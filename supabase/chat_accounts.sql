@@ -584,3 +584,13 @@ begin
                    t || '_needs_account', t);
   end loop;
 end $$;
+
+-- This file has just put back the plain chat functions (stamp_message, in_room and
+-- the rest), without their hotspot branch. On a database that has hotspots, every
+-- hotspot message is now refused (not_at_event) until hotspots.sql runs again.
+do $$
+begin
+  if to_regclass('public.hotspots') is not null then
+    raise warning 'Hotspots are installed: run supabase/hotspots.sql again now, or hotspot chat stops working.';
+  end if;
+end $$;

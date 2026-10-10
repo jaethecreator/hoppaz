@@ -660,15 +660,25 @@ create policy messages_insert on public.messages for insert to authenticated
 -- Event rooms clear the day after. The read policy already hides them; this
 -- deletes them for real. Schedule it if pg_cron is on:
 --   select cron.schedule('hoppaz-purge-rooms', '15 * * * *', 'select public.purge_expired_rooms()');
-create or replace function public.purge_expired_rooms()
-returns int language sql security definer set search_path = public as $$
-  with gone as (
-    delete from messages m using events e
-     where e.id::text = m.channel
-       and coalesce(e.ends_at, e.starts_at + interval '8 hours') + interval '24 hours' < now()
-    returning 1)
-  select count(*)::int from gone;
-$$;
+-- Only on a fresh database: chat_accounts.sql replaces it with a version that returns the
+-- picture paths to delete (table (path text)), and hotspots.sql adds its branch. Postgres
+-- cannot change a function's return type in place, so a run again leaves theirs alone.
+do $do$
+begin
+  if to_regprocedure('public.purge_expired_rooms()') is null then
+    execute $f$
+      create function public.purge_expired_rooms()
+      returns int language sql security definer set search_path = public as $$
+        with gone as (
+          delete from messages m using events e
+           where e.id::text = m.channel
+             and coalesce(e.ends_at, e.starts_at + interval '8 hours') + interval '24 hours' < now()
+          returning 1)
+        select count(*)::int from gone;
+      $$
+    $f$;
+  end if;
+end $do$;
 revoke all on function public.purge_expired_rooms() from public, anon, authenticated;
 
 -- Your own keys in a room, so the client can tell which messages are yours.
@@ -697,26 +707,35 @@ $$;
 revoke all on function public.have_met(uuid, uuid) from public, anon, authenticated;
 
 -- ---- who's here: only for people checked in at the same event
-create or replace function public.whos_here(p_event uuid)
-returns table (key uuid, alias text, waved boolean)
-language plpgsql security definer set search_path = public as $$
-declare me uuid := auth.uid();
+-- Only on a fresh database: chat_accounts.sql replaces it with more columns, and Postgres cannot change a
+-- function's return type in place, so a run again leaves the newer one alone.
+do $do$
 begin
-  if me is null or not exists (select 1 from checkins where event_id = p_event and user_id = me) then
-    return; -- not there yourself: you do not get to see who is
+  if to_regprocedure('public.whos_here(uuid)') is null then
+    execute $f$
+      create function public.whos_here(p_event uuid)
+      returns table (key uuid, alias text, waved boolean)
+      language plpgsql security definer set search_path = public as $$
+      declare me uuid := auth.uid();
+      begin
+        if me is null or not exists (select 1 from checkins where event_id = p_event and user_id = me) then
+          return; -- not there yourself: you do not get to see who is
+        end if;
+        return query
+          select (identity_for(c.user_id, p_event::text, true)).id,
+                 (identity_for(c.user_id, p_event::text, true)).alias,
+                 exists (select 1 from waves w where w.from_user = me and w.to_user = c.user_id)
+            from checkins c
+           where c.event_id = p_event
+             and c.user_id <> me
+             and c.created_at > now() - interval '6 hours'
+             and not is_blocked(me, c.user_id)
+           order by c.created_at desc
+           limit 60;
+      end $$
+    $f$;
   end if;
-  return query
-    select (identity_for(c.user_id, p_event::text, true)).id,
-           (identity_for(c.user_id, p_event::text, true)).alias,
-           exists (select 1 from waves w where w.from_user = me and w.to_user = c.user_id)
-      from checkins c
-     where c.event_id = p_event
-       and c.user_id <> me
-       and c.created_at > now() - interval '6 hours'
-       and not is_blocked(me, c.user_id)
-     order by c.created_at desc
-     limit 60;
-end $$;
+end $do$;
 
 -- ---- waves and DMs
 create table if not exists public.waves (
@@ -831,14 +850,23 @@ begin
   return 'sent';
 end $$;
 
-create or replace function public.my_waves()
-returns table (id uuid, from_alias text, event_title text, created_at timestamptz)
-language sql stable security definer set search_path = public as $$
-  select w.id, w.from_alias, e.title, w.created_at
-    from waves w left join events e on e.id = w.event_id
-   where w.to_user = auth.uid() and w.status = 'pending' and not is_blocked(w.from_user, w.to_user)
-   order by w.created_at desc;
-$$;
+-- Only on a fresh database: chat_accounts.sql replaces it with more columns, and Postgres cannot change a
+-- function's return type in place, so a run again leaves the newer one alone.
+do $do$
+begin
+  if to_regprocedure('public.my_waves()') is null then
+    execute $f$
+      create function public.my_waves()
+      returns table (id uuid, from_alias text, event_title text, created_at timestamptz)
+      language sql stable security definer set search_path = public as $$
+        select w.id, w.from_alias, e.title, w.created_at
+          from waves w left join events e on e.id = w.event_id
+         where w.to_user = auth.uid() and w.status = 'pending' and not is_blocked(w.from_user, w.to_user)
+         order by w.created_at desc;
+      $$
+    $f$;
+  end if;
+end $do$;
 
 -- Accept opens the DM and returns its id; decline returns null.
 create or replace function public.respond_wave(p_wave uuid, p_accept boolean)
@@ -852,33 +880,42 @@ begin
   return open_dm(w);
 end $$;
 
-create or replace function public.my_dms()
-returns table (
-  id uuid, i_am_a boolean, other_name text, other_look jsonb, revealed boolean,
-  me_revealed boolean, them_revealed boolean, my_alias text, event_title text,
-  last_body text, last_at timestamptz
-)
-language sql stable security definer set search_path = public as $$
-  select d.id,
-         d.a = auth.uid(),
-         case when d.a_revealed and d.b_revealed then coalesce(p.display_name, 'A Hopper')
-              when d.a = auth.uid() then d.b_alias else d.a_alias end,
-         case when d.a_revealed and d.b_revealed then p.avatar end,
-         d.a_revealed and d.b_revealed,
-         case when d.a = auth.uid() then d.a_revealed else d.b_revealed end,
-         case when d.a = auth.uid() then d.b_revealed else d.a_revealed end,
-         case when d.a = auth.uid() then d.a_alias else d.b_alias end,
-         e.title,
-         l.body,
-         coalesce(l.created_at, d.created_at)
-    from dms d
-    join profiles p on p.id = case when d.a = auth.uid() then d.b else d.a end
-    left join events e on e.id = d.event_id
-    left join lateral (select body, created_at from dm_messages where dm_id = d.id
-                        order by created_at desc limit 1) l on true
-   where auth.uid() in (d.a, d.b) and not is_blocked(d.a, d.b)
-   order by coalesce(l.created_at, d.created_at) desc;
-$$;
+-- Only on a fresh database: chat_accounts.sql replaces it with more columns, and Postgres cannot change a
+-- function's return type in place, so a run again leaves the newer one alone.
+do $do$
+begin
+  if to_regprocedure('public.my_dms()') is null then
+    execute $f$
+      create function public.my_dms()
+      returns table (
+        id uuid, i_am_a boolean, other_name text, other_look jsonb, revealed boolean,
+        me_revealed boolean, them_revealed boolean, my_alias text, event_title text,
+        last_body text, last_at timestamptz
+      )
+      language sql stable security definer set search_path = public as $$
+        select d.id,
+               d.a = auth.uid(),
+               case when d.a_revealed and d.b_revealed then coalesce(p.display_name, 'A Hopper')
+                    when d.a = auth.uid() then d.b_alias else d.a_alias end,
+               case when d.a_revealed and d.b_revealed then p.avatar end,
+               d.a_revealed and d.b_revealed,
+               case when d.a = auth.uid() then d.a_revealed else d.b_revealed end,
+               case when d.a = auth.uid() then d.b_revealed else d.a_revealed end,
+               case when d.a = auth.uid() then d.a_alias else d.b_alias end,
+               e.title,
+               l.body,
+               coalesce(l.created_at, d.created_at)
+          from dms d
+          join profiles p on p.id = case when d.a = auth.uid() then d.b else d.a end
+          left join events e on e.id = d.event_id
+          left join lateral (select body, created_at from dm_messages where dm_id = d.id
+                              order by created_at desc limit 1) l on true
+         where auth.uid() in (d.a, d.b) and not is_blocked(d.a, d.b)
+         order by coalesce(l.created_at, d.created_at) desc;
+      $$
+    $f$;
+  end if;
+end $do$;
 
 create or replace function public.send_dm(p_dm uuid, p_body text)
 returns uuid language plpgsql security definer set search_path = public as $$
@@ -1510,13 +1547,22 @@ end $$;
 -- Reward-code assignment happens only after a validated claim. Existing legacy
 -- collectibles remain readable and claimable during the launch transition.
 
-create or replace function public.my_drop_claims()
-returns table(drop_id uuid,title text,partner text,reward text,description text,code text,claimed_at timestamptz)
-language sql stable security definer set search_path=public as $$
- select c.drop_id,d.title,p.name,r.title,r.description,v.code,c.claimed_at
- from drop_claims c join game_drops d on d.id=c.drop_id left join partners p on p.id=d.partner_id left join drop_rewards r on r.id=c.reward_id left join drop_reward_codes v on v.reward_id=r.id and v.claimed_by=c.user_id
- where c.user_id=auth.uid() order by c.claimed_at desc;
-$$;
+-- Only on a fresh database: hunt_items.sql replaces it with more columns, and Postgres cannot change a
+-- function's return type in place, so a run again leaves the newer one alone.
+do $do$
+begin
+  if to_regprocedure('public.my_drop_claims()') is null then
+    execute $f$
+      create function public.my_drop_claims()
+      returns table(drop_id uuid,title text,partner text,reward text,description text,code text,claimed_at timestamptz)
+      language sql stable security definer set search_path=public as $$
+       select c.drop_id,d.title,p.name,r.title,r.description,v.code,c.claimed_at
+       from drop_claims c join game_drops d on d.id=c.drop_id left join partners p on p.id=d.partner_id left join drop_rewards r on r.id=c.reward_id left join drop_reward_codes v on v.reward_id=r.id and v.claimed_by=c.user_id
+       where c.user_id=auth.uid() order by c.claimed_at desc;
+      $$
+    $f$;
+  end if;
+end $do$;
 
 create or replace function public.log_approved_photo()
 returns trigger language plpgsql security definer set search_path=public as $$
@@ -1610,3 +1656,13 @@ begin
 end $$;
 drop trigger if exists crew_rsvp_activity on public.crew_move_rsvps;
 create trigger crew_rsvp_activity after insert or update of status on public.crew_move_rsvps for each row execute function public.log_crew_rsvp_activity();
+
+-- This file has just put back the plain chat functions (stamp_message, in_room and
+-- the rest), without their hotspot branch. On a database that has hotspots, every
+-- hotspot message is now refused (not_at_event) until hotspots.sql runs again.
+do $$
+begin
+  if to_regclass('public.hotspots') is not null then
+    raise warning 'Hotspots are installed: run supabase/hotspots.sql again now, or hotspot chat stops working.';
+  end if;
+end $$;
