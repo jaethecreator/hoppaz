@@ -12,15 +12,26 @@ import { useToast } from "@/lib/store";
  */
 
 type RewardItem = {
-  type: "xp" | "badge" | "collectible";
+  type: "xp" | "badge" | "collectible" | "card";
   title: string;
   description?: string;
   xp_amount?: number;
   weight?: number;
   badge_key?: string;
   collectible_key?: string;
+  /** A card prize (cards.sql): the box pays a deck card of this tier. */
+  card_tier?: CardTier;
   quantity?: number;
 };
+
+type CardTier = "common" | "rare" | "epic" | "legendary";
+/** The deck's box odds and XP by tier (docs/DECISIONS.md): ADD CARD PRIZES fills these in. */
+const CARD_PRIZES: { tier: CardTier; weight: string; xp: string }[] = [
+  { tier: "common", weight: "84", xp: "10" },
+  { tier: "rare", weight: "13", xp: "25" },
+  { tier: "epic", weight: "2.7", xp: "60" },
+  { tier: "legendary", weight: "0.3", xp: "150" },
+];
 
 export type SpawnRule = {
   id: string;
@@ -315,7 +326,7 @@ function RuleForm({ rule, areas, act, busy, onSaved }: { rule?: SpawnRule; areas
       title: r.title,
       xp: String(r.xp_amount ?? 0),
       weight: String(r.weight ?? 1),
-      key: r.badge_key ?? r.collectible_key ?? "",
+      key: r.badge_key ?? r.collectible_key ?? r.card_tier ?? "",
       keep: { description: r.description, quantity: r.quantity },
     })),
   );
@@ -349,7 +360,7 @@ function RuleForm({ rule, areas, act, busy, onSaved }: { rule?: SpawnRule; areas
         title: r.title,
         xp_amount: r.xp,
         weight: r.weight,
-        ...(r.type === "badge" ? { badge_key: r.key } : r.type === "collectible" ? { collectible_key: r.key } : {}),
+        ...(r.type === "badge" ? { badge_key: r.key } : r.type === "collectible" ? { collectible_key: r.key } : r.type === "card" ? { card_tier: r.key || "common" } : {}),
       })),
     });
     if (res) {
@@ -449,11 +460,15 @@ function RuleForm({ rule, areas, act, busy, onSaved }: { rule?: SpawnRule; areas
               <select
                 aria-label="Reward type"
                 value={r.type}
-                onChange={(e) => patch(r.id, { type: e.target.value as RewardItem["type"] })}
+                onChange={(e) => {
+                  const type = e.target.value as RewardItem["type"];
+                  patch(r.id, type === "card" ? { type, key: "common", title: r.title || "A card" } : { type, key: r.type === "card" ? "" : r.key });
+                }}
               >
                 <option value="xp">XP</option>
                 <option value="badge">Badge</option>
                 <option value="collectible">Collectible</option>
+                <option value="card">Card</option>
               </select>
               <input aria-label="Reward title" required maxLength={100} value={r.title} onChange={(e) => patch(r.id, { title: e.target.value })} placeholder="Title people see" />
               <button
@@ -475,7 +490,19 @@ function RuleForm({ rule, areas, act, busy, onSaved }: { rule?: SpawnRule; areas
                 Weight
                 <input type="number" min="0.01" max="10000" step="any" required value={r.weight} onChange={(e) => patch(r.id, { weight: e.target.value })} />
               </label>
-              {r.type !== "xp" && (
+              {r.type === "card" && (
+                <label className="label">
+                  Card tier
+                  <select value={r.key || "common"} onChange={(e) => patch(r.id, { key: e.target.value })}>
+                    {CARD_PRIZES.map((p) => (
+                      <option key={p.tier} value={p.tier}>
+                        {p.tier[0].toUpperCase() + p.tier.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {r.type !== "xp" && r.type !== "card" && (
                 <label className="label">
                   {r.type === "badge" ? "Badge key" : "Item key"}
                   <input required maxLength={60} value={r.key} onChange={(e) => patch(r.id, { key: e.target.value })} placeholder={r.type === "badge" ? "night-owl" : "jollof-pot"} />
@@ -492,7 +519,21 @@ function RuleForm({ rule, areas, act, busy, onSaved }: { rule?: SpawnRule; areas
         >
           <Plus size={14} /> ADD A REWARD
         </button>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={rewards.length + CARD_PRIZES.length > 20}
+          onClick={() =>
+            setRewards((rows) => [
+              ...rows.filter((x) => x.type !== "card"),
+              ...CARD_PRIZES.map((p) => ({ id: seq.current++, type: "card" as const, title: "A card", xp: p.xp, weight: p.weight, key: p.tier, keep: {} })),
+            ])
+          }
+        >
+          <Plus size={14} /> ADD CARD PRIZES (THE DECK ODDS)
+        </button>
         <p className="hint">Weight is the share of draws: 80, 18 and 2 pay out 80%, 18% and 2% of the time. A fixed rule pays one reward, so keep one row.</p>
+        <p className="hint">A card prize pays a card of that tier from the live deck (with the pity and the copy limits); with none left of a tier it pays the next tier down, then the XP only.</p>
       </fieldset>
       {!rule && (
         <label className="flex items-center gap-2 text-sm">

@@ -12,6 +12,7 @@ import { shortDate } from "@/components/me/dropTime";
 import { useSession } from "@/lib/useSession";
 import { loadCollection, loadDropReceipts, type CollectionEntry, type DropReceipt } from "@/lib/useCollectibles";
 import Hunt3D from "@/components/Hunt3D";
+import CardAlbum from "@/components/cards/CardAlbum";
 import { HUNT_ITEMS, HUNT_KEYS, RARITY } from "@/lib/huntItems";
 
 /* eslint-disable @next/next/no-img-element -- collectible art is Hoppaz or partner supplied, sizes unknown */
@@ -27,6 +28,7 @@ export default function CollectionPage() {
   const [items, setItems] = useState<CollectionEntry[]>([]);
   const [receipts, setReceipts] = useState<DropReceipt[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [cards, setCards] = useState(0);
 
   useEffect(() => {
     if (DEMO) {
@@ -48,7 +50,7 @@ export default function CollectionPage() {
     };
   }, [userId]);
 
-  const total = items.length + receipts.length;
+  const total = items.length + receipts.length + cards;
   // Camera hunt finds arrive as drop receipts tagged with the 3D item they unlocked.
   const found = new Map(receipts.filter((r) => r.hunt_item).map((r) => [r.hunt_item!, r]));
   return (
@@ -57,8 +59,10 @@ export default function CollectionPage() {
         backHref="/me"
         backLabel="Me"
         title="Your shelf"
-        caption={loaded && total ? `${items.length} COLLECTED · ${receipts.length} CLAIMED` : "COLLECTIBLES AND REWARDS"}
+        caption={loaded && total ? `${cards ? `${cards} CARDS · ` : ""}${items.length} COLLECTED · ${receipts.length} CLAIMED` : "CARDS, COLLECTIBLES AND REWARDS"}
       />
+
+      {!DEMO && <CardAlbum userId={userId} onCount={setCards} />}
 
       {loaded && (
         <section aria-label="Camera hunt collectibles" className="mb-7">

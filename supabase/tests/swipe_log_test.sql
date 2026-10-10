@@ -40,12 +40,16 @@ create temp table t (k text primary key, v uuid);
 grant all on t to authenticated;
 
 do $t$
-declare a uuid := pg_temp.newuser(); b uuid := pg_temp.newuser(); ev uuid;
+declare a uuid := pg_temp.newuser(); b uuid := pg_temp.newuser(); ev uuid; ev2 uuid;
 begin
   insert into public.events (title, venue_name, geog, starts_at, status)
   values ('Swipe log test night', 'Test venue', st_makepoint(3.38, 6.2)::geography, now() + interval '1 day', 'live')
   returning id into ev;
-  insert into t values ('a', a), ('b', b), ('ev', ev);
+  -- A second night nobody has swiped, so the double-fire guard (which drops a row before the policy sees it) is out of the way.
+  insert into public.events (title, venue_name, geog, starts_at, status)
+  values ('Swipe log test night two', 'Test venue', st_makepoint(3.38, 6.2)::geography, now() + interval '1 day', 'live')
+  returning id into ev2;
+  insert into t values ('a', a), ('b', b), ('ev', ev), ('ev2', ev2);
 end $t$;
 
 -- A guest (no email, so no account) can log a swipe either way.
@@ -64,11 +68,12 @@ end $t$;
 
 -- Nobody writes for someone else, reads someone else's, or changes the log.
 do $t$
-declare a uuid := (select v from t where k = 'a'); b uuid := (select v from t where k = 'b'); ev uuid := (select v from t where k = 'ev'); n int;
+declare a uuid := (select v from t where k = 'a'); b uuid := (select v from t where k = 'b'); ev uuid := (select v from t where k = 'ev');
+        ev2 uuid := (select v from t where k = 'ev2'); n int;
 begin
   perform pg_temp.as_user(b);
   begin
-    insert into public.swipe_log (user_id, event_id, direction) values (a, ev, 'left');
+    insert into public.swipe_log (user_id, event_id, direction) values (a, ev2, 'left');
     raise exception 'TEST FAILED: b logged a swipe as a';
   exception when insufficient_privilege then null;
   end;

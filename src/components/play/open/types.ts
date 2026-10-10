@@ -1,7 +1,8 @@
 export type OpenTier = "common" | "rare" | "epic" | "legendary";
 
 /** What the claim gives back. Mirrors claim_game_drop, mapped by the shell. */
-export type ClaimOk = { ok: true; xp: number; title?: string; collectible?: { key: string; name: string } };
+/** collectible.tier: a deck card (cards.sql) carries its own tier, which colours its face instead of the box's. */
+export type ClaimOk = { ok: true; xp: number; title?: string; collectible?: { key: string; name: string; tier?: OpenTier } };
 export type ClaimRefused = { ok: false; reason: string; message: string };
 export type ClaimResult = ClaimOk | ClaimRefused;
 

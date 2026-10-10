@@ -3,6 +3,7 @@
 import { NEED_ACCOUNT, requireAccount } from "./accountGate";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabase } from "./supabase/client";
+import { loadDropCards } from "./cards";
 
 export type Quest = {
   id: string;
@@ -285,8 +286,9 @@ export function useGameDrops(eventId?: string, opts: { staffOnly?: boolean } = {
             )[r.reason ?? ""] ?? "COULD NOT CLAIM",
         };
       }
-      await reload();
-      return { reward: r.reward, description: r.description, code: r.code, xp: r.xp };
+      // A box that pays cards gave them inside the claim (cards.sql): ask which, for the reveal.
+      const [cards] = await Promise.all([loadDropCards(drop.id), reload()]);
+      return { reward: r.reward, description: r.description, code: r.code, xp: r.xp, cards };
     },
     [reload]
   );

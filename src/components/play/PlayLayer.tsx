@@ -21,6 +21,7 @@ import { emitPlayEvent, markFirst, playSeen, usePlayBackButton, usePlayMode } fr
 import { usePlayTick } from "@/lib/usePlayTick";
 import { useSession } from "@/lib/useSession";
 import { ensureWelcomeBoxes } from "@/lib/useWelcomeBoxes";
+import { loadDropCards } from "@/lib/cards";
 import Avatar, { type AvatarHandle } from "./Avatar";
 import Crate, { TIER_ART } from "./Crate";
 import Hud, { type HudHandle } from "./Hud";
@@ -661,7 +662,16 @@ export default function PlayLayer({
       });
       if (error || !data) return { ok: false, reason: "error", message: "That didn't open. Try again in a bit." };
       const r = data as { ok: boolean; reason?: string; reward?: string; xp?: number; distance_m?: number };
-      if (r.ok) return { ok: true, xp: r.xp ?? 0, title: r.reward };
+      if (r.ok) {
+        // A box that pays cards gave one inside the claim (cards.sql); the open shows it as the card.
+        const card = (await loadDropCards(box.id)).find((c) => !c.starter);
+        return {
+          ok: true,
+          xp: (r.xp ?? 0) + (card?.xp_bonus ?? 0),
+          title: r.reward,
+          ...(card ? { collectible: { key: card.key, name: card.name, tier: card.tier } } : {}),
+        };
+      }
       const reason = r.reason ?? "error";
       if (GONE.has(reason)) tick.removeBox(box.id);
       if (reason === "need_account") requireAccount("open this box");

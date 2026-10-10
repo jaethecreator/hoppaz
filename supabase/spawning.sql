@@ -90,8 +90,10 @@ create index if not exists no_spawn_zones_geog_idx on public.no_spawn_zones usin
 
 -- ------------------------------------------------------------- spawn rules ---
 -- A rule says: inside this window, every N minutes, drop a wave of boxes at
--- random spots of these kinds. rewards items: {type: xp|badge|collectible,
--- title, description?, xp_amount?, weight?, badge_key?, collectible_key?, quantity?}.
+-- random spots of these kinds. rewards items: {type: xp|badge|collectible|card,
+-- title, description?, xp_amount?, weight?, badge_key?, collectible_key?,
+-- card_tier?, quantity?}. A card item (cards.sql) lets the box pay a card of that
+-- tier; the box may pay up to the highest card tier among its items.
 create table if not exists public.spawn_rules (
   id                 uuid primary key default gen_random_uuid(),
   name               text not null unique,
@@ -137,6 +139,10 @@ alter table public.game_drops add column if not exists spawn_rule_id uuid refere
 alter table public.game_drops add column if not exists owner_id uuid references public.profiles(id) on delete cascade;
 create index if not exists game_drops_kind_idx on public.game_drops(kind, closes_at);
 create index if not exists game_drops_owner_idx on public.game_drops(owner_id);
+
+-- The card columns (cards.sql owns them; added here too so the spawner below can always write them).
+alter table public.drop_rewards add column if not exists card_tier text;
+alter table public.game_drops add column if not exists card_max_tier text;
 
 alter table public.drop_claims add column if not exists lat double precision;
 alter table public.drop_claims add column if not exists lng double precision;
@@ -187,7 +193,10 @@ begin
         where jsonb_typeof(i) = 'object' and coalesce(i->>'title', '') <> '' and coalesce(nullif(i->>'weight', '')::numeric, 1) > 0
           and (i->>'type' = 'xp'
                or (i->>'type' = 'badge' and coalesce(i->>'badge_key', '') <> '')
-               or (i->>'type' = 'collectible' and exists (select 1 from collectibles c where c.key = i->>'collectible_key')));
+               or (i->>'type' = 'collectible' and exists (select 1 from collectibles c where c.key = i->>'collectible_key'))
+               -- a card prize needs cards.sql (its reward type) and a tier
+               or (i->>'type' = 'card' and i->>'card_tier' in ('common', 'rare', 'epic', 'legendary')
+                   and to_regclass('public.cards') is not null));
       if jsonb_array_length(rw) = 0 then
         raise notice 'spawn_boxes: rule "%" has no usable rewards, skipped', r.name;
         continue;
@@ -205,14 +214,18 @@ begin
       loop
         exit when made >= r.boxes_per_wave;
         if exists (select 1 from unnest(picked) g where st_dwithin(g, spot.geog, 300)) then continue; end if;
-        insert into game_drops (title, description, area, geog, opens_at, closes_at, radius_m, claim_method, max_claims, reward_model, kind, spawn_point_id, spawn_rule_id, active)
+        insert into game_drops (title, description, area, geog, opens_at, closes_at, radius_m, claim_method, max_claims, reward_model, kind, spawn_point_id, spawn_rule_id, active, card_max_tier)
         values (spot.name, 'First ' || r.max_claims || ' to get here open it.', spot.area, spot.geog, p_now, p_now + make_interval(mins => r.lifetime_minutes),
-                r.radius_m, 'proximity', r.max_claims, r.reward_model, 'spawn', spot.id, r.id, true)
+                r.radius_m, 'proximity', r.max_claims, r.reward_model, 'spawn', spot.id, r.id, true,
+                -- the highest card tier among the prizes (null: the box pays no cards)
+                (select i->>'card_tier' from jsonb_array_elements(rw) i where i->>'type' = 'card'
+                  order by array_position(array['common','rare','epic','legendary'], i->>'card_tier') desc limit 1))
         returning id into new_id;
-        insert into drop_rewards (drop_id, reward_type, title, description, quantity, weight, xp_amount, badge_key, collectible_id)
+        insert into drop_rewards (drop_id, reward_type, title, description, quantity, weight, xp_amount, badge_key, collectible_id, card_tier)
         select new_id, i->>'type', i->>'title', coalesce(i->>'description', ''), nullif(i->>'quantity', '')::integer,
                coalesce(nullif(i->>'weight', '')::numeric, 1), least(greatest(coalesce(nullif(i->>'xp_amount', '')::integer, 0), 0), 10000),
-               nullif(i->>'badge_key', ''), (select c.id from collectibles c where c.key = i->>'collectible_key')
+               nullif(i->>'badge_key', ''), (select c.id from collectibles c where c.key = i->>'collectible_key'),
+               case when i->>'type' = 'card' then i->>'card_tier' end
         from jsonb_array_elements(rw) i;
         update spawn_points set last_spawned_at = p_now where id = spot.id;
         picked := picked || spot.geog;

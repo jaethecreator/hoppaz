@@ -50,9 +50,9 @@ function esc(s: string) {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 }
 
-/** A collectible's card face: tier-coloured frame, a drawn picture, the name, the tier. */
-export function cardSVG(card: { key: string; name: string }, tier: OpenTier) {
-  const T = TIER[tier];
+/** A collectible's card face: tier-coloured frame, a drawn picture, the name, the tier (the card's own, else the box's). */
+export function cardSVG(card: { key: string; name: string; tier?: OpenTier }, tier: OpenTier) {
+  const T = TIER[card.tier ?? tier];
   const name = esc(card.name.length > 18 ? card.name.slice(0, 17) + "." : card.name);
   return (
     `<svg viewBox="0 0 120 168" xmlns="${NS}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">` +
