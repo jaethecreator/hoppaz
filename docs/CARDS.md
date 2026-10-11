@@ -1,5 +1,7 @@
 # Cards: note for Ola
 
+**Status, 11 Oct 2026: phase A is built.** `supabase/cards.sql` (tested by `supabase/tests/cards_test.sql`): the tables, the guards, `grant_card` through the `drop_claims` trigger, pity, buckets, copies, starters, set completion, `stamp_visit`, `my_album`, `my_card`, `my_drop_cards` and the `cards_public` view. The staff spawner pays `card` prizes (`spawn_boxes`, the admin route, `SpawnerSection.tsx`). The front end: `src/components/cards/CardFace.tsx`, the card step in `Reveal.tsx`, the Cards section on Your shelf (`CardAlbum.tsx`, with I'M HERE), and Play shows a card its box gave. The deck loads from JSON with `scripts/cards/import-deck.mjs`; `supabase/cards_sample.sql` is a 13-card sample for staging. Not built yet: phase B (Wanted: your shot), map art, the admin `CardsSection.tsx`. Small and welcome boxes still pay no cards, as below. One change from the text below: `my_drop_cards(drop)` is the reveal's read (a definer function), not a direct read of `card_copies`.
+
 9 Oct 2026. For Ola and the front end. Jae's calls: `docs/DECISIONS.md`. Deck: `docs/Hoppaz-Game-Plan.md` sections 3, 4, 12. Cards are mainly places, Nomad List style: a card says what to see there, and standing at its point stamps it **Visited**.
 
 ## Decision and fields

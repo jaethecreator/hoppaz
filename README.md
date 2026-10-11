@@ -58,6 +58,12 @@ must not be mistaken for a live event feed. Keep demo fixtures out of production
    Then `supabase/swipe_log.sql`: every left and right swipe on the Today deck,
    for the data (staff read the totals in the `swipe_stats` view; also safe to
    run again).
+   Then `supabase/cards.sql`, after `play.sql`: the card deck (sets, cards, the
+   box picker, the album, Visited). It is safe to run again. Load the deck with
+   `node scripts/cards/import-deck.mjs <deck.json>` and run the SQL it prints;
+   `supabase/cards_sample.sql` is a 13-card sample for local and staging
+   databases only. Street boxes pay cards once a spawn rule has card prizes
+   (the admin spawner's ADD CARD PRIZES button).
 3. **Authentication → Sign In / Providers → turn on Anonymous sign-ins.** Keep
    anonymous identity enabled; there is no mandatory email registration.
 4. Configure the app's Production environment in Vercel with
