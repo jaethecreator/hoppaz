@@ -6,7 +6,7 @@
 -- only so they can drop in a test. The points are approximate; check each one before any card goes live.
 -- ============================================================================
 begin;
-insert into public.card_sets (key, name, title, kind, live) values ('lagos-island', 'Lagos Island', 'Island Local', 'council', true)
+insert into public.cardnm_sets (key, name, title, kind, live) values ('lagos-island', 'Lagos Island', 'Island Local', 'council', true)
 on conflict (key) do update set name = excluded.name, title = excluded.title, kind = excluded.kind, live = excluded.live;
 insert into public.card_sets (key, name, title, kind, live) values ('eti-osa', 'Eti-Osa', 'Eti-Osa Local', 'council', true)
 on conflict (key) do update set name = excluded.name, title = excluded.title, kind = excluded.kind, live = excluded.live;
