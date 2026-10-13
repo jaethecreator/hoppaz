@@ -250,13 +250,23 @@
   width: 44px !important;
   height: 44px !important;
   line-height: 44px !important;
-  color: rgb(var(--ink)) !important;
+  color: rgb(var(--text)) !important;
   background: rgb(var(--raised)) !important;
   border-color: rgb(var(--hairline)) !important;
 }
 .hz-map-fallback .leaflet-control-attribution {
-  color: #29231f;
+  color: rgb(var(--text));
+  background: rgb(var(--ground) / 0.82);
   font-size: 10px;
+}
+.hz-map-fallback .leaflet-control-attribution a {
+  color: rgb(var(--orange));
+}
+.hz-map-fallback .leaflet-tile-pane {
+  filter: brightness(0.43) saturate(0.72) sepia(0.2) hue-rotate(345deg) contrast(1.16);
+}
+[data-theme="day"] .hz-map-fallback .leaflet-tile-pane {
+  filter: sepia(0.18) saturate(0.72) hue-rotate(345deg) brightness(1.03) contrast(0.95);
 }
 .hz-map-fallback .leaflet-map-pane {
   transform-style: preserve-3d;
@@ -286,7 +296,7 @@
   width: 19px;
   height: 14px;
   border: 2px solid #fff4e5;
-  background: #ff4d00;
+  background: #FF4D00;
   clip-path: polygon(50% 0, 100% 45%, 50% 100%, 0 45%);
 }
 .hz-map-fallback .hz-map3d-walls {
@@ -295,11 +305,14 @@
   left: 9px;
   width: 16px;
   height: 24px;
-  background: linear-gradient(90deg, #c43d12 0 50%, #ff6b2b 50% 100%);
+  background: linear-gradient(90deg, #B83600 0 50%, #FF4D00 50% 100%);
   clip-path: polygon(0 0, 50% 18%, 100% 0, 100% 77%, 50% 100%, 0 77%);
 }
 .hz-map-fallback .hz-map3d-building.is-selected .hz-map3d-roof {
-  background: #8d55ff;
+  background: rgb(var(--violet));
+}
+.hz-map-fallback .hz-map3d-building.is-selected .hz-map3d-walls {
+  background: linear-gradient(90deg, rgb(var(--violet) / 0.72) 0 50%, rgb(var(--violet)) 50% 100%);
 }
 .hz-map-fallback::after {
   position: absolute;
@@ -308,7 +321,7 @@
   height: 15%;
   content: "";
   pointer-events: none;
-  background: linear-gradient(0deg, rgb(12 9 8 / 18%), transparent);
+  background: linear-gradient(0deg, rgb(var(--shadow) / 0.18), transparent);
 }
 /* Zoom buttons sit just under the page's top chrome (the night rail) */
 .maplibregl-ctrl-top-right {
