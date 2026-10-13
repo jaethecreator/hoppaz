@@ -216,8 +216,16 @@ export default function InstallSheet() {
         <div className="flex items-center gap-4 pr-8">
           <Mascot state="oya" size={88} className="rig-on-raised flex-none" />
           <div className="min-w-0">
-            <h2 className="font-display text-[22px] font-black leading-[1.1]">{mode === "bookmark" ? "Keep Hoppaz one tap away." : "Keep Hoppaz on your home screen."}</h2>
-            <p className="hint mt-1.5">One tap to tonight.</p>
+            <h2 className="font-display text-[22px] font-black leading-[1.1]">
+              {mode === "bookmark" ? "Save Hoppaz for later?" : mode === "ios" ? "Add Hoppaz to your home screen?" : "Add a Hoppaz app icon?"}
+            </h2>
+            <p className="hint mt-1.5">
+              {mode === "ios"
+                ? "Optional. You can keep using Hoppaz in Safari."
+                : mode === "bookmark"
+                  ? "Optional. You can keep using Hoppaz here."
+                  : "Optional: this adds an icon to your phone. You can keep using Hoppaz here either way."}
+            </p>
           </div>
         </div>
 
@@ -238,7 +246,7 @@ export default function InstallSheet() {
           </ol>
         ) : (
           <button type="button" onClick={install} className="btn mt-4 w-full">
-            ADD TO HOME SCREEN
+            ADD APP ICON
           </button>
         )}
 
@@ -247,7 +255,7 @@ export default function InstallSheet() {
           onClick={close}
           className={mode !== "android" ? "btn btn-ghost mt-3 w-full" : "mt-1 flex min-h-[44px] w-full items-center justify-center font-mono text-[11px] font-medium tracking-[0.14em] text-dim"}
         >
-          NOT NOW
+          KEEP BROWSING
         </button>
       </div>
     </div>

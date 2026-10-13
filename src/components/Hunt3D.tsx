@@ -34,6 +34,7 @@ export default function Hunt3D({
     let stop = () => {};
     let cancelled = false;
     let started = false;
+    let mounted = false;
     let visible = false;
     let raf = 0;
     let refresh = () => {};
@@ -44,6 +45,10 @@ export default function Hunt3D({
       try {
         const [THREE, models] = await Promise.all([import("three"), import("@/lib/huntModels")]);
         if (cancelled) return;
+        if (!visible) {
+          started = false;
+          return;
+        }
         let renderer: InstanceType<typeof THREE.WebGLRenderer>;
         try {
           renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
@@ -121,6 +126,7 @@ export default function Hunt3D({
           renderer.forceContextLoss();
           renderer.domElement.remove();
         };
+        mounted = true;
         refresh();
       } catch {
         if (!cancelled) setFailed(true);
@@ -133,6 +139,12 @@ export default function Hunt3D({
       : new IntersectionObserver(([entry]) => {
           visible = entry.isIntersecting;
           if (visible) void mount();
+          else if (mounted) {
+            stop();
+            stop = () => {};
+            mounted = false;
+            started = false;
+          }
           refresh();
         });
     if (seen) seen.observe(el);

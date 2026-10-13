@@ -62,6 +62,9 @@ export async function continueWithGoogle(next: string, linkGuest: boolean): Prom
   const result = linkGuest && data.user?.is_anonymous
     ? await sb.auth.linkIdentity({ provider: "google", options })
     : await sb.auth.signInWithOAuth({ provider: "google", options });
+  if (result.error && /manual.*link.*disabled/i.test(result.error.message)) {
+    return "Google sign-up is not enabled yet. The Hoppaz admin needs to enable manual identity linking in Supabase. You can use email sign-up for now.";
+  }
   return result.error?.message ?? null;
 }
 

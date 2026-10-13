@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import * as maplibregl from "maplibre-gl";
 import type { ExpressionSpecification, GeoJSONSource, Map as MLMap, StyleSpecification } from "maplibre-gl";
 import { BRAND } from "@/lib/brand";
@@ -378,6 +379,8 @@ export default function NightMap({
 }: NightMapProps) {
   const holder = useRef<HTMLDivElement>(null);
   const map = useRef<MLMap | null>(null);
+  const [mapIssue, setMapIssue] = useState<"unavailable" | "lost" | null>(null);
+  const [mapRetry, setMapRetry] = useState(0);
   /** True while the style and our layers are in; false mid-swap. */
   const ready = useRef(false);
   /** Bumps each time our layers are (re)built, so data and markers repaint. 0 = nothing yet. */
@@ -592,28 +595,36 @@ export default function NightMap({
       styleTheme.current = t;
 
       // The map opens high over Lagos; the swoop (below) brings it down once the intro is done.
-      const created = new maplibregl.Map({
-        container: holder.current,
-        style,
-        center: [LAGOS_CENTER.lng, LAGOS_CENTER.lat],
-        zoom: 10.6,
-        minZoom: 9,
-        maxZoom: 17,
-        maxBounds: LAGOS_BOUNDS, // Lagos only, for now
-        maxPitch: 60,
-        // A cheap phone draws fewer pixels (docs/PLAY-MODE.md section 17).
-        // Avoid paying for a third or fourth physical pixel per CSS pixel on retina phones.
-        pixelRatio: Math.min(window.devicePixelRatio || 1, deviceTier() === "low" ? 1.5 : 2),
-        // The credit is added below, as plain text clear of the bottom chrome.
-        attributionControl: false,
-        dragRotate: false,
-        pitchWithRotate: false,
-      });
+      let created: MLMap;
+      try {
+        created = new maplibregl.Map({
+          container: holder.current,
+          style,
+          center: [LAGOS_CENTER.lng, LAGOS_CENTER.lat],
+          zoom: 10.6,
+          minZoom: 9,
+          maxZoom: 17,
+          maxBounds: LAGOS_BOUNDS, // Lagos only, for now
+          maxPitch: 60,
+          // Avoid paying for a third or fourth physical pixel per CSS pixel on retina phones.
+          pixelRatio: Math.min(window.devicePixelRatio || 1, deviceTier() === "low" ? 1.5 : 2),
+          attributionControl: false,
+          dragRotate: false,
+          pitchWithRotate: false,
+        });
+      } catch (error) {
+        console.warn("[hoppaz] map could not start:", error);
+        setMapIssue("unavailable");
+        return;
+      }
       m = created;
       map.current = created;
       created.on("error", (event) => {
+        if (event.error instanceof maplibregl.GPUInitializationError) setMapIssue("unavailable");
         console.warn("[hoppaz] map:", event.error);
       });
+      created.on("webglcontextlost", () => setMapIssue("lost"));
+      created.on("webglcontextrestored", () => setMapIssue(null));
       created.touchZoomRotate.disableRotation();
       created.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
       created.addControl(new maplibregl.AttributionControl({ compact: false }), "bottom-left");
@@ -720,7 +731,7 @@ export default function NightMap({
       map.current?.remove();
       map.current = null;
     };
-  }, []);
+  }, [mapRetry]);
 
   // Web fonts land after first paint; signs measured before that are the wrong width.
   useEffect(() => {
@@ -1184,5 +1195,30 @@ export default function NightMap({
   // Inline on purpose: MapLibre's own CSS gives .maplibregl-map position relative, and when the
   // production build orders that sheet after Tailwind's, the class "absolute" loses and the map
   // collapses to 0 px tall.
-  return <div ref={holder} className="absolute inset-0" style={{ position: "absolute", inset: 0 }} aria-label="Lagos map" />;
+  return (
+    <>
+      <div ref={holder} className="absolute inset-0" style={{ position: "absolute", inset: 0 }} aria-label="Lagos map" />
+      {mapIssue && (
+        <div role="alert" className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-ink/55 px-6 text-center backdrop-blur-[2px]">
+          <div className="pointer-events-auto max-w-sm rounded-hz border border-line bg-ink-2 p-5 shadow-sheet">
+            <p className="font-display text-lg font-black">{mapIssue === "lost" ? "The map paused." : "The map can’t run on this browser."}</p>
+            <p className="hint mt-1.5">
+              {mapIssue === "lost"
+                ? "Your phone’s graphics system stopped the map. Try reopening it or browse the events list."
+                : "This browser doesn’t support the map graphics Hoppaz needs. You can still browse events."}
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button type="button" className="btn w-full" onClick={() => {
+                setMapIssue(null);
+                setMapRetry((n) => n + 1);
+              }}>
+                TRY MAP AGAIN
+              </button>
+              <Link href="/discover" className="btn btn-ghost w-full">BROWSE EVENTS</Link>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }

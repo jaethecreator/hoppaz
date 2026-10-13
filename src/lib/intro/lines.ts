@@ -28,10 +28,10 @@ export const LINES: Record<StepId, Line> = {
     skip: "Skip",
   },
   install: {
-    title: "Keep me close",
-    line: "Put Hoppaz on your home screen. It opens quick, and I can ping you.",
-    cta: "Add it",
-    skip: "Later",
+    title: "Add Hoppaz to your home screen?",
+    line: "This adds an app icon for quick access. It is optional; you can keep using Hoppaz here.",
+    cta: "Add app icon",
+    skip: "Keep using browser",
   },
   open_app: {
     title: "Now open Hoppaz",
@@ -182,10 +182,10 @@ export const EXTRA = {
   } satisfies Line,
   /** The iPhone install step: the two taps, with a picture. */
   installIos: {
-    title: "Keep me close",
-    line: "Two taps and I live on your home screen. I'll wait!",
-    cta: "Done, I added it",
-    skip: "Later",
+    title: "Add Hoppaz to your home screen?",
+    line: "This is optional. Follow the two steps to add an icon, or keep using Hoppaz in Safari.",
+    cta: "I've added Hoppaz",
+    skip: "Keep using Safari",
   } satisfies Line,
   /** The iPhone stop card for a Hopper with an account. */
   openAppMember: {
