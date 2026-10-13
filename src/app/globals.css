@@ -262,6 +262,26 @@
 .hz-map-fallback .leaflet-control-attribution a {
   color: rgb(var(--orange));
 }
+.hz-map-fallback .leaflet-tooltip.hz-map-event-label {
+  max-width: 168px;
+  overflow: hidden;
+  padding: 4px 7px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 5px;
+  color: rgb(var(--text));
+  background: rgb(var(--raised) / 0.96);
+  font-family: var(--font-body), sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgb(var(--shadow) / 0.45);
+  pointer-events: none;
+}
+.hz-map-fallback .leaflet-tooltip-top.hz-map-event-label::before {
+  border-top-color: rgb(var(--raised));
+}
 .hz-map-fallback .leaflet-tile-pane {
   filter: brightness(0.43) saturate(0.72) sepia(0.2) hue-rotate(345deg) contrast(1.16);
 }

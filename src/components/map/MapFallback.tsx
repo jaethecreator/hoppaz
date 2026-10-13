@@ -38,8 +38,8 @@ export default function MapFallback({ events, fix, selectedId, onSelect, hudTop 
         mapPane.style.setProperty("transform-origin", "50% 72%", "important");
         const pitchPane = () => {
           const current = mapPane.style.transform;
-          if (!current.includes("rotateX(28deg)")) {
-            mapPane.style.transform = `${current} perspective(1100px) rotateX(28deg) scale(1.14)`;
+          if (!current.includes("rotateX(45deg)")) {
+            mapPane.style.transform = `${current} perspective(1100px) rotateX(45deg) scale(1.2)`;
           }
         };
         const observer = new MutationObserver(pitchPane);
@@ -86,7 +86,12 @@ export default function MapFallback({ events, fix, selectedId, onSelect, hudTop 
           keyboard: true,
           title: eventTitle(event),
         })
-          .bindTooltip(eventTitle(event), { direction: "top", offset: [0, -8] })
+          .bindTooltip(eventTitle(event), {
+            permanent: true,
+            direction: "top",
+            offset: [0, -8],
+            className: "hz-map-event-label",
+          })
           .on("click", () => onSelect(event.id))
           .addTo(pinsRef.current!);
       }

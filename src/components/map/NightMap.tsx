@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import * as maplibregl from "maplibre-gl";
 import type { ExpressionSpecification, GeoJSONSource, Map as MLMap, StyleSpecification } from "maplibre-gl";
 import { BRAND } from "@/lib/brand";
@@ -383,6 +384,8 @@ export default function NightMap({
   const map = useRef<MLMap | null>(null);
   const [mapIssue, setMapIssue] = useState<"unavailable" | "lost" | null>(null);
   const [mapRetry, setMapRetry] = useState(0);
+  const [showFallbackNotice, setShowFallbackNotice] = useState(false);
+  useEffect(() => setShowFallbackNotice(!!mapIssue), [mapIssue]);
   useEffect(() => {
     if (!mapIssue) return;
     onMapUnavailable?.();
@@ -1209,17 +1212,20 @@ export default function NightMap({
       {mapIssue && (
         <>
           <MapFallback events={events} fix={fix} selectedId={selectedId} onSelect={onSelect} hudTop={hudTop} />
-          <div role="status" className="pointer-events-none absolute left-3 right-3 top-[calc(env(safe-area-inset-top)+8.5rem)] z-10 flex justify-center px-2">
+          {showFallbackNotice && <div role="status" className="pointer-events-none absolute left-3 right-3 top-[calc(env(safe-area-inset-top)+8.5rem)] z-10 flex justify-center px-2">
             <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-hz border border-line bg-ink-2/95 px-3 py-2 shadow-sheet">
-              <p className="hint flex-1">{mapIssue === "lost" ? "Your phone paused the 3D map. Showing a simpler map." : "3D maps aren’t available here. Showing a simpler map."}</p>
+              <p className="hint min-w-0 flex-1">{mapIssue === "lost" ? "Your phone paused the 3D map. Showing a simpler map." : "3D maps aren’t available here. Showing a simpler map."}</p>
               <button type="button" className="btn shrink-0 px-3 py-2" onClick={() => {
                 setMapIssue(null);
                 setMapRetry((n) => n + 1);
               }}>
                 RETRY 3D
               </button>
+              <button type="button" aria-label="Close map notice" className="grid h-10 w-10 shrink-0 place-items-center rounded-hz text-dim" onClick={() => setShowFallbackNotice(false)}>
+                <X size={18} aria-hidden />
+              </button>
             </div>
-          </div>
+          </div>}
         </>
       )}
     </>
