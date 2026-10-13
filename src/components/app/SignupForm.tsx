@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import { createAccount, logIn } from "@/lib/account";
+import { createAccount, continueWithGoogle, logIn } from "@/lib/account";
 
 /** Fired on window after a sign-up or log-in, so the home-screen sheet can offer itself. */
 export const SIGNED_IN_EVENT = "hoppaz:signed-in";
@@ -25,6 +25,7 @@ export default function SignupForm({
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent) => {
@@ -44,8 +45,36 @@ export default function SignupForm({
     setError(null);
   };
 
+  const google = async () => {
+    if (busy || googleBusy) return;
+    setError(null);
+    setGoogleBusy(true);
+    let next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (window.location.pathname === "/account") {
+      const requested = new URLSearchParams(window.location.search).get("next");
+      next = requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/me";
+    }
+    let err: string | null;
+    try {
+      err = await continueWithGoogle(next, mode === "create");
+    } catch {
+      err = "Could not start Google sign-in. Please try again.";
+    }
+    setGoogleBusy(false);
+    if (err) setError(err);
+  };
+
   return (
     <form onSubmit={submit} className="flex flex-col gap-3">
+      <button type="button" onClick={google} className="btn btn-ghost w-full" disabled={busy || googleBusy}>
+        <GoogleMark />
+        {googleBusy ? "CONNECTING…" : "CONTINUE WITH GOOGLE"}
+      </button>
+      <div className="flex items-center gap-3" aria-hidden="true">
+        <span className="h-px flex-1 bg-line" />
+        <span className="font-mono text-[10px] tracking-[0.12em] text-dim">OR EMAIL</span>
+        <span className="h-px flex-1 bg-line" />
+      </div>
       {mode === "create" && (
         <div>
           <label className="label" htmlFor="su-name">Your name</label>
@@ -107,7 +136,7 @@ export default function SignupForm({
         </p>
       )}
 
-      <button type="submit" className="btn mt-1 w-full" disabled={busy}>
+      <button type="submit" className="btn mt-1 w-full" disabled={busy || googleBusy}>
         {busy ? "ONE SEC…" : mode === "create" ? "MAKE MY ACCOUNT" : "LOG IN"}
       </button>
       <button type="button" onClick={flip} className="min-h-[44px] font-body text-[14px] text-dim underline underline-offset-4">
@@ -117,5 +146,16 @@ export default function SignupForm({
         <p className="hint text-center">Free. Your XP so far comes with you. Your email is never shown to other Hoppers.</p>
       )}
     </form>
+  );
+}
+
+function GoogleMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 48 48" className="h-4 w-4">
+      <path fill="#FFC107" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.6c3.9-3.6 6.1-8.8 6.1-15Z" />
+      <path fill="#FF3D00" d="M24 44c5.5 0 10.1-1.8 13.5-4.8l-6.6-5.1c-1.8 1.2-4 2-6.9 2-5.3 0-9.8-3.6-11.4-8.4H5.8v5.3A20 20 0 0 0 24 44Z" />
+      <path fill="#4CAF50" d="M12.6 27.7a12 12 0 0 1 0-7.4V15H5.8a20 20 0 0 0 0 18l6.8-5.3Z" />
+      <path fill="#1976D2" d="M24 12.1c3 0 5.6 1 7.7 3.1l5.8-5.8C34 6.1 29.5 4 24 4A20 20 0 0 0 5.8 15l6.8 5.3c1.6-4.8 6.1-8.2 11.4-8.2Z" />
+    </svg>
   );
 }

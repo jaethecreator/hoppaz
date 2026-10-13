@@ -602,7 +602,8 @@ export default function NightMap({
         maxBounds: LAGOS_BOUNDS, // Lagos only, for now
         maxPitch: 60,
         // A cheap phone draws fewer pixels (docs/PLAY-MODE.md section 17).
-        ...(deviceTier() === "low" ? { pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5) } : {}),
+        // Avoid paying for a third or fourth physical pixel per CSS pixel on retina phones.
+        pixelRatio: Math.min(window.devicePixelRatio || 1, deviceTier() === "low" ? 1.5 : 2),
         // The credit is added below, as plain text clear of the bottom chrome.
         attributionControl: false,
         dragRotate: false,

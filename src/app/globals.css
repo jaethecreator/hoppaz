@@ -227,12 +227,11 @@
 :root:not([data-theme="day"]) .maplibregl-ctrl-group button span {
   filter: invert(1) brightness(1.4);
 }
-/* Phones pinch to zoom; the +/- buttons only earn their space with a mouse. */
+/* Keep explicit zoom controls on phones too; 44px targets are easier than precise pinches. */
 @media (hover: none) and (pointer: coarse) {
-  .maplibregl-ctrl-zoom-in,
-  .maplibregl-ctrl-zoom-out,
-  .maplibregl-ctrl-group:has(.maplibregl-ctrl-zoom-in) {
-    display: none !important;
+  .maplibregl-ctrl-top-right .maplibregl-ctrl-group button {
+    width: 44px;
+    height: 44px;
   }
 }
 .maplibregl-canvas:focus {

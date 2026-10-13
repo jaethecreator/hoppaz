@@ -50,6 +50,21 @@ export async function logIn(email: string, password: string): Promise<string | n
   return /invalid/i.test(error.message) ? "Wrong email or password" : error.message;
 }
 
+/** Start Google OAuth, linking a guest during account creation so their Hoppaz progress stays attached. */
+export async function continueWithGoogle(next: string, linkGuest: boolean): Promise<string | null> {
+  const sb = getSupabase();
+  if (!sb) return "Not connected";
+  const returnTo = next.startsWith("/") && !next.startsWith("//") ? next : "/me";
+  const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(returnTo)}`;
+  const { data, error } = await sb.auth.getUser();
+  if (error) return error.message;
+  const options = { redirectTo };
+  const result = linkGuest && data.user?.is_anonymous
+    ? await sb.auth.linkIdentity({ provider: "google", options })
+    : await sb.auth.signInWithOAuth({ provider: "google", options });
+  return result.error?.message ?? null;
+}
+
 export async function logOut() {
   const sb = getSupabase();
   await sb?.auth.signOut();

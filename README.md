@@ -66,6 +66,12 @@ must not be mistaken for a live event feed. Keep demo fixtures out of production
    (the admin spawner's ADD CARD PRIZES button).
 3. **Authentication → Sign In / Providers → turn on Anonymous sign-ins.** Keep
    anonymous identity enabled; there is no mandatory email registration.
+   To offer Google sign-in, configure a Google OAuth client and enable Google in
+   Supabase Authentication → Sign In / Providers. Set the Google client's redirect
+   URI to Supabase's callback URL shown on that provider page. In Supabase Auth URL
+   Configuration, allow `http://localhost:3000/auth/callback` and the production
+   app's `/auth/callback` URL. Enable manual identity linking: creating an account
+   with Google links it to the current anonymous Hopper, preserving their progress.
 4. Configure the app's Production environment in Vercel with
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
    `SUPABASE_SECRET_KEY`, `HOPPAZ_ADMIN_TOKEN`, `NEXT_PUBLIC_MAP_STYLE`, and

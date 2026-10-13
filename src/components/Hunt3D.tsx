@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { HUNT_ITEMS, type HuntKey } from "@/lib/huntItems";
+import { deviceTier } from "@/lib/deviceTier";
 
 /**
  * A camera-hunt item, spinning in 3D on a transparent canvas. three.js and the
- * models load on first use, so pages that never show an item never pay for
- * them. Falls back to the item's emoji where WebGL is unavailable. Fills its
- * parent; size it with className.
+ * models load when the item scrolls into view, so offscreen items do not create
+ * WebGL contexts. Falls back to the item's emoji where WebGL is unavailable.
+ * Fills its parent; size it with className.
  */
 export default function Hunt3D({
   item,
@@ -32,76 +33,117 @@ export default function Hunt3D({
     if (!el) return;
     let stop = () => {};
     let cancelled = false;
+    let started = false;
+    let visible = false;
+    let raf = 0;
+    let refresh = () => {};
 
-    void Promise.all([import("three"), import("@/lib/huntModels")]).then(([THREE, models]) => {
-      if (cancelled) return;
-      let renderer: InstanceType<typeof THREE.WebGLRenderer>;
+    const mount = async () => {
+      if (started || cancelled) return;
+      started = true;
       try {
-        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
+        const [THREE, models] = await Promise.all([import("three"), import("@/lib/huntModels")]);
+        if (cancelled) return;
+        let renderer: InstanceType<typeof THREE.WebGLRenderer>;
+        try {
+          renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
+        } catch {
+          setFailed(true);
+          return;
+        }
+        const pixelCap = deviceTier() === "low" ? 1.25 : 1.5;
+        renderer.setPixelRatio(Math.min(pixelCap, window.devicePixelRatio || 1));
+        renderer.setClearColor(0x000000, 0);
+        renderer.domElement.style.cssText = "display:block;width:100%;height:100%";
+        el.appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
+        camera.position.set(0, 1.4, 5.6);
+        camera.lookAt(0, 0, 0);
+        scene.add(new THREE.HemisphereLight("#FFF4E6", "#3A2440", 1.2));
+        const key = new THREE.DirectionalLight("#FFFFFF", 1.6);
+        key.position.set(3, 4, 5);
+        scene.add(key);
+
+        const model = models.buildHuntModel(item, { locked });
+        scene.add(model.group);
+        const t0 = performance.now();
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const animate = spin > 0 && !reducedMotion;
+        const draw = (now: number) => {
+          const t = animate ? (now - t0) / 1000 : 0;
+          model.group.rotation.y = t * spin * 0.63;
+          model.group.position.y = locked ? 0 : Math.sin(t * 1.6) * 0.06;
+          if (!locked) model.tick?.(t);
+          renderer.render(scene, camera);
+        };
+        const frame = (now: number) => {
+          raf = 0;
+          if (!visible || document.visibilityState !== "visible") return;
+          draw(now);
+          if (animate) raf = requestAnimationFrame(frame);
+        };
+        refresh = () => {
+          if (!visible || document.visibilityState !== "visible") {
+            if (raf) cancelAnimationFrame(raf);
+            raf = 0;
+            return;
+          }
+          if (animate) {
+            if (!raf) raf = requestAnimationFrame(frame);
+          } else {
+            draw(performance.now());
+          }
+        };
+
+        const size = () => {
+          const w = el.clientWidth || 1, h = el.clientHeight || 1;
+          renderer.setSize(w, h, false);
+          camera.aspect = w / h;
+          // Keep the whole item in frame whatever the box's shape.
+          camera.position.setLength(w >= h ? 5.6 : 5.6 * (h / w) ** 0.6);
+          camera.updateProjectionMatrix();
+          refresh();
+        };
+        size();
+        const resize = new ResizeObserver(size);
+        resize.observe(el);
+        const onVisibility = () => refresh();
+        document.addEventListener("visibilitychange", onVisibility);
+
+        stop = () => {
+          if (raf) cancelAnimationFrame(raf);
+          resize.disconnect();
+          document.removeEventListener("visibilitychange", onVisibility);
+          models.disposeHuntModel(model);
+          renderer.dispose();
+          renderer.forceContextLoss();
+          renderer.domElement.remove();
+        };
+        refresh();
       } catch {
-        setFailed(true);
-        return;
+        if (!cancelled) setFailed(true);
       }
-      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-      renderer.setClearColor(0x000000, 0);
-      renderer.domElement.style.cssText = "display:block;width:100%;height:100%";
-      el.appendChild(renderer.domElement);
+    };
 
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
-      camera.position.set(0, 1.4, 5.6);
-      camera.lookAt(0, 0, 0);
-      scene.add(new THREE.HemisphereLight("#FFF4E6", "#3A2440", 1.2));
-      const key = new THREE.DirectionalLight("#FFFFFF", 1.6);
-      key.position.set(3, 4, 5);
-      scene.add(key);
-
-      const model = models.buildHuntModel(item, { locked });
-      scene.add(model.group);
-
-      const size = () => {
-        const w = el.clientWidth || 1, h = el.clientHeight || 1;
-        renderer.setSize(w, h, false);
-        camera.aspect = w / h;
-        // Keep the whole item in frame whatever the box's shape.
-        camera.position.setLength(w >= h ? 5.6 : 5.6 * (h / w) ** 0.6);
-        camera.updateProjectionMatrix();
-      };
-      size();
-      const resize = new ResizeObserver(size);
-      resize.observe(el);
-
-      // Only draw while on screen: a collection page holds several of these.
-      let visible = true;
-      const seen = new IntersectionObserver(([entry]) => (visible = entry.isIntersecting));
-      seen.observe(el);
-
-      const t0 = performance.now();
-      let raf = 0;
-      const frame = () => {
-        raf = requestAnimationFrame(frame);
-        if (!visible) return;
-        const t = (performance.now() - t0) / 1000;
-        model.group.rotation.y = t * spin * 0.63;
-        model.group.position.y = locked ? 0 : Math.sin(t * 1.6) * 0.06;
-        if (!locked) model.tick?.(t);
-        renderer.render(scene, camera);
-      };
-      frame();
-
-      stop = () => {
-        cancelAnimationFrame(raf);
-        resize.disconnect();
-        seen.disconnect();
-        models.disposeHuntModel(model);
-        renderer.dispose();
-        renderer.forceContextLoss();
-        renderer.domElement.remove();
-      };
-    }).catch(() => !cancelled && setFailed(true));
+    // Offscreen collectibles do not download Three.js or allocate WebGL contexts.
+    const seen = typeof IntersectionObserver === "undefined"
+      ? null
+      : new IntersectionObserver(([entry]) => {
+          visible = entry.isIntersecting;
+          if (visible) void mount();
+          refresh();
+        });
+    if (seen) seen.observe(el);
+    else {
+      visible = true;
+      void mount();
+    }
 
     return () => {
       cancelled = true;
+      seen?.disconnect();
       stop();
     };
   }, [item, locked, spin]);
