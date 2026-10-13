@@ -31,6 +31,22 @@ export default function MapFallback({ events, fix, selectedId, onSelect, hudTop 
         maxBoundsViscosity: 0.8,
         zoomSnap: 0.5,
       }).setView([LAGOS_CENTER.lat, LAGOS_CENTER.lng], 10.5);
+      // Leaflet has no pitched camera. Pitch its movable map pane with CSS while
+      // keeping the controls and touch target flat and easy to operate.
+      const mapPane = map.getPane("mapPane");
+      if (mapPane) {
+        mapPane.style.setProperty("transform-origin", "50% 72%", "important");
+        const pitchPane = () => {
+          const current = mapPane.style.transform;
+          if (!current.includes("rotateX(28deg)")) {
+            mapPane.style.transform = `${current} perspective(1100px) rotateX(28deg) scale(1.14)`;
+          }
+        };
+        const observer = new MutationObserver(pitchPane);
+        observer.observe(mapPane, { attributes: true, attributeFilter: ["style"] });
+        pitchPane();
+        map.once("unload", () => observer.disconnect());
+      }
       leaflet.control.zoom({ position: "topright" }).addTo(map);
       leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
@@ -57,12 +73,18 @@ export default function MapFallback({ events, fix, selectedId, onSelect, hudTop 
       for (const event of events) {
         if (!Number.isFinite(event.lat) || !Number.isFinite(event.lng)) continue;
         const active = event.id === selectedId;
-        leaflet.circleMarker([event.lat, event.lng], {
-          radius: active ? 10 : 7,
-          color: "#fff4e5",
-          weight: 2,
-          fillColor: active ? "#8d55ff" : "#ff4d00",
-          fillOpacity: 1,
+        const markerNode = document.createElement("span");
+        markerNode.className = `hz-map3d-building${active ? " is-selected" : ""}`;
+        markerNode.setAttribute("aria-label", eventTitle(event));
+        const roof = document.createElement("span");
+        roof.className = "hz-map3d-roof";
+        const walls = document.createElement("span");
+        walls.className = "hz-map3d-walls";
+        markerNode.append(roof, walls);
+        leaflet.marker([event.lat, event.lng], {
+          icon: leaflet.divIcon({ className: "hz-map3d-marker", html: markerNode, iconSize: [32, 44], iconAnchor: [16, 40] }),
+          keyboard: true,
+          title: eventTitle(event),
         })
           .bindTooltip(eventTitle(event), { direction: "top", offset: [0, -8] })
           .on("click", () => onSelect(event.id))
@@ -85,6 +107,12 @@ export default function MapFallback({ events, fix, selectedId, onSelect, hudTop 
     const map = mapRef.current;
     if (fix && map) map.flyTo([fix.lat, fix.lng], Math.max(map.getZoom(), 12), { duration: 0.5 });
   }, [fix]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const event = events.find((candidate) => candidate.id === selectedId);
+    if (map && event) map.flyTo([event.lat, event.lng], Math.max(map.getZoom(), 14), { duration: 0.65 });
+  }, [events, selectedId]);
 
   return <div ref={host} className="hz-map-fallback absolute inset-0" style={{ "--hz-fallback-top": `${hudTop + 8}px` } as CSSProperties} aria-label="Lagos events map" />;
 }
