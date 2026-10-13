@@ -29,7 +29,6 @@ export default function MapFallback({ events, fix, selectedId, onSelect, hudTop 
         attributionControl: true,
         maxBounds: [[LAGOS_BOUNDS[0][1], LAGOS_BOUNDS[0][0]], [LAGOS_BOUNDS[1][1], LAGOS_BOUNDS[1][0]]],
         maxBoundsViscosity: 0.8,
-        tap: true,
         zoomSnap: 0.5,
       }).setView([LAGOS_CENTER.lat, LAGOS_CENTER.lng], 10.5);
       leaflet.control.zoom({ position: "topright" }).addTo(map);
