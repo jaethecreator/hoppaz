@@ -237,6 +237,27 @@
 .maplibregl-canvas:focus {
   outline: none;
 }
+.hz-map-fallback {
+  z-index: 2;
+  background: rgb(var(--ground));
+  touch-action: pan-x pan-y;
+}
+.hz-map-fallback .leaflet-control-zoom {
+  margin-top: var(--hz-fallback-top) !important;
+  margin-right: 8px !important;
+}
+.hz-map-fallback .leaflet-control-zoom a {
+  width: 44px !important;
+  height: 44px !important;
+  line-height: 44px !important;
+  color: rgb(var(--ink)) !important;
+  background: rgb(var(--raised)) !important;
+  border-color: rgb(var(--hairline)) !important;
+}
+.hz-map-fallback .leaflet-control-attribution {
+  color: #29231f;
+  font-size: 10px;
+}
 /* Zoom buttons sit just under the page's top chrome (the night rail) */
 .maplibregl-ctrl-top-right {
   top: calc(var(--hz-inset-top, 132px) + 8px);

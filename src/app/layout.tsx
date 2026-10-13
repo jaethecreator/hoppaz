@@ -22,6 +22,7 @@ import "@fontsource/dm-mono/500.css"
 import "@fontsource/poppins/600.css"
 import "@fontsource/poppins/900.css"
 import "maplibre-gl/dist/maplibre-gl.css"
+import "leaflet/dist/leaflet.css"
 import "./globals.css"
 
 const DESCRIPTION = "Come alone, leave with friends."

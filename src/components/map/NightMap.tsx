@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import * as maplibregl from "maplibre-gl";
 import type { ExpressionSpecification, GeoJSONSource, Map as MLMap, StyleSpecification } from "maplibre-gl";
 import { BRAND } from "@/lib/brand";
@@ -27,6 +26,7 @@ import type { Theme } from "@/lib/theme";
 import type { EventRow, HopStop } from "@/lib/types";
 import { SIDE_PANEL, sidePanelWidth } from "@/components/event/side";
 import { mountVenueModels, updateVenueModels } from "./venueModels";
+import MapFallback from "./MapFallback";
 
 // Next's app bundlers cannot infer MapLibre's dynamically resolved module-worker
 // URL. Serve the package worker as a same-origin static asset instead.
@@ -57,6 +57,7 @@ export type NightMapProps = {
   mode?: "events" | "play";
   /** Called once with the MapLibre map when the style and our layers are in (the Play layer hangs its avatar and crates on it). */
   onMapReady?: (map: MLMap) => void;
+  onMapUnavailable?: () => void;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onHopSelect: () => void;
@@ -376,11 +377,18 @@ export default function NightMap({
   sidePanel = false,
   allHot = false,
   navRef,
+  onMapUnavailable,
 }: NightMapProps) {
   const holder = useRef<HTMLDivElement>(null);
   const map = useRef<MLMap | null>(null);
   const [mapIssue, setMapIssue] = useState<"unavailable" | "lost" | null>(null);
   const [mapRetry, setMapRetry] = useState(0);
+  useEffect(() => {
+    if (!mapIssue) return;
+    onMapUnavailable?.();
+    map.current?.remove();
+    map.current = null;
+  }, [mapIssue, onMapUnavailable]);
   /** True while the style and our layers are in; false mid-swap. */
   const ready = useRef(false);
   /** Bumps each time our layers are (re)built, so data and markers repaint. 0 = nothing yet. */
@@ -1199,25 +1207,20 @@ export default function NightMap({
     <>
       <div ref={holder} className="absolute inset-0" style={{ position: "absolute", inset: 0 }} aria-label="Lagos map" />
       {mapIssue && (
-        <div role="alert" className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-ink/55 px-6 text-center backdrop-blur-[2px]">
-          <div className="pointer-events-auto max-w-sm rounded-hz border border-line bg-ink-2 p-5 shadow-sheet">
-            <p className="font-display text-lg font-black">{mapIssue === "lost" ? "The map paused." : "The map can’t run on this browser."}</p>
-            <p className="hint mt-1.5">
-              {mapIssue === "lost"
-                ? "Your phone’s graphics system stopped the map. Try reopening it or browse the events list."
-                : "This browser doesn’t support the map graphics Hoppaz needs. You can still browse events."}
-            </p>
-            <div className="mt-4 flex flex-col gap-2">
-              <button type="button" className="btn w-full" onClick={() => {
+        <>
+          <MapFallback events={events} fix={fix} selectedId={selectedId} onSelect={onSelect} hudTop={hudTop} />
+          <div role="status" className="pointer-events-none absolute left-3 right-3 top-[calc(env(safe-area-inset-top)+8.5rem)] z-10 flex justify-center px-2">
+            <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-hz border border-line bg-ink-2/95 px-3 py-2 shadow-sheet">
+              <p className="hint flex-1">{mapIssue === "lost" ? "Your phone paused the 3D map. Showing a simpler map." : "3D maps aren’t available here. Showing a simpler map."}</p>
+              <button type="button" className="btn shrink-0 px-3 py-2" onClick={() => {
                 setMapIssue(null);
                 setMapRetry((n) => n + 1);
               }}>
-                TRY MAP AGAIN
+                RETRY 3D
               </button>
-              <Link href="/discover" className="btn btn-ghost w-full">BROWSE EVENTS</Link>
             </div>
           </div>
-        </div>
+        </>
       )}
     </>
   );

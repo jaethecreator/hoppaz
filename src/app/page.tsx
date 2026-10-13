@@ -265,6 +265,7 @@ export default function MapPage() {
     setMap(m);
     introEvent("map_ready");
   }, []);
+  const onMapUnavailable = useCallback(() => setMap(null), []);
 
   // Paz's "Let's find you": what "Use my location" does in the location sheet, without opening the sheet, so one
   // tap asks the browser, sets the fix (the map flies to the Hopper) and tells the tour what the answer was.
@@ -373,6 +374,7 @@ export default function MapPage() {
         swoop={mounted && seenTitle}
         mode={playing ? "play" : "events"}
         onMapReady={onMapReady}
+        onMapUnavailable={onMapUnavailable}
         sidePanel={!!event}
         allHot={mode === "next"}
         navRef={navRef}
