@@ -19,9 +19,9 @@ folder). Every change below names the screens it comes from.
 | Change | Why |
 |---|---|
 | The Today tab is now **EVENTS** | People look for "events", not "today" (Bello 1972, MyLagosApp 1967). |
-| The map's day chips collapse into **one orange calendar button** that names the pick ("NEXT 20", "TODAY", "SAT 17") | One control instead of a strip of 15. It pops and says what you are looking at. |
+| The map's day chips are replaced by a **NEXT 20 chip** that names the pick ("NEXT 20", "TODAY", "SAT 17") and a separate **solid orange calendar button** | Jae: show the next 20 events, let people choose from them, and keep a calendar. The chip opens a compact list of the events in the pick (tap one and the map flies to it and opens it); the calendar opens one small month. |
 | The map's bottom "NEXT 20 · Tap your avatar to play" card is gone | It repeated the calendar, and Play is leaving. |
-| The Events tab has the same orange calendar in its header and is titled "Events" | The same control in both places. |
+| The Events tab opens on NEXT 20 every time, is titled "Events", and has the same chip and orange calendar on the right of its header | The same control in both places, built once (`src/components/pick/`). |
 | **Event rooms are open to everyone going** (WE OUTSIDE or I'm Going), not only people who checked in | The room is alive before the night. One chat per event, not two. |
 | A whole-app copy audit (in progress): lines that point people the wrong way are fixed, and the list is in `docs/COPY-AUDIT.md` | Old copy still mentioned Play, "tap your avatar" and check-in-only rooms. |
 
@@ -122,7 +122,7 @@ crews.
 
 ## 7. The map
 
-- One orange calendar (done).
+- A NEXT 20 chip and one orange calendar (done, `src/components/pick/`).
 - Hotspot pins in the map's own marker system, with "12 here" and box badges.
 - A "Your home base" chip that flies the map to your home and opens its room.
 - A Grid View switch to see the same events as a list (orange app 1954).
