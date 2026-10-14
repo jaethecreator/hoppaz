@@ -296,6 +296,7 @@ declare
   share_near numeric; share_mid numeric; share_far numeric; total numeric; roll numeric; bucket text;
   c cards; v_copy_no integer; tried uuid[] := '{}'; copy_id uuid; bonus integer := 0; first_in_set boolean;
   n_starters integer := coalesce((card_rule('sets') ->> 'starters')::integer, 2); guard integer := 0;
+  base_want integer; rare_due boolean;
 begin
   select * into d from game_drops where id = p_drop;
   if not found or d.card_max_tier is null then return null; end if;
@@ -304,10 +305,12 @@ begin
 
   cap := card_tier_rank(d.card_max_tier);
   want := least(card_tier_rank(r.card_tier), cap);
+  base_want := want;
 
   -- pity: the counts are card claims since the last Rare (or better) and Epic (or better)
   insert into card_pity (user_id) values (p_user) on conflict (user_id) do nothing;
   select * into pity from card_pity where user_id = p_user for update;
+  rare_due := pity.since_rare >= coalesce((card_rule('pity') ->> 'rare')::integer, 9);
   if pity.since_epic >= coalesce((card_rule('pity') ->> 'epic')::integer, 59) and cap >= 3 then want := greatest(want, 3);
   elsif pity.since_rare >= coalesce((card_rule('pity') ->> 'rare')::integer, 9) and cap >= 2 then want := greatest(want, 2);
   end if;
@@ -334,7 +337,8 @@ begin
                and not exists (select 1 from card_copies cc where cc.drop_id = p_drop and cc.card_id = x.id and not cc.starter)) q;
       total := share_near + share_mid + share_far;
       if total <= 0 then
-        t := t - 1;   -- nothing of this tier left: one tier down
+        -- nothing of this tier left: one tier down, or back to the box's own tier when a pity lift fails
+        t := case when t > base_want then (case when t >= 3 and rare_due and cap >= 2 and base_want < 2 then 2 else base_want end) else t - 1 end;
         continue;
       end if;
       -- the far bucket keeps at least far_min of the whole when it has cards
@@ -360,7 +364,7 @@ begin
      order by -ln(1 - random()) / (x.weight * case when exists (select 1 from album a where a.user_id = p_user and a.card_id = x.id) then 0.5 else 1 end)
      limit 1;
     if not found then
-      t := t - 1;
+      t := case when t > base_want then (case when t >= 3 and rare_due and cap >= 2 and base_want < 2 then 2 else base_want end) else t - 1 end;
       continue;
     end if;
 
