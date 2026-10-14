@@ -71,7 +71,7 @@ function Chat() {
         hasAccount={hasAccount}
         note={room.closesAt ? `CLOSES ${closes(room.closesAt)}` : undefined}
         empty={!room.member
-          ? room.kind === "hop" ? "This is the Hop's room, for riders on the bus." : "This room is for people at the event. Check in when you get there and you're in."
+          ? room.kind === "hop" ? "This is the Hop's room, for riders on the bus." : "Locked till you pull up. Check in at the venue and the room opens."
           : "You're in. Be the first to break the ice, and keep it friendly."}
         noPeople={room.kind === "event" && room.member ? "Nobody else checked in yet." : undefined}
       /> : (
