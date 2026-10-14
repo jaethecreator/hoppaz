@@ -1,5 +1,5 @@
 -- ============================================================================
--- Hoppaz: crew rooms (the 360 Playlist room, and the template for every crew,
+-- Hoppaz: crew rooms (the 360Playlist room, and the template for every crew,
 -- brand, hotspot and event room after it)
 -- Run order: schema.sql, chat_accounts.sql, then this file. Additive and safe to
 -- run again: it replaces no chat, drop or hotspot function, so hotspots.sql does
@@ -10,9 +10,19 @@
 --                     in its room). Off by default. Only staff set it, with the
 --                     service role or SQL: Hoppers can update a crew's name and
 --                     visibility, nothing else.
---   tables            crew_room_layouts (the walkable grid of each width, made from
---                     src/lib/campaign/layout.ts by scripts/crew-room/export-layouts.mjs),
---                     crew_rooms (one per crew: width, the owner's content, capacity),
+--   crews.logo_url, crews.header_images
+--                     the look of a crew: a round logo and up to 5 header pictures
+--                     for its hub. Written only by crew_update_look (the owner), and
+--                     only ever a /brands/ path or a picture in the crew-images
+--                     bucket under that crew's own folder (a check on the table).
+--   crew_rooms.template, crew_rooms.featured_event_id, crew_rooms.featured_ribbon
+--                     which room template holds the crew's meeting (the owner picks,
+--                     crew_room_set_template), and the event the fountain's sticker
+--                     shows with the ribbon text the owner typed under it
+--                     (crew_room_set_featured). Nothing is "free" unless the owner says so.
+--   tables            crew_room_layouts (the walkable grid of each template and width,
+--                     made from src/lib/campaign/templates.ts by scripts/crew-room/export-layouts.mjs),
+--                     crew_rooms (one per crew: template, width, the owner's content, capacity),
 --                     crew_room_presence (who walks where), crew_room_circles (the
 --                     live session of each conversation area), crew_room_messages and
 --                     crew_room_message_audience (who received an area message).
@@ -21,10 +31,14 @@
 --                     crew_join_attempts (the invite rate limit, no access).
 --   Hopper calls      crew_room_enter, crew_room_step (moves and heartbeats),
 --                     crew_room_state, crew_room_leave, crew_room_send,
---                     crew_room_settings (the crew owner); the crew hub's
---                     crew_card (public), crew_join_code and crew_invite_reset (owner).
+--                     crew_room_settings, crew_room_set_template, crew_room_set_featured
+--                     and crew_update_look (the crew owner); the crew hub's crew_card
+--                     (public), crew_join_code and crew_invite_reset (owner).
+--   storage           the public crew-images bucket: anyone reads, only the crew's owner
+--                     writes under <crew id>/, 2 MB, jpeg, png or webp.
 --
 -- Rules:
+--   owner      crew_members.role is owner or member. Every owner call here is owner only.
 --   presence   a walker stays in the room for 45 s after their last heartbeat
 --              (_crew_room_ttl), so a phone screen lock or a quick trip to another
 --              app keeps the avatar. The app beats every 10 s and leaves on its own
@@ -56,12 +70,14 @@
 begin;
 
 create table if not exists public.crew_room_layouts (
-  width integer primary key check (width in (30, 36)),
-  data  jsonb not null
+  template text not null default 'clubhouse',
+  width    integer not null check (width in (30, 36)),
+  data     jsonb not null,
+  primary key (template, width)
 );
 create table if not exists public.crew_rooms (
   crew_id    uuid primary key references public.crews(id) on delete cascade,
-  width      integer not null default 30 references public.crew_room_layouts(width),
+  width      integer not null default 30,
   content    jsonb not null default '{}',
   version    integer not null default 1,
   updated_at timestamptz not null default now()
@@ -110,6 +126,70 @@ create table if not exists public.crew_room_message_audience (
 -- Added after the first version. A rerun leaves existing values alone.
 alter table public.crews add column if not exists verified boolean not null default false;
 alter table public.crew_rooms add column if not exists capacity integer not null default 60 check (capacity between 1 and 500);
+
+-- Room templates. Layouts were keyed by width alone; they are keyed by (template, width) now,
+-- so a second template brings its own walls, areas and spawn. A room points at its layout
+-- with crew_rooms_layout_fkey (below, after the layouts are loaded), which is also what keeps
+-- crew_rooms.template to templates that exist.
+alter table public.crew_room_layouts add column if not exists template text not null default 'clubhouse';
+alter table public.crew_rooms add column if not exists template text not null default 'clubhouse';
+do $$
+begin
+  if exists (select 1 from pg_constraint where conrelid = 'public.crew_room_layouts'::regclass and contype = 'p' and array_length(conkey, 1) = 1) then
+    alter table public.crew_rooms drop constraint if exists crew_rooms_width_fkey;
+    alter table public.crew_room_layouts drop constraint crew_room_layouts_pkey;
+    alter table public.crew_room_layouts add primary key (template, width);
+  end if;
+end $$;
+
+-- The featured event: the fountain's sticker in the room. The owner picks the event (null falls
+-- back to the room's keyword match, in the app) and types the ribbon under it. The ribbon is the
+-- only place "FREE" ever comes from: events carry price 0 when the price is simply not known.
+alter table public.crew_rooms add column if not exists featured_event_id uuid references public.events(id) on delete set null;
+alter table public.crew_rooms add column if not exists featured_ribbon text not null default '';
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.crew_rooms'::regclass and conname = 'crew_rooms_ribbon_len') then
+    alter table public.crew_rooms add constraint crew_rooms_ribbon_len check (char_length(featured_ribbon) <= 14);
+  end if;
+end $$;
+
+-- The look of a crew: a round logo and up to 5 header pictures for the hub. Only crew_update_look
+-- writes them (the column grant below stays name and visibility), and the checks hold even for a
+-- write that skips it: a picture is a /brands/ path of ours or sits in this crew's own folder of the
+-- public crew-images bucket. Judged by the path, not the host: the same SQL serves a local stack
+-- and a hosted one.
+create or replace function public._crew_image_ok(p_crew uuid, p_url text) returns boolean
+language sql immutable as $$
+  select p_url is not null and (
+    p_url ~ '^/brands/[A-Za-z0-9._-]{1,80}\.(jpg|jpeg|png|webp)$'
+    or p_url ~ ('^https?://[^/?#[:space:]]{1,200}/storage/v1/object/public/crew-images/' || p_crew::text || '/[A-Za-z0-9._-]{1,120}\.(jpg|jpeg|png|webp)$'));
+$$;
+create or replace function public._crew_images_ok(p_crew uuid, p_urls text[]) returns boolean
+language sql immutable as $$
+  select cardinality(p_urls) <= 5 and not exists (select 1 from unnest(p_urls) u where not public._crew_image_ok(p_crew, u));
+$$;
+alter table public.crews add column if not exists logo_url text;
+alter table public.crews add column if not exists header_images text[] not null default '{}';
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.crews'::regclass and conname = 'crews_look_valid') then
+    alter table public.crews add constraint crews_look_valid
+      check ((logo_url is null or public._crew_image_ok(id, logo_url)) and public._crew_images_ok(id, header_images));
+  end if;
+end $$;
+
+-- Whether a Game Time for this crew's room is scheduled or live. The template cannot change under
+-- a hunt. Game Time (supabase/game_time.sql) replaces this with the real check; written only when
+-- missing, so running this file again never undoes that.
+do $$
+begin
+  if to_regprocedure('public._crew_room_hunt_busy(uuid)') is null then
+    create function public._crew_room_hunt_busy(p_crew uuid) returns boolean
+    language sql stable security definer set search_path = public as 'select false';
+    revoke all on function public._crew_room_hunt_busy(uuid) from public, anon, authenticated;
+  end if;
+end $$;
 -- The area a walker stands in, kept by a trigger from x and y (_crew_room_presence_area).
 alter table public.crew_room_presence add column if not exists area text;
 
@@ -128,12 +208,21 @@ drop index if exists public.crew_room_messages_recent;
 revoke update on public.crews from anon, authenticated;
 grant update (name, visibility) on public.crews to authenticated;
 
--- Layout values are generated from src/lib/campaign/layout.ts by export-layouts.mjs.
+-- Layout values are generated from src/lib/campaign/templates.ts by export-layouts.mjs.
 -- LAYOUT_SEED
-insert into public.crew_room_layouts(width,data) values
-(30,'{"grid":{"width":30,"height":20,"tile":32},"spawn":{"x":15,"y":17},"zones":[{"id":"studio","number":"01","name":"Listening Studio","subtitle":"Hear what comes next","x":1,"y":1,"w":8,"h":7,"material":"acoustic","stop":{"x":4,"y":5},"plaque":{"x":4,"y":7}},{"id":"stage","number":"02","name":"The 360 Stage","subtitle":"A home for the next sound","x":10,"y":1,"w":10,"h":6,"material":"stage","stop":{"x":15,"y":6},"plaque":{"x":15,"y":5}},{"id":"awards","number":"03","name":"Awards Gallery","subtitle":"The stories behind the milestones","x":21,"y":1,"w":8,"h":7,"material":"marble","stop":{"x":24,"y":5},"plaque":{"x":24,"y":7}},{"id":"courtyard","number":"04","name":"The Courtyard","subtitle":"Take a breath. Stay a while.","x":10,"y":8,"w":10,"h":6,"material":"grass","stop":{"x":15,"y":12},"plaque":{"x":15,"y":13}},{"id":"records","number":"05","name":"Record Lounge","subtitle":"Find your next favourite","x":1,"y":10,"w":8,"h":9,"material":"wood","stop":{"x":4,"y":13},"plaque":{"x":4,"y":10}},{"id":"campaign","number":"06","name":"Artist Corner","subtitle":"A closer look at the music","x":21,"y":10,"w":8,"h":9,"material":"terrazzo","stop":{"x":24,"y":14},"plaque":{"x":24,"y":10}}],"privateAreas":[{"id":"booth-1","name":"Listening Booth 1","x":2,"y":4,"w":3,"h":3,"stop":{"x":3,"y":5}},{"id":"booth-2","name":"Listening Booth 2","x":5,"y":4,"w":3,"h":3,"stop":{"x":6,"y":4}},{"id":"courtyard-corner","name":"Courtyard Corner","x":10,"y":9,"w":4,"h":4,"stop":{"x":13,"y":11}},{"id":"lounge-table","name":"Lounge Table","x":3,"y":13,"w":4,"h":5,"stop":{"x":4,"y":16}}],"blocks":[{"x":1,"y":1,"w":8,"h":1},{"x":1,"y":1,"w":1,"h":7},{"x":8,"y":1,"w":1,"h":7},{"x":1,"y":7,"w":3,"h":1},{"x":6,"y":7,"w":3,"h":1},{"x":10,"y":1,"w":10,"h":1},{"x":10,"y":1,"w":1,"h":5},{"x":19,"y":1,"w":1,"h":5},{"x":21,"y":1,"w":8,"h":1},{"x":21,"y":1,"w":1,"h":7},{"x":28,"y":1,"w":1,"h":7},{"x":21,"y":7,"w":3,"h":1},{"x":26,"y":7,"w":3,"h":1},{"x":1,"y":10,"w":3,"h":1},{"x":6,"y":10,"w":3,"h":1},{"x":1,"y":10,"w":1,"h":9},{"x":8,"y":10,"w":1,"h":9},{"x":1,"y":18,"w":8,"h":1},{"x":21,"y":10,"w":3,"h":1},{"x":26,"y":10,"w":3,"h":1},{"x":21,"y":10,"w":1,"h":9},{"x":28,"y":10,"w":1,"h":9},{"x":21,"y":18,"w":8,"h":1},{"id":"mixing-desk","kind":"console","x":2,"y":2,"w":5,"h":1,"solid":true},{"id":"studio-speaker-l","kind":"speaker","x":2,"y":3,"w":1,"h":1,"solid":true},{"id":"studio-speaker-r","kind":"speaker","x":6,"y":3,"w":1,"h":1,"solid":true},{"id":"listening-chair-l","kind":"headphones","x":2,"y":5,"w":1,"h":1,"solid":true},{"id":"listening-chair-r","kind":"headphones","x":6,"y":5,"w":1,"h":1,"solid":true},{"id":"studio-plant","kind":"plant","x":7,"y":6,"w":1,"h":1,"solid":true},{"id":"stage-console","kind":"console","x":13,"y":3,"w":4,"h":1,"solid":true,"variant":1},{"id":"stage-speaker-l","kind":"speaker","x":11,"y":3,"w":1,"h":2,"solid":true},{"id":"stage-speaker-r","kind":"speaker","x":18,"y":3,"w":1,"h":2,"solid":true},{"id":"gallery-display-1","kind":"plinth","x":22,"y":3,"w":2,"h":1,"solid":true,"variant":0},{"id":"gallery-display-2","kind":"plinth","x":25,"y":3,"w":2,"h":1,"solid":true,"variant":1},{"id":"gallery-display-3","kind":"plinth","x":26,"y":5,"w":1,"h":1,"solid":true,"variant":2},{"id":"gallery-plant","kind":"plant","x":22,"y":6,"w":1,"h":1,"solid":true},{"id":"courtyard-tree-l","kind":"tree","x":10,"y":8,"w":1,"h":1,"solid":true},{"id":"courtyard-tree-r","kind":"tree","x":19,"y":8,"w":1,"h":1,"solid":true},{"id":"courtyard-fountain","kind":"fountain","x":14,"y":9,"w":2,"h":2,"solid":true},{"id":"courtyard-bench-l","kind":"bench","x":11,"y":10,"w":2,"h":1,"solid":true},{"id":"courtyard-bench-r","kind":"bench","x":17,"y":10,"w":2,"h":1,"solid":true},{"id":"courtyard-plant-l","kind":"plant","x":11,"y":12,"w":1,"h":1,"solid":true},{"id":"courtyard-plant-r","kind":"plant","x":18,"y":12,"w":1,"h":1,"solid":true},{"id":"record-wall","kind":"records","x":2,"y":11,"w":2,"h":1,"solid":true},{"id":"record-wall-r","kind":"records","x":6,"y":11,"w":1,"h":1,"solid":true},{"id":"record-sofa-l","kind":"sofa","x":2,"y":14,"w":2,"h":1,"solid":true,"variant":1},{"id":"record-sofa-r","kind":"sofa","x":6,"y":15,"w":1,"h":2,"solid":true},{"id":"record-table","kind":"table","x":4,"y":15,"w":1,"h":1,"solid":true},{"id":"record-sofa-bottom","kind":"sofa","x":3,"y":17,"w":2,"h":1,"solid":true,"variant":1},{"id":"record-lamp","kind":"lamp","x":2,"y":16,"w":1,"h":1,"solid":true},{"id":"record-plant","kind":"plant","x":7,"y":17,"w":1,"h":1,"solid":true},{"id":"artist-poster-1","kind":"poster","x":22,"y":11,"w":2,"h":2,"solid":true,"variant":0},{"id":"artist-poster-2","kind":"poster","x":25,"y":11,"w":2,"h":2,"solid":true,"variant":1},{"id":"artist-poster-3","kind":"poster","x":26,"y":14,"w":1,"h":2,"solid":true,"variant":2},{"id":"artist-counter","kind":"counter","x":22,"y":17,"w":3,"h":1,"solid":true},{"id":"artist-plant","kind":"plant","x":26,"y":17,"w":1,"h":1,"solid":true},{"id":"entry-plant-l","kind":"plant","x":11,"y":16,"w":1,"h":1,"solid":true},{"id":"entry-plant-r","kind":"plant","x":18,"y":16,"w":1,"h":1,"solid":true},{"id":"entry-map-table","kind":"maptable","x":13,"y":16,"w":2,"h":1,"solid":true}]}'::jsonb),
-(36,'{"grid":{"width":36,"height":20,"tile":32},"spawn":{"x":18,"y":17},"zones":[{"id":"studio","number":"01","name":"Listening Studio","subtitle":"Hear what comes next","x":1,"y":1,"w":8,"h":7,"material":"acoustic","stop":{"x":4,"y":5},"plaque":{"x":4,"y":7}},{"id":"stage","number":"02","name":"The 360 Stage","subtitle":"A home for the next sound","x":13,"y":1,"w":10,"h":6,"material":"stage","stop":{"x":18,"y":6},"plaque":{"x":18,"y":5}},{"id":"awards","number":"03","name":"Awards Gallery","subtitle":"The stories behind the milestones","x":27,"y":1,"w":8,"h":7,"material":"marble","stop":{"x":30,"y":5},"plaque":{"x":30,"y":7}},{"id":"courtyard","number":"04","name":"The Courtyard","subtitle":"Take a breath. Stay a while.","x":13,"y":8,"w":10,"h":6,"material":"grass","stop":{"x":18,"y":12},"plaque":{"x":18,"y":13}},{"id":"records","number":"05","name":"Record Lounge","subtitle":"Find your next favourite","x":1,"y":10,"w":8,"h":9,"material":"wood","stop":{"x":4,"y":13},"plaque":{"x":4,"y":10}},{"id":"campaign","number":"06","name":"Artist Corner","subtitle":"A closer look at the music","x":27,"y":10,"w":8,"h":9,"material":"terrazzo","stop":{"x":30,"y":14},"plaque":{"x":30,"y":10}}],"privateAreas":[{"id":"booth-1","name":"Listening Booth 1","x":2,"y":4,"w":3,"h":3,"stop":{"x":3,"y":5}},{"id":"booth-2","name":"Listening Booth 2","x":5,"y":4,"w":3,"h":3,"stop":{"x":6,"y":4}},{"id":"courtyard-corner","name":"Courtyard Corner","x":13,"y":9,"w":4,"h":4,"stop":{"x":16,"y":11}},{"id":"lounge-table","name":"Lounge Table","x":3,"y":13,"w":4,"h":5,"stop":{"x":4,"y":16}}],"blocks":[{"x":1,"y":1,"w":8,"h":1},{"x":1,"y":1,"w":1,"h":7},{"x":8,"y":1,"w":1,"h":7},{"x":1,"y":7,"w":3,"h":1},{"x":6,"y":7,"w":3,"h":1},{"x":13,"y":1,"w":10,"h":1},{"x":13,"y":1,"w":1,"h":5},{"x":22,"y":1,"w":1,"h":5},{"x":27,"y":1,"w":8,"h":1},{"x":27,"y":1,"w":1,"h":7},{"x":34,"y":1,"w":1,"h":7},{"x":27,"y":7,"w":3,"h":1},{"x":32,"y":7,"w":3,"h":1},{"x":1,"y":10,"w":3,"h":1},{"x":6,"y":10,"w":3,"h":1},{"x":1,"y":10,"w":1,"h":9},{"x":8,"y":10,"w":1,"h":9},{"x":1,"y":18,"w":8,"h":1},{"x":27,"y":10,"w":3,"h":1},{"x":32,"y":10,"w":3,"h":1},{"x":27,"y":10,"w":1,"h":9},{"x":34,"y":10,"w":1,"h":9},{"x":27,"y":18,"w":8,"h":1},{"id":"mixing-desk","kind":"console","x":2,"y":2,"w":5,"h":1,"solid":true},{"id":"studio-speaker-l","kind":"speaker","x":2,"y":3,"w":1,"h":1,"solid":true},{"id":"studio-speaker-r","kind":"speaker","x":6,"y":3,"w":1,"h":1,"solid":true},{"id":"listening-chair-l","kind":"headphones","x":2,"y":5,"w":1,"h":1,"solid":true},{"id":"listening-chair-r","kind":"headphones","x":6,"y":5,"w":1,"h":1,"solid":true},{"id":"studio-plant","kind":"plant","x":7,"y":6,"w":1,"h":1,"solid":true},{"id":"stage-console","kind":"console","x":16,"y":3,"w":4,"h":1,"solid":true,"variant":1},{"id":"stage-speaker-l","kind":"speaker","x":14,"y":3,"w":1,"h":2,"solid":true},{"id":"stage-speaker-r","kind":"speaker","x":21,"y":3,"w":1,"h":2,"solid":true},{"id":"gallery-display-1","kind":"plinth","x":28,"y":3,"w":2,"h":1,"solid":true,"variant":0},{"id":"gallery-display-2","kind":"plinth","x":31,"y":3,"w":2,"h":1,"solid":true,"variant":1},{"id":"gallery-display-3","kind":"plinth","x":32,"y":5,"w":1,"h":1,"solid":true,"variant":2},{"id":"gallery-plant","kind":"plant","x":28,"y":6,"w":1,"h":1,"solid":true},{"id":"courtyard-tree-l","kind":"tree","x":13,"y":8,"w":1,"h":1,"solid":true},{"id":"courtyard-tree-r","kind":"tree","x":22,"y":8,"w":1,"h":1,"solid":true},{"id":"courtyard-fountain","kind":"fountain","x":17,"y":9,"w":2,"h":2,"solid":true},{"id":"courtyard-bench-l","kind":"bench","x":14,"y":10,"w":2,"h":1,"solid":true},{"id":"courtyard-bench-r","kind":"bench","x":20,"y":10,"w":2,"h":1,"solid":true},{"id":"courtyard-plant-l","kind":"plant","x":14,"y":12,"w":1,"h":1,"solid":true},{"id":"courtyard-plant-r","kind":"plant","x":21,"y":12,"w":1,"h":1,"solid":true},{"id":"record-wall","kind":"records","x":2,"y":11,"w":2,"h":1,"solid":true},{"id":"record-wall-r","kind":"records","x":6,"y":11,"w":1,"h":1,"solid":true},{"id":"record-sofa-l","kind":"sofa","x":2,"y":14,"w":2,"h":1,"solid":true,"variant":1},{"id":"record-sofa-r","kind":"sofa","x":6,"y":15,"w":1,"h":2,"solid":true},{"id":"record-table","kind":"table","x":4,"y":15,"w":1,"h":1,"solid":true},{"id":"record-sofa-bottom","kind":"sofa","x":3,"y":17,"w":2,"h":1,"solid":true,"variant":1},{"id":"record-lamp","kind":"lamp","x":2,"y":16,"w":1,"h":1,"solid":true},{"id":"record-plant","kind":"plant","x":7,"y":17,"w":1,"h":1,"solid":true},{"id":"artist-poster-1","kind":"poster","x":28,"y":11,"w":2,"h":2,"solid":true,"variant":0},{"id":"artist-poster-2","kind":"poster","x":31,"y":11,"w":2,"h":2,"solid":true,"variant":1},{"id":"artist-poster-3","kind":"poster","x":32,"y":14,"w":1,"h":2,"solid":true,"variant":2},{"id":"artist-counter","kind":"counter","x":28,"y":17,"w":3,"h":1,"solid":true},{"id":"artist-plant","kind":"plant","x":32,"y":17,"w":1,"h":1,"solid":true},{"id":"entry-plant-l","kind":"plant","x":14,"y":16,"w":1,"h":1,"solid":true},{"id":"entry-plant-r","kind":"plant","x":21,"y":16,"w":1,"h":1,"solid":true},{"id":"entry-map-table","kind":"maptable","x":16,"y":16,"w":2,"h":1,"solid":true}]}'::jsonb)
-on conflict(width) do update set data=excluded.data;
+insert into public.crew_room_layouts(template,width,data) values
+('clubhouse',30,'{"grid":{"width":30,"height":20,"tile":32},"spawn":{"x":15,"y":17},"zones":[{"id":"studio","number":"01","name":"Listening Studio","subtitle":"Hear what comes next","x":1,"y":1,"w":8,"h":7,"material":"acoustic","stop":{"x":4,"y":5},"plaque":{"x":4,"y":7}},{"id":"stage","number":"02","name":"The 360 Stage","subtitle":"A home for the next sound","x":10,"y":1,"w":10,"h":6,"material":"stage","stop":{"x":15,"y":6},"plaque":{"x":15,"y":5}},{"id":"awards","number":"03","name":"Awards Gallery","subtitle":"The stories behind the milestones","x":21,"y":1,"w":8,"h":7,"material":"marble","stop":{"x":24,"y":5},"plaque":{"x":24,"y":7}},{"id":"courtyard","number":"04","name":"The Courtyard","subtitle":"Take a breath. Stay a while.","x":10,"y":8,"w":10,"h":6,"material":"grass","stop":{"x":15,"y":12},"plaque":{"x":15,"y":13}},{"id":"records","number":"05","name":"Record Lounge","subtitle":"Find your next favourite","x":1,"y":10,"w":8,"h":9,"material":"wood","stop":{"x":4,"y":13},"plaque":{"x":4,"y":10}},{"id":"campaign","number":"06","name":"Artist Corner","subtitle":"A closer look at the music","x":21,"y":10,"w":8,"h":9,"material":"terrazzo","stop":{"x":24,"y":14},"plaque":{"x":24,"y":10}}],"privateAreas":[{"id":"booth-1","name":"Listening Booth 1","x":2,"y":4,"w":3,"h":3,"stop":{"x":3,"y":5}},{"id":"booth-2","name":"Listening Booth 2","x":5,"y":4,"w":3,"h":3,"stop":{"x":6,"y":4}},{"id":"courtyard-corner","name":"Courtyard Corner","x":10,"y":9,"w":4,"h":4,"stop":{"x":13,"y":11}},{"id":"lounge-table","name":"Lounge Table","x":3,"y":13,"w":4,"h":5,"stop":{"x":4,"y":16}}],"blocks":[{"x":1,"y":1,"w":8,"h":1},{"x":1,"y":1,"w":1,"h":7},{"x":8,"y":1,"w":1,"h":7},{"x":1,"y":7,"w":3,"h":1},{"x":6,"y":7,"w":3,"h":1},{"x":10,"y":1,"w":10,"h":1},{"x":10,"y":1,"w":1,"h":5},{"x":19,"y":1,"w":1,"h":5},{"x":21,"y":1,"w":8,"h":1},{"x":21,"y":1,"w":1,"h":7},{"x":28,"y":1,"w":1,"h":7},{"x":21,"y":7,"w":3,"h":1},{"x":26,"y":7,"w":3,"h":1},{"x":1,"y":10,"w":3,"h":1},{"x":6,"y":10,"w":3,"h":1},{"x":1,"y":10,"w":1,"h":9},{"x":8,"y":10,"w":1,"h":9},{"x":1,"y":18,"w":8,"h":1},{"x":21,"y":10,"w":3,"h":1},{"x":26,"y":10,"w":3,"h":1},{"x":21,"y":10,"w":1,"h":9},{"x":28,"y":10,"w":1,"h":9},{"x":21,"y":18,"w":8,"h":1},{"id":"mixing-desk","kind":"console","x":2,"y":2,"w":5,"h":1,"solid":true},{"id":"studio-speaker-l","kind":"speaker","x":2,"y":3,"w":1,"h":1,"solid":true},{"id":"studio-speaker-r","kind":"speaker","x":6,"y":3,"w":1,"h":1,"solid":true},{"id":"listening-chair-l","kind":"headphones","x":2,"y":5,"w":1,"h":1,"solid":true},{"id":"listening-chair-r","kind":"headphones","x":6,"y":5,"w":1,"h":1,"solid":true},{"id":"studio-plant","kind":"plant","x":7,"y":6,"w":1,"h":1,"solid":true},{"id":"stage-console","kind":"console","x":13,"y":3,"w":4,"h":1,"solid":true,"variant":1},{"id":"stage-speaker-l","kind":"speaker","x":11,"y":3,"w":1,"h":2,"solid":true},{"id":"stage-speaker-r","kind":"speaker","x":18,"y":3,"w":1,"h":2,"solid":true},{"id":"gallery-display-1","kind":"plinth","x":22,"y":3,"w":2,"h":1,"solid":true,"variant":0},{"id":"gallery-display-2","kind":"plinth","x":25,"y":3,"w":2,"h":1,"solid":true,"variant":1},{"id":"gallery-display-3","kind":"plinth","x":26,"y":5,"w":1,"h":1,"solid":true,"variant":2},{"id":"gallery-plant","kind":"plant","x":22,"y":6,"w":1,"h":1,"solid":true},{"id":"courtyard-tree-l","kind":"tree","x":10,"y":8,"w":1,"h":1,"solid":true},{"id":"courtyard-tree-r","kind":"tree","x":19,"y":8,"w":1,"h":1,"solid":true},{"id":"courtyard-fountain","kind":"fountain","x":14,"y":9,"w":2,"h":2,"solid":true},{"id":"courtyard-bench-l","kind":"bench","x":11,"y":10,"w":2,"h":1,"solid":true},{"id":"courtyard-bench-r","kind":"bench","x":17,"y":10,"w":2,"h":1,"solid":true},{"id":"courtyard-plant-l","kind":"plant","x":11,"y":12,"w":1,"h":1,"solid":true},{"id":"courtyard-plant-r","kind":"plant","x":18,"y":12,"w":1,"h":1,"solid":true},{"id":"record-wall","kind":"records","x":2,"y":11,"w":2,"h":1,"solid":true},{"id":"record-wall-r","kind":"records","x":6,"y":11,"w":1,"h":1,"solid":true},{"id":"record-sofa-l","kind":"sofa","x":2,"y":14,"w":2,"h":1,"solid":true,"variant":1},{"id":"record-sofa-r","kind":"sofa","x":6,"y":15,"w":1,"h":2,"solid":true},{"id":"record-table","kind":"table","x":4,"y":15,"w":1,"h":1,"solid":true},{"id":"record-sofa-bottom","kind":"sofa","x":3,"y":17,"w":2,"h":1,"solid":true,"variant":1},{"id":"record-lamp","kind":"lamp","x":2,"y":16,"w":1,"h":1,"solid":true},{"id":"record-plant","kind":"plant","x":7,"y":17,"w":1,"h":1,"solid":true},{"id":"artist-poster-1","kind":"poster","x":22,"y":11,"w":2,"h":2,"solid":true,"variant":0},{"id":"artist-poster-2","kind":"poster","x":25,"y":11,"w":2,"h":2,"solid":true,"variant":1},{"id":"artist-poster-3","kind":"poster","x":26,"y":14,"w":1,"h":2,"solid":true,"variant":2},{"id":"artist-counter","kind":"counter","x":22,"y":17,"w":3,"h":1,"solid":true},{"id":"artist-plant","kind":"plant","x":26,"y":17,"w":1,"h":1,"solid":true},{"id":"entry-plant-l","kind":"plant","x":11,"y":16,"w":1,"h":1,"solid":true},{"id":"entry-plant-r","kind":"plant","x":18,"y":16,"w":1,"h":1,"solid":true},{"id":"entry-map-table","kind":"maptable","x":13,"y":16,"w":2,"h":1,"solid":true}]}'::jsonb),
+('clubhouse',36,'{"grid":{"width":36,"height":20,"tile":32},"spawn":{"x":18,"y":17},"zones":[{"id":"studio","number":"01","name":"Listening Studio","subtitle":"Hear what comes next","x":1,"y":1,"w":8,"h":7,"material":"acoustic","stop":{"x":4,"y":5},"plaque":{"x":4,"y":7}},{"id":"stage","number":"02","name":"The 360 Stage","subtitle":"A home for the next sound","x":13,"y":1,"w":10,"h":6,"material":"stage","stop":{"x":18,"y":6},"plaque":{"x":18,"y":5}},{"id":"awards","number":"03","name":"Awards Gallery","subtitle":"The stories behind the milestones","x":27,"y":1,"w":8,"h":7,"material":"marble","stop":{"x":30,"y":5},"plaque":{"x":30,"y":7}},{"id":"courtyard","number":"04","name":"The Courtyard","subtitle":"Take a breath. Stay a while.","x":13,"y":8,"w":10,"h":6,"material":"grass","stop":{"x":18,"y":12},"plaque":{"x":18,"y":13}},{"id":"records","number":"05","name":"Record Lounge","subtitle":"Find your next favourite","x":1,"y":10,"w":8,"h":9,"material":"wood","stop":{"x":4,"y":13},"plaque":{"x":4,"y":10}},{"id":"campaign","number":"06","name":"Artist Corner","subtitle":"A closer look at the music","x":27,"y":10,"w":8,"h":9,"material":"terrazzo","stop":{"x":30,"y":14},"plaque":{"x":30,"y":10}}],"privateAreas":[{"id":"booth-1","name":"Listening Booth 1","x":2,"y":4,"w":3,"h":3,"stop":{"x":3,"y":5}},{"id":"booth-2","name":"Listening Booth 2","x":5,"y":4,"w":3,"h":3,"stop":{"x":6,"y":4}},{"id":"courtyard-corner","name":"Courtyard Corner","x":13,"y":9,"w":4,"h":4,"stop":{"x":16,"y":11}},{"id":"lounge-table","name":"Lounge Table","x":3,"y":13,"w":4,"h":5,"stop":{"x":4,"y":16}}],"blocks":[{"x":1,"y":1,"w":8,"h":1},{"x":1,"y":1,"w":1,"h":7},{"x":8,"y":1,"w":1,"h":7},{"x":1,"y":7,"w":3,"h":1},{"x":6,"y":7,"w":3,"h":1},{"x":13,"y":1,"w":10,"h":1},{"x":13,"y":1,"w":1,"h":5},{"x":22,"y":1,"w":1,"h":5},{"x":27,"y":1,"w":8,"h":1},{"x":27,"y":1,"w":1,"h":7},{"x":34,"y":1,"w":1,"h":7},{"x":27,"y":7,"w":3,"h":1},{"x":32,"y":7,"w":3,"h":1},{"x":1,"y":10,"w":3,"h":1},{"x":6,"y":10,"w":3,"h":1},{"x":1,"y":10,"w":1,"h":9},{"x":8,"y":10,"w":1,"h":9},{"x":1,"y":18,"w":8,"h":1},{"x":27,"y":10,"w":3,"h":1},{"x":32,"y":10,"w":3,"h":1},{"x":27,"y":10,"w":1,"h":9},{"x":34,"y":10,"w":1,"h":9},{"x":27,"y":18,"w":8,"h":1},{"id":"mixing-desk","kind":"console","x":2,"y":2,"w":5,"h":1,"solid":true},{"id":"studio-speaker-l","kind":"speaker","x":2,"y":3,"w":1,"h":1,"solid":true},{"id":"studio-speaker-r","kind":"speaker","x":6,"y":3,"w":1,"h":1,"solid":true},{"id":"listening-chair-l","kind":"headphones","x":2,"y":5,"w":1,"h":1,"solid":true},{"id":"listening-chair-r","kind":"headphones","x":6,"y":5,"w":1,"h":1,"solid":true},{"id":"studio-plant","kind":"plant","x":7,"y":6,"w":1,"h":1,"solid":true},{"id":"stage-console","kind":"console","x":16,"y":3,"w":4,"h":1,"solid":true,"variant":1},{"id":"stage-speaker-l","kind":"speaker","x":14,"y":3,"w":1,"h":2,"solid":true},{"id":"stage-speaker-r","kind":"speaker","x":21,"y":3,"w":1,"h":2,"solid":true},{"id":"gallery-display-1","kind":"plinth","x":28,"y":3,"w":2,"h":1,"solid":true,"variant":0},{"id":"gallery-display-2","kind":"plinth","x":31,"y":3,"w":2,"h":1,"solid":true,"variant":1},{"id":"gallery-display-3","kind":"plinth","x":32,"y":5,"w":1,"h":1,"solid":true,"variant":2},{"id":"gallery-plant","kind":"plant","x":28,"y":6,"w":1,"h":1,"solid":true},{"id":"courtyard-tree-l","kind":"tree","x":13,"y":8,"w":1,"h":1,"solid":true},{"id":"courtyard-tree-r","kind":"tree","x":22,"y":8,"w":1,"h":1,"solid":true},{"id":"courtyard-fountain","kind":"fountain","x":17,"y":9,"w":2,"h":2,"solid":true},{"id":"courtyard-bench-l","kind":"bench","x":14,"y":10,"w":2,"h":1,"solid":true},{"id":"courtyard-bench-r","kind":"bench","x":20,"y":10,"w":2,"h":1,"solid":true},{"id":"courtyard-plant-l","kind":"plant","x":14,"y":12,"w":1,"h":1,"solid":true},{"id":"courtyard-plant-r","kind":"plant","x":21,"y":12,"w":1,"h":1,"solid":true},{"id":"record-wall","kind":"records","x":2,"y":11,"w":2,"h":1,"solid":true},{"id":"record-wall-r","kind":"records","x":6,"y":11,"w":1,"h":1,"solid":true},{"id":"record-sofa-l","kind":"sofa","x":2,"y":14,"w":2,"h":1,"solid":true,"variant":1},{"id":"record-sofa-r","kind":"sofa","x":6,"y":15,"w":1,"h":2,"solid":true},{"id":"record-table","kind":"table","x":4,"y":15,"w":1,"h":1,"solid":true},{"id":"record-sofa-bottom","kind":"sofa","x":3,"y":17,"w":2,"h":1,"solid":true,"variant":1},{"id":"record-lamp","kind":"lamp","x":2,"y":16,"w":1,"h":1,"solid":true},{"id":"record-plant","kind":"plant","x":7,"y":17,"w":1,"h":1,"solid":true},{"id":"artist-poster-1","kind":"poster","x":28,"y":11,"w":2,"h":2,"solid":true,"variant":0},{"id":"artist-poster-2","kind":"poster","x":31,"y":11,"w":2,"h":2,"solid":true,"variant":1},{"id":"artist-poster-3","kind":"poster","x":32,"y":14,"w":1,"h":2,"solid":true,"variant":2},{"id":"artist-counter","kind":"counter","x":28,"y":17,"w":3,"h":1,"solid":true},{"id":"artist-plant","kind":"plant","x":32,"y":17,"w":1,"h":1,"solid":true},{"id":"entry-plant-l","kind":"plant","x":14,"y":16,"w":1,"h":1,"solid":true},{"id":"entry-plant-r","kind":"plant","x":21,"y":16,"w":1,"h":1,"solid":true},{"id":"entry-map-table","kind":"maptable","x":16,"y":16,"w":2,"h":1,"solid":true}]}'::jsonb)
+on conflict(template,width) do update set data=excluded.data;
+
+-- A room points at a layout that exists.
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.crew_rooms'::regclass and conname = 'crew_rooms_layout_fkey') then
+    alter table public.crew_rooms add constraint crew_rooms_layout_fkey
+      foreign key (template, width) references public.crew_room_layouts(template, width);
+  end if;
+end $$;
 
 -- ------------------------------------------------------------------ helpers ---
 -- How long a walker stays after their last heartbeat. The app beats every 10 s.
@@ -157,7 +246,7 @@ begin
   end if;
 end $$;
 
-create or replace function public._crew_room_walkable(p_width int, p_x int, p_y int) returns boolean
+create or replace function public._crew_room_walkable(p_template text, p_width int, p_x int, p_y int) returns boolean
 language sql stable security definer set search_path = public as $$
   select p_x > 0 and p_y > 0
      and p_x < (l.data->'grid'->>'width')::int - 1 and p_y < (l.data->'grid'->>'height')::int - 1
@@ -165,20 +254,21 @@ language sql stable security definer set search_path = public as $$
            select 1 from jsonb_array_elements(l.data->'blocks') b
             where p_x >= (b->>'x')::int and p_x < (b->>'x')::int + (b->>'w')::int
               and p_y >= (b->>'y')::int and p_y < (b->>'y')::int + (b->>'h')::int)
-    from crew_room_layouts l where l.width = p_width;
+    from crew_room_layouts l where l.template = p_template and l.width = p_width;
 $$;
 
 -- The conversation area at a tile, or null on the stage, the paths and the entrance.
-create or replace function public._crew_room_area(p_width int, p_x int, p_y int) returns text
+create or replace function public._crew_room_area(p_template text, p_width int, p_x int, p_y int) returns text
 language sql stable security definer set search_path = public as $$
   select (select a->>'id' from jsonb_array_elements(l.data->'privateAreas') a
            where p_x >= (a->>'x')::int and p_x < (a->>'x')::int + (a->>'w')::int
              and p_y >= (a->>'y')::int and p_y < (a->>'y')::int + (a->>'h')::int
            limit 1)
     from crew_room_layouts l
-   where l.width = p_width and _crew_room_walkable(p_width, p_x, p_y);
+   where l.template = p_template and l.width = p_width and _crew_room_walkable(p_template, p_width, p_x, p_y);
 $$;
--- The first version had a section lookup nothing called.
+-- The first version had a section lookup nothing called; the width-only lookups were replaced by
+-- the (template, width) ones above.
 drop function if exists public._crew_room_section(int, int, int);
 
 -- Keeps presence.area in step with x and y (a move, an entry, a width change), so a
@@ -186,16 +276,18 @@ drop function if exists public._crew_room_section(int, int, int);
 create or replace function public._crew_room_presence_area() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  new.area := _crew_room_area((select width from crew_rooms where crew_id = new.crew_id), new.x, new.y);
+  new.area := (select _crew_room_area(r.template, r.width, new.x, new.y) from crew_rooms r where r.crew_id = new.crew_id);
   return new;
 end $$;
 drop trigger if exists crew_room_presence_area on public.crew_room_presence;
 create trigger crew_room_presence_area before insert or update of x, y on public.crew_room_presence
   for each row execute function public._crew_room_presence_area();
 -- Rows written before the trigger existed.
-update public.crew_room_presence p set area = _crew_room_area(r.width, p.x, p.y)
+update public.crew_room_presence p set area = _crew_room_area(r.template, r.width, p.x, p.y)
   from public.crew_rooms r
- where r.crew_id = p.crew_id and p.area is distinct from _crew_room_area(r.width, p.x, p.y);
+ where r.crew_id = p.crew_id and p.area is distinct from _crew_room_area(r.template, r.width, p.x, p.y);
+drop function if exists public._crew_room_walkable(int, int, int);
+drop function if exists public._crew_room_area(int, int, int);
 
 -- The sweep. The caller holds the room lock. Removes walkers who went stale or left
 -- the crew, starts a session for an area someone is in, moves only the walkers whose
@@ -203,10 +295,11 @@ update public.crew_room_presence p set area = _crew_room_area(r.width, p.x, p.y)
 create or replace function public._crew_room_reconcile(p_crew uuid) returns void
 language plpgsql security definer set search_path = public as $$
 declare
-  w int;
-  t timestamptz := clock_timestamp();
+  w   int;
+  tpl text;
+  t   timestamptz := clock_timestamp();
 begin
-  select width into w from crew_rooms where crew_id = p_crew;
+  select width, template into w, tpl from crew_rooms where crew_id = p_crew;
   delete from crew_room_presence p
    where p.crew_id = p_crew
      and (p.last_seen < t - _crew_room_ttl()
@@ -215,7 +308,7 @@ begin
   select p_crew, (a->'stop'->>'x')::int, (a->'stop'->>'y')::int, a->>'id'
     from crew_room_layouts l
    cross join jsonb_array_elements(l.data->'privateAreas') a
-   where l.width = w
+   where l.template = tpl and l.width = w
      and a->>'id' in (select p.area from crew_room_presence p where p.crew_id = p_crew and p.area is not null)
   on conflict (crew_id, section) do nothing;
   update crew_room_presence p
@@ -247,9 +340,10 @@ language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
     'observed_at', clock_timestamp(),
     'crew', jsonb_build_object(
-      'id', c.id, 'name', c.name, 'verified', c.verified,
+      'id', c.id, 'name', c.name, 'verified', c.verified, 'logo_url', c.logo_url, 'owner_id', c.created_by,
       'is_owner', exists (select 1 from crew_members where crew_id = c.id and user_id = auth.uid() and role = 'owner')),
-    'room', jsonb_build_object('width', r.width, 'content', r.content, 'version', r.version, 'capacity', r.capacity),
+    'room', jsonb_build_object('template', r.template, 'width', r.width, 'content', r.content, 'version', r.version,
+                               'capacity', r.capacity, 'featured_event_id', r.featured_event_id, 'featured_ribbon', r.featured_ribbon),
     'peers', coalesce((
       select jsonb_agg(jsonb_build_object(
                'id', p.user_id, 'name', coalesce(pr.display_name, 'A crew member'), 'look', pr.avatar,
@@ -265,6 +359,16 @@ language sql stable security definer set search_path = public as $$
                            from crew_room_circles where crew_id = c.id), '[]'))
     from crews c join crew_rooms r on r.crew_id = c.id
    where c.id = p_crew;
+$$;
+
+-- The crew's room row, made with its first content when it has none yet.
+create or replace function public._crew_room_ensure(p_crew uuid) returns void
+language sql security definer set search_path = public as $$
+  insert into crew_rooms (crew_id, content)
+  select p_crew, jsonb_build_object('brand', left(name, 40), 'strapline', 'Your crew. Your music. Your space.',
+           'musicTitle', '', 'musicUrl', '', 'audioUrl', '', 'artistTitle', '', 'artistNote', '', 'awards', '[]'::jsonb)
+    from crews where id = p_crew
+  on conflict do nothing;
 $$;
 
 -- -------------------------------------------------------------- the calls ---
@@ -285,11 +389,7 @@ begin
   perform _crew_room_require(p_crew);
   if p_session is null then raise exception 'invalid_session'; end if;
   perform _crew_room_lock(p_crew);
-  insert into crew_rooms (crew_id, content)
-  select p_crew, jsonb_build_object('brand', left(name, 40), 'strapline', 'Your crew. Your music. Your space.',
-           'musicTitle', '', 'musicUrl', '', 'audioUrl', '', 'artistTitle', '', 'artistNote', '', 'awards', '[]'::jsonb)
-    from crews where id = p_crew
-  on conflict do nothing;
+  perform _crew_room_ensure(p_crew);
   select * into room from crew_rooms where crew_id = p_crew;
   -- Sweep first, so a stale walker frees their spot and their own old row is gone.
   perform _crew_room_reconcile(p_crew);
@@ -303,12 +403,12 @@ begin
     if (select count(*) from crew_room_presence where crew_id = p_crew) >= room.capacity then
       return _crew_room_snapshot(p_crew) || jsonb_build_object('watching', true);
     end if;
-    select data->'spawn' into spawn from crew_room_layouts where width = room.width;
+    select data->'spawn' into spawn from crew_room_layouts where template = room.template and width = room.width;
     -- Arrive around the entrance without stacking every new avatar on one tile.
     select tx, ty into sx, sy
       from generate_series((spawn->>'x')::int - 2, (spawn->>'x')::int + 2) tx
      cross join generate_series((spawn->>'y')::int - 2, (spawn->>'y')::int + 2) ty
-     where _crew_room_walkable(room.width, tx, ty)
+     where _crew_room_walkable(room.template, room.width, tx, ty)
        and not exists (select 1 from crew_room_presence p where p.crew_id = p_crew and p.x = tx and p.y = ty)
      order by (tx - (spawn->>'x')::int) ^ 2 + (ty - (spawn->>'y')::int) ^ 2, ty, tx
      limit 1;
@@ -331,6 +431,7 @@ declare
   px     int;
   py     int;
   w      int;
+  tpl    text;
   n      int;
   credit numeric;
   stale  boolean;
@@ -358,7 +459,7 @@ begin
     if p_seq <> p.seq + 1 then raise exception 'invalid_sequence'; end if;
     credit := least(8, p.move_credit + greatest(0, extract(epoch from t - p.credit_at)) * 12);
     if n > credit then raise exception 'moving_too_fast'; end if;
-    select width into w from crew_rooms where crew_id = p_crew;
+    select width, template into w, tpl from crew_rooms where crew_id = p_crew;
     px := p.x;
     py := p.y;
     for tile in select * from jsonb_array_elements(p_steps) loop
@@ -367,7 +468,7 @@ begin
         raise exception 'invalid_movement';
       end if;
       if abs((tile->>'x')::int - px) + abs((tile->>'y')::int - py) <> 1
-         or not _crew_room_walkable(w, (tile->>'x')::int, (tile->>'y')::int) then
+         or not _crew_room_walkable(tpl, w, (tile->>'x')::int, (tile->>'y')::int) then
         raise exception 'invalid_movement';
       end if;
       px := (tile->>'x')::int;
@@ -453,7 +554,7 @@ end $$;
 -- The owner's shared settings: banner, welcome line, music and audio links, artist
 -- story, awards, the words that find the crew's events (eventKeywords, comma
 -- separated; the crew name when empty) and width. A width change moves every walker
--- back to the entrance.
+-- back to the entrance, and waits while a Game Time is scheduled or live (hunt_in_progress).
 create or replace function public.crew_room_settings(p_crew uuid, p_width int, p_content jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -462,6 +563,7 @@ declare
   v          jsonb;
   clean      jsonb := '{}';
   old_width  int;
+  tpl        text;
   spawn      jsonb;
 begin
   perform _crew_room_require(p_crew);
@@ -469,6 +571,11 @@ begin
     raise exception 'owner_only';
   end if;
   if p_width not in (30, 36) or jsonb_typeof(p_content) <> 'object' or pg_column_size(p_content) > 20000 then
+    raise exception 'invalid_settings';
+  end if;
+  select template into tpl from crew_rooms where crew_id = p_crew;
+  tpl := coalesce(tpl, 'clubhouse');
+  if not exists (select 1 from crew_room_layouts where template = tpl and width = p_width) then
     raise exception 'invalid_settings';
   end if;
   for k in select unnest(array['brand', 'strapline', 'musicTitle', 'musicUrl', 'audioUrl', 'artistTitle', 'artistNote', 'eventKeywords']) loop
@@ -496,11 +603,15 @@ begin
   clean := clean || jsonb_build_object('awards', coalesce(p_content->'awards', '[]'));
   perform _crew_room_lock(p_crew);
   select width into old_width from crew_rooms where crew_id = p_crew;
+  -- The size of the room cannot change under a Game Time (the hiding places are tied to it).
+  if old_width is distinct from p_width and old_width is not null and _crew_room_hunt_busy(p_crew) then
+    raise exception 'hunt_in_progress';
+  end if;
   insert into crew_rooms (crew_id, width, content) values (p_crew, p_width, clean)
   on conflict (crew_id) do update
     set width = p_width, content = clean, version = crew_rooms.version + 1, updated_at = clock_timestamp();
   if old_width is distinct from p_width then
-    select data->'spawn' into spawn from crew_room_layouts where width = p_width;
+    select data->'spawn' into spawn from crew_room_layouts where template = tpl and width = p_width;
     delete from crew_room_circles where crew_id = p_crew;
     update crew_room_presence
        set x = (spawn->>'x')::int, y = (spawn->>'y')::int, seq = 0, last_moved_at = clock_timestamp(),
@@ -509,6 +620,82 @@ begin
     perform _crew_room_reconcile(p_crew);
   end if;
   return _crew_room_snapshot(p_crew);
+end $$;
+
+-- The owner picks which room template holds the crew's meeting. The template must have a layout
+-- for the room's width (invalid_template), and not while a Game Time for this room is scheduled
+-- or live (hunt_in_progress). A change walks everyone back to the new template's entrance.
+create or replace function public.crew_room_set_template(p_crew uuid, p_template text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  room  crew_rooms;
+  spawn jsonb;
+begin
+  perform _crew_room_require(p_crew);
+  if not exists (select 1 from crew_members where crew_id = p_crew and user_id = auth.uid() and role = 'owner') then
+    raise exception 'owner_only';
+  end if;
+  perform _crew_room_ensure(p_crew);
+  perform _crew_room_lock(p_crew);
+  select * into room from crew_rooms where crew_id = p_crew for update;
+  select data->'spawn' into spawn from crew_room_layouts where template = coalesce(p_template, '') and width = room.width;
+  if spawn is null then raise exception 'invalid_template'; end if;
+  if room.template is distinct from p_template then
+    if _crew_room_hunt_busy(p_crew) then raise exception 'hunt_in_progress'; end if;
+    update crew_rooms set template = p_template, version = version + 1, updated_at = clock_timestamp() where crew_id = p_crew;
+    delete from crew_room_circles where crew_id = p_crew;
+    update crew_room_presence
+       set x = (spawn->>'x')::int, y = (spawn->>'y')::int, seq = 0, last_moved_at = clock_timestamp(),
+           move_credit = 3, credit_at = clock_timestamp()
+     where crew_id = p_crew;
+    perform _crew_room_reconcile(p_crew);
+  end if;
+  return _crew_room_snapshot(p_crew);
+end $$;
+
+-- The owner picks the event on the fountain's sticker (null: the app falls back to the crew's
+-- next event by its event words) and types the ribbon under it: "FREE", "N5,000", "SOLD OUT".
+-- Up to 14 characters, no line breaks. An empty ribbon shows no ribbon. Only a live event can be
+-- picked (invalid_event otherwise), so a draft never reaches a sticker.
+create or replace function public.crew_room_set_featured(p_crew uuid, p_event uuid, p_ribbon text default '') returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  ribbon text := btrim(coalesce(p_ribbon, ''));
+begin
+  perform _crew_room_require(p_crew);
+  if not exists (select 1 from crew_members where crew_id = p_crew and user_id = auth.uid() and role = 'owner') then
+    raise exception 'owner_only';
+  end if;
+  if char_length(ribbon) > 14 or ribbon ~ '[[:cntrl:]]' then raise exception 'invalid_ribbon'; end if;
+  if p_event is not null and not exists (select 1 from events where id = p_event and status = 'live') then raise exception 'invalid_event'; end if;
+  perform _crew_room_ensure(p_crew);
+  perform _crew_room_lock(p_crew);
+  update crew_rooms
+     set featured_event_id = p_event, featured_ribbon = case when p_event is null then '' else ribbon end,
+         version = version + 1, updated_at = clock_timestamp()
+   where crew_id = p_crew;
+  return _crew_room_snapshot(p_crew);
+end $$;
+
+-- The owner sets the crew's look: a round logo (null or empty clears it) and up to 5 header
+-- pictures, in the order they play. Each is a /brands/ path or a picture in this crew's folder of
+-- the crew-images bucket (invalid_image otherwise, too_many_images past 5). Returns the crew's card.
+create or replace function public.crew_update_look(p_crew uuid, p_logo_url text, p_header_images text[]) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  logo   text := nullif(btrim(coalesce(p_logo_url, '')), '');
+  images text[] := coalesce(p_header_images, '{}');
+begin
+  perform _crew_room_require(p_crew);
+  if not exists (select 1 from crew_members where crew_id = p_crew and user_id = auth.uid() and role = 'owner') then
+    raise exception 'owner_only';
+  end if;
+  if cardinality(images) > 5 then raise exception 'too_many_images'; end if;
+  if (logo is not null and not _crew_image_ok(p_crew, logo)) or not _crew_images_ok(p_crew, images) then
+    raise exception 'invalid_image';
+  end if;
+  update crews set logo_url = logo, header_images = images where id = p_crew;
+  return crew_card(p_crew, null);
 end $$;
 
 -- ------------------------------------------------------- crew hub and invites ---
@@ -526,11 +713,14 @@ revoke all on public.crew_join_attempts from anon, authenticated;
 -- One crew as its hub and its invite page show it. Who sees it: a member (with the
 -- recent General chat), anyone holding its invite code, and anyone at all for an
 -- open crew. Anyone else gets null. "in_room" and "heads" are the walkers there now
--- (blocked people left out); "keywords" are the words its events are found by.
+-- (blocked people left out); "keywords" are the words its events are found by; "featured_event" is the
+-- event on the room's fountain sticker with its ribbon (null when none, or when it is no longer live).
 create or replace function public.crew_card(p_crew uuid default null, p_code text default null) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare
   c      crews;
+  rm     crew_rooms;
+  fe     jsonb;
   member boolean;
   t      timestamptz := clock_timestamp();
 begin
@@ -544,8 +734,18 @@ begin
   if not member and c.visibility <> 'open' and (p_code is null or upper(btrim(p_code)) <> c.invite_code) then
     return null;
   end if;
+  select * into rm from crew_rooms where crew_id = c.id;
+  -- The featured event goes with the card: it is a public event, and only a live one is shown.
+  select jsonb_build_object('id', e.id, 'title', e.title, 'venue_name', e.venue_name, 'area', e.area,
+                            'starts_at', e.starts_at, 'flyer_url', e.flyer_url)
+    into fe from events e where e.id = rm.featured_event_id and e.status = 'live';
   return jsonb_build_object(
     'id', c.id, 'name', c.name, 'verified', c.verified, 'visibility', c.visibility,
+    'logo_url', c.logo_url, 'header_images', to_jsonb(c.header_images),
+    'template', coalesce(rm.template, 'clubhouse'),
+    'featured_event_id', case when fe is not null then rm.featured_event_id end,
+    'featured_ribbon', case when fe is not null then coalesce(rm.featured_ribbon, '') else '' end,
+    'featured_event', fe,
     'members', (select count(*) from crew_members where crew_id = c.id),
     'is_member', member,
     'is_owner', member and exists (select 1 from crew_members where crew_id = c.id and user_id = auth.uid() and role = 'owner'),
@@ -650,21 +850,53 @@ revoke all on public.crew_room_layouts, public.crew_rooms, public.crew_room_pres
   public.crew_room_messages, public.crew_room_message_audience from anon, authenticated;
 grant select on public.crew_rooms, public.crew_room_presence, public.crew_room_messages to authenticated;
 revoke all on function public._crew_room_ttl(), public._crew_room_lock(uuid), public._crew_room_require(uuid),
-  public._crew_room_walkable(int, int, int), public._crew_room_area(int, int, int), public._crew_room_presence_area(),
-  public._crew_room_reconcile(uuid), public._crew_room_stale(uuid), public._crew_room_snapshot(uuid)
+  public._crew_room_walkable(text, int, int, int), public._crew_room_area(text, int, int, int), public._crew_room_presence_area(),
+  public._crew_room_reconcile(uuid), public._crew_room_stale(uuid), public._crew_room_snapshot(uuid), public._crew_room_ensure(uuid)
   from public, anon, authenticated;
 revoke all on function public._crew_room_message_visible(uuid), public._crew_room_peer_visible(uuid, uuid) from public, anon;
 grant execute on function public._crew_room_message_visible(uuid), public._crew_room_peer_visible(uuid, uuid) to authenticated;
 revoke all on function public.crew_room_enter(uuid, uuid), public.crew_room_step(uuid, uuid, int, jsonb),
   public.crew_room_state(uuid), public.crew_room_leave(uuid, uuid), public.crew_room_send(uuid, text, text, uuid, uuid),
-  public.crew_room_settings(uuid, int, jsonb) from public, anon;
+  public.crew_room_settings(uuid, int, jsonb), public.crew_room_set_template(uuid, text),
+  public.crew_room_set_featured(uuid, uuid, text), public.crew_update_look(uuid, text, text[]) from public, anon;
 grant execute on function public.crew_room_enter(uuid, uuid), public.crew_room_step(uuid, uuid, int, jsonb),
   public.crew_room_state(uuid), public.crew_room_leave(uuid, uuid), public.crew_room_send(uuid, text, text, uuid, uuid),
-  public.crew_room_settings(uuid, int, jsonb) to authenticated;
+  public.crew_room_settings(uuid, int, jsonb), public.crew_room_set_template(uuid, text),
+  public.crew_room_set_featured(uuid, uuid, text), public.crew_update_look(uuid, text, text[]) to authenticated;
 -- The card is public (an invite preview is drawn with the public key); joining and a new code need a session.
 revoke all on function public.crew_card(uuid, text), public.crew_join_code(text), public.crew_invite_reset(uuid) from public;
 grant execute on function public.crew_card(uuid, text) to anon, authenticated;
 grant execute on function public.crew_join_code(text), public.crew_invite_reset(uuid) to authenticated;
+
+-- ------------------------------------------------------------ crew pictures ---
+-- Public bucket: anyone reads a logo or header picture by its link; only the crew's owner writes,
+-- and only a single picture straight under <crew id>/, 2 MB, jpeg, png or webp. File names are
+-- fresh per upload (no overwrite), so the owner needs insert, read (to list their folder) and delete.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('crew-images', 'crew-images', true, 2097152, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update
+  set public = true, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+create or replace function public._crew_image_path_owner(p_name text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and public.has_account()
+     and array_length(storage.foldername(p_name), 1) = 1
+     and storage.filename(p_name) ~ '^[A-Za-z0-9._-]{1,120}\.(jpg|jpeg|png|webp)$'
+     and exists (select 1 from crew_members m
+                  where m.crew_id::text = (storage.foldername(p_name))[1] and m.user_id = auth.uid() and m.role = 'owner');
+$$;
+revoke all on function public._crew_image_path_owner(text) from public, anon;
+grant execute on function public._crew_image_path_owner(text) to authenticated;
+
+drop policy if exists crew_images_owner_upload on storage.objects;
+create policy crew_images_owner_upload on storage.objects for insert to authenticated
+  with check (bucket_id = 'crew-images' and public._crew_image_path_owner(name));
+drop policy if exists crew_images_owner_read on storage.objects;
+create policy crew_images_owner_read on storage.objects for select to authenticated
+  using (bucket_id = 'crew-images' and public._crew_image_path_owner(name));
+drop policy if exists crew_images_owner_remove on storage.objects;
+create policy crew_images_owner_remove on storage.objects for delete to authenticated
+  using (bucket_id = 'crew-images' and public._crew_image_path_owner(name));
 
 -- Realtime carries new messages (RLS decides who gets each one) and settings changes.
 -- Walkers are read by polling, so presence stays out: a heartbeat is not a Realtime event.

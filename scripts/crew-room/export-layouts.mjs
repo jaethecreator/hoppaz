@@ -1,15 +1,20 @@
+// Writes the walkable grid of every room template, at both widths, into supabase/crew_rooms.sql (the LAYOUT_SEED
+// block). Run it whenever walls, props, areas or templates move, then load the SQL.
 import fs from 'node:fs';
-import vm from 'node:vm';
-import ts from 'typescript';
+import { loadCampaign } from '../rooms/load-campaign.mjs';
 const root=new URL('../../',import.meta.url);
-const source=fs.readFileSync(new URL('src/lib/campaign/layout.ts',root),'utf8');
-const context={exports:{},URL};
-vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
-const {clubhouseWidth,sceneBlocks}=context.exports;
-const rows=[30,36].map(width=>{const l=clubhouseWidth(width);const data={grid:l.grid,spawn:l.spawn,zones:l.zones,privateAreas:l.privateAreas,blocks:sceneBlocks(l)};return `(${width},'${JSON.stringify(data).replaceAll("'","''")}'::jsonb)`;});
-const seed='insert into public.crew_room_layouts(width,data) values\n'+rows.join(',\n')+'\non conflict(width) do update set data=excluded.data;';
+const {ROOM_TEMPLATES,ROOM_WIDTHS,sceneBlocks}=loadCampaign();
+const rows=[];
+for(const t of ROOM_TEMPLATES) for(const width of ROOM_WIDTHS){
+  const l=t.layout(width);
+  const data={grid:l.grid,spawn:l.spawn,zones:l.zones,privateAreas:l.privateAreas,blocks:sceneBlocks(l)};
+  rows.push(`('${t.key}',${width},'${JSON.stringify(data).replaceAll("'","''")}'::jsonb)`);
+}
+const seed='insert into public.crew_room_layouts(template,width,data) values\n'+rows.join(',\n')+'\non conflict(template,width) do update set data=excluded.data;';
 const file=new URL('supabase/crew_rooms.sql',root);
 let sql=fs.readFileSync(file,'utf8');
-sql=sql.replace(/-- LAYOUT_SEED(?:\ninsert into public\.crew_room_layouts[\s\S]*?on conflict\(width\) do update set data=excluded\.data;)?/, '-- LAYOUT_SEED\n'+seed);
+const pattern=/-- LAYOUT_SEED(?:\ninsert into public\.crew_room_layouts[\s\S]*?on conflict\((?:template,)?width\) do update set data=excluded\.data;)?/;
+if(!pattern.test(sql)) throw new Error('LAYOUT_SEED marker not found in supabase/crew_rooms.sql');
+sql=sql.replace(pattern,()=>'-- LAYOUT_SEED\n'+seed);
 fs.writeFileSync(file,sql);
-console.log('Generated both room collision layouts from the campaign manifest.');
+console.log(`Generated ${rows.length} room collision layouts (${ROOM_TEMPLATES.map(t=>t.key).join(', ')}) from the campaign manifest.`);

@@ -51,6 +51,7 @@ declare
   sa uuid := gen_random_uuid(); sb uuid := gen_random_uuid(); sc uuid := gen_random_uuid();
   res jsonb; circle uuid; general uuid; near uuid; later uuid; req uuid := gen_random_uuid(); body jsonb; before_x int;
   at_b tid; at_c tid; code text; later_code text;
+  base text; ev uuid; failed text; seen int;
 begin
   insert into public.crews (id, name, created_by) values (crew, 'Room test crew', a), (other_crew, 'Different room', d);
   insert into public.crew_members (crew_id, user_id, role)
@@ -72,6 +73,9 @@ begin
   update public.crews set verified = true where id = crew;
   perform pg_temp.actor(b); res := public.crew_room_state(crew); perform pg_temp.admin();
   perform pg_temp.ok(res->'crew'->>'verified' = 'true', 'staff verification shows in the room');
+  perform pg_temp.ok(res->'room'->>'template' = 'clubhouse' and res->'crew'->>'owner_id' = a::text and res->'crew' ? 'logo_url'
+    and res->'room'->'featured_event_id' = 'null'::jsonb and res->'room'->>'featured_ribbon' = '',
+    'the room snapshot carries its template, the owner, the logo and no featured event');
 
   update public.crew_room_presence set x = case when user_id = a then 3 when user_id = b then 4 else 6 end,
     y = case when user_id = b then 6 else 4 end, last_moved_at = clock_timestamp() - interval '1 second', last_seen = clock_timestamp()
@@ -238,6 +242,133 @@ begin
     perform pg_temp.actor(d); perform public.crew_join_code('WRONG' || i); perform pg_temp.admin();
   end loop;
   perform pg_temp.fail_as(d, format('select public.crew_join_code(%L)', later_code), 'slow_down');
+
+  -- ----------------------------------------------------------- the look of a crew ---
+  base := 'http://127.0.0.1:54321/storage/v1/object/public/crew-images/' || crew || '/';
+  perform pg_temp.fail_as(c, format('select public.crew_update_look(%L,%L,%L)', crew, '/brands/360playlist.jpg', '{}'::text[]), 'owner_only');
+  perform pg_temp.fail_as(d, format('select public.crew_update_look(%L,null,%L)', crew, '{}'::text[]), 'owner_only');
+  perform pg_temp.fail_as(g, format('select public.crew_update_look(%L,null,%L)', crew, '{}'::text[]), 'need_account');
+  perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,null,%L)', crew, array[base||'1.jpg',base||'2.jpg',base||'3.jpg',base||'4.jpg',base||'5.jpg',base||'6.jpg']), 'too_many_images');
+  perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,null,%L)', crew, array['http://127.0.0.1:54321/storage/v1/object/public/crew-images/' || other_crew || '/x.jpg']), 'invalid_image');
+  perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,null,%L)', crew, array['javascript:alert(1)']), 'invalid_image');
+  perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,%L,%L)', crew, base||'logo.gif', '{}'::text[]), 'invalid_image');
+  perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,%L,%L)', crew, base||'sub/logo.jpg', '{}'::text[]), 'invalid_image');
+  perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,%L,%L)', crew, '/brands/../etc/x.jpg', '{}'::text[]), 'invalid_image');
+  perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,null,%L)', crew, array[null]::text[]), 'invalid_image');
+  perform pg_temp.actor(a);
+  res := public.crew_update_look(crew, '/brands/360playlist.jpg', array[base||'one.jpg', base||'two.png', '/brands/360playlist.jpg']);
+  perform pg_temp.admin();
+  perform pg_temp.ok(res->>'logo_url' = '/brands/360playlist.jpg' and jsonb_array_length(res->'header_images') = 3
+    and res->'header_images'->>0 = base||'one.jpg' and res->'header_images'->>1 = base||'two.png', 'the owner sets a logo and header pictures, in order');
+  perform pg_temp.actor(c); res := public.crew_card(crew, null); perform pg_temp.admin();
+  perform pg_temp.ok(jsonb_array_length(res->'header_images') = 3 and res->>'logo_url' = '/brands/360playlist.jpg' and res->>'template' = 'clubhouse',
+    'members see the look and the template on the crew card');
+  perform pg_temp.actor(c); res := public.crew_room_state(crew); perform pg_temp.admin();
+  perform pg_temp.ok(res->'crew'->>'logo_url' = '/brands/360playlist.jpg', 'the room snapshot carries the logo');
+  perform pg_temp.actor(a); res := public.crew_update_look(crew, '', '{}'::text[]); perform pg_temp.admin();
+  perform pg_temp.ok(res->'logo_url' = 'null'::jsonb and res->'header_images' = '[]'::jsonb, 'the owner clears the look');
+  perform pg_temp.fail_as(a, format('update public.crews set logo_url = %L where id = %L', base||'x.jpg', crew), 'permission denied');
+  begin
+    update public.crews set logo_url = 'https://evil.example/logo.jpg' where id = crew;
+    failed := null;
+  exception when check_violation then failed := sqlerrm; end;
+  perform pg_temp.ok(failed like '%crews_look_valid%', 'the table itself refuses a picture that is not ours (' || coalesce(failed, 'no error') || ')');
+  begin
+    update public.crews set header_images = array[base||'1.jpg',base||'2.jpg',base||'3.jpg',base||'4.jpg',base||'5.jpg',base||'6.jpg'] where id = crew;
+    failed := null;
+  exception when check_violation then failed := sqlerrm; end;
+  perform pg_temp.ok(failed like '%crews_look_valid%', 'the table itself refuses a sixth header picture');
+
+  -- ------------------------------------------------------------ the crew pictures bucket ---
+  perform pg_temp.ok((select public and file_size_limit = 2097152 and allowed_mime_types @> array['image/jpeg','image/png','image/webp'] and cardinality(allowed_mime_types) = 3
+                        from storage.buckets where id = 'crew-images'), 'crew-images is public, 2 MB, images only');
+  perform pg_temp.actor(a);
+  insert into storage.objects (bucket_id, name) values ('crew-images', crew || '/one.jpg'), ('crew-images', crew || '/logo.png');
+  perform pg_temp.admin();
+  perform pg_temp.ok((select count(*) = 2 from storage.objects where bucket_id = 'crew-images' and name like crew::text || '/%'), 'the owner uploads under the crew folder');
+  perform pg_temp.fail_as(c, format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'crew-images', crew || '/member.jpg'), 'row-level security');
+  perform pg_temp.fail_as(d, format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'crew-images', crew || '/other.jpg'), 'row-level security');
+  perform pg_temp.fail_as(g, format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'crew-images', crew || '/guest.jpg'), 'row-level security');
+  perform pg_temp.fail_as(a, format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'crew-images', other_crew || '/mine.jpg'), 'row-level security');
+  perform pg_temp.fail_as(a, format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'crew-images', crew || '/deeper/x.jpg'), 'row-level security');
+  perform pg_temp.fail_as(a, format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'crew-images', crew || '/x.gif'), 'row-level security');
+  perform pg_temp.fail_as(a, format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'crew-images', 'x.jpg'), 'row-level security');
+  perform pg_temp.fail_as(a, format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'crew-images', 'not-a-uuid/x.jpg'), 'row-level security');
+  perform pg_temp.actor(c); select count(*) into seen from storage.objects where bucket_id = 'crew-images' and name like crew::text || '/%'; perform pg_temp.admin();
+  perform pg_temp.ok(seen = 0, 'members cannot list the owner''s folder (the public link is how pictures are read)');
+  -- The Storage API sets this flag for its own deletes; the row policies still decide which rows go.
+  perform set_config('storage.allow_delete_query', 'true', true);
+  perform pg_temp.actor(c); delete from storage.objects where bucket_id = 'crew-images' and name = crew || '/one.jpg'; perform pg_temp.admin();
+  perform pg_temp.ok(exists (select 1 from storage.objects where bucket_id = 'crew-images' and name = crew || '/one.jpg'), 'a member cannot remove a picture');
+  perform pg_temp.actor(a); delete from storage.objects where bucket_id = 'crew-images' and name = crew || '/one.jpg'; perform pg_temp.admin();
+  perform pg_temp.ok(not exists (select 1 from storage.objects where bucket_id = 'crew-images' and name = crew || '/one.jpg'), 'the owner removes a picture');
+
+  -- ------------------------------------------------------------- the room template ---
+  perform pg_temp.fail_as(c, format('select public.crew_room_set_template(%L,%L)', crew, 'clubhouse'), 'owner_only');
+  perform pg_temp.fail_as(a, format('select public.crew_room_set_template(%L,%L)', crew, 'lounge'), 'invalid_template');
+  perform pg_temp.fail_as(a, format('select public.crew_room_set_template(%L,null)', crew), 'invalid_template');
+  perform pg_temp.actor(a); res := public.crew_room_set_template(crew, 'clubhouse'); perform pg_temp.admin();
+  perform pg_temp.ok(res->'room'->>'template' = 'clubhouse', 'choosing the template you have changes nothing');
+  perform pg_temp.ok(not exists (select 1 from public.crew_room_layouts where template = 'test-lounge'), 'the test starts without a second template');
+  insert into public.crew_room_layouts (template, width, data)
+  select 'test-lounge', width, jsonb_set(data, '{spawn}', '{"x":16,"y":17}') from public.crew_room_layouts where template = 'clubhouse';
+  perform pg_temp.actor(a); perform public.crew_room_enter(crew, sa); perform pg_temp.admin();
+  perform pg_temp.ok(exists (select 1 from public.crew_room_presence where crew_id = crew), 'someone is walking when the template changes');
+  -- Not while a Game Time is scheduled or live.
+  create or replace function public._crew_room_hunt_busy(p_crew uuid) returns boolean language sql as 'select true';
+  perform pg_temp.fail_as(a, format('select public.crew_room_set_template(%L,%L)', crew, 'test-lounge'), 'hunt_in_progress');
+  perform pg_temp.fail_as(a, format('select public.crew_room_settings(%L,30,%L)', crew, (select content from public.crew_rooms where crew_id = crew)), 'hunt_in_progress');
+  perform pg_temp.ok((select template = 'clubhouse' and width = 36 from public.crew_rooms where crew_id = crew), 'a refused change leaves the room as it was');
+  perform pg_temp.actor(a); res := public.crew_room_set_template(crew, 'clubhouse'); perform pg_temp.admin();
+  perform pg_temp.ok(res->'room'->>'template' = 'clubhouse', 'a hunt does not block choosing the template you already have');
+  create or replace function public._crew_room_hunt_busy(p_crew uuid) returns boolean language sql as 'select false';
+  perform pg_temp.actor(a); res := public.crew_room_set_template(crew, 'test-lounge'); perform pg_temp.admin();
+  perform pg_temp.ok(res->'room'->>'template' = 'test-lounge' and (res->'room'->>'version')::int > 1, 'the owner picks another template');
+  perform pg_temp.ok((select count(*) > 0 and bool_and(x = 16 and y = 17 and seq = 0) from public.crew_room_presence where crew_id = crew),
+    'a template change walks everyone back to the new entrance');
+  perform pg_temp.ok(not exists (select 1 from public.crew_room_circles where crew_id = crew), 'area sessions end with the old layout');
+  perform pg_temp.ok(public._crew_room_walkable('test-lounge', 36, 16, 17) and not public._crew_room_walkable('test-lounge', 36, 0, 0), 'the walkable grid is read from the room''s own template');
+  perform pg_temp.actor(c); res := public.crew_card(crew, null); perform pg_temp.admin();
+  perform pg_temp.ok(res->>'template' = 'test-lounge', 'the crew card names the template');
+  perform pg_temp.fail_as(a, format('update public.crew_rooms set template = %L where crew_id = %L', 'clubhouse', crew), 'permission denied');
+  perform pg_temp.actor(a); res := public.crew_room_set_template(crew, 'clubhouse'); perform pg_temp.admin();
+  perform pg_temp.ok(res->'room'->>'template' = 'clubhouse', 'the owner picks the clubhouse again');
+  delete from public.crew_room_layouts where template = 'test-lounge';
+  begin
+    update public.crew_rooms set template = 'nope' where crew_id = crew;
+    failed := null;
+  exception when foreign_key_violation then failed := sqlerrm; end;
+  perform pg_temp.ok(failed like '%crew_rooms_layout_fkey%', 'a room can only point at a template that exists');
+
+  -- --------------------------------------------------------------- the featured event ---
+  select id into ev from public.events where status = 'live' limit 1;
+  if ev is not null then
+    perform pg_temp.fail_as(c, format('select public.crew_room_set_featured(%L,%L,%L)', crew, ev, 'FREE'), 'owner_only');
+    perform pg_temp.fail_as(a, format('select public.crew_room_set_featured(%L,%L,%L)', crew, gen_random_uuid(), 'FREE'), 'invalid_event');
+    perform pg_temp.fail_as(a, format('select public.crew_room_set_featured(%L,%L,%L)', crew, ev, 'THIS RIBBON IS FAR TOO LONG'), 'invalid_ribbon');
+    perform pg_temp.fail_as(a, format('select public.crew_room_set_featured(%L,%L,%L)', crew, ev, E'FR\nEE'), 'invalid_ribbon');
+    perform pg_temp.actor(a); res := public.crew_room_set_featured(crew, ev, '  FREE '); perform pg_temp.admin();
+    perform pg_temp.ok(res->'room'->>'featured_event_id' = ev::text and res->'room'->>'featured_ribbon' = 'FREE', 'the owner features an event with the ribbon they typed');
+    perform pg_temp.actor(c); res := public.crew_room_state(crew); perform pg_temp.admin();
+    perform pg_temp.ok(res->'room'->>'featured_event_id' = ev::text and res->'room'->>'featured_ribbon' = 'FREE', 'the whole crew sees the featured event');
+    perform pg_temp.actor(c); res := public.crew_card(crew, null); perform pg_temp.admin();
+    perform pg_temp.ok(res->>'featured_event_id' = ev::text, 'members see it on the crew card');
+    perform pg_temp.actor(d); res := public.crew_card(null, (select invite_code from public.crews where id = crew)); perform pg_temp.admin();
+    perform pg_temp.ok(res->'featured_event_id' is not null, 'the card of a crew you joined shows it too');
+    perform pg_temp.actor(g); res := public.crew_card(null, later_code); perform pg_temp.admin();
+    perform pg_temp.ok(res->'featured_event'->>'id' = ev::text and res->>'featured_ribbon' = 'FREE' and res->'featured_event' ? 'title',
+      'anyone with the invite sees the featured event and its ribbon on the card');
+    update public.events set status = 'pending' where id = ev;
+    perform pg_temp.actor(a); res := public.crew_card(crew, null); perform pg_temp.admin();
+    perform pg_temp.ok(res->'featured_event' = 'null'::jsonb and res->>'featured_ribbon' = '', 'an event that is no longer live is not shown');
+    perform pg_temp.fail_as(a, format('select public.crew_room_set_featured(%L,%L,%L)', crew, ev, 'FREE'), 'invalid_event');
+    update public.events set status = 'live' where id = ev;
+    perform pg_temp.actor(a); res := public.crew_room_set_featured(crew, null, 'FREE'); perform pg_temp.admin();
+    perform pg_temp.ok(res->'room'->'featured_event_id' = 'null'::jsonb and res->'room'->>'featured_ribbon' = '', 'clearing the event clears its ribbon');
+    perform pg_temp.actor(a); res := public.crew_room_set_featured(crew, ev, ''); perform pg_temp.admin();
+    perform pg_temp.ok(res->'room'->>'featured_ribbon' = '', 'no ribbon is no ribbon: nothing is free unless the owner says so');
+  end if;
+
   raise notice 'ALL CREW ROOM TESTS PASSED';
 end $$;
 rollback;
