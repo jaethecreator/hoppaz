@@ -22,7 +22,7 @@ export async function POST(req: Request) {
       {
         user_id: me.id,
         title: "Test spot just lit up",
-        body: "About 1.4 km from you. Send your avatar to open a box.",
+        body: "About 1.4 km from you. First come, first served.",
         url: "/?spot=test",
         tag: "spot-test",
       },

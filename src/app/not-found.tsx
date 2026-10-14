@@ -13,7 +13,7 @@ export default function NotFound() {
         <Mascot state="oops" size={150} className="mt-3" />
         <h1 className="mt-4 text-balance font-display text-[28px] font-black leading-[1.1]">That page has gone home.</h1>
         <Link href="/" className="btn mt-6">
-          BACK TO TODAY
+          BACK TO THE MAP
         </Link>
       </div>
     </div>

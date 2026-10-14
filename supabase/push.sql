@@ -254,7 +254,7 @@ begin
              'user_id', pk.user_id,
              'title', left(coalesce(nullif(trim(p_title), ''), 'A spot'), 60) || ' just lit up',
              'body', case when pk.distance_m < 1000 then 'Under 1 km from you. ' else 'About ' || round(pk.distance_m / 1000.0, 1)::text || ' km from you. ' end
-                     || 'Send your avatar to open a box.',
+                     || 'First come, first served.',
              'url', coalesce(p_url, '/?spot=' || p_spot_id::text),
              'tag', 'spot-' || p_spot_id::text)), '[]'::jsonb)
       into alerts

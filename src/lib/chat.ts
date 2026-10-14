@@ -57,7 +57,7 @@ export function chatError(message: string | undefined) {
   if (message.includes("not_in_dm")) return "THIS CHAT IS CLOSED";
   if (message.includes("need_account")) return "MAKE AN ACCOUNT TO CHAT PRIVATELY";
   if (message.includes("bad_image")) return "THAT PICTURE DID NOT SEND";
-  if (message.includes("not_at_event")) return "CHECK IN AT THE EVENT TO JOIN ITS ROOM";
+  if (message.includes("not_at_event")) return "SAY YOU'RE GOING TO THE EVENT TO JOIN ITS ROOM";
   if (message.includes("not_in_group")) return "JOIN THE GROUP CHAT FIRST";
   if (message.includes("not_in_move")) return "SAY I'M IN TO JOIN THIS CHAT";
   if (message.includes("room_closed")) return "THIS ROOM HAS CLOSED";
@@ -152,7 +152,7 @@ export function useRoom(channel: string, userId: string | null) {
 const WAVE_TEXT: Record<string, string> = {
   sent: "WAVE SENT. IF THEY WAVE BACK, YOU CAN CHAT",
   already: "ALREADY WAVED",
-  not_met: "YOU CAN WAVE AT PEOPLE AT THE SAME PARTY OR IN YOUR GROUP CHATS",
+  not_met: "YOU CAN WAVE AT PEOPLE IN YOUR ROOMS AND GROUP CHATS",
   blocked: "YOU BLOCKED THEM",
   slow_down: "THAT'S A LOT OF WAVES TODAY. TRY TOMORROW",
   self: "THAT'S YOU",

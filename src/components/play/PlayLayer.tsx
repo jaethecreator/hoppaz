@@ -228,7 +228,7 @@ export default function PlayLayer({
     onIdle: () => {
       // Reading a hotspot's chat takes no touches, and a hotspot is a room that is always on: it is not idle.
       if (roomRef.current) return;
-      say("Play paused. Tap your avatar to come back.");
+      say("Paused. You're back on the map.");
       exit();
     },
   });

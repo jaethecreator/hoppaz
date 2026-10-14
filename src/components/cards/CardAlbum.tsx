@@ -43,7 +43,7 @@ export default function CardAlbum({ userId, onCount }: { userId: string | null; 
       </div>
 
       {owned === 0 ? (
-        <p className="hint">Street boxes pay cards. Every card is a Lagos place: stand there and stamp it Visited.</p>
+        <p className="hint">Cards come out of boxes. Every card is a Lagos place: stand there and stamp it Visited.</p>
       ) : (
         <>
           {sets.length > 0 && (

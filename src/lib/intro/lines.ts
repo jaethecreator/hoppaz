@@ -102,7 +102,7 @@ export const LINES: Record<StepId, Line> = {
   },
   deck_go: {
     title: "What's on tonight?",
-    line: "Tap Today and let's see the events.",
+    line: "Tap Events and let's see the line-up.",
     skip: "Skip",
   },
   deck: {
@@ -111,8 +111,8 @@ export const LINES: Record<StepId, Line> = {
     skip: "Skip",
   },
   chat: {
-    title: "Every event has a chat",
-    line: "That's where your crew forms. Tap the chat!",
+    title: "Every event has a room",
+    line: "Everyone going is in it. Tap the chat!",
     skip: "Skip",
   },
   crew_go: {

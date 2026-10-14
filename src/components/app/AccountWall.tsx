@@ -4,7 +4,7 @@ import Mascot from "@/components/Mascot";
 import SignupForm from "@/components/app/SignupForm";
 
 const PERKS = [
-  "Say WE OUTSIDE and get into the event's group chat",
+  "Say WE OUTSIDE and get into the event room with everyone going",
   "Check in, earn XP and badges, claim drops and rewards",
   "Start a crew and plan moves together",
   "Dress your Hopper and keep your nights",

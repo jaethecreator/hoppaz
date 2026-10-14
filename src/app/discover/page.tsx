@@ -289,7 +289,7 @@ export default function TodayPage() {
   }, [openId]);
 
   /* ------------------------------------------------- WE OUTSIDE on a card -- */
-  const WE_OUTSIDE = "We outside. Its group chat invite is in Crew.";
+  const WE_OUTSIDE = "We outside. You're in its room in Chat.";
   // A guest's tap opens the sign-up sheet and finishes on its own after sign-up (useGoing remembers it);
   // when the going lands, fold it into the count here and say so.
   const awaiting = useRef<Set<string>>(new Set());
@@ -343,7 +343,7 @@ export default function TodayPage() {
     }
     if (e.id !== openIdRef.current) setDelta((d) => ({ ...d, [e.id]: (d[e.id] ?? 0) + 1 }));
     // Said once a visit: on an endless deck a line on every swipe would be noise.
-    if (!toldOnce.current) say("We outside. It's in your WE OUTSIDE list, with its group chat.", "ok");
+    if (!toldOnce.current) say("We outside. It's on your list, and you're in its room in Chat.", "ok");
     toldOnce.current = true;
   };
   const swipeInRef = useRef(swipeIn);
