@@ -63,6 +63,11 @@ function Prop({ prop, tile }: { prop: CampaignProp; tile: number }) {
     case "fountain": art = <>
       <path d="M15 9H54L64 19V53L54 63H15L5 53V19Z" fill={P.shadow} opacity=".2" /><path d="M12 4H50L60 14V48L50 58H12L2 48V14Z" fill={P.stone} stroke={P.ink} strokeWidth="2" /><path d="M15 10H47L54 17V44L47 51H15L8 44V17Z" fill={P.slate} stroke={P.slateLight} strokeWidth="2" /><path d="M17 14H45L50 19V28H13V19Z" fill={P.slateLight} /><circle cx="31" cy="31" r="15" fill={P.ink} stroke={P.cream} strokeWidth="2" /><circle cx="31" cy="31" r="9" fill={P.wall} /><circle cx="31" cy="31" r="4" fill={P.gold} /><path d="M14 43h8M40 18h7M41 44h7" stroke={P.slateLight} strokeWidth="2" />
     </>; break;
+    case "maptable": art = <>
+      {commonShadow}<path d={`M3 8H${w - 5}V27H3Z`} fill={P.woodDark} stroke={P.ink} strokeWidth="2" /><path d={`M3 4H${w - 5}V22H3Z`} fill={P.woodLight} stroke={P.ink} strokeWidth="2" />
+      <rect x="7" y="6" width={w - 16} height="13" fill={P.paper} /><path d={`M7 15h12l6-3h${w - 31}v7H7Z`} fill={P.slateLight} /><path d={`M9 9h7M18 8v6M24 10h${w - 36}`} stroke={P.stone} strokeWidth="1" />
+      <path d="M27 6h4v5l-2 3-2-3Z" fill={P.ember} stroke={P.ink} strokeWidth="1" /><rect x={w - 14} y="7" width="4" height="4" fill={P.gold} />
+    </>; break;
     case "lamp": art = <>
       <rect x="12" y="25" width="17" height="6" fill={P.shadow} opacity=".25" /><path d="M16 9V27M9 27H23" stroke={P.ink} strokeWidth="3" /><path d="M10 3H22L27 15H5Z" fill={P.gold} stroke={P.ink} strokeWidth="2" /><path d="M11 5H16L14 12H8Z" fill={P.cream} />
     </>; break;

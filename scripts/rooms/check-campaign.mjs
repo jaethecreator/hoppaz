@@ -84,4 +84,21 @@ check("Conversation areas are reachable, separate and keep main gathering spaces
     for(const id of ['stage','courtyard','awards','campaign']) assert.equal(privateAreaAt(room,room.zones.find(z=>z.id===id).stop),null);
   }
 });
+// Other features find props by id (the map table, Game Time's hiding places): an id is never renamed or dropped.
+const STABLE_IDS = ["mixing-desk", "studio-speaker-l", "studio-speaker-r", "listening-chair-l", "listening-chair-r", "studio-plant",
+  "stage-console", "stage-speaker-l", "stage-speaker-r", "gallery-display-1", "gallery-display-2", "gallery-display-3", "gallery-plant",
+  "courtyard-tree-l", "courtyard-tree-r", "courtyard-fountain", "courtyard-bench-l", "courtyard-bench-r", "courtyard-plant-l",
+  "courtyard-plant-r", "record-wall", "record-wall-r", "record-rug", "record-sofa-l", "record-sofa-r", "record-table",
+  "record-sofa-bottom", "record-lamp", "record-plant", "artist-poster-1", "artist-poster-2", "artist-poster-3", "artist-counter",
+  "artist-plant", "entry-plant-l", "entry-plant-r", "entry-map-table"];
+check("Prop ids stay stable in both widths, and the map table by the door is reachable", () => {
+  for (const width of [30, 36]) {
+    const room = clubhouseWidth(width);
+    const ids = room.props.map((p) => p.id);
+    for (const id of STABLE_IDS) assert.ok(ids.includes(id), `${id} missing at width ${width}`);
+    const table = room.props.find((p) => p.id === "entry-map-table");
+    assert.ok(scenePath(room, room.spawn, { x: table.x, y: table.y + 1 }), "the map table must be reachable from the entrance");
+    assert.ok(scenePath(room, room.spawn, room.zones.find((z) => z.id === "courtyard").stop), "the table must not block the way in");
+  }
+});
 console.log(`${passed} campaign checks passed.`);

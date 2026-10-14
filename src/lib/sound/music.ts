@@ -37,6 +37,10 @@
  *    or decoded.
  *  - The Music switch (music.setOn) is saved in localStorage key "hz-music" ("off" or "on"), default on,
  *    and is separate from Sound. Sound off (sfx.setMuted) silences the music as well.
+ *  - A screen can bring its own loop (music.want's `track`: a crew room's owner set one). It plays in place
+ *    of the slot, by the same rules, about 7 dB down (a released track is mastered far louder than these
+ *    loops). One that cannot play here (its host refuses, it is not audio, it is over MAX_TRACK) is
+ *    given up for the visit and the slot plays instead. Low-tier phones get the menu loop, as in Play.
  */
 
 import { deviceTier } from "@/lib/deviceTier";
@@ -46,11 +50,19 @@ import { decode, type Lane } from "./samples";
 import { sfx } from "./sfx";
 
 export type { MusicSlot };
+/** A screen's own loop, by its address. */
+type Track = `url:${string}`;
+/** What can sound: one of the app's slots, or a screen's own loop. */
+type Key = MusicSlot | Track;
 
 const KEY = "hz-music";
 const BASE = "/music/";
 /** Each slot's level on the bus. Set by loudness against the sound effects; the menu loop is also mastered 3 dB lower. */
 const LEVEL: Record<MusicSlot, number> = { play_day: 0.17, play_night: 0.17, menu: 0.12 };
+/** A screen's own loop: a released track sits near -9 LUFS, the Play loops near -16, so about 7 dB under Play. */
+const TRACK_LEVEL = 0.08;
+/** A screen's own loop bigger than this (bytes) is not decoded: a phone would hold minutes of raw audio. */
+const MAX_TRACK = 12_000_000;
 /** Quiet hours: 6 dB down, so half the amplitude. */
 const QUIET = 0.5;
 /** Ducking: down in ATTACK s, held `hold` s after the sound ends, back up in RELEASE s (both to within 2%). */
@@ -89,7 +101,7 @@ const REVIVE = 0.02;
 type Loop = { buf: AudioBuffer; ls: number; le: number; len: number };
 /** One running loop: its gain does the fades. t0 is when it started (context seconds) at off seconds into the loop. */
 type Voice = {
-  slot: MusicSlot;
+  slot: Key;
   src: AudioBufferSourceNode;
   g: GainNode;
   t0: number;
@@ -102,11 +114,13 @@ type Voice = {
 /* ----------------------------------------------------------------- state -- */
 let on = true;
 let want: MusicSlot | null = null;
+/** The screen's own loop, if it brought one (music.want's track). */
+let track: Track | null = null;
 /** A real tap since the page was last hidden or interrupted. Only onGesture sets it; the stops below clear it. */
 let tapped = false;
 /** Bumped by every start and stop, so a slow load or a timer can tell it was overtaken. */
 let epoch = 0;
-let pending: MusicSlot | null = null;
+let pending: Key | null = null;
 let cur: Voice | null = null;
 let bound: AudioContext | null = null;
 let bus: GainNode | null = null;
@@ -118,8 +132,10 @@ let held = false;
 let tick: ReturnType<typeof setInterval> | undefined;
 let prefetchT: ReturnType<typeof setTimeout> | undefined;
 const voices = new Set<Voice>();
-const loops = new Map<MusicSlot, Promise<Loop | null>>();
-const retryAt = new Map<MusicSlot, number>();
+const loops = new Map<Key, Promise<Loop | null>>();
+const retryAt = new Map<Key, number>();
+/** Screens' own loops that could not play here this visit. */
+const dead = new Set<Track>();
 const watched = new WeakSet<AudioContext>();
 const listeners = new Set<() => void>();
 
@@ -130,13 +146,20 @@ try {
 }
 
 const hidden = () => typeof document !== "undefined" && document.hidden;
-const isPlay = (s: MusicSlot) => s !== "menu";
+const isTrack = (s: Key): s is Track => s.startsWith("url:");
+const isPlay = (s: Key) => s === "play_day" || s === "play_night";
+const level = (s: Key) => (isTrack(s) ? TRACK_LEVEL : LEVEL[s]);
 const emit = () => listeners.forEach((f) => f());
 
-/** The slot that should sound right now, or null: nothing wanted, switch off, or sound off. Low-tier phones get the menu loop. */
-function target(): MusicSlot | null {
+/**
+ * What should sound right now, or null: nothing wanted, switch off, or sound off. The screen's own loop when it brought
+ * one that can play; low-tier phones get the menu loop instead of Play or a screen's loop.
+ */
+function target(): Key | null {
   if (!want || !on || sfx.isMuted()) return null;
-  return isPlay(want) && deviceTier() === "low" ? "menu" : want;
+  const low = deviceTier() === "low";
+  if (track && !low && !dead.has(track)) return track;
+  return isPlay(want) && low ? "menu" : want;
 }
 
 /* ----------------------------------------------------------- the loops -- */
@@ -157,22 +180,30 @@ function fit(buf: AudioBuffer, m: { file: string; samples: number; rate: number 
   return { buf, ls: 0, le: buf.duration, len: buf.duration };
 }
 
-async function grab(a: AudioContext, slot: MusicSlot): Promise<Loop | null> {
-  const m = MUSIC[slot];
+async function grab(a: AudioContext, slot: Key): Promise<Loop | null> {
+  // A screen's own loop has no known length: the decode is trusted as it is (samples 0).
+  const m = isTrack(slot) ? { file: slot.slice(4), samples: 0, rate: 44100 } : MUSIC[slot];
   try {
-    const r = await fetch(BASE + m.file);
+    const r = await fetch(isTrack(slot) ? m.file : BASE + m.file);
     if (!r.ok) throw new Error("HTTP " + r.status);
-    return fit(await decode(a, await r.arrayBuffer()), m);
+    if (isTrack(slot) && Number(r.headers.get("content-length") ?? 0) > MAX_TRACK) throw new Error("too big");
+    const bytes = await r.arrayBuffer();
+    if (isTrack(slot) && bytes.byteLength > MAX_TRACK) throw new Error("too big");
+    return fit(await decode(a, bytes), m);
   } catch (e) {
     console.warn("music " + m.file, e instanceof Error ? e.message : e);
     loops.delete(slot);
-    retryAt.set(slot, Date.now() + RETRY);
+    if (isTrack(slot)) {
+      // Blocked by its host, not audio, or too big: it will not play on a retry either. The slot plays instead.
+      dead.add(slot);
+      emit();
+    } else retryAt.set(slot, Date.now() + RETRY);
     return null;
   }
 }
 
 /** Fetch and decode a loop, once. Later calls get the same promise. Never throws. */
-function load(a: AudioContext, slot: MusicSlot): Promise<Loop | null> {
+function load(a: AudioContext, slot: Key): Promise<Loop | null> {
   let p = loops.get(slot);
   if (!p) {
     p = grab(a, slot);
@@ -321,12 +352,12 @@ function bring(v: Voice, at: number, secs: number) {
   } catch {
     /* already stopped; the fade-out had set its stop, and the last call wins */
   }
-  swell(v.g.gain, v.g.gain.value, LEVEL[v.slot], at, secs, true);
+  swell(v.g.gain, v.g.gain.value, level(v.slot), at, secs, true);
   return v;
 }
 
 /** A new copy of a loop, fading in. Joining another loop (dusk), it starts at the same place in the bar, so the beat does not move. */
-function spawn(a: AudioContext, slot: MusicSlot, p: Loop, at: number, secs: number, join: Voice | null) {
+function spawn(a: AudioContext, slot: Key, p: Loop, at: number, secs: number, join: Voice | null) {
   const off = join ? ((join.off + Math.max(0, at - join.t0)) % join.len) % p.len : 0;
   const src = a.createBufferSource();
   src.buffer = p.buf;
@@ -340,13 +371,13 @@ function spawn(a: AudioContext, slot: MusicSlot, p: Loop, at: number, secs: numb
   const v: Voice = { slot, src, g, t0: at, off, len: p.len, dying: false };
   voices.add(v);
   src.onended = () => drop(v);
-  swell(g.gain, 0, LEVEL[slot], at, secs, true);
+  swell(g.gain, 0, level(slot), at, secs, true);
   src.start(at, p.ls + off);
   return v;
 }
 
 /** Start a loop and crossfade the others out. Dusk (Play to Play) is longer. The caller has made sure the context is running. */
-function begin(a: AudioContext, slot: MusicSlot, p: Loop) {
+function begin(a: AudioContext, slot: Key, p: Loop) {
   bind(a);
   const at = a.currentTime + 0.05;
   const from = cur && !cur.dying ? cur : null;
@@ -403,7 +434,7 @@ function awake(a: AudioContext): Promise<boolean> {
   });
 }
 
-async function start(a: AudioContext, slot: MusicSlot) {
+async function start(a: AudioContext, slot: Key) {
   const my = ++epoch;
   pending = slot;
   // The lease first: a slow load must not let the idle sleep suspend the context. Only a tap wakes it again.
@@ -416,6 +447,8 @@ async function start(a: AudioContext, slot: MusicSlot) {
   // through reconcile() to start the loop from the kept buffer.
   if (!p || !up || hidden() || target() !== slot) {
     giveUp();
+    // A screen's own loop that cannot play: the slot takes over now, from the same tap.
+    if (!p && isTrack(slot)) reconcile();
     return;
   }
   begin(a, slot, p);
@@ -488,11 +521,20 @@ function install() {
 install();
 
 export const music = {
-  /** The slot this screen wants, or null for none. <MusicHost /> calls it on every route and Play change. Starts only after a real tap. */
-  want(slot: MusicSlot | null) {
+  /**
+   * The slot this screen wants, or null for none, and the screen's own loop (an address) if it brought one: the loop
+   * plays in place of the slot, and the slot is what plays when it cannot. <MusicHost /> calls it on every route and
+   * Play change. Starts only after a real tap.
+   */
+  want(slot: MusicSlot | null, own?: string | null) {
     want = slot;
+    track = slot && own ? `url:${own}` : null;
+    // A loop the room no longer uses is freed, unless it is still fading out.
+    for (const k of loops.keys()) if (isTrack(k) && k !== track && ![...voices].some((v) => v.slot === k)) loops.delete(k);
     reconcile();
   },
+  /** True when a screen's own loop could not play here this visit (the slot played instead). */
+  failed: (own: string) => dead.has(`url:${own}`),
   /** The Music switch. Persisted. Off fades the music out at once. */
   setOn(next: boolean) {
     if (on === next) return;
@@ -506,7 +548,7 @@ export const music = {
     emit();
   },
   isOn: () => on,
-  /** For useSyncExternalStore: fires when the switch changes. */
+  /** For useSyncExternalStore: fires when the switch changes, or a screen's own loop could not play. */
   subscribe(fn: () => void) {
     listeners.add(fn);
     return () => {

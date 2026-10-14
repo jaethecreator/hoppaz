@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowUpRight, Disc3, Headphones, Leaf, MapPin, Music2, Settings2, Trophy, X } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, CalendarDays, Disc3, Headphones, Leaf, MapPin, Music2, Settings2, Trophy, X } from "lucide-react";
+import VerifiedBadge from "@/components/VerifiedBadge";
 import type { SocialWorld } from "@/lib/crew-room/types";
+import { dayLabel } from "@/lib/filters";
 import { EMPTY_CAMPAIGN, clubhouseWidth, validCampaignUrl, type AwardEntry, type CampaignContent, type CampaignZone, type ZoneId } from "@/lib/campaign/layout";
 import { useHoppaz } from "@/lib/store";
 import { useSession } from "@/lib/useSession";
 import CampaignWorld from "./CampaignWorld";
+import RoomMusic from "./RoomMusic";
 import css from "./Campaign.module.css";
 
 const STORAGE_KEY = "hoppaz:360-playlist:preview:v1";
@@ -33,7 +36,7 @@ function safeStoredContent(value: unknown): CampaignContent | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
   const content = { ...EMPTY_CAMPAIGN };
-  for (const key of ["brand", "strapline", "musicTitle", "musicUrl", "audioUrl", "artistTitle", "artistNote"] as const) {
+  for (const key of ["brand", "strapline", "musicTitle", "musicUrl", "audioUrl", "artistTitle", "artistNote", "eventKeywords"] as const) {
     if (typeof item[key] === "string") content[key] = item[key].slice(0, key === "artistNote" ? 1200 : 300);
   }
   if (!content.brand.trim()) content.brand = EMPTY_CAMPAIGN.brand;
@@ -43,9 +46,15 @@ function safeStoredContent(value: unknown): CampaignContent | null {
   return content;
 }
 
+/** The crew's next event, for the Stage (lib/crew-room/crewEvents.ts). */
+export type StageEvent = { id: string; title: string; starts_at: string; venue_name: string };
+
 export type CrewCampaign = {
-  id: string; name: string; content: CampaignContent; width: 30 | 36; editable: boolean; connected: boolean;
+  id: string; name: string; verified: boolean; content: CampaignContent; width: 30 | 36; editable: boolean; connected: boolean;
   world: SocialWorld; caption: string; chatOpen: boolean; chatButton: React.ReactNode; chat: React.ReactNode;
+  /** A line said once under the header (a tab that took over), or null. */
+  notice?: React.ReactNode;
+  nextEvent?: StageEvent | null;
   onSave: (content: CampaignContent, width: 30 | 36) => Promise<string | null>;
 };
 export default function CampaignExperience({ crew }: { crew?: CrewCampaign }) {
@@ -65,7 +74,6 @@ export default function CampaignExperience({ crew }: { crew?: CrewCampaign }) {
   const [awardDraft, setAwardDraft] = useState("");
   const [formError, setFormError] = useState("");
   const [saveNote, setSaveNote] = useState("");
-  const [audioError, setAudioError] = useState(false);
   const [saving, setSaving] = useState(false);
   const dialog = useRef<HTMLDivElement>(null);
   const settingsTrigger = useRef<HTMLButtonElement>(null);
@@ -127,17 +135,17 @@ export default function CampaignExperience({ crew }: { crew?: CrewCampaign }) {
       try {
         const problem = await crew.onSave(next,draftWidth);
         if (problem) { setFormError(problem); return; }
-        setSaveNote("Saved for everyone in this crew."); setAudioError(false); setSelected(null);
+        setSaveNote("Saved for everyone in this crew."); setSelected(null);
       } catch { setFormError("Could not save. Your changes are still here; try again."); }
       finally { setSaving(false); }
       return;
     }
-    setContent(next); setWidth(draftWidth); setAudioError(false); setSelected(null);
+    setContent(next); setWidth(draftWidth); setSelected(null);
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ content: next, width: draftWidth })); setSaveNote("Saved on this device. Your preview is ready."); }
     catch { setSaveNote("Preview updated for this visit. This browser couldn’t save it."); }
   };
   const reset = () => {
-    setContent(EMPTY_CAMPAIGN); setDraft(EMPTY_CAMPAIGN); setWidth(30); setDraftWidth(30); setAwardDraft(""); setSelected(null); setFormError(""); setAudioError(false);
+    setContent(EMPTY_CAMPAIGN); setDraft(EMPTY_CAMPAIGN); setWidth(30); setDraftWidth(30); setAwardDraft(""); setSelected(null); setFormError("");
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* Reset still works for the current visit. */ }
     setSaveNote("The original 360 Playlist preview is restored.");
   };
@@ -146,10 +154,11 @@ export default function CampaignExperience({ crew }: { crew?: CrewCampaign }) {
 
   return <div className={css.experience}>
     <header className={css.header}>
-      <Link href={crew ? "/crew" : "/"} className={css.back} aria-label={crew ? "Back to your crews" : "Back to the main map"}><ArrowLeft size={20} aria-hidden /></Link>
-      <div className={css.heading}><p>{crew?.caption ?? "A music home / Campaign preview"}</p><h1>{content.brand}</h1></div>
-      <div className={css.headerActions}>{crew?.chatButton}<Link href="/crew" aria-label="Your crews"><MapPin size={17} aria-hidden /><span>Crews</span></Link>{(!crew || crew.editable) && <button ref={settingsTrigger} type="button" onClick={openSettings} aria-label={crew ? "Customize crew room" : "Customize this preview"}><Settings2 size={17} aria-hidden /><span>Customize</span></button>}</div>
+      <Link href={crew ? `/crew/${crew.id}` : "/"} className={css.back} aria-label={crew ? "Back to the crew" : "Back to the main map"}><ArrowLeft size={20} aria-hidden /></Link>
+      <div className={css.heading}><p>{crew?.caption ?? "A music home / Campaign preview"}</p><div className={css.title}><h1>{content.brand}</h1>{crew?.verified && <VerifiedBadge size={18} />}</div></div>
+      <div className={css.headerActions}>{crew?.chatButton}<Link href="/crew" aria-label="Your crews"><MapPin size={17} aria-hidden /><span>Crews</span></Link>{(!crew || crew.editable) && <button ref={settingsTrigger} type="button" onClick={openSettings} aria-label={crew ? "Customise crew room" : "Customise this preview"}><Settings2 size={17} aria-hidden /><span>Customise</span></button>}</div>
     </header>
+    {crew?.notice}
     <div className={css.body}>
       <div className={css.mapColumn}>
         <CampaignWorld key={width} layout={layout} look={profile?.avatar ?? look} brand={content.brand} selected={selected} onZone={selectZone} touring={touring} onTourHandled={tourHandled} social={crew?.world} />
@@ -162,12 +171,16 @@ export default function CampaignExperience({ crew }: { crew?: CrewCampaign }) {
         {!zone && <><div className={css.roomList}>{layout.zones.map((item) => <button type="button" key={item.id} onClick={() => travel(item.id)}><b>{item.number}</b><span>{item.name}</span><ArrowUpRight size={14} aria-hidden /></button>)}</div><p className={css.note}>Tap the floor to walk. Choose a room to explore. {crew ? "Marked conversation areas have their own chat. Walk inside to join. General crew chat stays available everywhere." : "Your avatar is the only visitor shown in this preview."}</p></>}
         {zone?.id === "studio" && <>
           {content.musicTitle && <div className={css.recordDisc}><i aria-hidden /><div><strong>{content.musicTitle}</strong><small>In the listening room</small></div></div>}
-          {audio && <audio key={audio} className={css.audio} controls preload="none" aria-label={content.musicTitle || "Campaign listening audio"} onError={() => setAudioError(true)}><source src={audio} />Your browser does not support audio playback.</audio>}
-          {audioError && <p className={`${css.description} ${css.error}`} role="alert">This audio couldn’t load. Try the music link or update the audio URL.</p>}
+          {crew && <RoomMusic audio={audio} title={content.musicTitle} />}
           {source && <a className={css.action} href={source} target="_blank" rel="noopener noreferrer">Open the music<ArrowUpRight size={15} aria-hidden /></a>}
           {!audio && !source && <div className={css.empty}><p>The next listening session is being prepared.</p><p>There’s a seat waiting for you. Music will appear here when the campaign is ready.</p></div>}
         </>}
-        {zone?.id === "stage" && <><div className={css.empty}><p>{content.brand}</p><p>{content.artistTitle ? `In focus: ${content.artistTitle}` : "The next session is taking shape. Take a look around the clubhouse while the stage gets ready."}</p></div><button className={css.action} type="button" onClick={() => travel("studio")}>Go to the Listening Studio<Headphones size={15} aria-hidden /></button></>}
+        {zone?.id === "stage" && <>
+          {crew?.nextEvent
+            ? <Link className={css.stageEvent} href={`/event/${crew.nextEvent.id}`}><span className={css.eyebrow}>Next on stage · {dayLabel(crew.nextEvent.starts_at)}</span><strong>{crew.nextEvent.title}</strong><small>{crew.nextEvent.venue_name}</small><span className={css.stageEventGo}>See the event<CalendarDays size={15} aria-hidden /></span></Link>
+            : <div className={css.empty}><p>{content.brand}</p><p>{content.artistTitle ? `In focus: ${content.artistTitle}` : "The next session is taking shape. Take a look around the clubhouse while the stage gets ready."}</p></div>}
+          <button className={crew?.nextEvent ? css.secondary : css.action} type="button" onClick={() => travel("studio")}>Go to the Listening Studio<Headphones size={15} aria-hidden /></button>
+        </>}
         {zone?.id === "awards" && (content.awards.length ? <div className={css.awards}>{content.awards.map((award, index) => <article className={css.award} key={`${award.title}-${index}`}><p className={css.eyebrow}>{award.year}</p><strong>{award.title}</strong><p>{award.detail}</p>{award.sourceUrl && <a href={award.sourceUrl} target="_blank" rel="noopener noreferrer">Read the story<ArrowUpRight size={13} aria-hidden /></a>}</article>)}</div> : <div className={css.empty}><p>The archive is being curated.</p><p>These display cases are ready for the brand’s real awards and stories. The collection will appear here as it’s added.</p></div>)}
         {zone?.id === "courtyard" && <><div className={css.empty}><p>Pause between the rooms.</p><p>The courtyard connects every corner of the clubhouse. Follow a path and see where the music takes you.</p></div><button className={css.secondary} type="button" onClick={() => travel("records")}>Find a seat in the Record Lounge<ArrowUpRight size={15} aria-hidden /></button></>}
         {zone?.id === "records" && <>{source ? <a className={css.action} href={source} target="_blank" rel="noopener noreferrer">Browse the playlist<Disc3 size={15} aria-hidden /></a> : <div className={css.empty}><p>The next selection is on its way.</p><p>Discover the brand’s music here when the playlist is added.</p></div>}<button className={css.secondary} type="button" onClick={() => travel("campaign")}>Meet the Artist Corner<ArrowUpRight size={15} aria-hidden /></button></>}
@@ -185,9 +198,10 @@ export default function CampaignExperience({ crew }: { crew?: CrewCampaign }) {
         <fieldset><legend className={css.eyebrow}>Room width</legend><div className={css.mapSizes}>{([30, 36] as const).map((value) => <button type="button" key={value} aria-pressed={draftWidth === value} onClick={() => setDraftWidth(value)}><strong>{value === 30 ? "Compact" : "Roomy"}</strong><small>{value} × 20 tiles</small></button>)}</div><p style={{ marginTop: 8 }}>Roomy opens more space between the rooms.</p></fieldset>
         <label>Playlist or release title<input value={draft.musicTitle} maxLength={120} onChange={(event) => setDraft({ ...draft, musicTitle: event.target.value })} autoComplete="off" /></label>
         <label>Music link<input type="url" value={draft.musicUrl} onChange={(event) => setDraft({ ...draft, musicUrl: event.target.value })} placeholder="https://…" autoComplete="off" /></label>
-        <label>Direct audio link <span className={css.note}>Optional. A hosted audio file starts only when you press play.</span><input type="url" value={draft.audioUrl} onChange={(event) => setDraft({ ...draft, audioUrl: event.target.value })} placeholder="https://…/track.mp3" autoComplete="off" /></label>
+        <label>Room music loop <span className={css.note}>Optional. A hosted audio file the room plays on a loop, from a visitor’s first tap. Its host has to allow playing it from other sites. Without one, the room plays the Hoppaz room theme.</span><input type="url" value={draft.audioUrl} onChange={(event) => setDraft({ ...draft, audioUrl: event.target.value })} placeholder="https://…/track.mp3" autoComplete="off" /></label>
         <label>Featured artist or release<input value={draft.artistTitle} maxLength={120} onChange={(event) => setDraft({ ...draft, artistTitle: event.target.value })} autoComplete="off" /></label>
         <label>Artist story<textarea value={draft.artistNote} maxLength={1200} onChange={(event) => setDraft({ ...draft, artistNote: event.target.value })} /></label>
+        {crew && <label>Event words <span className={css.note}>Optional. Words in the title or venue of this crew’s events, with commas between them. The Stage and the crew page show the next one. Empty, the crew name is used.</span><input value={draft.eventKeywords ?? ""} maxLength={160} onChange={(event) => setDraft({ ...draft, eventKeywords: event.target.value })} placeholder={`${crew.name}, the artist`} autoComplete="off" /></label>}
         <label>Awards archive<span className={css.note}>One real award per line: Year | Award name | Short story | Optional web link</span><textarea value={awardDraft} onChange={(event) => setAwardDraft(event.target.value)} placeholder="Add the brand’s verified award stories here." /></label>
         {formError && <p className={css.error} role="alert">{formError}</p>}{saveNote && <p className={css.success} role="status">{saveNote}</p>}
         <footer><button className={css.action} type="submit" disabled={saving}>{saving ? "Saving…" : crew ? "Save for crew" : "Save preview"}</button>{!crew && <button className={css.secondary} type="button" onClick={reset}>Reset preview</button>}<button className={css.secondary} type="button" onClick={closePanel}>Back to room</button></footer>

@@ -3,7 +3,7 @@ import type { Block, Tile } from "./geometry";
 export type ZoneId = "studio" | "stage" | "awards" | "courtyard" | "records" | "campaign";
 export type FloorMaterial = "acoustic" | "stage" | "marble" | "grass" | "wood" | "terrazzo";
 export type CampaignZone = Block & { id: ZoneId; number: string; name: string; subtitle: string; material: FloorMaterial; stop: Tile; plaque: Tile };
-export type PropKind = "console" | "speaker" | "headphones" | "plant" | "tree" | "sofa" | "table" | "records" | "plinth" | "poster" | "counter" | "bench" | "fountain" | "lamp" | "rug";
+export type PropKind = "console" | "speaker" | "headphones" | "plant" | "tree" | "sofa" | "table" | "records" | "plinth" | "poster" | "counter" | "bench" | "fountain" | "lamp" | "rug" | "maptable";
 export type CampaignProp = Block & { id: string; kind: PropKind; variant?: number; solid?: boolean };
 export type PrivateArea = Block & { id: string; name: string; stop: Tile };
 export type CampaignLayout = { id: string; grid: { width: number; height: number; tile: number }; spawn: Tile; zones: CampaignZone[]; privateAreas: PrivateArea[]; walls: Block[]; props: CampaignProp[] };
@@ -57,8 +57,16 @@ export const CLUBHOUSE: CampaignLayout = {
     { id: "artist-poster-3", kind: "poster", x: 26, y: 14, w: 1, h: 2, solid: true, variant: 2 },
     { id: "artist-counter", kind: "counter", x: 22, y: 17, w: 3, h: 1, solid: true }, { id: "artist-plant", kind: "plant", x: 26, y: 17, w: 1, h: 1, solid: true },
     { id: "entry-plant-l", kind: "plant", x: 11, y: 16, w: 1, h: 1, solid: true }, { id: "entry-plant-r", kind: "plant", x: 18, y: 16, w: 1, h: 1, solid: true },
+    // The Lagos map on a table by the door: tapping it leaves for the main map (MAP_TABLE).
+    { id: "entry-map-table", kind: "maptable", x: 13, y: 16, w: 2, h: 1, solid: true },
   ],
 };
+
+/**
+ * Props the room does something with. Their ids are fixed: other features find them by id (the map table here, and
+ * the Game Time hunt's hiding places), so an id is never renamed or reused.
+ */
+export const MAP_TABLE = "entry-map-table";
 
 export const sceneSize = (layout: CampaignLayout) => ({ width: layout.grid.width * layout.grid.tile, height: layout.grid.height * layout.grid.tile });
 /** Extra width opens the circulation lanes while preserving each authored room and its doors. */
@@ -111,8 +119,9 @@ export function scenePath(layout: CampaignLayout, from: Tile, to: Tile): Tile[] 
 }
 
 export type AwardEntry = { title: string; year: string; detail: string; sourceUrl?: string };
-export type CampaignContent = { brand: string; strapline: string; musicTitle: string; musicUrl: string; audioUrl: string; artistTitle: string; artistNote: string; awards: AwardEntry[] };
-export const EMPTY_CAMPAIGN: CampaignContent = { brand: "360 Playlist", strapline: "A space for music, discovery & good company.", musicTitle: "", musicUrl: "", audioUrl: "", artistTitle: "", artistNote: "", awards: [] };
+/** eventKeywords: comma separated words that find the crew's events by title or venue (the crew name when empty). Optional: rooms saved before it have none. */
+export type CampaignContent = { brand: string; strapline: string; musicTitle: string; musicUrl: string; audioUrl: string; artistTitle: string; artistNote: string; eventKeywords?: string; awards: AwardEntry[] };
+export const EMPTY_CAMPAIGN: CampaignContent = { brand: "360 Playlist", strapline: "A space for music, discovery & good company.", musicTitle: "", musicUrl: "", audioUrl: "", artistTitle: "", artistNote: "", eventKeywords: "", awards: [] };
 /** Public outbound content only accepts web links; direct audio is configured in the campaign manifest. */
 export function validCampaignUrl(value: string): string | null {
   try { const url = new URL(value); return url.protocol === "https:" || url.protocol === "http:" ? url.href : null; } catch { return null; }

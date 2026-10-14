@@ -1,13 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, LocateFixed, Map, Move, MessageCircle, Volume2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Eye, LocateFixed, Map, MapPinned, Move, MessageCircle } from "lucide-react";
 import Avatar from "@/components/Avatar";
 import type { Tile } from "@/lib/campaign/geometry";
-import { areaArrival, privateAreaAt, canWalkScene, scenePath, sceneSize, type CampaignLayout, type CampaignZone, type ZoneId } from "@/lib/campaign/layout";
+import { MAP_TABLE, areaArrival, privateAreaAt, canWalkScene, scenePath, sceneSize, type CampaignLayout, type CampaignZone, type ZoneId } from "@/lib/campaign/layout";
+import type { RoomPeer, SocialWorld } from "@/lib/crew-room/types";
 import ClubhouseArt from "./ClubhouseArt";
+import { MusicSwitch } from "./RoomMusic";
 import css from "./Campaign.module.css";
-import type { SocialWorld } from "@/lib/crew-room/types";
+
+/** A walker whose last heartbeat is this old (ms) is shown as away: a locked phone or another app. The server keeps them 45 s. */
+const AWAY = 25_000;
+/** Postgres writes microseconds; some browsers only read milliseconds. */
+const when = (at: string) => Date.parse(at.replace(/(\.\d{3})\d+/, "$1"));
+const isAway = (peer: RoomPeer, observedAt: string) => when(observedAt) - when(peer.last_seen) > AWAY;
 
 export default function CampaignWorld({ layout, look, brand, selected, onZone, touring, onTourHandled, social }: { layout: CampaignLayout; look: unknown; brand: string; selected: ZoneId | null; onZone: (zone: CampaignZone) => void; touring: ZoneId | null; onTourHandled: () => void; social?: SocialWorld }) {
   const viewport = useRef<HTMLDivElement>(null);
@@ -22,6 +30,9 @@ export default function CampaignWorld({ layout, look, brand, selected, onZone, t
   const [destination, setDestination] = useState<Tile | null>(null);
   const uid = useId().replace(/:/g, "");
   const scene = sceneSize(layout);
+  const router = useRouter();
+  const watching = !!social?.watching;
+  const table = layout.props.find((prop) => prop.id === MAP_TABLE);
 
   useEffect(() => {
     if (!social?.reset) return;
@@ -42,6 +53,7 @@ export default function CampaignWorld({ layout, look, brand, selected, onZone, t
   }, []);
 
   const move = useCallback((to: Tile, after?: () => void, follow = true) => {
+    if (social?.watching) { setNotice("The room is full, so you're watching. You'll walk in when a spot opens."); return; }
     if (timer.current) clearTimeout(timer.current);
     setWalking(false); setDestination(null);
     const path = scenePath(layout, current.current, to);
@@ -82,11 +94,13 @@ export default function CampaignWorld({ layout, look, brand, selected, onZone, t
     onTourHandled();
   }, [touring, layout, choose, onTourHandled]);
 
+  // Watching a full room: there is no avatar to follow, so the camera shows the whole room.
+  const wide = overview || watching;
   const fit = Math.min(size.width / scene.width, size.height / scene.height);
-  const scale = overview ? fit * .94 : size.width >= 900 ? Math.min(1.2, fit) : Math.min(1.05, Math.max(.85, size.width / 470));
+  const scale = wide ? fit * .94 : size.width >= 900 ? Math.min(1.2, fit) : Math.min(1.05, Math.max(.85, size.width / 470));
   const visibleWidth = size.width / scale, visibleHeight = size.height / scale;
-  const cameraX = overview ? 0 : Math.max(0, Math.min(scene.width - visibleWidth, (player.x + .5) * layout.grid.tile - visibleWidth / 2));
-  const cameraY = overview ? 0 : Math.max(0, Math.min(scene.height - visibleHeight, (player.y + .5) * layout.grid.tile - visibleHeight / 2));
+  const cameraX = wide ? 0 : Math.max(0, Math.min(scene.width - visibleWidth, (player.x + .5) * layout.grid.tile - visibleWidth / 2));
+  const cameraY = wide ? 0 : Math.max(0, Math.min(scene.height - visibleHeight, (player.y + .5) * layout.grid.tile - visibleHeight / 2));
   const left = Math.max(0, (size.width - scene.width * scale) / 2) - cameraX * scale;
   const top = Math.max(0, (size.height - scene.height * scale) / 2) - cameraY * scale;
   const project = (tile: Tile) => ({ x: left + (tile.x + .5) * layout.grid.tile * scale, y: top + (tile.y + .5) * layout.grid.tile * scale });
@@ -110,8 +124,11 @@ export default function CampaignWorld({ layout, look, brand, selected, onZone, t
         }}><ClubhouseArt layout={layout} uid={uid} brand={brand} /></button>
         {social && layout.privateAreas.map((area) => <div key={area.id} data-conversation-area={area.id} aria-hidden className={`${css.privateArea} ${currentArea?.id===area.id ? css.privateAreaActive : ''}`} style={{left:area.x*layout.grid.tile,top:area.y*layout.grid.tile,width:area.w*layout.grid.tile,height:area.h*layout.grid.tile}}><span>{area.name.replace('Listening ','')}</span></div>)}
         {destination && <div className={css.destination} style={{ left: (destination.x + .5) * layout.grid.tile, top: (destination.y + .5) * layout.grid.tile }} />}
-        {peers.map((peer) => <div key={peer.id} data-room-peer={peer.id} data-peer-tile={`${peer.x},${peer.y}`} className={`${css.player} ${css.peer} ${peer.circle_id && peer.circle_id === social?.circleId ? css.nearPeer : ""}`} style={{ left: (peer.x + .5) * layout.grid.tile - 7, top: (peer.y + .5) * layout.grid.tile }}><span><Avatar look={peer.look} label={`${peer.name}'s character`} /></span><b>{peer.name}</b></div>)}
-        <div className={css.player} data-player-tile={`${player.x},${player.y}`} style={{ left: (player.x + .5) * layout.grid.tile, top: (player.y + .5) * layout.grid.tile }}><span className={walking ? css.walking : undefined}><Avatar look={look} label="Your character" /></span><b>You</b></div>
+        {peers.map((peer) => {
+          const away = !!social && isAway(peer, social.observedAt);
+          return <div key={peer.id} data-room-peer={peer.id} data-peer-tile={`${peer.x},${peer.y}`} data-away={away || undefined} className={`${css.player} ${css.peer} ${peer.circle_id && peer.circle_id === social?.circleId ? css.nearPeer : ""} ${away ? css.away : ""}`} style={{ left: (peer.x + .5) * layout.grid.tile - 7, top: (peer.y + .5) * layout.grid.tile }}><span><Avatar look={peer.look} label={away ? `${peer.name}'s character, away` : `${peer.name}'s character`} /></span><b>{away ? `${peer.name} · away` : peer.name}</b></div>;
+        })}
+        {!watching && <div className={css.player} data-player-tile={`${player.x},${player.y}`} style={{ left: (player.x + .5) * layout.grid.tile, top: (player.y + .5) * layout.grid.tile }}><span className={walking ? css.walking : undefined}><Avatar look={look} label="Your character" /></span><b>You</b></div>}
       </div>
       {layout.zones.map((zone) => {
         const at = project(zone.plaque);
@@ -119,11 +136,18 @@ export default function CampaignWorld({ layout, look, brand, selected, onZone, t
       })}
       {peers.map((peer) => { const at = project(peer); return <button key={peer.id} type="button" className={css.peerTarget} aria-label={`Walk to ${peer.name}`} title={`Walk to ${peer.name}`} style={{ left:at.x,top:at.y }} onClick={() => move({ x:peer.x,y:peer.y })} />; })}
       {social && layout.privateAreas.map((area) => { const at=project({x:area.x+area.w-1,y:area.y+area.h-1});return <button key={area.id} type="button" className={css.areaTarget} aria-label={`Join ${area.name}`} title={`Join ${area.name}`} style={{left:at.x,top:at.y}} onClick={() => move(areaArrival(layout,area,peers,current.current))}><MessageCircle size={13} aria-hidden /></button>; })}
-      <div className={css.camera}><button type="button" onClick={() => setOverview((value) => !value)} aria-label={overview ? "Follow my character" : "See the whole clubhouse"}>{overview ? <LocateFixed size={17} aria-hidden /> : <Map size={17} aria-hidden />}<span>{overview ? "Follow me" : "Overview"}</span></button></div>
-      {social && <button type="button" className={css.nearbyStatus} onClick={social.onConversation} aria-label={currentArea ? `Open ${currentArea.name} chat` : 'Find conversation areas'}><MessageCircle size={14} aria-hidden /><span>{currentArea ? `${currentArea.name} · ${areaMembers.length}` : 'Conversation areas'}</span></button>}
-      {overview && <div className={css.overviewHint}><Move size={14} aria-hidden />Six rooms. One music home.</div>}
-      {!overview && <div className={css.controls} aria-label="Walk controls">{steps.map(({ name, Icon, x, y }) => <button type="button" key={name} aria-label={`Walk ${name}`} disabled={!canWalkScene(layout, { x: player.x + x, y: player.y + y })} onClick={() => move({ x: current.current.x + x, y: current.current.y + y })}><Icon size={18} aria-hidden /></button>)}</div>}
+      {table && (() => {
+        const at = project({ x: table.x + (table.w - 1) / 2, y: table.y });
+        // Walk up to the table, then out to the map. Watching, there is no walk: straight to the map.
+        const open = () => watching ? router.push("/") : move({ x: table.x, y: table.y + 1 }, () => router.push("/"));
+        return <button type="button" data-room-object={MAP_TABLE} className={`${css.marker} ${css.mapTable}`} aria-label="Open the Lagos map" title="Open the Lagos map" onClick={open} style={{ left: at.x, top: at.y }}><span><MapPinned size={15} aria-hidden /></span></button>;
+      })()}
+      {watching && <p className={css.watchLine} role="status"><Eye size={14} aria-hidden />Room is full, you&apos;re watching. You&apos;ll walk in when a spot opens.</p>}
+      <div className={css.camera}>{!watching && <button type="button" onClick={() => setOverview((value) => !value)} aria-label={overview ? "Follow my character" : "See the whole clubhouse"}>{overview ? <LocateFixed size={17} aria-hidden /> : <Map size={17} aria-hidden />}<span>{overview ? "Follow me" : "Overview"}</span></button>}</div>
+      {social && !watching && <button type="button" className={css.nearbyStatus} onClick={social.onConversation} aria-label={currentArea ? `Open ${currentArea.name} chat` : 'Find conversation areas'}><MessageCircle size={14} aria-hidden /><span>{currentArea ? `${currentArea.name} · ${areaMembers.length}` : 'Conversation areas'}</span></button>}
+      {overview && !watching && <div className={css.overviewHint}><Move size={14} aria-hidden />Six rooms. One music home.</div>}
+      {!overview && !watching && <div className={css.controls} aria-label="Walk controls">{steps.map(({ name, Icon, x, y }) => <button type="button" key={name} aria-label={`Walk ${name}`} disabled={!canWalkScene(layout, { x: player.x + x, y: player.y + y })} onClick={() => move({ x: current.current.x + x, y: current.current.y + y })}><Icon size={18} aria-hidden /></button>)}</div>}
     </div>
-    <div className={css.worldStatus}><p role="status" aria-live="polite">{walking ? "Walking to your next stop…" : notice}</p><span><Volume2 size={13} aria-hidden />Sound starts when you choose it</span></div>
+    <div className={css.worldStatus}><p role="status" aria-live="polite">{walking ? "Walking to your next stop…" : watching && notice.startsWith("Choose") ? "You're watching the room live. General chat is open to you." : notice}</p><MusicSwitch /></div>
   </div>;
 }
