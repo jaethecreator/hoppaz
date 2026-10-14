@@ -43,7 +43,7 @@ export default function GlobalError({
               {/* A plain link on purpose: with the layout down, a full page load is the safe way home. */}
               {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
               <a href="/" className="btn">
-                BACK TO TODAY
+                BACK TO THE MAP
               </a>
               <button type="button" onClick={() => retry()} className="btn btn-ghost">
                 TRY AGAIN

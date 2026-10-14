@@ -4,7 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { Camera, QrCode } from "lucide-react";
 import QrScanner from "@/components/QrScanner";
-import Reveal, { type RevealItem, type RevealOutcome } from "@/components/reveal/Reveal";
+import type { DropCard } from "@/lib/cards";
+import Reveal, { claimItems, type RevealOutcome } from "@/components/reveal/Reveal";
 import CameraHunt from "@/components/CameraHunt";
 import Hunt3D from "@/components/Hunt3D";
 import { huntItem, RARITY } from "@/lib/huntItems";
@@ -46,7 +47,7 @@ export default function DropRow({
   gameDrops: GameDrop[];
   gameBusy: string | null;
   /** Runs the existing claim. Returns an error line, or the reward. */
-  onClaimGame: (drop: GameDrop, code: string) => Promise<{ error?: string; reward?: string; description?: string; code?: string; xp?: number }>;
+  onClaimGame: (drop: GameDrop, code: string) => Promise<{ error?: string; reward?: string; description?: string; code?: string; xp?: number; cards?: DropCard[] }>;
   collectibles: CollectibleDrop[];
   collected: Set<string>;
   collectBusy: string | null;
@@ -78,9 +79,7 @@ export default function DropRow({
     if (res.error) return { error: sentence(res.error) };
     onOpened(drop.id);
     setGot((g) => [...g, { id: drop.id, title: res.reward ?? "Your reward", description: res.description ?? "", code: res.code }]);
-    const items: RevealItem[] = [{ kind: "reward", title: res.reward ?? "Your reward", line: res.description, code: res.code }];
-    if (res.xp) items.push({ kind: "xp", title: `+${res.xp} XP`, line: "Added to your XP." });
-    return { items };
+    return { items: claimItems(res) };
   };
 
   const openCollectible = async (drop: CollectibleDrop): Promise<RevealOutcome> => {
@@ -185,7 +184,7 @@ export default function DropRow({
           {g.code && <p className="mt-2 inline-block rounded-[4px] border border-dashed border-line px-2 py-1 font-mono text-[13px] tracking-[0.12em]">{g.code}</p>}
           {g.toCollection && (
             <p className="mt-2">
-              <Link href="/collection?tab=shelf" className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-cream underline decoration-orange decoration-2 underline-offset-4">
+              <Link href="/collection" className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-cream underline decoration-orange decoration-2 underline-offset-4">
                 SEE YOUR COLLECTION
               </Link>
             </p>

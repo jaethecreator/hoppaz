@@ -13,7 +13,7 @@ export function ErrorLine({ onRetry }: { onRetry: () => void }) {
       className="pointer-events-auto mt-2 flex items-center gap-2.5 rounded-hz border border-line bg-ink-2/95 py-1 pl-3 pr-1 backdrop-blur"
     >
       <i aria-hidden className="h-2 w-2 flex-none rounded-full bg-fireant" />
-      <span className="min-w-0 flex-1 font-body text-[13px] font-semibold leading-snug">Can&apos;t reach today&apos;s events.</span>
+      <span className="min-w-0 flex-1 font-body text-[13px] font-semibold leading-snug">Can&apos;t reach the events.</span>
       <button
         onClick={onRetry}
         className="flex-none px-3 py-3.5 font-mono text-[10.5px] font-medium uppercase tracking-[0.1em] text-orange underline underline-offset-4"

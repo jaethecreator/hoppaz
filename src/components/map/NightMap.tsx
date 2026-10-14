@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import * as maplibregl from "maplibre-gl";
 import type { ExpressionSpecification, GeoJSONSource, Map as MLMap, StyleSpecification } from "maplibre-gl";
 import { BRAND } from "@/lib/brand";
@@ -26,6 +27,7 @@ import type { Theme } from "@/lib/theme";
 import type { EventRow, HopStop } from "@/lib/types";
 import { SIDE_PANEL, sidePanelWidth } from "@/components/event/side";
 import { mountVenueModels, updateVenueModels } from "./venueModels";
+import MapFallback from "./MapFallback";
 
 // Next's app bundlers cannot infer MapLibre's dynamically resolved module-worker
 // URL. Serve the package worker as a same-origin static asset instead.
@@ -56,6 +58,7 @@ export type NightMapProps = {
   mode?: "events" | "play";
   /** Called once with the MapLibre map when the style and our layers are in (the Play layer hangs its avatar and crates on it). */
   onMapReady?: (map: MLMap) => void;
+  onMapUnavailable?: () => void;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onHopSelect: () => void;
@@ -375,9 +378,20 @@ export default function NightMap({
   sidePanel = false,
   allHot = false,
   navRef,
+  onMapUnavailable,
 }: NightMapProps) {
   const holder = useRef<HTMLDivElement>(null);
   const map = useRef<MLMap | null>(null);
+  const [mapIssue, setMapIssue] = useState<"unavailable" | "lost" | null>(null);
+  const [mapRetry, setMapRetry] = useState(0);
+  const [showFallbackNotice, setShowFallbackNotice] = useState(false);
+  useEffect(() => setShowFallbackNotice(!!mapIssue), [mapIssue]);
+  useEffect(() => {
+    if (!mapIssue) return;
+    onMapUnavailable?.();
+    map.current?.remove();
+    map.current = null;
+  }, [mapIssue, onMapUnavailable]);
   /** True while the style and our layers are in; false mid-swap. */
   const ready = useRef(false);
   /** Bumps each time our layers are (re)built, so data and markers repaint. 0 = nothing yet. */
@@ -592,27 +606,36 @@ export default function NightMap({
       styleTheme.current = t;
 
       // The map opens high over Lagos; the swoop (below) brings it down once the intro is done.
-      const created = new maplibregl.Map({
-        container: holder.current,
-        style,
-        center: [LAGOS_CENTER.lng, LAGOS_CENTER.lat],
-        zoom: 10.6,
-        minZoom: 9,
-        maxZoom: 17,
-        maxBounds: LAGOS_BOUNDS, // Lagos only, for now
-        maxPitch: 60,
-        // A cheap phone draws fewer pixels (docs/PLAY-MODE.md section 17).
-        ...(deviceTier() === "low" ? { pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5) } : {}),
-        // The credit is added below, as plain text clear of the bottom chrome.
-        attributionControl: false,
-        dragRotate: false,
-        pitchWithRotate: false,
-      });
+      let created: MLMap;
+      try {
+        created = new maplibregl.Map({
+          container: holder.current,
+          style,
+          center: [LAGOS_CENTER.lng, LAGOS_CENTER.lat],
+          zoom: 10.6,
+          minZoom: 9,
+          maxZoom: 17,
+          maxBounds: LAGOS_BOUNDS, // Lagos only, for now
+          maxPitch: 60,
+          // Avoid paying for a third or fourth physical pixel per CSS pixel on retina phones.
+          pixelRatio: Math.min(window.devicePixelRatio || 1, deviceTier() === "low" ? 1.5 : 2),
+          attributionControl: false,
+          dragRotate: false,
+          pitchWithRotate: false,
+        });
+      } catch (error) {
+        console.warn("[hoppaz] map could not start:", error);
+        setMapIssue("unavailable");
+        return;
+      }
       m = created;
       map.current = created;
       created.on("error", (event) => {
+        if (event.error instanceof maplibregl.GPUInitializationError) setMapIssue("unavailable");
         console.warn("[hoppaz] map:", event.error);
       });
+      created.on("webglcontextlost", () => setMapIssue("lost"));
+      created.on("webglcontextrestored", () => setMapIssue(null));
       created.touchZoomRotate.disableRotation();
       created.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
       created.addControl(new maplibregl.AttributionControl({ compact: false }), "bottom-left");
@@ -719,7 +742,7 @@ export default function NightMap({
       map.current?.remove();
       map.current = null;
     };
-  }, []);
+  }, [mapRetry]);
 
   // Web fonts land after first paint; signs measured before that are the wrong width.
   useEffect(() => {
@@ -1183,5 +1206,28 @@ export default function NightMap({
   // Inline on purpose: MapLibre's own CSS gives .maplibregl-map position relative, and when the
   // production build orders that sheet after Tailwind's, the class "absolute" loses and the map
   // collapses to 0 px tall.
-  return <div ref={holder} className="absolute inset-0" style={{ position: "absolute", inset: 0 }} aria-label="Lagos map" />;
+  return (
+    <>
+      <div ref={holder} className="absolute inset-0" style={{ position: "absolute", inset: 0 }} aria-label="Lagos map" />
+      {mapIssue && (
+        <>
+          <MapFallback events={events} fix={fix} selectedId={selectedId} onSelect={onSelect} hudTop={hudTop} />
+          {showFallbackNotice && <div role="status" className="pointer-events-none absolute left-3 right-3 top-[calc(env(safe-area-inset-top)+8.5rem)] z-10 flex justify-center px-2">
+            <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-hz border border-line bg-ink-2/95 px-3 py-2 shadow-sheet">
+              <p className="hint min-w-0 flex-1">{mapIssue === "lost" ? "Your phone paused the 3D map. Showing a simpler map." : "3D maps aren’t available here. Showing a simpler map."}</p>
+              <button type="button" className="btn shrink-0 px-3 py-2" onClick={() => {
+                setMapIssue(null);
+                setMapRetry((n) => n + 1);
+              }}>
+                RETRY 3D
+              </button>
+              <button type="button" aria-label="Close map notice" className="grid h-10 w-10 shrink-0 place-items-center rounded-hz text-dim" onClick={() => setShowFallbackNotice(false)}>
+                <X size={18} aria-hidden />
+              </button>
+            </div>
+          </div>}
+        </>
+      )}
+    </>
+  );
 }

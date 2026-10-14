@@ -15,7 +15,6 @@ import { getSupabase } from "@/lib/supabase/client";
 import { useToast } from "@/lib/store";
 import { lagosDate } from "@/components/me/lagosDay";
 import { DEMO } from "@/components/me/demo";
-import { loadCardCount, toWonCard } from "@/lib/cards";
 import { loadCollection } from "@/lib/useCollectibles";
 import { setDevPosition, useGeoPermission, useLivePosition } from "@/lib/useLivePosition";
 import { emitPlayEvent, markFirst, playSeen, usePlayBackButton, usePlayMode } from "@/lib/usePlayMode";
@@ -23,6 +22,7 @@ import { usePlayTick } from "@/lib/usePlayTick";
 import { useSession } from "@/lib/useSession";
 import { isTestHost } from "@/lib/testHost";
 import { ensureWelcomeBoxes } from "@/lib/useWelcomeBoxes";
+import { loadDropCards } from "@/lib/cards";
 import Avatar, { type AvatarHandle } from "./Avatar";
 import Crate, { TIER_ART } from "./Crate";
 import Hud, { type HudHandle } from "./Hud";
@@ -228,7 +228,7 @@ export default function PlayLayer({
     onIdle: () => {
       // Reading a hotspot's chat takes no touches, and a hotspot is a room that is always on: it is not idle.
       if (roomRef.current) return;
-      say("Play paused. Tap your avatar to come back.");
+      say("Paused. You're back on the map.");
       exit();
     },
   });
@@ -302,8 +302,8 @@ export default function PlayLayer({
       return;
     }
     let on = true;
-    void Promise.all([loadCollection(userId), loadCardCount()])
-      .then(([rows, cards]) => on && setShelf(rows.length + cards))
+    void loadCollection(userId)
+      .then((rows) => on && setShelf(rows.length))
       .catch(() => {});
     return () => {
       on = false;
@@ -664,8 +664,17 @@ export default function PlayLayer({
         p_code: null,
       });
       if (error || !data) return { ok: false, reason: "error", message: "That didn't open. Try again in a bit." };
-      const r = data as { ok: boolean; reason?: string; reward?: string; xp?: number; distance_m?: number; card?: unknown };
-      if (r.ok) return { ok: true, xp: r.xp ?? 0, title: r.reward, card: toWonCard(r.card) };
+      const r = data as { ok: boolean; reason?: string; reward?: string; xp?: number; distance_m?: number };
+      if (r.ok) {
+        // A box that pays cards gave one inside the claim (cards.sql); the open shows it as the card.
+        const card = (await loadDropCards(box.id)).find((c) => !c.starter);
+        return {
+          ok: true,
+          xp: (r.xp ?? 0) + (card?.xp_bonus ?? 0),
+          title: r.reward,
+          ...(card ? { collectible: { key: card.key, name: card.name, tier: card.tier } } : {}),
+        };
+      }
       const reason = r.reason ?? "error";
       if (GONE.has(reason)) tick.removeBox(box.id);
       if (reason === "need_account") requireAccount("open this box");
@@ -1253,10 +1262,7 @@ export default function PlayLayer({
           origin={opening.origin}
           firstOfDay={opening.firstOfDay}
           xpBefore={xp}
-          onLand={(kind, r) => {
-            credit(kind, r);
-            if (kind === "card" && r.card?.isNew) setShelf((n) => (n === null ? n : n + 1));
-          }}
+          onLand={(kind, r) => credit(kind, r)}
           onDone={(result) => finish(opening, result)}
           onCancel={() => {
             setOpening(null);

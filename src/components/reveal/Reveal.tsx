@@ -7,23 +7,38 @@ import { Share2, X } from "lucide-react";
 import Mascot, { type MascotState } from "@/components/Mascot";
 import Serial from "@/components/me/Serial";
 import { useToast } from "@/lib/store";
-import { artUrl, cardLabel, copyLine, type WonCard } from "@/lib/cards";
 import { haptics } from "@/lib/haptics";
-import { RARITY } from "@/lib/huntItems";
 import { sfx } from "@/lib/sound/sfx";
 import { flyStarsToMe } from "./starFlight";
+import CardFace from "@/components/cards/CardFace";
+import { copyLabel, type DropCard } from "@/lib/cards";
 
 /* eslint-disable @next/next/no-img-element -- collectible art is Hoppaz or partner supplied, sizes unknown */
 
-/** One thing that comes out of the box, face up. A "card" is a deck card: `card` is what the claim answered. */
+/** One thing that comes out of the box, face up. A "card" item is a card from the deck (cards.sql). */
 export type RevealItem = {
   kind: "reward" | "xp" | "collectible" | "card";
   title: string;
   line?: string;
   code?: string;
   art?: string | null;
-  card?: WonCard;
+  card?: DropCard;
 };
+
+/** The deck cards a claim gave, as reveal items: the prize first, then the starters a first card in a set brings. */
+export function cardItems(cards: DropCard[]): RevealItem[] {
+  return cards.map((c) => ({ kind: "card", title: c.name, card: c }));
+}
+
+/**
+ * What a box claim came to, in reveal order. A box that paid cards shows its XP and then each card (its prize line
+ * only names the card prize); any other box shows its reward stub and then the XP, as it always has.
+ */
+export function claimItems(res: { reward?: string; description?: string; code?: string; xp?: number; cards?: DropCard[] }): RevealItem[] {
+  const xp: RevealItem[] = res.xp ? [{ kind: "xp", title: `+${res.xp} XP`, line: "Added to your XP." }] : [];
+  if (res.cards?.length) return [...xp, ...cardItems(res.cards)];
+  return [{ kind: "reward", title: res.reward ?? "Your reward", line: res.description, code: res.code }, ...xp];
+}
 /** What opening the box came to: the things inside, or why it would not open. */
 export type RevealOutcome = { items: RevealItem[] } | { error: string };
 
@@ -53,8 +68,7 @@ const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matc
  * server (open), whichever box you pick, and the others are never opened.
  * The mascot keeps the secret before the reveal and wins after it.
  *
- * Built for partner drops and collectibles now, and deck cards (a box that pays a card shows it face up, NEW on a
- * first copy); the daily box reuses it, with
+ * Built for partner drops and collectibles now; the daily box reuses it, with
  * its own words for the top bar, the last frame and the share line (it is not a
  * drop, and nothing lands on the shelf).
  *
@@ -450,9 +464,20 @@ function Box({
   );
 }
 
-/** One thing out of the box, face up: a ticket stub for a reward, art for a collectible, a big number for XP. `wait` is how long the XP number holds at 0 before it counts up. */
+/** One thing out of the box, face up: a ticket stub for a reward, art for a collectible, a big number for XP, the face for a deck card. `wait` is how long the XP number holds at 0 before it counts up. */
 function PulledCard({ item, wait }: { item: RevealItem; wait: number }) {
-  if (item.kind === "card" && item.card) return <PulledDeckCard card={item.card} />;
+  if (item.kind === "card" && item.card) {
+    const c = item.card;
+    const tag = c.starter ? "STARTER FOR THE SET" : c.new ? "NEW CARD" : "ANOTHER COPY";
+    return (
+      <div className="flex w-[min(80vw,300px)] flex-col items-center">
+        <p className="seclabel mb-2.5">{tag}</p>
+        <CardFace name={c.name} tier={c.tier} setName={c.set_name} cardKey={c.key} copy={copyLabel(c)} size="lg" />
+        <p className="hint mt-3 text-center">{c.fact}</p>
+        {c.xp_bonus > 0 && <p className="mt-1.5 font-mono text-[10.5px] uppercase tracking-[0.1em] text-orange">+{c.xp_bonus} XP for the lucky pull</p>}
+      </div>
+    );
+  }
   if (item.kind === "xp") {
     const xp = /^(\+?)(\d+)\s*XP$/i.exec(item.title);
     return (
@@ -480,43 +505,6 @@ function PulledCard({ item, wait }: { item: RevealItem; wait: number }) {
           <Serial code={item.code} />
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * A deck card out of the box: its own front image in an edge of its rarity colour, NEW stuck on the corner of a first copy,
- * and what this copy was under it. If the image cannot load, a plate with the name and rarity stands in.
- */
-function PulledDeckCard({ card }: { card: WonCard }) {
-  const [broken, setBroken] = useState(false);
-  const color = RARITY[card.rarity].color;
-  const tags = [copyLine(card, card.copyNo), card.lifted ? `Guaranteed ${card.rarity}` : null, card.isNew ? null : "Another copy", card.visited ? "Visited" : null].filter(Boolean);
-  return (
-    <div className="flex flex-col items-center">
-      <div className="relative w-[min(58vw,224px)] overflow-visible" style={{ aspectRatio: "5 / 8" }}>
-        <div
-          className="absolute inset-0 overflow-hidden rounded-[14px] bg-ink-2"
-          style={{ boxShadow: `0 0 0 3px ${color}, 0 0 34px ${color}66` }}
-        >
-          {broken ? (
-            <div className="grid h-full place-content-center gap-2 px-4 text-center">
-              <p className="font-display text-[20px] font-black leading-tight">{card.name}</p>
-              <p className="seclabel" style={{ color }}>
-                {RARITY[card.rarity].label}
-              </p>
-            </div>
-          ) : (
-            <img src={artUrl(card, "front")} alt={cardLabel(card)} draggable={false} decoding="async" onError={() => setBroken(true)} className="h-full w-full object-cover" />
-          )}
-        </div>
-        {card.isNew && (
-          <span className="absolute -left-3 -top-4 -rotate-6 rounded-[6px] bg-orange px-2 py-1 font-mono text-[10px] font-medium tracking-[0.14em] text-brand-ink shadow-chunk-sm">
-            NEW
-          </span>
-        )}
-      </div>
-      {tags.length > 0 && <p className="seclabel mt-3.5 text-center">{tags.join(" · ")}</p>}
     </div>
   );
 }

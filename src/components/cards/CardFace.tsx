@@ -1,197 +1,91 @@
-"use client";
-
-import { useState } from "react";
 import clsx from "clsx";
-import { artUrl, shortDay, thumbSrcSet, type DeckCard } from "@/lib/cards";
-import { RARITY_LOOK, copiesLine } from "@/lib/deck";
-import { haptics } from "@/lib/haptics";
-import { sfx } from "@/lib/sound/sfx";
-import VisitedStamp from "./VisitedStamp";
-import css from "./CardFace.module.css";
-
-/* eslint-disable @next/next/no-img-element -- fixed 720x1152 WebP files from /public/cards: next/image would only re-encode them */
-
-type Props = {
-  card: DeckCard;
-  /** tile: the 180x288 thumbnail, still (the album grid). full: the 720x1152 front, tap to flip to the back. */
-  mode?: "tile" | "full";
-  /** A card you do not hold: a dark silhouette. No image is loaded; the name is drawn only if showName is on. */
-  locked?: boolean;
-  showName?: boolean;
-  /** How many rarities the deck has (catalog.tiers.length): the silhouette draws that many pips, so no tier the deck lacks is hinted at. */
-  tiers?: number;
-  /** A tile's width on screen, for `sizes`: the browser then picks the 180 px or the 360 px thumb. */
-  tileSizes?: string;
-  visited?: boolean;
-  /** The play-day the stamp was made, as 2026-10-09. */
-  visitedOn?: string | null;
-  /** The stamp lands now (a first stamp): it is struck in with the 180ms stamp, not just there. */
-  stampIn?: boolean;
-  /** Your copy number. Drawn on a numbered card only ("NO. 7 OF 100"); a Rare copy has a number but is not numbered. */
-  copyNo?: number | null;
-  /** Copies you hold, shown as "x2" on a tile. */
-  count?: number;
-  /** Controlled flip. Leave out to let the card keep its own side. */
-  flipped?: boolean;
-  onFlip?: (flipped: boolean) => void;
-  /** Load the image now, not when it nears the screen (the card you are looking at). */
-  priority?: boolean;
-  className?: string;
-};
+import { TIER } from "@/components/play/open/tiers";
+import { TIER_LABEL, type CardTier } from "@/lib/cards";
 
 /**
- * One card, drawn the way the deck is: the front and back are the Hoppaz art (WebP, lazy), and what changes from
- * Hopper to Hopper is drawn on top in code: the rarity edge (Rare and Epic glow), your copy number, the Visited
- * stamp. A card you do not hold is a dark silhouette with only its rarity pips showing (one per rarity the deck has).
- *
- * Tapping a full card flips it in 3D (sfx.flip). With reduced motion the flip is a quick fade and the Epic glow
- * holds still.
+ * A card's face, all drawn in code (CARDS.md, "What the front end does"): the
+ * tier frame, the art window, the name, the set, the tier and, on an Epic or
+ * Legendary, the copy number. There is no card art yet, so the art window is a
+ * drawn street grid with the place's pin, steady per card (from its key). The
+ * WANTED ribbon comes with phase B, when a Hopper's shot can win the art.
  */
 export default function CardFace({
-  card,
-  mode = "full",
-  locked = false,
-  showName = false,
-  tiers,
-  tileSizes = "112px",
+  name,
+  tier,
+  setName,
+  cardKey,
+  copy,
   visited = false,
-  visitedOn = null,
-  stampIn = false,
-  copyNo = null,
-  count = 1,
-  flipped,
-  onFlip,
-  priority = false,
+  dim = false,
+  size = "md",
   className,
-}: Props) {
-  const look = RARITY_LOOK[card.rarity];
-  const [own, setOwn] = useState(false);
-  const [seen, setSeen] = useState(false);
-  const side = flipped ?? own;
-  const scene = clsx(css.scene, card.rarity === "rare" && css.rare, card.rarity === "epic" && css.epic, className);
-  const vars = { ["--rim" as string]: look.color, ["--glow" as string]: look.glow } as React.CSSProperties;
-  const eager = priority ? "eager" : "lazy";
-  // A tile sits inside the album's <button>, which may only hold phrasing content: spans there, a div for the full card.
-  const Wrap = mode === "tile" ? "span" : "div";
-
-  if (locked) {
-    return (
-      <Wrap className={scene} style={vars}>
-        <span
-          role="img"
-          aria-label={showName ? `${card.name}, locked ${look.label.toLowerCase()} card` : `Locked ${look.label.toLowerCase()} card from ${card.setName}`}
-          className={css.locked}
-        >
-          <span aria-hidden className={css.pips}>
-            {Array.from({ length: Math.max(tiers ?? look.pips, look.pips) }, (_, i) => (
-              <i key={i} className={clsx(css.pip, i < look.pips && css.pipOn)} />
-            ))}
-          </span>
-          {showName ? (
-            <span aria-hidden className={css.lockedName}>
-              {card.name}
-            </span>
-          ) : (
-            <span aria-hidden className={css.lockedMark}>
-              ?
-            </span>
-          )}
-          <span aria-hidden className={css.lockedFoot}>
-            <span style={{ color: look.onDark }}>{look.label}</span>
-            <span className={css.lockedCopies}>{copiesLine(card)}</span>
-          </span>
-        </span>
-      </Wrap>
-    );
-  }
-
-  const stamp = visited && (
-    <span className={css.stamp}>
-      <span className={clsx("block", stampIn && css.stampIn)}>
-        <VisitedStamp date={visitedOn ? shortDay(visitedOn).toUpperCase() : undefined} dateClassName={css.stampDate} />
-      </span>
-    </span>
-  );
-
-  if (mode === "tile") {
-    return (
-      <Wrap className={scene} style={vars}>
-        <span aria-hidden className={css.halo} />
-        <span className={css.face}>
-          <img
-            src={artUrl(card, "thumb")}
-            srcSet={thumbSrcSet(card)}
-            sizes={tileSizes}
-            alt=""
-            width={180}
-            height={288}
-            loading={eager}
-            decoding="async"
-            draggable={false}
-            className={css.img}
-          />
-          {stamp}
-          <span aria-hidden className={css.edge} />
-          {count > 1 && <span className={css.count}>x{count}</span>}
-        </span>
-      </Wrap>
-    );
-  }
-
-  const flip = () => {
-    const next = !side;
-    if (flipped === undefined) setOwn(next);
-    setSeen(true);
-    onFlip?.(next);
-    haptics.buzz("snap");
-    sfx.flip();
-  };
-  const numbered = card.numbered && copyNo && card.copiesTotal ? { no: copyNo, of: card.copiesTotal } : null;
-
+}: {
+  name: string;
+  tier: CardTier;
+  setName: string;
+  cardKey: string;
+  /** "S1 · 7 of 10" */
+  copy?: string | null;
+  visited?: boolean;
+  /** Not in your album yet: the face greys out. */
+  dim?: boolean;
+  size?: "sm" | "md" | "lg";
+  className?: string;
+}) {
+  const T = TIER[tier];
+  const w = size === "lg" ? "w-[min(78vw,280px)]" : size === "md" ? "w-[220px]" : "w-full";
   return (
-    <div className={scene} style={vars}>
-      <span aria-hidden className={css.halo} />
-      <div className={css.persp}>
-        <button
-          type="button"
-          onClick={flip}
-          data-flipped={side}
-          aria-label={`${card.name}, ${look.label.toLowerCase()} card${visited ? ", visited" : ""}. Showing the ${side ? "back" : "front"}. Tap to flip.`}
-          className={css.card}
-        >
-          <span className={clsx(css.face, css.front)} aria-hidden={side}>
-            <img
-              src={artUrl(card, "front")}
-              alt=""
-              width={720}
-              height={1152}
-              loading={eager}
-              decoding="async"
-              draggable={false}
-              className={css.img}
-              onLoad={() => setSeen(true)}
-            />
-            {numbered && (
-              <span className={css.number}>
-                NO. {numbered.no} OF {numbered.of}
-              </span>
-            )}
-            {stamp}
-            <span aria-hidden className={css.edge} />
+    <div
+      className={clsx("relative overflow-hidden rounded-[14px] border-[3px] bg-[#17120f] p-[7px] text-[#F5EBDD]", w, dim && "opacity-40 grayscale", className)}
+      style={{ borderColor: T.t, boxShadow: dim ? undefined : `0 0 ${tier === "legendary" ? 28 : 16}px ${T.c}55` }}
+    >
+      <div className="relative aspect-[102/96] overflow-hidden rounded-[8px]" style={{ background: T.bg }}>
+        <StreetArt cardKey={cardKey} accent={T.t} />
+        {visited && (
+          <span className="absolute bottom-2 left-2 -rotate-6 rounded-[4px] border-2 border-[#2FD35C] bg-black/60 px-1.5 py-0.5 font-mono text-[9px] font-medium uppercase tracking-[0.12em] text-[#2FD35C]">
+            Visited
           </span>
-          <span className={clsx(css.face, css.back)} aria-hidden={!side}>
-            {/* The back waits for the front (or the first flip), so it never competes with it for the connection. */}
-            {seen && <img src={artUrl(card, "back")} alt="" width={720} height={1152} loading="lazy" decoding="async" draggable={false} className={css.img} />}
-            {numbered && (
-              <span aria-hidden className={css.serial}>
-                <b>{numbered.no}</b>
-                <i>OF {numbered.of} A SEASON</i>
-              </span>
-            )}
-            <span aria-hidden className={css.edge} />
-          </span>
-        </button>
+        )}
       </div>
+      <p className={clsx("mt-2 truncate text-center font-display font-black leading-tight", size === "sm" ? "text-[12px]" : "text-[16px]")}>{name}</p>
+      <p className={clsx("truncate text-center font-mono uppercase tracking-[0.1em] text-[#F5EBDD]/60", size === "sm" ? "text-[8px]" : "text-[9.5px]")}>{setName}</p>
+      <p className={clsx("mt-1 text-center font-mono uppercase tracking-[0.14em]", size === "sm" ? "text-[8px]" : "text-[10px]")} style={{ color: T.t }}>
+        {TIER_LABEL[tier]}
+        {copy ? ` · ${copy.replace(/^S1 · /, "")}` : ""}
+      </p>
     </div>
+  );
+}
+
+/** A steady pseudo-random from the card key, so the same card always draws the same streets. */
+function seeded(key: string) {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619) >>> 0;
+  return () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), 3266489909) >>> 0;
+    return ((h ^= h >>> 16) >>> 0) / 4294967296;
+  };
+}
+
+function StreetArt({ cardKey, accent }: { cardKey: string; accent: string }) {
+  const r = seeded(cardKey);
+  const roads = Array.from({ length: 7 }, () => {
+    const vertical = r() > 0.5;
+    const at = 8 + r() * 84;
+    const bend = (r() - 0.5) * 30;
+    return vertical ? `M${at} -5 Q${at + bend} 50 ${at - bend / 2} 105` : `M-5 ${at} Q50 ${at + bend} 105 ${at - bend / 2}`;
+  });
+  const px = 30 + r() * 40;
+  const py = 34 + r() * 30;
+  return (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" aria-hidden>
+      {roads.map((d, i) => (
+        <path key={i} d={d} fill="none" stroke="#F5EBDD" strokeOpacity={i < 2 ? 0.32 : 0.14} strokeWidth={i < 2 ? 3.2 : 1.6} strokeLinecap="round" />
+      ))}
+      <circle cx={px} cy={py} r="13" fill={accent} opacity=".18" />
+      <path d={`M${px} ${py + 9}c-6-7-9-11-9-15a9 9 0 0 1 18 0c0 4-3 8-9 15z`} fill="#FF4D00" />
+      <circle cx={px} cy={py - 6} r="3.4" fill="#0E0B0A" />
+    </svg>
   );
 }

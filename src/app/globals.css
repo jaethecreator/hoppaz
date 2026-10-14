@@ -227,16 +227,121 @@
 :root:not([data-theme="day"]) .maplibregl-ctrl-group button span {
   filter: invert(1) brightness(1.4);
 }
-/* Phones pinch to zoom; the +/- buttons only earn their space with a mouse. */
+/* Keep explicit zoom controls on phones too; 44px targets are easier than precise pinches. */
 @media (hover: none) and (pointer: coarse) {
-  .maplibregl-ctrl-zoom-in,
-  .maplibregl-ctrl-zoom-out,
-  .maplibregl-ctrl-group:has(.maplibregl-ctrl-zoom-in) {
-    display: none !important;
+  .maplibregl-ctrl-top-right .maplibregl-ctrl-group button {
+    width: 44px;
+    height: 44px;
   }
 }
 .maplibregl-canvas:focus {
   outline: none;
+}
+.hz-map-fallback {
+  z-index: 2;
+  background: rgb(var(--ground));
+  touch-action: pan-x pan-y;
+}
+.hz-map-fallback .leaflet-control-zoom {
+  margin-top: var(--hz-fallback-top) !important;
+  margin-right: 8px !important;
+}
+.hz-map-fallback .leaflet-control-zoom a {
+  width: 44px !important;
+  height: 44px !important;
+  line-height: 44px !important;
+  color: rgb(var(--text)) !important;
+  background: rgb(var(--raised)) !important;
+  border-color: rgb(var(--hairline)) !important;
+}
+.hz-map-fallback .leaflet-control-attribution {
+  color: rgb(var(--text));
+  background: rgb(var(--ground) / 0.82);
+  font-size: 10px;
+}
+.hz-map-fallback .leaflet-control-attribution a {
+  color: rgb(var(--orange));
+}
+.hz-map-fallback .leaflet-tooltip.hz-map-event-label {
+  max-width: 168px;
+  overflow: hidden;
+  padding: 4px 7px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 5px;
+  color: rgb(var(--text));
+  background: rgb(var(--raised) / 0.96);
+  font-family: var(--font-body), sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgb(var(--shadow) / 0.45);
+  pointer-events: none;
+}
+.hz-map-fallback .leaflet-tooltip-top.hz-map-event-label::before {
+  border-top-color: rgb(var(--raised));
+}
+.hz-map-fallback .leaflet-tile-pane {
+  filter: brightness(0.43) saturate(0.72) sepia(0.2) hue-rotate(345deg) contrast(1.16);
+}
+[data-theme="day"] .hz-map-fallback .leaflet-tile-pane {
+  filter: sepia(0.18) saturate(0.72) hue-rotate(345deg) brightness(1.03) contrast(0.95);
+}
+.hz-map-fallback .leaflet-map-pane {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+.hz-map-fallback .leaflet-control-container {
+  position: relative;
+  z-index: 1000;
+}
+.hz-map-fallback .hz-map3d-marker {
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+.hz-map-fallback .hz-map3d-building {
+  position: relative;
+  display: block;
+  width: 32px;
+  height: 40px;
+  filter: drop-shadow(2px 4px 2px rgb(12 9 8 / 45%));
+}
+.hz-map-fallback .hz-map3d-roof {
+  position: absolute;
+  z-index: 2;
+  top: 1px;
+  left: 7px;
+  width: 19px;
+  height: 14px;
+  border: 2px solid #fff4e5;
+  background: #FF4D00;
+  clip-path: polygon(50% 0, 100% 45%, 50% 100%, 0 45%);
+}
+.hz-map-fallback .hz-map3d-walls {
+  position: absolute;
+  top: 10px;
+  left: 9px;
+  width: 16px;
+  height: 24px;
+  background: linear-gradient(90deg, #B83600 0 50%, #FF4D00 50% 100%);
+  clip-path: polygon(0 0, 50% 18%, 100% 0, 100% 77%, 50% 100%, 0 77%);
+}
+.hz-map-fallback .hz-map3d-building.is-selected .hz-map3d-roof {
+  background: rgb(var(--violet));
+}
+.hz-map-fallback .hz-map3d-building.is-selected .hz-map3d-walls {
+  background: linear-gradient(90deg, rgb(var(--violet) / 0.72) 0 50%, rgb(var(--violet)) 50% 100%);
+}
+.hz-map-fallback::after {
+  position: absolute;
+  z-index: 450;
+  inset: auto 0 0;
+  height: 15%;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(0deg, rgb(var(--shadow) / 0.18), transparent);
 }
 /* Zoom buttons sit just under the page's top chrome (the night rail) */
 .maplibregl-ctrl-top-right {

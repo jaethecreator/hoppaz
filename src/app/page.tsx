@@ -33,7 +33,6 @@ import type { HopStop } from "@/lib/types";
 import { busPosition } from "@/lib/busPosition";
 import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
-import NextBar from "@/components/map-chrome/NextBar";
 import { NEXT_COUNT, nextEvents } from "@/lib/filters";
 import { usePlayMode } from "@/lib/usePlayMode";
 import { introEvent, introPending, registerIntroAction } from "@/lib/intro";
@@ -265,6 +264,7 @@ export default function MapPage() {
     setMap(m);
     introEvent("map_ready");
   }, []);
+  const onMapUnavailable = useCallback(() => setMap(null), []);
 
   // Paz's "Let's find you": what "Use my location" does in the location sheet, without opening the sheet, so one
   // tap asks the browser, sets the fix (the map flies to the Hopper) and tells the tour what the answer was.
@@ -373,6 +373,7 @@ export default function MapPage() {
         swoop={mounted && seenTitle}
         mode={playing ? "play" : "events"}
         onMapReady={onMapReady}
+        onMapUnavailable={onMapUnavailable}
         sidePanel={!!event}
         allHot={mode === "next"}
         navRef={navRef}
@@ -440,23 +441,13 @@ export default function MapPage() {
       {/* ----------------------------------------------------------- bottom -- */}
       {mounted && !event && !playing && (
         <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3.5 pb-2.5">
-          <div className="mx-auto flex max-w-[560px] flex-col items-end gap-2.5">
-            <Link href="/drop" aria-label="Post a flyer" className="btn pointer-events-auto px-3.5 py-2.5">
+          <div className="mx-auto flex max-w-[560px] items-end gap-2">
+            <Link href="/drop" aria-label="Post a flyer" title="Post a flyer" className="btn pointer-events-auto grid h-11 w-11 flex-none place-items-center p-0">
               <Plus size={16} strokeWidth={3} aria-hidden />
-              Post a flyer
             </Link>
-            {mode === "next" ? (
-              <NextBar
-                className="pointer-events-auto w-full"
-                count={next.list.length}
-                from={next.from}
-                to={next.to}
-                hasFix={!!fix}
-                onLocate={() => setPicking(true)}
-              />
-            ) : slot && (
+            {mode !== "next" && slot && (
               <TimeScrubber
-                className="pointer-events-auto w-full"
+                className="pointer-events-auto min-w-0 flex-1"
                 stops={stops}
                 index={stopIdx}
                 onIndex={onStop}

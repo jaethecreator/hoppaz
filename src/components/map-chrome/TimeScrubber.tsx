@@ -76,7 +76,7 @@ export default function TimeScrubber({
   return (
     <section
       aria-label="Time on the map"
-      className={clsx("relative rounded-hz border border-line bg-ink-2/95 px-3.5 pb-1.5 pt-2.5 backdrop-blur", className)}
+      className={clsx("relative rounded-hz border border-line bg-ink-2/95 px-3 pb-1 pt-2 backdrop-blur", className)}
     >
       {sample && (
         <span className="absolute -top-[7px] left-3.5 bg-ink-2 px-1.5 font-mono text-[10px] leading-none tracking-[0.1em] text-dim">
@@ -84,12 +84,12 @@ export default function TimeScrubber({
         </span>
       )}
       <div className="flex items-end gap-3">
-        <span aria-hidden className="num min-w-[3.4ch] text-[32px] leading-none">
+        <span aria-hidden className="num min-w-[3.4ch] text-[27px] leading-none">
           {big}
         </span>
         <div className="min-w-0 flex-1 pb-px">
           <p className="seclabel truncate">{caption}</p>
-          <p className={clsx("mt-0.5 truncate font-body text-[13px] leading-snug", dimLine ? "text-dim" : "text-cream")}>{line}</p>
+          <p className={clsx("mt-0.5 truncate font-body text-[12px] leading-snug", dimLine ? "text-dim" : "text-cream")}>{line}</p>
         </div>
       </div>
 
@@ -113,22 +113,22 @@ export default function TimeScrubber({
         onPointerMove={(e) => dragging.current && fromX(e.clientX)}
         onPointerUp={() => (dragging.current = false)}
         onPointerCancel={() => (dragging.current = false)}
-        className="relative mx-3 mt-2 h-[72px] cursor-pointer touch-none select-none outline-none focus-visible:ring-2 focus-visible:ring-orange"
+        className="relative mx-2 mt-1 h-[56px] cursor-pointer touch-none select-none outline-none focus-visible:ring-2 focus-visible:ring-orange"
       >
-        <div aria-hidden className="absolute inset-x-0 top-0 flex h-6 items-end justify-between">
+        <div aria-hidden className="absolute inset-x-0 top-0 flex h-4 items-end justify-between">
           {strengths.map((s, i) => (
             <i
               key={i}
               className={clsx("block w-[3px] rounded-[1px]", i === index ? "bg-cream" : "bg-cream/25")}
-              style={{ height: Math.max(2, Math.round(s * 24)) }}
+              style={{ height: Math.max(2, Math.round(s * 16)) }}
             />
           ))}
         </div>
-        <div aria-hidden className="absolute inset-x-0 top-[30px] h-[3px] rounded-full bg-line" />
-        <div aria-hidden className="absolute left-0 top-[30px] h-[3px] rounded-full bg-cream/40" style={{ width: `${pct(index)}%` }} />
+        <div aria-hidden className="absolute inset-x-0 top-[21px] h-[3px] rounded-full bg-line" />
+        <div aria-hidden className="absolute left-0 top-[21px] h-[3px] rounded-full bg-cream/40" style={{ width: `${pct(index)}%` }} />
         <div
           aria-hidden
-          className="absolute top-[19px] h-6 w-[14px] -translate-x-1/2 rounded-hz bg-orange shadow-chunk-sm"
+          className="absolute top-[10px] h-6 w-[14px] -translate-x-1/2 rounded-hz bg-orange shadow-chunk-sm"
           style={{ left: `${pct(index)}%` }}
         />
         {/* Printed times. They sit inside the slider on purpose: a tap anywhere on a label is a tap on
@@ -138,7 +138,7 @@ export default function TimeScrubber({
             key={t.i}
             aria-hidden
             className={clsx(
-              "pointer-events-none absolute top-11 flex h-7 -translate-x-1/2 items-center font-mono text-[10px] tracking-[0.08em]",
+              "pointer-events-none absolute top-[30px] flex h-6 -translate-x-1/2 items-center font-mono text-[10px] tracking-[0.08em]",
               t.i === index ? "text-cream" : "text-dim"
             )}
             style={{ left: `${pct(t.i)}%` }}

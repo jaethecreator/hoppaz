@@ -41,9 +41,9 @@ Which step shows is derived, never stored: the first step that applies to this H
 | 8 | `spawns` | Boxes drop all day and stay open a while (no number: the spawn rules set the life, staff tune it), wave, vibe, link up | Play | button |
 | 9 | `alerts` | Want a ping? (iPhone Safari: no account yet, sign up first; then the two taps; alerts are asked in the installed app. iPhone in-app browser such as Instagram: "Open me in Safari", then Got it) | target `alerts` | alerts on or refused, or already granted, or the Hopper said they added it |
 | 10 | `leave_play` | Back to the street | target `play-exit` | Play closed |
-| 11 | `deck_go` | Tap Today | target `today-tab` | the deck is on screen |
+| 11 | `deck_go` | Tap Events | target `today-tab` (the EVENTS tab) | the deck is on screen |
 | 12 | `deck` | Slide and tap (compact Paz, Today keeps room for the card) | route `/discover`, target `deck` | an event opened |
-| 13 | `chat` | Every event has a chat (compact Paz, so the event sheet stays readable) | target `event-chat` on screen | chat opened |
+| 13 | `chat` | Every event has a room; everyone going is in it (compact Paz, so the event sheet stays readable) | target `event-chat` on screen | chat opened |
 | 14 | `crew_go` | Tap Crew | target `crew-tab` | Crew on screen |
 | 15 | `crew` | Crew up: how crews work | route `/crew` | button |
 | 16 | `me_go` | Tap Me | target `me-tab` | Me on screen |

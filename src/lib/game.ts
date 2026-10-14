@@ -3,6 +3,7 @@
 import { NEED_ACCOUNT, requireAccount } from "./accountGate";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabase } from "./supabase/client";
+import { loadDropCards } from "./cards";
 
 export type Quest = {
   id: string;
@@ -53,6 +54,8 @@ export type CrewGroup = {
   visibility: "open" | "private";
   invite_code: string;
   created_by: string;
+  /** A brand crew Hoppaz has checked (crews.verified, staff only). Missing on a database without crew_rooms.sql. */
+  verified?: boolean;
   crew_moves?: CrewMove[];
 };
 export type CrewMove = {
@@ -285,8 +288,9 @@ export function useGameDrops(eventId?: string, opts: { staffOnly?: boolean } = {
             )[r.reason ?? ""] ?? "COULD NOT CLAIM",
         };
       }
-      await reload();
-      return { reward: r.reward, description: r.description, code: r.code, xp: r.xp };
+      // A box that pays cards gave them inside the claim (cards.sql): ask which, for the reveal.
+      const [cards] = await Promise.all([loadDropCards(drop.id), reload()]);
+      return { reward: r.reward, description: r.description, code: r.code, xp: r.xp, cards };
     },
     [reload]
   );
@@ -363,15 +367,19 @@ export function useGroups(userId: string | null) {
   const reload = useCallback(async () => {
     const sb = getSupabase();
     if (!sb || !userId) return;
+    // Every column (*), so verified comes along where crew_rooms.sql has added it and nothing breaks where it has not.
     const [{ data }, { data: open }] = await Promise.all([
       sb
         .from("crew_members")
-        .select("crew:crews!inner(id,name,visibility,invite_code,created_by)")
+        .select("crew:crews!inner(*)")
         .eq("user_id", userId),
-      sb.from("crews").select("id,name,visibility,invite_code,created_by").eq("visibility", "open").limit(50),
+      sb.from("crews").select("*").eq("visibility", "open").limit(50),
     ]);
     const list = ((data ?? []) as unknown as { crew: CrewGroup }[]).map((x) => x.crew).filter(Boolean);
-    setOpenGroups(((open ?? []) as CrewGroup[]).filter((g) => !list.some((m) => m.id === g.id)));
+    // Verified brand crews first, in both lists.
+    const verifiedFirst = (a: CrewGroup, b: CrewGroup) => Number(!!b.verified) - Number(!!a.verified);
+    list.sort(verifiedFirst);
+    setOpenGroups(((open ?? []) as CrewGroup[]).filter((g) => !list.some((m) => m.id === g.id)).sort(verifiedFirst));
     if (list.length) {
       const { data: m } = await sb
         .from("crew_moves")

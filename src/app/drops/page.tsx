@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Camera, Lock, MapPin } from "lucide-react";
 import QrScanner from "@/components/QrScanner";
-import Reveal, { type RevealItem, type RevealOutcome } from "@/components/reveal/Reveal";
+import type { DropCard } from "@/lib/cards";
+import Reveal, { claimItems, type RevealOutcome } from "@/components/reveal/Reveal";
 import { sentence } from "@/components/event/copy";
 import PerforatedStub from "@/components/me/PerforatedStub";
 import Serial from "@/components/me/Serial";
@@ -18,13 +19,13 @@ import { useHoppaz, useToast } from "@/lib/store";
 import { useGameDrops, type GameDrop } from "@/lib/game";
 import { loadDropReceipts } from "@/lib/useCollectibles";
 
-type Reveal = { reward?: string; description?: string; code?: string; xp?: number };
+type Reveal = { reward?: string; description?: string; code?: string; xp?: number; cards?: DropCard[] };
 
 const HOW: Record<GameDrop["claim_method"], string> = {
   proximity: "Claim it at the venue.",
   qr: "Scan the venue code to claim.",
   either: "Claim at the venue, or scan its code.",
-  avatar: "Send your avatar to open it, in Play.",
+  avatar: "A street box.",
 };
 
 /**
@@ -86,9 +87,7 @@ export default function DropsPage() {
     if (result.error) return { error: sentence(result.error) };
     setRevealed((r) => ({ ...r, [d.id]: result }));
     setJustNow((c) => new Set(c).add(d.id));
-    const items: RevealItem[] = [{ kind: "reward", title: result.reward ?? "Your reward", line: result.description, code: result.code }];
-    if (result.xp) items.push({ kind: "xp", title: `+${result.xp} XP`, line: "Added to your XP." });
-    return { items };
+    return { items: claimItems(result) };
   };
 
   const card = (d: GameDrop, phase: "open" | "sealed") => {
@@ -145,7 +144,7 @@ export default function DropsPage() {
               {!!got.xp && <p className="mt-3 font-mono text-[10.5px] font-medium tracking-[0.08em] text-dim">+{got.xp} XP</p>}
             </div>
           ) : done ? (
-            <Link href="/collection?tab=shelf" className="btn btn-ghost w-full">
+            <Link href="/collection" className="btn btn-ghost w-full">
               SEE IT ON YOUR SHELF
             </Link>
           ) : (

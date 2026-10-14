@@ -48,7 +48,7 @@ async function parseRule(sb:SupabaseClient,b:Record<string,unknown>):Promise<{ro
   const rewards:Record<string,unknown>[]=[];
   for(const raw of b.rewards){
     const r=(raw&&typeof raw==="object"?raw:{}) as Record<string,unknown>;
-    const type=String(r.type);if(!["xp","badge","collectible"].includes(type))return {error:"A street box can pay XP, a badge or a collectible"};
+    const type=String(r.type);if(!["xp","badge","collectible","card"].includes(type))return {error:"A street box can pay XP, a badge, a collectible or a card"};
     const title=String(r.title??"").trim();if(!title||title.length>100)return {error:"Every reward needs a title (100 characters max)"};
     const xp=r.xp_amount==null||r.xp_amount===""?0:whole(r.xp_amount,0,10000);if(xp===null)return {error:"XP amount: 0 to 10000"};
     if(type==="xp"&&xp<1)return {error:"An XP reward needs an XP amount"};
@@ -58,6 +58,8 @@ async function parseRule(sb:SupabaseClient,b:Record<string,unknown>):Promise<{ro
     if(r.quantity!=null&&r.quantity!==""){const q=whole(r.quantity,1,100000);if(q===null)return {error:"Reward stock: 1 to 100000"};item.quantity=q;}
     if(type==="badge"){const key=String(r.badge_key??"").trim();if(!/^[a-z0-9][a-z0-9_-]{0,59}$/i.test(key))return {error:"A badge reward needs a badge key"};item.badge_key=key;}
     if(type==="collectible"){const key=String(r.collectible_key??"").trim();if(!/^[a-z0-9][a-z0-9_-]{0,59}$/i.test(key))return {error:"A collectible reward needs a collectible key"};item.collectible_key=key;}
+    // a card prize (cards.sql): the box pays a deck card of this tier, and its XP is that tier's
+    if(type==="card"){const tier=String(r.card_tier??"");if(!["common","rare","epic","legendary"].includes(tier))return {error:"A card reward needs a tier: common, rare, epic or legendary"};item.card_tier=tier;}
     rewards.push(item);
   }
   // spawn_boxes quietly skips rewards it cannot pay, so refuse unknown keys here.

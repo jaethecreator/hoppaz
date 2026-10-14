@@ -129,7 +129,9 @@ begin
     return exists (select 1 from event_group_members
                     where user_id = p_user and event_id::text = substr(p_channel, 7) and status = 'joined');
   elsif exists (select 1 from events where id::text = p_channel) then
-    return exists (select 1 from checkins where user_id = p_user and event_id::text = p_channel);
+    -- An event room is for everyone going (WE OUTSIDE / I'M GOING) as well as everyone who checked in.
+    return exists (select 1 from checkins where user_id = p_user and event_id::text = p_channel)
+        or exists (select 1 from swipes where user_id = p_user and event_id::text = p_channel and decision = 'in');
   elsif p_channel like 'move:%' then
     -- A crew move's chat: everyone in the crew who said I'M IN.
     return exists (select 1 from crew_move_rsvps
@@ -583,4 +585,14 @@ begin
     execute format('create trigger %I before insert on public.%I for each row execute function public.require_account_row()',
                    t || '_needs_account', t);
   end loop;
+end $$;
+
+-- This file has just put back the plain chat functions (stamp_message, in_room and
+-- the rest), without their hotspot branch. On a database that has hotspots, every
+-- hotspot message is now refused (not_at_event) until hotspots.sql runs again.
+do $$
+begin
+  if to_regclass('public.hotspots') is not null then
+    raise warning 'Hotspots are installed: run supabase/hotspots.sql again now, or hotspot chat stops working.';
+  end if;
 end $$;

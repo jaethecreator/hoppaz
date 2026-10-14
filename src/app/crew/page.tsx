@@ -18,6 +18,7 @@ import { useLinger } from "@/components/chat/useLinger";
 import { useGroups } from "@/lib/game";
 import { useEvents } from "@/lib/useEvents";
 import { useTheme } from "@/lib/useTheme";
+import VerifiedBadge from "@/components/VerifiedBadge";
 import CrewPanel from "./CrewPanel";
 import { introEvent } from "@/lib/intro";
 
@@ -98,7 +99,7 @@ function CrewPagePage() {
           </span>
         </div>
         {chats.length === 0 && (
-          <p className="hint mt-2">Say you&apos;re going to an event and you&apos;re invited to its group chat. Unlike the event room, it stays after the night.</p>
+          <p className="hint mt-2">Say WE OUTSIDE and you&apos;re invited to its group chat. The event room shuts three days after; this one stays.</p>
         )}
         {invites.map((g) => (
           <div key={g.event_id} className="mt-3 flex items-center gap-2 border-t border-line pt-3">
@@ -144,7 +145,7 @@ function CrewPagePage() {
           <div className="mt-3 flex flex-col items-center px-3 py-3 text-center">
             <Mascot state="oya" size={104} edge={theme === "day" ? "ink" : "ground"} label="The Hoppaz mascot, calling you over" />
             <p className="mt-3 font-display text-[19px] font-black leading-tight">No crews yet.</p>
-            <p className="hint mt-1 max-w-[17rem]">A crew is the people you actually go out with. Start one below, or join with a code.</p>
+            <p className="hint mt-1 max-w-[17rem]">A crew is your people, with a room of its own. Start one below, or join with a code.</p>
           </div>
         )}
 
@@ -184,12 +185,15 @@ function CrewPagePage() {
             <p className="seclabel mb-2 mt-4">OPEN CREWS</p>
             {openGroups.map((g) => (
               <div key={g.id} className="flex items-center gap-2 border-t border-line py-2">
-                <span className="min-w-0 flex-1 truncate font-display text-[15px] font-semibold">{g.name}</span>
+                <Link href={`/crew/${g.id}`} className="flex min-h-[44px] min-w-0 flex-1 items-center gap-1.5">
+                  <span className="min-w-0 truncate font-display text-[15px] font-semibold">{g.name}</span>
+                  {g.verified && <VerifiedBadge size={15} />}
+                </Link>
                 <button
                   className="btn btn-ghost flex-none px-4"
                   onClick={async () => {
                     const ok = await joinGroup(g.id);
-                    say(ok ? "You're in the crew." : "Couldn't join. Try again.", ok ? "ok" : "error");
+                    say(ok ? "You're in the crew. Tap ENTER CREW ROOM to walk in." : "Couldn't join. Try again.", ok ? "ok" : "error");
                   }}
                 >
                   JOIN

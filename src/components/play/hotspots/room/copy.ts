@@ -34,7 +34,7 @@ export function closedCopy(reason: string, place: string): Closed {
     case "not_found":
       return { title: "No such hotspot", body: "That one is not on the map any more." };
     case "elsewhere":
-      return { title: "You moved on", body: "Your avatar is in another hotspot, on another screen. One avatar, one place." };
+      return { title: "You moved on", body: "You are in another hotspot, on another screen. One place at a time." };
     case "no_session":
       return { title: "One moment", body: "Still connecting. Try again.", retry: true };
     default:

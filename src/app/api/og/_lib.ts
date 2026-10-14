@@ -52,6 +52,33 @@ export async function loadShareEvent(id: string): Promise<ShareEvent | null> {
   return null;
 }
 
+/** What a crew invite card shows (crew_card() in supabase/crew_rooms.sql, by invite code). */
+export type ShareCrew = { name: string; brand: string; verified: boolean; members: number; in_room: number };
+
+/**
+ * A crew by its invite code, or null (unknown or replaced code). Read with the public key: crew_card() shows a crew
+ * to anyone holding its code, and nothing more than the invite page does.
+ */
+export async function loadShareCrew(code: string): Promise<ShareCrew | null> {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!base || !key || !/^[0-9a-z]{4,32}$/i.test(code)) return null;
+  try {
+    const res = await fetch(`${base}/rest/v1/rpc/crew_card`, {
+      method: "POST",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_code: code }),
+      next: { revalidate: 60 },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    const crew = (await res.json()) as ShareCrew | null;
+    return crew?.name ? crew : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Changes whenever something the card shows changes, so a chat app that cached the old picture fetches the new one. */
 export function cardVersion(e: ShareEvent) {
   let h = 2166136261;

@@ -50,6 +50,32 @@ export async function logIn(email: string, password: string): Promise<string | n
   return /invalid/i.test(error.message) ? "Wrong email or password" : error.message;
 }
 
+/** Start Google OAuth, linking a guest during account creation so their Hoppaz progress stays attached. */
+export async function continueWithGoogle(next: string, linkGuest: boolean): Promise<string | null> {
+  const sb = getSupabase();
+  if (!sb) return "Not connected";
+  const returnTo = next.startsWith("/") && !next.startsWith("//") ? next : "/me";
+  // Pin production OAuth callbacks to the canonical site even when sign-in is
+  // started from a preview URL or an installed app with an unexpected origin.
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || window.location.origin;
+  const callback = new URL("/auth/callback", siteUrl);
+  callback.searchParams.set("next", returnTo);
+  const redirectTo = callback.toString();
+  const { data, error } = await sb.auth.getUser();
+  if (error) return error.message;
+  const options = { redirectTo };
+  const result = linkGuest && data.user?.is_anonymous
+    ? await sb.auth.linkIdentity({ provider: "google", options })
+    : await sb.auth.signInWithOAuth({ provider: "google", options });
+  if (result.error && /unsupported provider|provider.*not enabled/i.test(result.error.message)) {
+    return "Google sign-in is not configured for this Hoppaz project yet. An admin needs to enable Google and add its OAuth Client ID and Secret in Supabase Authentication settings.";
+  }
+  if (result.error && /manual.*link.*disabled/i.test(result.error.message)) {
+    return "Google sign-up is not enabled yet. The Hoppaz admin needs to enable manual identity linking in Supabase. You can use email sign-up for now.";
+  }
+  return result.error?.message ?? null;
+}
+
 export async function logOut() {
   const sb = getSupabase();
   await sb?.auth.signOut();

@@ -14,7 +14,7 @@ const DEVICES = [
 
 const PAGES = [
   ["Map", "/"],
-  ["Today", "/discover"],
+  ["Events", "/discover"],
   ["Crew", "/crew"],
   ["Chat", "/chat"],
   ["Me", "/me"],

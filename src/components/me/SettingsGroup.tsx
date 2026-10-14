@@ -105,7 +105,7 @@ function SoundRows() {
             ? muted ? "No music, and Sound is off too." : "No music. You still hear the sounds."
             : muted
               ? "Music is on, but Sound is off, so you hear none."
-              : "You hear soft music in Play, Today, Crew and Me. Quieter from 11pm to 7am."
+              : "You hear soft music in Events, Crew, Me and crew rooms. Quieter from 11pm to 7am."
         }
         onToggle={() => music.setOn(!tunes)}
       />
@@ -207,8 +207,8 @@ function SpawnAlerts() {
   const live = on && !!push?.subscribed;
   let line: string;
   if (level === null) line = "";
-  else if (level === "off") line = "No alerts. You still see spots on the map when you look.";
-  else if (live) line = `${level === "few" ? "About 3 a day" : "Every spot near you"}, even with the app closed. Nothing between 11pm and 8am.`;
+  else if (level === "off") line = "No alerts. Your phone stays quiet.";
+  else if (live) line = `${level === "few" ? "About 3 a day" : "Every spot near you"}, even with the app closed. Nothing between 11pm and 7am.`;
   else if (problem) line = WHY[problem];
   else if (push?.support === "needs-install") line = WHY["needs-install"];
   else if (push?.permission === "denied") line = WHY.denied;

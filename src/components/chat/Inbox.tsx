@@ -43,7 +43,7 @@ export default function Inbox({
       )}
       <p className="seclabel mb-2 mt-4">Your chats</p>
       {dms.length === 0 ? (
-        <p className="hint">Wave at someone at the same party or in one of your group chats. If they wave back, your private chat opens.</p>
+        <p className="hint">Wave at someone in an event room or one of your group chats. If they wave back, your private chat opens.</p>
       ) : (
         dms.map((d) => (
           <Link href={`/chat/dm/${d.id}`} key={d.id} className="card mb-2 flex items-center gap-3 py-3">

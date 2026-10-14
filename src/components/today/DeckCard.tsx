@@ -38,6 +38,7 @@ const NOTCH = { ["--notch-y" as string]: `calc(100% - ${FOOT}px)` } as React.CSS
  */
 function DeckCard({
   event,
+  distance,
   now,
   count,
   going,
@@ -50,6 +51,7 @@ function DeckCard({
   onGoing,
 }: {
   event: EventRow;
+  distance: string | null;
   now: number;
   /** The going count to print: the loaded number plus your own tap. */
   count: number;
@@ -117,6 +119,7 @@ function DeckCard({
                 <path d="M12 2.5a7 7 0 00-7 7c0 5 7 12 7 12s7-7 7-12a7 7 0 00-7-7zm0 9.6a2.6 2.6 0 110-5.2 2.6 2.6 0 010 5.2z" />
               </svg>
               <span>{where}</span>
+              {distance && <span className={m.distance}>{distance}</span>}
             </span>
             <span className={m.going}>
               {ended ? "ENDED" : lead ? "UNCONFIRMED" : count > 0 ? <><b>{count}</b> GOING</> : "BE THE FIRST"}

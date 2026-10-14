@@ -1,0 +1,99 @@
+{
+  "note": "A SAMPLE deck for local and staging databases, so boxes have cards to pay while the real deck\n(the 287 researched cards) is prepared. Not for production: these cards are marked signed off\nonly so they can drop in a test. The points are approximate; check each one before any card goes live.",
+  "sets": [
+    { "key": "lagos-island", "name": "Lagos Island", "title": "Island Local", "kind": "council", "live": true },
+    { "key": "eti-osa", "name": "Eti-Osa", "title": "Eti-Osa Local", "kind": "council", "live": true },
+    { "key": "surulere", "name": "Surulere", "title": "Surulere Local", "kind": "council", "live": true },
+    { "key": "ikeja", "name": "Ikeja", "title": "Ikeja Local", "kind": "council", "live": true },
+    { "key": "yaba", "name": "Yaba", "title": "Yaba Local", "kind": "council", "live": true },
+    { "key": "music", "name": "Music", "title": "Music Head", "kind": "city", "live": true },
+    { "key": "unilag", "name": "UNILAG", "title": "Akokite", "kind": "campus", "live": true }
+  ],
+  "cards": [
+    {
+      "key": "balogun-market", "set": "lagos-island", "name": "Balogun Market", "tier": "common",
+      "fact": "One of the biggest markets in Lagos, spread across the streets around Balogun Street on Lagos Island, known for fabrics.",
+      "fact_source": "Wikipedia, Balogun Market", "question": "What is the best thing you ever bought at Balogun?",
+      "visit_tip": "Go early on a weekday, before the crowd and the heat.", "lat": 6.4566, "lng": 3.3879, "radius_m": 300,
+      "status": "live", "signed_off": true
+    },
+    {
+      "key": "freedom-park", "set": "lagos-island", "name": "Freedom Park", "tier": "common",
+      "fact": "A park and arts venue on Broad Street, built on the site of the colonial-era Broad Street Prison.",
+      "fact_source": "Wikipedia, Freedom Park, Lagos", "question": "Which show at Freedom Park would you take a friend to?",
+      "visit_tip": "Weekend evenings often have live music.", "lat": 6.4513, "lng": 3.3928, "radius_m": 120,
+      "status": "live", "signed_off": true
+    },
+    {
+      "key": "tafawa-balewa-square", "set": "lagos-island", "name": "Tafawa Balewa Square", "tier": "rare",
+      "tier_reason": "A historic landmark", "fact": "It stands on the old Lagos Racecourse, where Nigeria's independence was celebrated on 1 October 1960.",
+      "fact_source": "Wikipedia, Tafawa Balewa Square", "question": "What do you think the crowd felt on 1 October 1960?",
+      "lat": 6.4498, "lng": 3.3963, "radius_m": 250, "status": "live", "signed_off": true
+    },
+    {
+      "key": "nike-art-gallery", "set": "eti-osa", "name": "Nike Art Gallery", "tier": "common",
+      "fact": "A five-storey gallery in Lekki founded by the artist Nike Davies-Okundaye, holding thousands of works by Nigerian artists.",
+      "fact_source": "Wikipedia, Nike Art Gallery", "question": "Which piece would you hang in your room?",
+      "visit_tip": "Entry is free; give yourself an hour for all five floors.", "lat": 6.4447, "lng": 3.4868, "radius_m": 100,
+      "status": "live", "signed_off": true
+    },
+    {
+      "key": "lekki-conservation-centre", "set": "eti-osa", "name": "Lekki Conservation Centre", "tier": "rare",
+      "tier_reason": "A historic institution", "fact": "A nature reserve run by the Nigerian Conservation Foundation, with one of the longest canopy walkways in Africa.",
+      "fact_source": "Wikipedia, Lekki Conservation Centre", "question": "Would you do the canopy walk, or watch from the ground?",
+      "visit_tip": "Wear trainers and bring water for the walkway.", "lat": 6.4391, "lng": 3.5357, "radius_m": 400,
+      "status": "live", "signed_off": true
+    },
+    {
+      "key": "national-stadium", "set": "surulere", "name": "National Stadium", "tier": "rare",
+      "tier_reason": "A historic landmark", "fact": "The National Stadium in Surulere opened in 1972 and hosted the 2nd All-Africa Games in 1973.",
+      "fact_source": "Wikipedia, National Stadium, Lagos", "question": "What match would you bring back to the National Stadium?",
+      "lat": 6.4986, "lng": 3.3655, "radius_m": 400, "status": "live", "signed_off": true
+    },
+    {
+      "key": "national-theatre", "set": "surulere", "name": "National Theatre", "tier": "rare",
+      "tier_reason": "A historic landmark", "fact": "The National Arts Theatre in Iganmu opened in 1976, built to host FESTAC '77.",
+      "fact_source": "Wikipedia, National Theatre, Lagos", "question": "What would you stage in the main hall?",
+      "lat": 6.4757, "lng": 3.3712, "radius_m": 300, "status": "live", "signed_off": true
+    },
+    {
+      "key": "festac-77", "set": "surulere", "name": "FESTAC '77", "tier": "epic",
+      "tier_reason": "A major festival", "fact": "The Second World Black and African Festival of Arts and Culture, held in Lagos in 1977.",
+      "fact_source": "Wikipedia, FESTAC 77", "question": "If FESTAC came back this year, who should headline?",
+      "lat": 6.4752, "lng": 3.3712, "radius_m": 300, "status": "live", "signed_off": true
+    },
+    {
+      "key": "computer-village", "set": "ikeja", "name": "Computer Village", "tier": "common",
+      "fact": "One of the biggest phone and computer markets in Africa, in the streets around Otigba Street in Ikeja.",
+      "fact_source": "Wikipedia, Computer Village", "question": "What is the most Computer Village thing that has happened to you?",
+      "visit_tip": "Know the price before you go, and test before you pay.", "lat": 6.5965, "lng": 3.3421, "radius_m": 300,
+      "status": "live", "signed_off": true
+    },
+    {
+      "key": "tejuosho-market", "set": "yaba", "name": "Tejuosho Market", "tier": "common",
+      "fact": "One of the main markets of Yaba, on the mainland.",
+      "fact_source": "Wikipedia, Yaba, Lagos", "question": "What do you always buy in Yaba?",
+      "lat": 6.5072, "lng": 3.3701, "radius_m": 250, "status": "live", "signed_off": true
+    },
+    {
+      "key": "yabatech", "set": "yaba", "name": "Yaba College of Technology", "tier": "rare",
+      "tier_reason": "A historic institution", "fact": "Founded in 1947, it grew out of Yaba Higher College (1932), the first higher education institution in Nigeria.",
+      "fact_source": "Wikipedia, Yaba College of Technology", "question": "Who is the most famous Yabatech graduate you know?",
+      "lat": 6.5187, "lng": 3.3726, "radius_m": 300, "status": "live", "signed_off": true
+    },
+    {
+      "key": "unilag", "set": "unilag", "name": "University of Lagos", "tier": "rare",
+      "tier_reason": "A historic institution", "fact": "The University of Lagos, at Akoka, was founded in 1962.",
+      "fact_source": "Wikipedia, University of Lagos", "question": "What is the best spot on campus?",
+      "lat": 6.5158, "lng": 3.3897, "radius_m": 500, "status": "live", "signed_off": true
+    },
+    {
+      "key": "fela", "set": "music", "name": "Fela Anikulapo-Kuti", "tier": "legendary", "person": true,
+      "tier_reason": "Pioneer: founded Afrobeat", "known_for": "Afrobeat",
+      "fact": "Fela Anikulapo-Kuti pioneered Afrobeat in Lagos in the late 1960s and the 1970s.",
+      "fact_source": "Wikipedia, Fela Kuti", "question": "Which Fela song would you play first?",
+      "visit_tip": "The card sits at the Kalakuta Republic Museum, his old home in Ikeja.", "lat": 6.6009, "lng": 3.3486, "radius_m": 150,
+      "status": "live", "signed_off": true
+    }
+  ]
+}

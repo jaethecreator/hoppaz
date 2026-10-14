@@ -4,7 +4,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
-import { Copy, MapPin, MessageSquare } from "lucide-react";
+import { Copy, DoorOpen, MapPin, MessageSquare } from "lucide-react";
+import VerifiedBadge from "@/components/VerifiedBadge";
 import { useToast } from "@/lib/store";
 import { dayLabel } from "@/lib/filters";
 import { clockShort } from "@/lib/geo";
@@ -20,9 +21,10 @@ const RSVPS: Array<{ status: Rsvp; label: string; said: string }> = [
 ];
 
 /**
- * One crew: its name, its invite code printed like a ticket serial, the form to
- * plan a move, and every planned move as a ticket stub with its RSVP chips.
- * I'M IN puts you in the move's chat with everyone else who's in, and opens it.
+ * One crew: its name (to the crew page), its invite code printed like a ticket
+ * serial, the way into its room, the form to plan a move, and every planned move
+ * as a ticket stub with its RSVP chips. I'M IN puts you in the move's chat with
+ * everyone else who's in, and opens it.
  */
 export default function CrewPanel({
   group,
@@ -54,11 +56,20 @@ export default function CrewPanel({
   return (
     <div className="mt-4 border-t border-line pt-4">
       <div className="flex items-center gap-2">
-        <h2 className="min-w-0 flex-1 truncate font-display text-[19px] font-black leading-tight">{group.name}</h2>
+        <h2 className="flex min-w-0 flex-1 items-center gap-1.5 font-display text-[19px] font-black leading-tight">
+          <Link href={`/crew/${group.id}`} className="min-w-0 truncate">
+            {group.name}
+          </Link>
+          {group.verified && <VerifiedBadge size={17} />}
+        </h2>
         <span className="pill flex-none">{group.visibility}</span>
       </div>
 
       <InviteSerial code={group.invite_code} />
+
+      <Link href={`/crew/${group.id}/room`} className="btn mt-3 w-full">
+        <DoorOpen size={16} aria-hidden /> Enter crew room
+      </Link>
 
       <button
         type="button"
