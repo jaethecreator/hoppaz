@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const root=new URL('../../',import.meta.url);
+const source=fs.readFileSync(new URL('src/lib/campaign/layout.ts',root),'utf8');
+const context={exports:{},URL};
+vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
+const {clubhouseWidth,sceneBlocks}=context.exports;
+const rows=[30,36].map(width=>{const l=clubhouseWidth(width);const data={grid:l.grid,spawn:l.spawn,zones:l.zones,privateAreas:l.privateAreas,blocks:sceneBlocks(l)};return `(${width},'${JSON.stringify(data).replaceAll("'","''")}'::jsonb)`;});
+const seed='insert into public.crew_room_layouts(width,data) values\n'+rows.join(',\n')+'\non conflict(width) do update set data=excluded.data;';
+const file=new URL('supabase/crew_rooms.sql',root);
+let sql=fs.readFileSync(file,'utf8');
+sql=sql.replace(/-- LAYOUT_SEED(?:\ninsert into public\.crew_room_layouts[\s\S]*?on conflict\(width\) do update set data=excluded\.data;)?/, '-- LAYOUT_SEED\n'+seed);
+fs.writeFileSync(file,sql);
+console.log('Generated both room collision layouts from the campaign manifest.');
