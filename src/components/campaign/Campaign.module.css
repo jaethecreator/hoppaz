@@ -879,3 +879,18 @@
 .worldStatus .musicSwitch {
   flex: none;
 }
+
+/* Game Time's layer inside the scaled world: full size and click-through, so its children opt in to pointer events. */
+.gameTimeWorld {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+/* Game Time's layer over the room chrome: click-through, so its banner and sheets opt in to pointer events. */
+.gameTimeChrome {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+}

@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight, CalendarDays, Disc3, Headphones, Leaf, MapPin, Music2, Settings2, Trophy, X } from "lucide-react";
 import VerifiedBadge from "@/components/VerifiedBadge";
+import GameTimeLayer from "@/components/game-time/GameTimeLayer";
+import { useRoomStore } from "@/lib/crew-room/roomStore";
 import type { SocialWorld } from "@/lib/crew-room/types";
 import { dayLabel } from "@/lib/filters";
-import { EMPTY_CAMPAIGN, clubhouseWidth, validCampaignUrl, type AwardEntry, type CampaignContent, type CampaignZone, type ZoneId } from "@/lib/campaign/layout";
+import { EMPTY_CAMPAIGN, clubhouseWidth, validCampaignUrl, type AwardEntry, type CampaignContent, type CampaignLayout, type CampaignZone, type ZoneId } from "@/lib/campaign/layout";
 import { useHoppaz } from "@/lib/store";
 import { useSession } from "@/lib/useSession";
 import CampaignWorld from "./CampaignWorld";
@@ -57,6 +59,14 @@ export type CrewCampaign = {
   nextEvent?: StageEvent | null;
   onSave: (content: CampaignContent, width: 30 | 36) => Promise<string | null>;
 };
+/** Game Time's chrome mount: over the room, outside the scaled world (banner, countdown, win sheet). Screen pixels. */
+function GameTimeChrome({ crewId, layout, watching }: { crewId: string; layout: CampaignLayout; watching: boolean }) {
+  const me = useRoomStore((state) => state.me);
+  const walkTo = useRoomStore((state) => state.walkTo);
+  const none = useCallback(() => {}, []);
+  return <div className={css.gameTimeChrome} data-game-time-layer="chrome"><GameTimeLayer crewId={crewId} roomId={crewId} layout={layout} me={me} isMember isWatcher={watching} walkTo={walkTo ?? none} worldLayer={false} /></div>;
+}
+
 export default function CampaignExperience({ crew }: { crew?: CrewCampaign }) {
   const look = useHoppaz((state) => state.look);
   const { profile } = useSession();
@@ -161,7 +171,7 @@ export default function CampaignExperience({ crew }: { crew?: CrewCampaign }) {
     {crew?.notice}
     <div className={css.body}>
       <div className={css.mapColumn}>
-        <CampaignWorld key={width} layout={layout} look={profile?.avatar ?? look} brand={content.brand} selected={selected} onZone={selectZone} touring={touring} onTourHandled={tourHandled} social={crew?.world} />
+        <CampaignWorld key={width} crewId={crew?.id} layout={layout} look={profile?.avatar ?? look} brand={content.brand} selected={selected} onZone={selectZone} touring={touring} onTourHandled={tourHandled} social={crew?.world} />
         <nav className={css.tour} aria-label="Explore clubhouse rooms">{layout.zones.map((item) => <button key={item.id} type="button" aria-pressed={selected === item.id} onClick={() => travel(item.id)}><b>{item.number}</b>{item.name}</button>)}</nav>
       </div>
       <aside className={`${css.detail} ${zone ? css.detailSelected : ""}`} aria-label={zone ? `${zone.name} details` : "About the clubhouse"} style={{ display:crew?.chatOpen ? "none" : undefined }}>
@@ -207,5 +217,6 @@ export default function CampaignExperience({ crew }: { crew?: CrewCampaign }) {
         <footer><button className={css.action} type="submit" disabled={saving}>{saving ? "Saving…" : crew ? "Save for crew" : "Save preview"}</button>{!crew && <button className={css.secondary} type="button" onClick={reset}>Reset preview</button>}<button className={css.secondary} type="button" onClick={closePanel}>Back to room</button></footer>
       </form>
     </div></div>}
+    {crew && <GameTimeChrome crewId={crew.id} layout={layout} watching={crew.world.watching} />}
   </div>;
 }
