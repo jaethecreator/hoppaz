@@ -15,6 +15,16 @@ export type CrewCard = {
   brand: string;
   verified: boolean;
   visibility: "open" | "private";
+  /** The round badge: a /brands/ path of ours or a picture in the crew-images bucket. Null until the owner sets one. */
+  logo_url: string | null;
+  /** Up to 5 pictures for the hub's header, in the order they play. Empty: the hub shows the room's own art. */
+  header_images: string[];
+  /** Which room template holds the crew's meeting (ROOM_TEMPLATES in src/lib/campaign/templates.ts). */
+  template: string;
+  /** The event on the fountain's sticker, with the owner's ribbon under it. Null when none is set or it is no longer live. */
+  featured_event_id: string | null;
+  featured_ribbon: string;
+  featured_event: CrewEvent | null;
   members: number;
   is_member: boolean;
   is_owner: boolean;
@@ -57,6 +67,32 @@ export function useCrewCard({ crewId, code }: { crewId?: string; code?: string }
   }, [load]);
 
   return { card, state, reload: load };
+}
+
+/** What the hub's Explore shelf reads: room_rails() in supabase/crew_rails.sql. */
+export type RailCrew = { id: string; name: string; verified: boolean; logo_url: string | null; members: number };
+export type RailEvent = CrewEvent & { going: number };
+
+/**
+ * Other open crews (verified first) and the events people are going to this week, in one small read. Empty lists when
+ * the rails are not in the database or the read fails: the shelf is a bonus, never a blocker.
+ */
+export function useRails(crewId: string) {
+  const [rails, setRails] = useState<{ crews: RailCrew[]; trending: RailEvent[] }>({ crews: [], trending: [] });
+  useEffect(() => {
+    const sb = getSupabase();
+    if (!sb) return;
+    let live = true;
+    void sb.rpc("room_rails", { p_crew: crewId }).then(({ data, error }) => {
+      if (!live || error || !data) return;
+      const d = data as { crews?: RailCrew[]; trending?: RailEvent[] };
+      setRails({ crews: d.crews ?? [], trending: d.trending ?? [] });
+    });
+    return () => {
+      live = false;
+    };
+  }, [crewId]);
+  return rails;
 }
 
 const COLUMNS = "id,title,venue_name,area,starts_at,flyer_url";

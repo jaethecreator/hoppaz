@@ -3,23 +3,27 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Copy, DoorOpen, Flame, MapPin, MessageCircle, RefreshCw, Share2, Users } from "lucide-react";
-import { FaceDisc } from "@/components/Avatar";
+import { CalendarDays, DoorOpen, Flame, MapPin, MessageCircle, Settings2, Share2, TrendingUp, Users, type LucideIcon } from "lucide-react";
 import ChatFace from "@/components/chat/ChatFace";
 import LoadingStub from "@/components/app/LoadingStub";
 import PageHeader from "@/components/app/PageHeader";
-import VerifiedBadge from "@/components/VerifiedBadge";
+import HubHeader, { CrewLogo } from "@/components/crew-room/HubHeader";
+import ManageCrew from "@/components/crew-room/ManageCrew";
+import Featured from "@/components/crew-room/CrewHubFeatured";
+import RoomNow from "@/components/crew-room/CrewHubNow";
 import { requireAccount } from "@/lib/accountGate";
-import { inviteLink, shareInvite, useCrewCard, useCrewEvents, type CrewCard } from "@/lib/crew-room/hub";
+import { shareInvite, useCrewCard, useCrewEvents, useRails, type CrewCard } from "@/lib/crew-room/hub";
 import { dayLabel } from "@/lib/filters";
 import { useHotspots } from "@/lib/hotspots/useHotspots";
 import { useHoppaz, useToast } from "@/lib/store";
 import { getSupabase } from "@/lib/supabase/client";
+import { useSession } from "@/lib/useSession";
 
 /**
- * One crew as a place to start from (/crew/<id>): who is in its room right now, the way in, the last few General
- * messages, and tiles out into the rest of Hoppaz (the crew's next events on the map, the nearest hotspots, tonight's
- * deck, other crews). Open crews can be looked at by anyone; joining needs an account.
+ * One crew as a place to start from (/crew/<id>), inside the app with its bottom nav. A header that swipes through the
+ * crew's pictures, the name with its tick and the round logo, who is in the room right now, the way in, the owner's
+ * MANAGE CREW, the last few General messages, and tiles out into the rest of Hoppaz. Open crews can be looked at by
+ * anyone; joining needs an account.
  */
 export default function CrewHub({ crewId }: { crewId: string }) {
   const { card, state, reload } = useCrewCard({ crewId });
@@ -54,7 +58,15 @@ function Hub({ card, onChange }: { card: CrewCard; onChange: () => void }) {
   const router = useRouter();
   const say = useToast((s) => s.say);
   const [busy, setBusy] = useState(false);
+  const [managing, setManaging] = useState(false);
+  // Starts the session store: JOIN asks it whether this Hopper has an account, so it must be up before the tap.
+  const { state: session } = useSession();
   const room = `/crew/${card.id}/room`;
+
+  // /crew/<id>?manage=1 opens the dashboard straight away (the owner's own bookmark).
+  useEffect(() => {
+    if (card.is_owner && new URLSearchParams(window.location.search).get("manage") === "1") setManaging(true);
+  }, [card.is_owner]);
 
   const join = async () => {
     const sb = getSupabase();
@@ -72,133 +84,70 @@ function Hub({ card, onChange }: { card: CrewCard; onChange: () => void }) {
     if (!card.invite_code) return;
     const how = await shareInvite(card.brand, card.invite_code);
     if (how === "copied") say("Invite link copied.", "ok");
-    else if (how === "failed") say("Couldn't share. Copy the link below.", "error");
+    else if (how === "failed") say("Couldn't share. Open MANAGE CREW to copy the link.", "error");
   };
 
   return (
-    <div className="h-full overflow-y-auto px-4 pb-6">
-      <PageHeader title="Crew" back="/crew" />
+    <div className="relative h-full">
+      <div className="h-full overflow-y-auto pb-6" data-hub-scroll>
+        <div className="mx-auto w-full max-w-[760px]">
+          <HubHeader
+            images={card.header_images}
+            title={card.brand}
+            verified={card.verified}
+            logoUrl={card.logo_url}
+            kicker={card.verified ? "BRAND CREW" : card.visibility === "open" ? "OPEN CREW" : "PRIVATE CREW"}
+            back="/crew"
+            meta={
+              <p className="mt-1.5 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.06em] text-dim" data-members={card.members}>
+                <Users size={12} aria-hidden /> {card.members} {card.members === 1 ? "member" : "members"}
+              </p>
+            }
+          />
 
-      <section className="card mb-4" aria-label={`${card.brand}, now`}>
-        <p className="seclabel">{card.verified ? "BRAND CREW" : card.visibility === "open" ? "OPEN CREW" : "PRIVATE CREW"}</p>
-        <div className="mt-1 flex min-w-0 items-center gap-2">
-          <h1 className="min-w-0 truncate font-display text-[28px] font-black leading-tight">{card.brand}</h1>
-          {card.verified && <VerifiedBadge size={22} />}
+          <div className="px-4">
+            <div className="mt-4"><RoomNow card={card} /></div>
+
+            <div className="mt-3 flex gap-2">
+              {card.is_member ? (
+                <>
+                  <Link href={room} className="btn min-w-0 flex-1 text-[15px]" data-enter-room>
+                    <DoorOpen size={18} aria-hidden /> ENTER ROOM
+                  </Link>
+                  {card.invite_code && (
+                    <button type="button" className="btn btn-ghost flex-none px-4 text-[13px]" onClick={invite} data-invite>
+                      <Share2 size={16} aria-hidden /> INVITE
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn w-full text-[15px]"
+                  disabled={busy || session === "loading" || card.visibility !== "open"}
+                  data-join
+                  onClick={() => {
+                    if (requireAccount("join this crew", () => void join())) void join();
+                  }}
+                >
+                  <DoorOpen size={18} aria-hidden /> {busy ? "JOINING…" : card.visibility === "open" ? "JOIN AND WALK IN" : "INVITE ONLY"}
+                </button>
+              )}
+            </div>
+
+            {card.is_owner && (
+              <button type="button" className="btn btn-ghost mt-2 w-full" onClick={() => setManaging(true)} data-manage-open>
+                <Settings2 size={16} aria-hidden /> MANAGE CREW
+              </button>
+            )}
+
+            <Featured card={card} />
+            {card.is_member && <RecentChat card={card} />}
+            <Explore card={card} />
+          </div>
         </div>
-        <p className="mt-1 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.06em] text-dim">
-          <Users size={12} aria-hidden /> {card.members} {card.members === 1 ? "member" : "members"}
-        </p>
-
-        <RoomNow card={card} />
-
-        {card.is_member ? (
-          <Link href={room} className="btn mt-4 w-full text-[15px]">
-            <DoorOpen size={18} aria-hidden /> ENTER ROOM
-          </Link>
-        ) : (
-          <button
-            type="button"
-            className="btn mt-4 w-full text-[15px]"
-            disabled={busy || card.visibility !== "open"}
-            onClick={() => {
-              if (requireAccount("join this crew", () => void join())) void join();
-            }}
-          >
-            <DoorOpen size={18} aria-hidden /> {busy ? "JOINING…" : card.visibility === "open" ? "JOIN AND WALK IN" : "INVITE ONLY"}
-          </button>
-        )}
-        {card.is_owner && card.invite_code && <InviteTools card={card} onShare={invite} onReset={onChange} />}
-      </section>
-
-      {card.is_member && <RecentChat card={card} />}
-      <Explore card={card} />
-    </div>
-  );
-}
-
-/** "N in the room now", with their faces. Refreshed with the card, every 15 s. */
-function RoomNow({ card }: { card: CrewCard }) {
-  return (
-    <div className="mt-3 flex items-center gap-3 rounded-hz border border-line px-3 py-2.5" data-room-now={card.in_room}>
-      {card.heads.length > 0 && (
-        <span className="flex flex-none">
-          {card.heads.slice(0, 5).map((h, i) => (
-            <FaceDisc key={h.id} look={h.look} initial={h.name} size={30} className={i ? "-ml-2.5 ring-2 ring-ink-2" : "ring-2 ring-ink-2"} />
-          ))}
-        </span>
-      )}
-      <span className="min-w-0 flex-1">
-        <b className="flex items-center gap-1.5 font-display text-[15px] font-semibold">
-          {card.in_room > 0 && <span aria-hidden className="h-2 w-2 flex-none animate-pulse2 rounded-full bg-keke" />}
-          {card.in_room > 0 ? `${card.in_room} in the room now` : "Nobody in the room yet"}
-        </b>
-        <span className="hint block truncate">
-          {card.in_room > 0 ? card.heads.slice(0, 3).map((h) => h.name).join(", ") : "Walk in first and the music starts with you."}
-        </span>
-      </span>
-    </div>
-  );
-}
-
-/** The owner's invite: share the link, copy it, or make a new one (the old link stops working). */
-function InviteTools({ card, onShare, onReset }: { card: CrewCard; onShare: () => void; onReset: () => void }) {
-  const say = useToast((s) => s.say);
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const link = inviteLink(card.invite_code ?? "");
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(link);
-      say("Invite link copied.", "ok");
-    } catch {
-      say("Couldn't copy. Hold the link to copy it.", "error");
-    }
-  };
-
-  const reset = async () => {
-    const sb = getSupabase();
-    if (!sb || busy) return;
-    setBusy(true);
-    const { error } = await sb.rpc("crew_invite_reset", { p_crew: card.id });
-    setBusy(false);
-    setConfirming(false);
-    if (error) return say("Couldn't make a new link. Try again.", "error");
-    say("New invite link made. The old one no longer works.", "ok");
-    onReset();
-  };
-
-  return (
-    <div className="mt-3 rounded-hz border border-dashed border-line px-3 py-2.5">
-      <p className="seclabel">Invite link</p>
-      <p className="mt-0.5 select-all break-all font-mono text-[12px] text-cream" data-invite-link={link}>
-        {link}
-      </p>
-      <div className="mt-2.5 flex gap-2">
-        <button type="button" className="btn flex-1 px-3" onClick={onShare}>
-          <Share2 size={15} aria-hidden /> INVITE
-        </button>
-        <button type="button" className="btn btn-ghost flex-none px-3 text-[12px]" onClick={copy} aria-label="Copy the invite link">
-          <Copy size={14} aria-hidden /> COPY
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost flex-none px-3 text-[12px]"
-          onClick={() => setConfirming((v) => !v)}
-          aria-expanded={confirming}
-          aria-label="Make a new invite link"
-        >
-          <RefreshCw size={14} aria-hidden />
-        </button>
       </div>
-      {confirming && (
-        <div className="mt-2.5">
-          <p className="hint">A new link stops the old one working. Anyone already in the crew stays in.</p>
-          <button type="button" className="btn btn-ghost mt-2 w-full" disabled={busy} onClick={reset}>
-            {busy ? "ONE SEC…" : "MAKE A NEW LINK"}
-          </button>
-        </div>
-      )}
+      {managing && card.is_owner && <ManageCrew card={card} onClose={() => setManaging(false)} onChange={onChange} />}
     </div>
   );
 }
@@ -206,7 +155,7 @@ function InviteTools({ card, onShare, onReset }: { card: CrewCard; onShare: () =
 /** The last few General messages. A tap opens the room with the chat open. */
 function RecentChat({ card }: { card: CrewCard }) {
   return (
-    <Link href={`/crew/${card.id}/room?chat=1`} className="card mb-4 block" aria-label="Open the crew chat in the room">
+    <Link href={`/crew/${card.id}/room?chat=1`} className="card mt-4 block" aria-label="Open the crew chat in the room">
       <div className="flex items-center justify-between gap-2">
         <p className="seclabel">General chat</p>
         <span className="flex items-center gap-1 font-mono text-[10px] font-medium tracking-[0.12em] text-orange">
@@ -230,41 +179,37 @@ function RecentChat({ card }: { card: CrewCard }) {
   );
 }
 
-type Tile = { href: string; key: string; Icon: typeof MapPin; kicker: string; title: string; line?: string };
+type Tile = { href: string; key: string; Icon?: LucideIcon; logo?: { url: string | null; name: string }; kicker: string; title: string; line?: string };
 
-/** Out into the app: the crew's events on the map, the nearest hotspots, tonight's deck, other crews. */
+/**
+ * Out into the app: the crew's events, what is trending this week, the nearest hotspots, tonight's deck, other crews.
+ * An event opens the map on it (/?e=<id>); a crew opens its own hub.
+ */
 function Explore({ card }: { card: CrewCard }) {
   const fix = useHoppaz((s) => s.fix);
   const { events, matched } = useCrewEvents(card.keywords, 3);
+  const rails = useRails(card.id);
   const hotspots = useHotspots({ active: true, at: fix });
-  const [crews, setCrews] = useState<{ id: string; name: string; verified?: boolean }[]>([]);
 
-  useEffect(() => {
-    const sb = getSupabase();
-    if (!sb) return;
-    let live = true;
-    void sb
-      .from("crews")
-      .select("*")
-      .eq("visibility", "open")
-      .neq("id", card.id)
-      .limit(24)
-      .then(({ data }) => {
-        if (!live) return;
-        const rows = (data ?? []) as { id: string; name: string; verified?: boolean }[];
-        setCrews(rows.sort((a, b) => Number(!!b.verified) - Number(!!a.verified)).slice(0, 4));
-      });
-    return () => {
-      live = false;
-    };
-  }, [card.id]);
+  const seen = new Set<string>(card.featured_event ? [card.featured_event.id] : []);
+  const crewEvents = events.filter((e) => !seen.has(e.id));
+  crewEvents.forEach((e) => seen.add(e.id));
+  const trending = rails.trending.filter((e) => !seen.has(e.id)).slice(0, 2);
 
   const tiles: Tile[] = [
-    ...events.map((e) => ({
+    ...crewEvents.map((e) => ({
       href: `/?e=${e.id}`,
       key: `e-${e.id}`,
       Icon: CalendarDays,
       kicker: `${matched ? "CREW EVENT" : "BIG THIS WEEK"} · ${dayLabel(e.starts_at)}`,
+      title: e.title,
+      line: e.venue_name,
+    })),
+    ...trending.map((e) => ({
+      href: `/?e=${e.id}`,
+      key: `t-${e.id}`,
+      Icon: TrendingUp,
+      kicker: e.going > 0 ? `TRENDING · ${e.going} GOING` : `THIS WEEK · ${dayLabel(e.starts_at)}`,
       title: e.title,
       line: e.venue_name,
     })),
@@ -280,21 +225,27 @@ function Explore({ card }: { card: CrewCard }) {
       };
     }),
     { href: "/discover", key: "tonight", Icon: Flame, kicker: "TONIGHT IN LAGOS", title: "Swipe through tonight", line: "Every event on, one card at a time" },
-    ...crews.map((c) => ({ href: `/crew/${c.id}`, key: `c-${c.id}`, Icon: Users, kicker: c.verified ? "BRAND CREW" : "OPEN CREW", title: c.name })),
+    ...rails.crews.slice(0, 4).map((c) => ({
+      href: `/crew/${c.id}`,
+      key: `c-${c.id}`,
+      logo: { url: c.logo_url, name: c.name },
+      kicker: `${c.verified ? "BRAND CREW" : "OPEN CREW"} · ${c.members} ${c.members === 1 ? "MEMBER" : "MEMBERS"}`,
+      title: c.name,
+    })),
   ];
 
   return (
-    <section aria-label="Explore from here">
+    <section aria-label="Explore from here" className="mt-5">
       <p className="seclabel mb-2">Explore from here</p>
       <div className="grid grid-cols-2 gap-2">
-        {tiles.map(({ href, key, Icon, kicker, title, line }) => (
+        {tiles.map(({ href, key, Icon, logo, kicker, title, line }) => (
           <Link
             key={key}
             href={href}
             data-explore={key}
-            className="card flex min-h-[112px] flex-col gap-1 p-3 transition-colors active:bg-ink-3"
+            className="card flex min-h-[112px] flex-col gap-1 p-3 transition-colors active:bg-ink-3 [&:nth-child(odd):last-child]:col-span-2"
           >
-            <Icon size={16} className="text-orange" aria-hidden />
+            {logo ? <CrewLogo url={logo.url} name={logo.name} size={28} className="!border-[2px]" /> : Icon && <Icon size={16} className="text-orange" aria-hidden />}
             <span className="mt-1 font-mono text-[10px] uppercase leading-tight tracking-[0.08em] text-dim">{kicker}</span>
             <b className="line-clamp-2 font-display text-[15px] font-semibold leading-tight">{title}</b>
             {line && <span className="hint line-clamp-1">{line}</span>}
