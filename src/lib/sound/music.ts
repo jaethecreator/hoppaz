@@ -37,6 +37,9 @@
  *    or decoded.
  *  - The Music switch (music.setOn) is saved in localStorage key "hz-music" ("off" or "on"), default on,
  *    and is separate from Sound. Sound off (sfx.setMuted) silences the music as well.
+ *  - A crew room plays at ROOM_LEVEL (0.35) of those levels: the room is a place to talk, and the loop is a bed under
+ *    it. Only the room: Play on the map keeps today's level. While its voice room is joined and someone you can hear is
+ *    talking, the music dips again to about 20 percent of today's level (the "voice" duck lane, music.duckVoice).
  *  - A screen can bring its own loop (music.want's `track`: a crew room's owner set one). It plays in place
  *    of the slot, by the same rules, about 7 dB down (a released track is mastered far louder than these
  *    loops). One that cannot play here (its host refuses, it is not audio, it is over MAX_TRACK) is
@@ -65,6 +68,8 @@ const TRACK_LEVEL = 0.08;
 const MAX_TRACK = 12_000_000;
 /** Quiet hours: 6 dB down, so half the amplitude. */
 const QUIET = 0.5;
+/** A crew room plays the loop at this share of its slot's level (Play on the map is untouched). 0.35 of today's. */
+const ROOM_LEVEL = 0.35;
 /** Ducking: down in ATTACK s, held `hold` s after the sound ends, back up in RELEASE s (both to within 2%). */
 const ATTACK = 0.04;
 const RELEASE = 0.7;
@@ -73,11 +78,17 @@ const RELEASE = 0.7;
  * runs with gaps of 0.4 s or so, so the hold keeps a box open as one dip. The UI lane is ticks and toasts at 30%,
  * which the music would mask, so it gets a light, short dip.
  */
-const DUCK_LANES: ReadonlyMap<Lane, { to: number; hold: number }> = new Map<Lane, { to: number; hold: number }>([
+const DUCK_LANES: ReadonlyMap<Lane | "voice", { to: number; hold: number }> = new Map<Lane | "voice", { to: number; hold: number }>([
   ["moment", { to: 0.5, hold: 0.6 }],
   ["reward", { to: 0.5, hold: 0.6 }],
   ["ui", { to: 0.71, hold: 0.1 }],
+  // Someone you can hear is talking in the room's voice chat. Held for as long as they talk (music.duckVoice), not
+  // for a sound's length: 0.57 on top of ROOM_LEVEL 0.35 lands at 20 percent of today's level.
+  ["voice", { to: 0.57, hold: 0.6 }],
 ]);
+/** The voice lane's gain, and how fast the music follows it (seconds, both ways). */
+const VOICE_DUCK = DUCK_LANES.get("voice")!.to;
+const VOICE_EASE = 0.25;
 /** One voice never holds the duck longer than this many seconds. */
 const DUCK_MAX = 4;
 /** Route changes and starts, dusk, and the quick stop (switch off, sound off, page hidden). Seconds. */
@@ -125,6 +136,11 @@ let cur: Voice | null = null;
 let bound: AudioContext | null = null;
 let bus: GainNode | null = null;
 let duck: GainNode | null = null;
+/** After the duck: the room's level and the voice dip, so neither fights the sound-effect ducking above it. */
+let post: GainNode | null = null;
+/** A crew room is the screen (its level), and someone you can hear is talking in its voice room. */
+let roomMode = false;
+let voiceDuck = false;
 let busNow = 1;
 let duckUntil = 0;
 let duckTo = 1;
@@ -149,6 +165,8 @@ const hidden = () => typeof document !== "undefined" && document.hidden;
 const isTrack = (s: Key): s is Track => s.startsWith("url:");
 const isPlay = (s: Key) => s === "play_day" || s === "play_night";
 const level = (s: Key) => (isTrack(s) ? TRACK_LEVEL : LEVEL[s]);
+/** What the post node should be: the room's share of the level, times the voice dip. */
+const postTarget = () => (roomMode ? ROOM_LEVEL : 1) * (voiceDuck ? VOICE_DUCK : 1);
 const emit = () => listeners.forEach((f) => f());
 
 /**
@@ -221,8 +239,11 @@ function bind(a: AudioContext) {
   bus = a.createGain();
   bus.gain.value = busNow;
   duck = a.createGain();
+  post = a.createGain();
+  post.gain.value = postTarget();
   bus.connect(duck);
-  duck.connect(a.destination);
+  duck.connect(post);
+  post.connect(a.destination);
   duckUntil = 0;
   duckTo = 1;
   if (!watched.has(a)) {
@@ -232,6 +253,15 @@ function bind(a: AudioContext) {
       if ((a.state as string) === "interrupted") stopUntilTap(0.05);
     });
   }
+}
+
+/** The room's level or the voice dip changed: ease the post node to it. */
+function syncPost() {
+  if (!bound || !post) return;
+  const t = bound.currentTime;
+  post.gain.cancelScheduledValues(t);
+  post.gain.setValueAtTime(post.gain.value, t);
+  post.gain.setTargetAtTime(postTarget(), t, VOICE_EASE / 4);
 }
 
 /** Quiet hours begin or end. Cheap when nothing changed. */
@@ -308,10 +338,11 @@ function settle() {
   try {
     bus?.disconnect();
     duck?.disconnect();
+    post?.disconnect();
   } catch {
     /* already gone */
   }
-  bus = duck = bound = null;
+  bus = duck = post = bound = null;
 }
 
 /** Fade a loop out over `secs` from `at`, then stop it. The timer is for a context that is asleep and never gets there. */
@@ -526,12 +557,28 @@ export const music = {
    * plays in place of the slot, and the slot is what plays when it cannot. <MusicHost /> calls it on every route and
    * Play change. Starts only after a real tap.
    */
-  want(slot: MusicSlot | null, own?: string | null) {
+  want(slot: MusicSlot | null, own?: string | null, room?: boolean) {
     want = slot;
     track = slot && own ? `url:${own}` : null;
+    const inRoom = !!slot && !!room;
+    if (roomMode !== inRoom) {
+      roomMode = inRoom;
+      if (!inRoom) voiceDuck = false;
+      syncPost();
+    }
     // A loop the room no longer uses is freed, unless it is still fading out.
     for (const k of loops.keys()) if (isTrack(k) && k !== track && ![...voices].some((v) => v.slot === k)) loops.delete(k);
     reconcile();
+  },
+  /**
+   * The room's voice chat: true while joined and someone you can hear is talking, false when they stop. The music
+   * eases down to the "voice" duck lane and back. Only dips a crew room's music; anywhere else it is ignored.
+   */
+  duckVoice(active: boolean) {
+    const next = active && roomMode;
+    if (voiceDuck === next) return;
+    voiceDuck = next;
+    syncPost();
   },
   /** True when a screen's own loop could not play here this visit (the slot played instead). */
   failed: (own: string) => dead.has(`url:${own}`),

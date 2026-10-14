@@ -37,10 +37,12 @@ export default function MusicHost() {
   // A crew room's screen says when the Hopper is inside and which loop its owner set (useRoomTrack).
   const room = useRoomTrack();
   const slot = slotFor(path, playing, theme === "night", room.inside);
-  const own = ROOM.test(path.replace(/\/+$/, "")) ? room.url : null;
+  const inRoomPath = ROOM.test(path.replace(/\/+$/, ""));
+  const own = inRoomPath ? room.url : null;
   useEffect(() => {
-    music.want(slot, own);
-  }, [slot, own]);
+    // A crew room plays the loop quieter than the map's Play does (music.ts, ROOM_LEVEL).
+    music.want(slot, own, inRoomPath);
+  }, [slot, own, inRoomPath]);
   // Only on unmount. A cleanup on the effect above would stop and restart the music at every route change.
   useEffect(() => () => music.want(null), []);
   return null;
