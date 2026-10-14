@@ -6,10 +6,11 @@ import { useEffect, useState } from "react";
  * Test hosts only: /reset wipes this browser's Hoppaz data (the sign-in, the
  * tour, saved switches, cached files) and opens the app again as a brand new
  * Hopper, so the first-run tour with Paz plays from the top. It touches
- * nothing on the server. On any other host it does nothing.
+ * nothing on the server. On any other host it does nothing, including vercel.app,
+ * where production is served.
  */
 const TEST_HOST =
-  /^(localhost|127\.0\.0\.1|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[a-z0-9-]+\.trycloudflare\.com|[a-z0-9-]+\.vercel\.app)$/i;
+  /^(localhost|127\.0\.0\.1|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[a-z0-9-]+\.trycloudflare\.com)$/i;
 
 async function wipe() {
   try {
