@@ -55,7 +55,12 @@ export async function continueWithGoogle(next: string, linkGuest: boolean): Prom
   const sb = getSupabase();
   if (!sb) return "Not connected";
   const returnTo = next.startsWith("/") && !next.startsWith("//") ? next : "/me";
-  const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(returnTo)}`;
+  // Pin production OAuth callbacks to the canonical site even when sign-in is
+  // started from a preview URL or an installed app with an unexpected origin.
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || window.location.origin;
+  const callback = new URL("/auth/callback", siteUrl);
+  callback.searchParams.set("next", returnTo);
+  const redirectTo = callback.toString();
   const { data, error } = await sb.auth.getUser();
   if (error) return error.message;
   const options = { redirectTo };
