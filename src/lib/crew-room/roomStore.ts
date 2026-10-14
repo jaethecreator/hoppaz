@@ -30,7 +30,14 @@ import type { Tile } from "@/lib/campaign/geometry";
  *   popups     the small cards inside the world (zone cards, "can't walk there" hints). pushPopup replaces a popup with
  *              the same id. The popup layer (PopUps.tsx) draws them and calls dismissPopup when they fade; the store
  *              also drops each one itself a little after its ttlMs, so a layer that never mounts cannot pile them up
- *   sheet      the chat sheet: "peek" (the rest height), "half" or "full"
+ *   sheet      the chat sheet: "closed" (nothing drawn but the CHAT button), "peek", "half" or "full". The shell's CHAT
+ *              button sets "half"; the sheet (ChatSheet) owns every change after that and writes the new state here
+ *   sheetHeight px from the bottom of the stage (the world area between the header and the tab bar) up to the top edge of
+ *              the sheet, keyboard lift included; 0 when closed. ChatSheet writes it when the sheet settles and when
+ *              the keyboard changes it (not on every drag frame). The camera keeps my avatar above this line and the
+ *              bottom row (action pill, buttons) rides on it
+ *   unread     General messages from others I have not seen. ChatSheet owns it (reset to 0 when the sheet shows the
+ *              bottom of General); the CHAT button in the shell shows it
  *   view       the camera: "full" shows the whole room, "me" follows my avatar. The HUD button and the open sequence
  *              set it; the world reads it
  *
@@ -43,7 +50,7 @@ import type { Tile } from "@/lib/campaign/geometry";
 export type RoomAction = { id: string; label: string; priority: number; onPress: () => void };
 export type RoomPopup = { id: string; title: string; body?: string; tile?: { x: number; y: number }; ttlMs: number };
 export type RoomPeerPoint = { id: string; name: string; x: number; y: number; look: unknown; key?: string };
-export type RoomSheet = "peek" | "half" | "full";
+export type RoomSheet = "closed" | "peek" | "half" | "full";
 export type RoomView = "full" | "me";
 
 type RoomStore = {
@@ -58,6 +65,8 @@ type RoomStore = {
   tile: number;
   tappedPeer: string | null;
   sheet: RoomSheet;
+  sheetHeight: number;
+  unread: number;
   zone: string | null;
   view: RoomView;
   setMe: (me: Tile | null) => void;
@@ -72,6 +81,8 @@ type RoomStore = {
   setTile: (tile: number) => void;
   setTappedPeer: (id: string | null) => void;
   setSheet: (sheet: RoomSheet) => void;
+  setSheetHeight: (px: number) => void;
+  setUnread: (n: number) => void;
   setZone: (zone: string | null) => void;
   setView: (view: RoomView) => void;
   reset: () => void;
@@ -104,7 +115,9 @@ const initial = {
   peers: [] as RoomPeerPoint[],
   tile: 32,
   tappedPeer: null,
-  sheet: "peek" as RoomSheet,
+  sheet: "closed" as RoomSheet,
+  sheetHeight: 0,
+  unread: 0,
   zone: null,
   view: "full" as RoomView,
 };
@@ -140,6 +153,8 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   setTile: (tile) => set((s) => (s.tile === tile ? s : { tile })),
   setTappedPeer: (tappedPeer) => set((s) => (s.tappedPeer === tappedPeer ? s : { tappedPeer })),
   setSheet: (sheet) => set((s) => (s.sheet === sheet ? s : { sheet })),
+  setSheetHeight: (px) => set((s) => (s.sheetHeight === px ? s : { sheetHeight: px })),
+  setUnread: (unread) => set((s) => (s.unread === unread ? s : { unread })),
   setZone: (zone) => set((s) => (s.zone === zone ? s : { zone })),
   setView: (view) => set((s) => (s.view === view ? s : { view })),
   reset: () => {
