@@ -894,3 +894,6 @@
   z-index: 15;
   pointer-events: none;
 }
+
+/* The screen chrome mounts (chat sheet, Hopper menu, action pill, event sheet, voice): one click-through layer. */
+.chromeLayer { position: absolute; inset: 0; z-index: 12; pointer-events: none; }

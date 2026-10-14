@@ -9,6 +9,12 @@ import { MAP_TABLE, areaArrival, privateAreaAt, canWalkScene, scenePath, sceneSi
 import GameTimeLayer from "@/components/game-time/GameTimeLayer";
 import type { RoomPeer, SocialWorld } from "@/lib/crew-room/types";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
+import Bubbles from "@/components/crew-room/Bubbles";
+import ExitDoor from "@/components/crew-room/ExitDoor";
+import FountainSticker from "@/components/crew-room/FountainSticker";
+import PopUps from "@/components/crew-room/PopUps";
+import VibeLayer from "@/components/crew-room/VibeLayer";
+import type { CrewRoomConnection } from "@/lib/crew-room/types";
 import ClubhouseArt from "./ClubhouseArt";
 import { MusicSwitch } from "./RoomMusic";
 import css from "./Campaign.module.css";
@@ -19,7 +25,7 @@ const AWAY = 25_000;
 const when = (at: string) => Date.parse(at.replace(/(\.\d{3})\d+/, "$1"));
 const isAway = (peer: RoomPeer, observedAt: string) => when(observedAt) - when(peer.last_seen) > AWAY;
 
-export default function CampaignWorld({ layout, look, brand, selected, onZone, touring, onTourHandled, social, crewId }: { layout: CampaignLayout; look: unknown; brand: string; selected: ZoneId | null; onZone: (zone: CampaignZone) => void; touring: ZoneId | null; onTourHandled: () => void; social?: SocialWorld; crewId?: string }) {
+export default function CampaignWorld({ layout, look, brand, selected, onZone, touring, onTourHandled, social, crewId, room, userId }: { layout: CampaignLayout; look: unknown; brand: string; selected: ZoneId | null; onZone: (zone: CampaignZone) => void; touring: ZoneId | null; onTourHandled: () => void; social?: SocialWorld; crewId?: string; room?: CrewRoomConnection; userId?: string }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 960, height: 640 });
   const [player, setPlayer] = useState(layout.spawn);
@@ -142,11 +148,13 @@ export default function CampaignWorld({ layout, look, brand, selected, onZone, t
         {social && layout.privateAreas.map((area) => <div key={area.id} data-conversation-area={area.id} aria-hidden className={`${css.privateArea} ${currentArea?.id===area.id ? css.privateAreaActive : ''}`} style={{left:area.x*layout.grid.tile,top:area.y*layout.grid.tile,width:area.w*layout.grid.tile,height:area.h*layout.grid.tile}}><span>{area.name.replace('Listening ','')}</span></div>)}
         {destination && <div className={css.destination} style={{ left: (destination.x + .5) * layout.grid.tile, top: (destination.y + .5) * layout.grid.tile }} />}
         {social && crewId && <div className={css.gameTimeWorld} data-game-time-layer="world"><GameTimeLayer crewId={crewId} roomId={crewId} layout={layout} me={watching ? null : player} isMember isWatcher={watching} walkTo={walkTo} worldLayer /></div>}
+        {social && crewId && <><FountainSticker crewId={crewId} layout={layout} /><ExitDoor crewId={crewId} layout={layout} /></>}
         {peers.map((peer) => {
           const away = !!social && isAway(peer, social.observedAt);
           return <div key={peer.id} data-room-peer={peer.id} data-peer-tile={`${peer.x},${peer.y}`} data-away={away || undefined} className={`${css.player} ${css.peer} ${peer.circle_id && peer.circle_id === social?.circleId ? css.nearPeer : ""} ${away ? css.away : ""}`} style={{ left: (peer.x + .5) * layout.grid.tile - 7, top: (peer.y + .5) * layout.grid.tile }}><span><Avatar look={peer.look} label={away ? `${peer.name}'s character, away` : `${peer.name}'s character`} /></span><b>{away ? `${peer.name} · away` : peer.name}</b></div>;
         })}
         {!watching && <div className={css.player} data-player-tile={`${player.x},${player.y}`} style={{ left: (player.x + .5) * layout.grid.tile, top: (player.y + .5) * layout.grid.tile }}><span className={walking ? css.walking : undefined}><Avatar look={look} label="Your character" /></span><b>You</b></div>}
+        {social && crewId && room && userId && <><Bubbles crewId={crewId} layout={layout} room={room} userId={userId} /><VibeLayer crewId={crewId} layout={layout} /><PopUps crewId={crewId} layout={layout} /></>}
       </div>
       {layout.zones.map((zone) => {
         const at = project(zone.plaque);

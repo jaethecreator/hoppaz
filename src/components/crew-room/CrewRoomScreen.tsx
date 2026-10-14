@@ -214,6 +214,8 @@ export function CrewRoomView({ crewId, userId, room }: { crewId: string; userId:
         editable: snapshot.crew.is_owner,
         connected: room.connected,
         nextEvent: matched ? (events[0] ?? null) : null,
+        room,
+        userId,
         world: {
           ...world,
           destination,
