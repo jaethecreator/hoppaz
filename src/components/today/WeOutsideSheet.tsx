@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { MessageCircle } from "lucide-react";
+import { MapPin, MessageCircle } from "lucide-react";
 import Sheet from "@/components/Sheet";
 import type { EventGroup } from "@/lib/chat";
 import { dayLabel } from "@/lib/filters";
@@ -73,6 +73,14 @@ export default function WeOutsideSheet({
                   </span>
                   {!saved && <span className="mt-0.5 block font-mono text-[9.5px] uppercase tracking-[0.1em] text-orange">Sign up to save</span>}
                 </button>
+                <Link
+                  href={`/?e=${encodeURIComponent(e.id)}`}
+                  aria-label={`Show ${eventTitle(e)} on map`}
+                  title="Show on map"
+                  className="grid h-10 w-10 flex-none place-items-center rounded-full border border-line text-orange"
+                >
+                  <MapPin size={16} aria-hidden />
+                </Link>
                 {saved && g?.status === "invited" ? (
                   <button
                     type="button"

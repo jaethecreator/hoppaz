@@ -160,6 +160,10 @@ export default function TodayPage() {
   const nextBusy = useMemo(() => nextBusyDay(counts, dayKey), [counts, dayKey]);
 
   const goingOf = useCallback((e: EventRow) => Math.max(0, (e.swipes_in ?? 0) + (delta[e.id] ?? 0)), [delta]);
+  const distanceLabel = useCallback((e: EventRow) => {
+    if (!fix || !Number.isFinite(e.distance_m)) return null;
+    return e.distance_m < 1000 ? `${Math.round(e.distance_m)} M` : `${(e.distance_m / 1000).toFixed(1)} KM`;
+  }, [fix]);
 
   /* ------------------------------------------------------------ the deck -- */
   const deckKey = mode === "next" ? "next" : `day:${dayKey}`;
@@ -575,6 +579,7 @@ export default function TodayPage() {
                     return (
                       <DeckCard
                         event={e}
+                        distance={distanceLabel(e)}
                         now={now}
                         count={goingOf(e)}
                         going={going.isGoing(e.id)}
@@ -662,6 +667,7 @@ export default function TodayPage() {
             setPicked(null);
           }}
           isHopStop={isHopStop}
+          showOnMap
           placement={wide ? "side" : "sheet"}
           onPrev={wide && !picked && pileIds.length > 1 ? () => move(pileIds[pileIds.length - 1], "front") : undefined}
           onNext={wide && !picked && pileIds.length > 1 ? () => move(event.id, "back") : undefined}

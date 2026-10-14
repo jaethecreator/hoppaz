@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Bus, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowRight, Bus, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import StubSheet from "@/components/event/StubSheet";
 import ArtPanel from "@/components/event/ArtPanel";
 import GoingFoot from "@/components/event/GoingFoot";
@@ -45,6 +45,8 @@ type Props = {
   /** Side placement: step to the nearest event to the left or right on the map. Absent when there is none. */
   onPrev?: () => void;
   onNext?: () => void;
+  /** Add a map link when this card was opened from a list or discovery deck. */
+  showOnMap?: boolean;
 };
 
 /** Check-in times seen this session, so the stamp keeps its time when you reopen the card. */
@@ -64,7 +66,7 @@ export default function EventCard(props: Props) {
   return <EventSheet key={props.event.id} {...props} />;
 }
 
-function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, isHopStop, checkedAt, placement = "sheet", onPrev, onNext }: Props) {
+function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, isHopStop, checkedAt, placement = "sheet", onPrev, onNext, showOnMap = false }: Props) {
   const side = placement === "side";
   const page = placement === "page";
   const say = useToast((s) => s.say);
@@ -173,6 +175,12 @@ function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, i
         <h2 className={`font-display font-black leading-[1.05] tracking-[-0.01em] ${side ? "pr-6 text-[22px]" : page ? "text-[34px]" : "text-[30px]"}`}>{title}</h2>
         <p className="mt-2.5 font-mono text-[12px] font-medium uppercase leading-snug tracking-[0.04em] text-cream [text-wrap:balance]">{line}</p>
         <p className="mt-1 font-body text-[14px] text-dim">{event.venue_name}</p>
+        {showOnMap && (
+          <Link href={`/?e=${encodeURIComponent(event.id)}`} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full border border-line px-4 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-cream transition-colors hover:border-orange">
+            <MapPin size={15} className="text-orange" aria-hidden />
+            Show on map
+          </Link>
+        )}
         {pill && (
           <p className="mt-3">
             <span className={`pill ${pill.cls}`}>{pill.text}</span>
