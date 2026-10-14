@@ -2,10 +2,10 @@ import type { CSSProperties, ReactElement } from "react";
 import { ImageResponse } from "next/og";
 import { shareDate } from "@/components/event/share";
 import { clockShort, eventPrice, eventTitle, isEventLead } from "@/lib/geo";
-import { loadSharp, type Flyer, type ShareEvent } from "./_lib";
+import { loadSharp, type Flyer, type ShareCrew, type ShareEvent } from "./_lib";
 
 /**
- * The two share cards, 1200 x 630, drawn with next/og (Satori): flexbox and a
+ * The share cards (an event, a crew invite, the site), 1200 x 630, drawn with next/og (Satori): flexbox and a
  * subset of CSS only, every element with more than one child is display:flex.
  * Colours are the brand's fixed ones (src/lib/brand.ts); the card is always
  * the night look, whatever the time in Lagos.
@@ -317,6 +317,72 @@ export function SiteShareCard({ wordmark }: { wordmark: string }) {
             }}
           >
             OPEN THE MAP
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A crew's invite card (/crew/join/<code>): its name, the verified tick, members and who is in its room now. */
+export function CrewShareCard({ crew, wordmark }: { crew: ShareCrew; wordmark: string }) {
+  const size = titleSize(crew.brand.toUpperCase(), 640);
+  return (
+    <div style={{ display: "flex", width: OG_SIZE.width, height: OG_SIZE.height, background: INK, color: CREAM, position: "relative" }}>
+      <div style={{ display: "flex", position: "absolute", right: 0, top: 0, width: 520, height: OG_SIZE.height }}>
+        <MapBoard />
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          right: 380,
+          top: 0,
+          width: 180,
+          height: OG_SIZE.height,
+          backgroundImage: `linear-gradient(to right, ${INK}, rgba(14,11,10,0))`,
+        }}
+      />
+      <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", width: 760, padding: "64px 0 60px 72px" }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- Satori draws plain img tags */}
+        <img src={wordmark} width={300} height={94} alt="" />
+
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", fontFamily: MONO, fontWeight: 500, fontSize: 26, letterSpacing: 3, color: ORANGE }}>
+            {crew.verified && (
+              <svg width={34} height={34} viewBox="0 0 24 24" style={{ marginRight: 12 }}>
+                <path
+                  d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"
+                  fill="#22B8F0"
+                />
+                <path d="m9 12 2 2 4-4" fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+            {crew.verified ? "VERIFIED CREW · YOU'RE INVITED" : "YOU'RE INVITED TO THE CREW"}
+          </div>
+          <div style={{ display: "flex", marginTop: 14, fontFamily: DISPLAY, fontWeight: 900, fontSize: size, lineHeight: 1.02, letterSpacing: -1, color: CREAM, maxWidth: 640 }}>
+            {crew.brand.toUpperCase()}
+          </div>
+          <div style={{ display: "flex", marginTop: 22, fontFamily: BODY, fontWeight: 600, fontSize: 32, color: DIM }}>
+            {`${crew.members} ${crew.members === 1 ? "member" : "members"}${crew.in_room > 0 ? ` · ${crew.in_room} in the room now` : ""}`}
+          </div>
+        </div>
+
+        <div style={{ display: "flex" }}>
+          <div
+            style={{
+              display: "flex",
+              padding: "15px 28px",
+              background: ORANGE,
+              borderRadius: 8,
+              boxShadow: `0 5px 0 ${EMBER}`,
+              fontFamily: DISPLAY,
+              fontWeight: 900,
+              fontSize: 27,
+              letterSpacing: 1,
+              color: INK,
+            }}
+          >
+            JOIN THE CREW
           </div>
         </div>
       </div>
