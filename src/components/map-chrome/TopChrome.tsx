@@ -8,9 +8,9 @@ import Wordmark from "@/components/Wordmark";
 import type { DateFilter } from "@/lib/filters";
 
 /**
- * Everything across the top of the map: a compact row (wordmark, streak,
- * "what kind", "where am I"), the day rail, and a slim row of removable pills
- * when a vibe filter is on. Anything the page needs to say (a failed load)
+ * Everything across the top of the map: one compact row (wordmark, the orange
+ * calendar that names the night you are looking at, streak, "what kind", "where
+ * am I"), and a slim row of removable pills when a vibe filter is on. Anything the page needs to say (a failed load)
  * is passed as children and sits under the rail.
  *
  * The visible chips are 36px; each button carries 4px of padding so the thing
@@ -57,13 +57,17 @@ export default function TopChrome({
   const filtered = types.length > 0;
   return (
     <div ref={hudRef} className="pointer-events-none absolute inset-x-0 top-0 z-20">
-      {/* A soft scrim so the wordmark, icons and rail read over any map: map labels must not show through. */}
-      <div aria-hidden className="absolute inset-x-0 top-0 h-[calc(env(safe-area-inset-top,0px)+8rem)] bg-gradient-to-b from-ink/95 via-ink/80 to-transparent" />
+      {/* A soft scrim so the wordmark and icons read over any map: map labels must not show through. */}
+      <div aria-hidden className="absolute inset-x-0 top-0 h-[calc(env(safe-area-inset-top,0px)+5.5rem)] bg-gradient-to-b from-ink/95 via-ink/80 to-transparent" />
 
       <div className="pad-top relative mx-auto max-w-[640px] px-3.5 pb-2">
         <div className="flex items-center gap-1">
           <div className="pointer-events-auto mr-auto min-w-0 overflow-hidden py-1">
             <Wordmark size={15} />
+          </div>
+
+          <div className="pointer-events-auto -my-1 flex h-11 items-center px-1">
+            <DayRail compact value={day} onChange={onDay} counts={counts} lead={lead} />
           </div>
 
           <Link
@@ -116,8 +120,6 @@ export default function TopChrome({
             </span>
           </button>
         </div>
-
-        <DayRail slim value={day} onChange={onDay} counts={counts} lead={lead} className="pointer-events-auto mt-1" />
 
         {filtered && (
           <div className="pointer-events-auto -mx-3.5 mt-px flex items-center gap-1.5 overflow-x-auto px-3.5 py-[7px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

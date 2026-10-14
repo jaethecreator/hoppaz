@@ -12,7 +12,8 @@ import { nightOf, railDays, type DateFilter } from "@/lib/filters";
  * with its weekday, date and how many events are on. The month grid sits
  * behind the calendar icon for the person planning three weeks ahead.
  *
- * One rail for the Map and Today, driven by the shared date filter.
+ * One rail for the Map and Events, driven by the shared date filter. `compact` folds it all
+ * behind a single orange calendar button that names the current pick (the Map and Events use it).
  */
 
 /** Events load up to 45 days ahead (useEvents), so the grid stops there. */
@@ -23,6 +24,7 @@ export default function DayRail({
   onChange,
   counts,
   slim = false,
+  compact = false,
   lead,
   className,
 }: {
@@ -34,6 +36,8 @@ export default function DayRail({
   counts: Record<string, number>;
   /** The Map's thinner version. */
   slim?: boolean;
+  /** One orange calendar button that names the current pick; the days and the month sit behind it. */
+  compact?: boolean;
   className?: string;
 }) {
   const [gridOpen, setGridOpen] = useState(false);
@@ -47,6 +51,93 @@ export default function DayRail({
     const el = rail.current?.querySelector<HTMLElement>('[aria-checked="true"]');
     el?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
   }, [selected]);
+
+  if (compact) {
+    const pick = days.find((d) => d.date === selected);
+    const label =
+      lead?.on ? `${lead.label} ${lead.sub}`
+      : pick ? (pick.isToday ? "TODAY" : `${pick.weekday} ${pick.day}`)
+      : selected ? `${Number(selected.slice(8))} ${new Date(`${selected}T12:00:00Z`).toLocaleDateString("en-NG", { month: "short", timeZone: "UTC" }).toUpperCase()}`
+      : "PICK A DAY";
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setGridOpen(true)}
+          aria-label={`Showing ${label.toLowerCase()}. Pick a day`}
+          className={clsx(
+            "inline-flex h-9 flex-none items-center gap-1.5 rounded-hz border border-orange bg-orange px-2.5 font-mono text-[11px] font-medium tracking-[0.08em] text-brand-ink shadow-chunk transition-[transform,box-shadow] duration-75 active:translate-y-1 active:shadow-none",
+            className
+          )}
+        >
+          <CalendarDays size={16} strokeWidth={2.2} aria-hidden />
+          <span className="whitespace-nowrap">{label}</span>
+        </button>
+        <Sheet open={gridOpen} onClose={() => setGridOpen(false)} label="Pick a day">
+          <div className="pb-1">
+            <h2 className="text-xl font-black">When are you going out?</h2>
+            <div className="mt-3 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Day">
+              {lead && (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={lead.on}
+                  aria-label={lead.aria}
+                  onClick={() => {
+                    lead.onClick();
+                    setGridOpen(false);
+                  }}
+                  className={clsx(
+                    "flex min-w-[58px] flex-col items-center justify-center rounded-hz border px-2 py-1.5",
+                    lead.on ? "border-orange bg-orange text-brand-ink" : "border-line bg-ink-3 text-cream"
+                  )}
+                >
+                  <span className={clsx("font-mono text-[10px] font-medium tracking-[0.08em]", lead.on ? "text-brand-ink" : "text-dim")}>{lead.label}</span>
+                  <span className="num text-[20px]">{lead.sub}</span>
+                </button>
+              )}
+              {days.map((d) => {
+                const on = d.date === selected && !lead?.on;
+                const n = counts[d.date] ?? 0;
+                return (
+                  <button
+                    key={d.date}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    aria-label={`${d.isToday ? "Today" : d.weekday} ${d.day} ${d.month}, ${n} on`}
+                    onClick={() => {
+                      onChange({ kind: "night", date: d.date });
+                      setGridOpen(false);
+                    }}
+                    className={clsx(
+                      "flex min-w-[58px] flex-col items-center justify-center rounded-hz border px-2 py-1.5",
+                      on ? "border-orange bg-orange text-brand-ink" : "border-line bg-ink-3 text-cream",
+                      !on && n === 0 && "opacity-55"
+                    )}
+                  >
+                    <span className={clsx("font-mono text-[10px] font-medium tracking-[0.08em]", on ? "text-brand-ink" : "text-dim")}>
+                      {d.isToday ? "TODAY" : d.weekday}
+                    </span>
+                    <span className="num text-[20px]">{d.day}</span>
+                    <span className={clsx("font-mono text-[9.5px]", on ? "text-brand-ink" : "text-dim")}>{n} on</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <MonthGrid
+            selected={lead?.on ? null : selected}
+            counts={counts}
+            onPick={(date) => {
+              onChange({ kind: "night", date });
+              setGridOpen(false);
+            }}
+          />
+        </Sheet>
+      </>
+    );
+  }
 
   return (
     <div className={clsx("flex items-stretch gap-1.5", className)}>

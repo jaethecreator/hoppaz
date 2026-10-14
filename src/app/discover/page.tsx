@@ -21,11 +21,9 @@ import {
   HOUR,
   byGoingThenStart,
   conductorLine,
-  dateTag,
   hasEnded,
   nextBusyDay,
   nextBusyLabel,
-  weekdayLong,
 } from "@/components/today/helpers";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
 import {
@@ -137,7 +135,6 @@ export default function TodayPage() {
   const shownTypes = mounted ? types : NO_TYPES;
   const today = nightOf(now);
   const dayKey = mounted && dateFilter.kind === "night" ? dateFilter.date : today;
-  const isToday = dayKey === today;
   const dayFilter: DateFilter = useMemo(() => ({ kind: "night", date: dayKey }), [dayKey]);
 
   // Rail counts: everything loaded, narrowed by type only (the same numbers the Map's rail shows).
@@ -424,7 +421,6 @@ export default function TodayPage() {
       ? "Nothing listed for this night yet."
       : conductorLine({ events: deckEvents, dropIds: dropSet, dayKey: mode === "next" ? "" : dayKey, now, goingOf });
 
-  const title = mode === "next" ? "Next up" : isToday ? "Today" : weekdayLong(dayKey);
 
   return (
     <div
@@ -443,8 +439,27 @@ export default function TodayPage() {
           {/* -------------------------------------------------------- header -- */}
           <header className="pad-top flex-none px-4 pb-3">
             <div className="flex items-baseline gap-2.5">
-              <h1 className="truncate font-display text-[34px] font-black leading-none tracking-[-0.01em]">{title}</h1>
-              {mode === "day" && !isToday && mounted && <span className="seclabel flex-none">{dateTag(dayKey)}</span>}
+              <h1 className="truncate font-display text-[34px] font-black leading-none tracking-[-0.01em]">Events</h1>
+              {mounted && (
+                <DayRail
+                  key={today}
+                  compact
+                  className="self-center"
+                  value={mode === "next" ? { kind: "any" } : dayFilter}
+                  onChange={pickDay}
+                  counts={counts}
+                  lead={{
+                    label: "NEXT",
+                    sub: String(next.list.length || NEXT_COUNT),
+                    aria: `Next ${next.list.length} events`,
+                    on: mode === "next",
+                    onClick: () => {
+                      setMode("next");
+                      setOpen(false);
+                    },
+                  }}
+                />
+              )}
               {mounted && (
                 <button
                   type="button"
@@ -463,28 +478,6 @@ export default function TodayPage() {
             <p className="mt-2.5 min-h-[22px] font-body text-[15px] font-medium leading-snug text-cream">{line}</p>
           </header>
 
-          <div className="flex-none px-4">
-            {mounted ? (
-              <DayRail
-                key={today}
-                value={mode === "next" ? { kind: "any" } : dayFilter}
-                onChange={pickDay}
-                counts={counts}
-                lead={{
-                  label: "NEXT",
-                  sub: String(next.list.length || NEXT_COUNT),
-                  aria: `Next ${next.list.length} events`,
-                  on: mode === "next",
-                  onClick: () => {
-                    setMode("next");
-                    setOpen(false);
-                  },
-                }}
-              />
-            ) : (
-              <div className="h-[72px]" aria-hidden />
-            )}
-          </div>
 
           {shownTypes.length > 0 && (
             <div className="flex flex-none items-center gap-1.5 overflow-x-auto px-4 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

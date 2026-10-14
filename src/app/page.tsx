@@ -33,7 +33,6 @@ import type { HopStop } from "@/lib/types";
 import { busPosition } from "@/lib/busPosition";
 import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
-import NextBar from "@/components/map-chrome/NextBar";
 import { NEXT_COUNT, nextEvents } from "@/lib/filters";
 import { usePlayMode } from "@/lib/usePlayMode";
 import { introEvent, introPending, registerIntroAction } from "@/lib/intro";
@@ -446,16 +445,7 @@ export default function MapPage() {
             <Link href="/drop" aria-label="Post a flyer" title="Post a flyer" className="btn pointer-events-auto grid h-11 w-11 flex-none place-items-center p-0">
               <Plus size={16} strokeWidth={3} aria-hidden />
             </Link>
-            {mode === "next" ? (
-              <NextBar
-                className="pointer-events-auto min-w-0 flex-1"
-                count={next.list.length}
-                from={next.from}
-                to={next.to}
-                hasFix={!!fix}
-                onLocate={() => setPicking(true)}
-              />
-            ) : slot && (
+            {mode !== "next" && slot && (
               <TimeScrubber
                 className="pointer-events-auto min-w-0 flex-1"
                 stops={stops}
