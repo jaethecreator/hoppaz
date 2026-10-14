@@ -12,18 +12,22 @@ export default function AuthCallbackPage() {
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
-    const providerError = params.get("error_description") ?? params.get("error");
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const providerError = params.get("error_description") ?? params.get("error")
+      ?? hashParams.get("error_description") ?? hashParams.get("error");
     const rawNext = params.get("next") ?? "/me";
     const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/me";
 
     const finish = async () => {
       if (providerError) throw new Error(providerError);
-      if (!code) throw new Error("Google sign-in did not finish. Please try again.");
       const sb = getSupabase();
       if (!sb) throw new Error("Not connected");
-      const { error: exchangeError } = await sb.auth.exchangeCodeForSession(code);
-      if (exchangeError) throw exchangeError;
+      // createBrowserClient has detectSessionInUrl enabled. It handles the PKCE
+      // code or implicit tokens during initialization, so manually exchanging
+      // the same code here can fail with an already-used code error.
+      const { data: { session }, error: sessionError } = await sb.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session) throw new Error("Google sign-in did not finish. Please try again.");
       if (cancelled) return;
       const { data: userData } = await sb.auth.getUser();
       const googleName = userData.user?.user_metadata?.full_name ?? userData.user?.user_metadata?.name;
