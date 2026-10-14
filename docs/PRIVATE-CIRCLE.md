@@ -18,9 +18,6 @@ LIVEKIT_API_KEY=your-server-api-key
 LIVEKIT_API_SECRET=your-server-api-secret
 ```
 
-LIVEKIT_URL=wss://hoppaz-6tnmexa2.livekit.cloud
-LIVEKIT_API_KEY=APIGH22nGro9LoG
-LIVEKIT_API_SECRET=8reqyfZncP5PzXUZV2rD64h6KkGJzwudcePje3pQsEeG
 Keep the API secret off the client. Hoppaz checks membership before minting a short-lived room token. If these variables are absent, the private map and quests still work, while audio rooms show a setup message.
 
 ## Adding private listings
