@@ -129,7 +129,9 @@ begin
     return exists (select 1 from event_group_members
                     where user_id = p_user and event_id::text = substr(p_channel, 7) and status = 'joined');
   elsif exists (select 1 from events where id::text = p_channel) then
-    return exists (select 1 from checkins where user_id = p_user and event_id::text = p_channel);
+    -- An event room is for everyone going (WE OUTSIDE / I'M GOING) as well as everyone who checked in.
+    return exists (select 1 from checkins where user_id = p_user and event_id::text = p_channel)
+        or exists (select 1 from swipes where user_id = p_user and event_id::text = p_channel and decision = 'in');
   elsif p_channel like 'move:%' then
     -- A crew move's chat: everyone in the crew who said I'M IN.
     return exists (select 1 from crew_move_rsvps
