@@ -41,18 +41,25 @@ end; avoid the waitlist tab in IMG_1951.
 
 ## 2. Sign-up: early, short and fun (no guest mode)
 
-**The flow on first open:**
-1. **City splash.** About 2 seconds of Lagos at night: "Experience the city like a local"
-   (MyLagosApp 1966). No buttons.
-2. **Pick your home base.** A map of the hotspots: "Where do you hang?" The nearest one is
-   suggested if you allow location. The ask shows real Lagos flyers with "2 km away"
+Jae chose this direction on 14 Oct: his flow, plus hooks that keep the whole city in view.
+
+1. **City splash.** About 2 seconds of Lagos at night. No buttons.
+2. **"Set your location to get started."** The ask shows real Lagos flyers with "2 km away"
    (Tix 1980).
-3. **Make your Hopper.** Pick your avatar look (Lagos Life 2033: fabrics, skin tones).
-4. **Claim your Hopper.** **This step is the sign-up.** It reads "Save your Hopper and join
-   Jibowu", with Google as one tap and email with a 6-digit code below. The username is made
-   automatically and can be changed later (Bello 1971–1972). Lagos Life turns sign-up into
-   making your character; we do the same.
-5. **Land in your home base room**, with your first welcome box waiting and Paz saying hi.
+3. **A peek at the nearest hotspot room.** It is live: the room, people in it, chat moving.
+   The app picks the hotspot closest to you. Nobody chooses a home base up front.
+4. **Make your Hopper.** Pick your avatar look (Lagos Life 2033: fabrics, skin tones).
+5. **STEP IN: Google or email.** This is the sign-up, and it is the only way into the room.
+   The username is made automatically and can be changed later (Bello 1971–1972).
+6. **You spawn in the room.**
+   - The chat says "New Hopper in Jibowu".
+   - Paz says: "This is the spot closest to you. Chat with people near you, or head out to
+     see what's on tonight." He points at the room's door.
+7. **The door, or Back, opens the map of events near you.** Exploring Lagos starts here.
+
+**Home base is earned, not picked.** It becomes yours from where you spend the most time
+over 30 days. Visiting other areas stays the point of Hoppaz, and the community rivalry comes
+from where people actually hang out.
 
 Everything after that is optional and asked when it is useful:
 - **Interests:** later, one screen of emoji chips with Skip (Eventbrite 2014).
@@ -61,11 +68,14 @@ Everything after that is optional and asked when it is useful:
 
 Never an 8-step form before any content; the orange app at IMG_1942–1949 is the warning.
 
+**Needs:** hotspot rooms on the new room engine (the 360 crew room is the template), so the
+nearest room can be shown and entered.
+
 ## 3. Land where the result lives (and make it rich)
 
 | You do | You land on | What makes it feel deep |
 |---|---|---|
-| Sign up | your home base room | Your name appears on the room's mural, members say hi, and a welcome box shimmers |
+| Sign up (STEP IN) | the nearest hotspot room | "New Hopper in Jibowu", people say hi, Paz points at the door to the map, and a welcome box shimmers |
 | WE OUTSIDE on an event | that event's room | Who else is going (faces), the countdown, the line-up on the walls, and chat open |
 | Join a crew (invite link) | the crew's room | Members wave, "you're member #47", the crew's next event |
 | Open a box | a full-screen reveal, then your Collection | The new card flips in, with a NEW tag and the set's progress ("3 of 8 Yaba") |
