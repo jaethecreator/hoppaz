@@ -15,6 +15,12 @@ export const BRAND = {
   line: "#2E211C",
 } as const;
 
+/**
+ * The Hoppaz line, in the caps the opening titles used. Kept here when the Paz welcome flow and its title sequence were
+ * removed, so the first run that replaces them can use it again (the share poster does today).
+ */
+export const TAGLINE = "COME ALONE. LEAVE WITH FRIENDS.";
+
 export const VIBES = [
   "afro",
   "amapiano",

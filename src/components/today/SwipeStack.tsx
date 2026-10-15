@@ -403,7 +403,6 @@ export default function SwipeStack({
         role="group"
         aria-roledescription="card stack"
         aria-label={`Events. Swipe ${goSide} if you're going, the other way to see it later.`}
-        data-intro="deck"
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}

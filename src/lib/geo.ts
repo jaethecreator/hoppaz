@@ -25,6 +25,9 @@ export const AREAS: Area[] = [
   { name: "Ajah", side: "island", lat: 6.468, lng: 3.565 },
 ];
 
+/** Lagos only for now (the same box as the server's bounds). */
+export const insideLagos = (lat: number, lng: number) => lat >= 6.3 && lat <= 6.8 && lng >= 3.05 && lng <= 3.95;
+
 export const LAGOS_CENTER = { lat: 6.5, lng: 3.42 };
 
 /**

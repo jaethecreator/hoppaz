@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import HotspotRoom from "@/components/play/hotspots/HotspotRoom";
+import HotspotRoom from "@/components/hotspots/HotspotRoom";
 import { useSession } from "@/lib/useSession";
 
 /**

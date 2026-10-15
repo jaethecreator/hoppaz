@@ -5,14 +5,14 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import type { HotspotsData } from "@/lib/hotspots/useHotspots";
 import type { Hotspot } from "@/lib/hotspots/types";
-import HotspotMarker from "./HotspotMarker";
+import HotspotMarker from "@/components/hotspots/HotspotMarker";
 import HotspotPointer from "./HotspotPointer";
-import HotspotSheet from "./HotspotSheet";
-import HotspotsAll from "./HotspotsAll";
+import HotspotSheet from "@/components/hotspots/HotspotSheet";
+import HotspotsAll from "@/components/hotspots/HotspotsAll";
 
 // The room (chat, faces) has its own chunk: nobody pays for it until a sheet is opened. Until it has loaded, the screen is
 // the room's own dark ground, so the hand-over from the map has no empty frame in it.
-const HotspotRoom = dynamic(() => import("./HotspotRoom"), { ssr: false, loading: () => <div aria-hidden className="fixed inset-0 z-[45] bg-ink" /> });
+const HotspotRoom = dynamic(() => import("@/components/hotspots/HotspotRoom"), { ssr: false, loading: () => <div aria-hidden className="fixed inset-0 z-[45] bg-ink" /> });
 
 /** Below this zoom the camera is out over all of Lagos and a pin is just its disc. */
 const FAR_ZOOM = 12.6;
@@ -82,7 +82,7 @@ export default function HotspotsLayer({
 
   // Someone looking at a sheet may well enter: fetch the room now so it is there when the avatar arrives.
   useEffect(() => {
-    if (sheet) void import("./HotspotRoom");
+    if (sheet) void import("@/components/hotspots/HotspotRoom");
   }, [sheet]);
 
   // The room covers the whole screen: the markers (which would paint over it) step aside while it is open.

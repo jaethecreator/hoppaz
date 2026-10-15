@@ -349,119 +349,11 @@
   right: 4px;
 }
 
-/* ------------------------------------------------- title sequence ----- */
-/*
- * Timings: START 0.3s, PAN 3.4s, about 4.5s in all with the hold on the lockup.
- * TitleSequence.tsx owns the numbers and hands them down as --ts-start / --ts-pan;
- * the fallbacks here are the same values, so the two stay in step.
- * Stamps, not springs: every curve is a hard ease-out, nothing overshoots.
- */
-.ts-cam {
-  animation: ts-pan var(--ts-pan, 3.4s) cubic-bezier(0.37, 0, 0.63, 1) var(--ts-start, 0.3s) both;
-}
-.ts-cam-back {
-  animation: ts-pan-back var(--ts-pan, 3.4s) cubic-bezier(0.37, 0, 0.63, 1) var(--ts-start, 0.3s) both;
-}
-.ts-rise {
-  transform-box: fill-box;
-  transform-origin: 50% 100%;
-  animation: ts-rise 0.26s cubic-bezier(0.2, 0.9, 0.3, 1) var(--d) both;
-}
-.ts-pop {
-  transform-box: fill-box;
-  transform-origin: 50% 100%;
-  animation: ts-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) var(--d) both;
-}
-/* A rooftop sign that flips to another name, like the logos in the show */
-.ts-pop.ts-flip-out {
-  animation:
-    ts-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) var(--d) both,
-    ts-flip 0.14s cubic-bezier(0.2, 0.9, 0.3, 1) var(--d2) forwards;
-}
-.ts-draw {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: ts-draw 0.4s cubic-bezier(0.2, 0.9, 0.3, 1) var(--d) forwards;
-}
-.ts-bus {
-  animation: ts-drive 2.2s cubic-bezier(0.3, 0, 0.7, 1) var(--d) both;
-}
-.ts-blimp {
-  animation: ts-drift 3.6s ease-in-out both;
-}
-@keyframes ts-pan {
-  to {
-    transform: translateX(var(--pan));
-  }
-}
-@keyframes ts-pan-back {
-  to {
-    transform: translateX(var(--pan-back));
-  }
-}
-@keyframes ts-rise {
-  from {
-    transform: scaleY(0);
-  }
-  to {
-    transform: scaleY(1);
-  }
-}
-/* A sign stamps onto its roof: lands from a little above and a little off square. */
-@keyframes ts-pop {
-  from {
-    opacity: 0;
-    transform: scale(1.4) rotate(-3deg);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes ts-flip {
-  to {
-    transform: scaleY(0);
-  }
-}
-@keyframes ts-draw {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-@keyframes ts-drive {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(900px);
-  }
-}
-@keyframes ts-drift {
-  from {
-    transform: translate(-60px, 8px);
-  }
-  to {
-    transform: translate(80px, -6px);
-  }
-}
-/* The lockup: wordmark, then mascot. Scales down hard, lands a degree off square. */
-@keyframes ts-stamp {
-  from {
-    opacity: 0;
-    transform: scale(1.5) rotate(-4deg);
-  }
-  to {
-    opacity: 1;
-    transform: rotate(-1deg);
-  }
-}
-
 /* ------------------------------------------------------- map signs ---- */
 /*
  * Every event stands on the map as a rooftop billboard, the original Hoppaz
  * sign: a cream board with the name and one mono line (crowd diamond, price,
- * time, minutes away) on two posts, popping up one after another the way the
- * intro's signs do. From street zoom it becomes a card with the flyer on top and
+ * time, minutes away) on two posts, popping up one after another. From street zoom it becomes a card with the flyer on top and
  * floats over its venue's house. NightMap's declutter sets data-mode on each
  * sign: card | banner | mini (price tag) | off (just the dot).
  */
@@ -778,7 +670,7 @@
   position: absolute;
   inset: -11px;
 }
-/* The little bus from the intro: orange, with a violet edge on the Hop's day. It bobs while it drives. */
+/* The little Hop bus: orange, with a violet edge on the Hop's day. It bobs while it drives. */
 .hz-bus {
   display: flex;
   flex-direction: column;
@@ -1009,7 +901,7 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
 }
 
 /*
- * Loud-layer pages (the title sequence, the shared month poster) are always the
+ * Loud-layer pages (the shared month poster) are always the
  * night set, whatever the Lagos clock says: their art is drawn for it.
  */
 .hz-night,
@@ -1189,23 +1081,10 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
  * Ambient animation stops on a low tier (.hz-low) and for people who asked their phone for less motion.
  */
 
-/* Play closes the map: signs, stops, the bus and the zoom buttons fade out of the way. */
-.hz-playing .hz-sign,
-.hz-playing .hz-stop,
-.hz-playing .hz-bus {
-  opacity: 0 !important;
-  pointer-events: none !important;
-  /* After the fade they leave the layout, so a cheap phone is not repositioning 20 hidden markers every frame. */
-  display: none !important;
-  transition: opacity 0.3s, display 0.3s allow-discrete;
-}
 .hz-sign,
 .hz-stop,
 .hz-bus {
   transition: opacity 0.3s;
-}
-.hz-playing .maplibregl-ctrl-top-right {
-  display: none;
 }
 
 /* Your avatar: a 44 px disc on a neutral ring. Out of Play it asks to be tapped (a slow pulse and a PLAY tag); never orange. */

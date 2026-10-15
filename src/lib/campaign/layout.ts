@@ -1,9 +1,14 @@
 import type { Block, Tile } from "./geometry";
 
-export type ZoneId = "studio" | "stage" | "awards" | "courtyard" | "records" | "campaign";
-export type FloorMaterial = "acoustic" | "stage" | "marble" | "grass" | "wood" | "terrazzo";
+/** The clubhouse's own zone ids. Event and hotspot rooms (src/lib/campaign/rooms) bring their own, so a zone id is any string. */
+export type ZoneId = "studio" | "stage" | "awards" | "courtyard" | "records" | "campaign" | (string & {});
+export type FloorMaterial = "acoustic" | "stage" | "marble" | "grass" | "wood" | "terrazzo" | (string & {});
 export type CampaignZone = Block & { id: ZoneId; number: string; name: string; subtitle: string; material: FloorMaterial; stop: Tile; plaque: Tile };
-export type PropKind = "console" | "speaker" | "headphones" | "plant" | "tree" | "sofa" | "table" | "records" | "plinth" | "poster" | "counter" | "bench" | "fountain" | "lamp" | "rug" | "maptable";
+/**
+ * What a prop is drawn as. The first sixteen are the clubhouse kit (ClubhouseArt). Event and hotspot rooms draw their own
+ * props in their art file (src/components/campaign/art), so a kind is any string there: the layout only needs the box.
+ */
+export type PropKind = "console" | "speaker" | "headphones" | "plant" | "tree" | "sofa" | "table" | "records" | "plinth" | "poster" | "counter" | "bench" | "fountain" | "lamp" | "rug" | "maptable" | (string & {});
 export type CampaignProp = Block & { id: string; kind: PropKind; variant?: number; solid?: boolean };
 export type PrivateArea = Block & { id: string; name: string; stop: Tile };
 export type CampaignLayout = { id: string; grid: { width: number; height: number; tile: number }; spawn: Tile; zones: CampaignZone[]; privateAreas: PrivateArea[]; walls: Block[]; props: CampaignProp[] };
