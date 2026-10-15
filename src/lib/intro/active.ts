@@ -2,13 +2,11 @@
 
 import { useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
-import { useToast } from "@/lib/store";
 import { supabaseConfigured } from "@/lib/supabase/client";
 import { usePlayMode } from "@/lib/usePlayMode";
 import { useSessionStore } from "@/lib/useSession";
 import { readEnv, type IntroEnv } from "./env";
 import { promptWindowOpen, useInstallPrompt } from "./install";
-import { EXTRA } from "./lines";
 import { currentStep, type InstallKind, type IntroCtx, type IntroSave } from "./machine";
 import { INTRO_QUIET, stepDef, type StepId } from "./steps";
 import { useIntro } from "./store";
@@ -102,11 +100,5 @@ export function useIntroActive(): boolean {
   return stepFor(key, save, nudge, makeCtx(path ?? "/", playing, readEnv(), accountReady(email, sessionState), canPrompt)) !== null;
 }
 
-/**
- * A gated action was tried while Paz is touring. The sign-up sheet stays shut;
- * a short line says so instead. (On the "keep your Golden Danfo" card the line
- * points at her card, where the one sign-up moment is.)
- */
-export function introNeedAccount(): void {
-  useToast.getState().say(introStepNow() === "keep" ? EXTRA.signupOnCard : EXTRA.signupLater);
-}
+/** Gated actions stay quiet during the tour; skipping or finishing it never forces signup. */
+export function introNeedAccount(): void {}

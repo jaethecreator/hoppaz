@@ -1,6 +1,6 @@
 "use client";
 
-import { useAccountGate } from "@/lib/accountGate";
+import { goToAccount } from "@/lib/accountGate";
 import { askToInstall, enablePush } from "@/lib/push";
 import { useToast } from "@/lib/store";
 import { fireInstallPrompt } from "./install";
@@ -42,7 +42,7 @@ const defaults: Record<IntroActionName, Handler> = {
   added: () => introEvent("install_added"),
 
   // The one sign-up moment, and the alerts rule: Paz asked, the Hopper tapped, so the sheet opens (it never opens on its own during the tour).
-  signup: (step) => useAccountGate.getState().show(step === "alerts" ? "keep your boxes and get alerts" : "keep your Golden Danfo"),
+  signup: (step) => goToAccount(step === "alerts" ? "keep your boxes and get alerts" : "keep your Golden Danfo"),
 
   // The host turns the position watch on; the permission question appears and
   // the bridge turns the answer into location_granted or location_denied.

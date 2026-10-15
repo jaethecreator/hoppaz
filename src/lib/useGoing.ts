@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { create } from "zustand";
 import { getSupabase } from "./supabase/client";
 import { NEED_ACCOUNT, requireAccount } from "./accountGate";
@@ -108,8 +108,8 @@ export function useGoing(userId: string | null) {
         }
         return null;
       }
-      // Saying you're going needs an account; the sheet opens and finishes this after.
-      if (decision === "in" && !requireAccount("say we outside", () => void decideRef.current(eventId, decision))) return NEED_ACCOUNT;
+      // Saying you're going needs an account. Sign in, return here and tap again.
+      if (decision === "in" && !requireAccount("say we outside")) return NEED_ACCOUNT;
       // Read the id fresh: a log-in from the sheet may have just swapped users.
       const uid = useSessionStore.getState().userId ?? userId;
       if (!uid) return "Still connecting. Try again in a moment.";
@@ -137,10 +137,6 @@ export function useGoing(userId: string | null) {
   );
 
   // The sheet finishes a gated decision later; this always reaches the newest decide.
-  const decideRef = useRef(decide);
-  useEffect(() => {
-    decideRef.current = decide;
-  });
 
   /** I'M GOING toggles: going -> not decided, anything else -> going. */
   const toggleGoing = useCallback(

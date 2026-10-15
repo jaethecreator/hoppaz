@@ -27,14 +27,17 @@ function Account() {
   // Only same-site paths: never bounce to wherever a link says.
   const raw = params.get("next") ?? "/me";
   const next = raw.startsWith("/") && !raw.startsWith("//") ? raw : "/me";
+  const loginMode = params.get("mode") === "login";
+  const accountCaption = params.get("detail")
+    ?? (params.get("reason") ? `Create an account to ${params.get("reason")}.` : loginMode ? "Log in to your Hoppaz account." : "Create your Hoppaz account to keep your nights.");
   const { email: signedIn, profile, state } = useSession();
 
   return (
     <div className="h-full overflow-y-auto px-4 pb-8">
       <PageHeader
-        backTo={next}
-        title={signedIn ? "Your account" : "Join Hoppaz"}
-        caption={signedIn ? "Signed in" : "Say WE OUTSIDE, check in, earn rewards, crew up"}
+        backTo={params.get("reason") ? "/" : next}
+        title={signedIn ? "Your account" : loginMode ? "Log in" : "Sign up"}
+        caption={signedIn ? "Signed in" : accountCaption}
       />
 
       {state === "loading" ? (
@@ -57,7 +60,7 @@ function Account() {
         </div>
       ) : (
         <div className="card">
-          <SignupForm startWith={params.get("mode") === "login" ? "login" : "create"} onDone={() => router.push(next)} />
+          <SignupForm startWith={loginMode ? "login" : "create"} onDone={() => router.push(next)} />
         </div>
       )}
     </div>

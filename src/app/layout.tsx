@@ -10,9 +10,8 @@ import InstallSheet from "@/components/app/InstallSheet"
 import MusicHost from "@/components/app/MusicHost"
 import OfflineLine from "@/components/app/OfflineLine"
 import PushAlert from "@/components/app/PushAlert"
-import GameTimePing from "@/components/game-time/GameTimePing"
-import SignupSheet from "@/components/app/SignupSheet"
 import SoundLane from "@/components/app/SoundLane"
+import GameTimePing from "@/components/game-time/GameTimePing"
 import IntroHost from "@/components/intro/IntroHost"
 import { THEME_BOOT_SCRIPT } from "@/lib/theme"
 import "@fontsource/archivo/400.css"
@@ -22,8 +21,8 @@ import "@fontsource/dm-mono/400.css"
 import "@fontsource/dm-mono/500.css"
 import "@fontsource/poppins/600.css"
 import "@fontsource/poppins/900.css"
-import "maplibre-gl/dist/maplibre-gl.css"
 import "leaflet/dist/leaflet.css"
+import "maplibre-gl/dist/maplibre-gl.css"
 import "./globals.css"
 
 const DESCRIPTION = "Come alone, leave with friends."
@@ -100,7 +99,6 @@ export default function RootLayout({
         </div>
         <GameTimePing />
         <Toaster />
-        <SignupSheet />
         <InstallSheet />
         <IntroHost />
       </body>

@@ -336,7 +336,7 @@ export default function TodayPage() {
   const toldOnce = useRef(false);
   const swipeIn = async (e: EventRow) => {
     if (going.isGoing(e.id) || going.busy[e.id]) return;
-    if (!requireAccount("save your WE OUTSIDE list and get the group chats", undefined, { quiet: asked.current })) {
+    if (!requireAccount("save your WE OUTSIDE list and get the group chats", { quiet: asked.current })) {
       asked.current = true;
       guest.add(e.id);
       return;

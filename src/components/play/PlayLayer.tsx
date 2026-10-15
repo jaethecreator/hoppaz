@@ -757,13 +757,6 @@ export default function PlayLayer({
         const left = boxes.filter((b) => b.kind === "welcome" && b.id !== op.box.id).length;
         if (left === 0) {
           if (markFirst("welcome")) emitPlayEvent({ type: "welcome-done" });
-          // The third welcome box is open: keep it by making an account, in place (same user id is upgraded).
-          // During Paz's tour this is her own "keep your Golden Danfo" card, so the sheet does not also open by itself.
-          if (!hasAccount) {
-            setTimeout(() => {
-              if (!introActive()) requireAccount("keep your Golden Danfo");
-            }, 700);
-          }
         }
       }
     },
@@ -795,7 +788,7 @@ export default function PlayLayer({
         return;
       }
       // An account is asked for before the tape rips, never for a welcome box.
-      if (box.kind !== "welcome" && !requireAccount("open boxes", () => onBoxTap(box))) return;
+      if (box.kind !== "welcome" && !requireAccount("open boxes")) return;
       if (box.needsPresence) {
         const m = metresBetween(h.lat, h.lng, box.lat, box.lng);
         if (m > REACH_M) {
@@ -955,7 +948,7 @@ export default function PlayLayer({
     (h: Hotspot) => {
       if (busy.current || !playing || h.status !== "open") return;
       // Browsing is open to everyone; being in the room needs an account (and the 18 and over question, asked by the room).
-      if (!requireAccount("enter a hotspot", () => enterHotspot(h))) return;
+      if (!requireAccount("enter a hotspot")) return;
       busy.current = true;
       stayRef.current = true;
       setSheet(null);
@@ -1131,10 +1124,9 @@ export default function PlayLayer({
       const n = welcome.length;
       return { tone: "info", text: `${n} welcome ${n === 1 ? "box" : "boxes"} for you. Tap one.` };
     }
-    // A guest has no small boxes by design (the server says 0 left); they have welcome boxes, then the sign-up sheet.
+    // A guest has no small boxes by design (the server says 0 left); welcome boxes are optional and never force signup.
     if ((DEMO ? demo.length : tick.answered) && boxes.length === 0) {
-      // Paz's tour has its own sign-up card; the tray does not ask a second time.
-      if (!hasAccount) return { tone: "info", text: touring ? "No boxes right now. New ones rise nearby." : "Make an account to keep playing." };
+      if (!hasAccount) return { tone: "info", text: "No boxes right now. New ones rise nearby." };
       return info.smallLeft === 0
         ? { tone: "info", text: "Tomorrow's box is sealed." }
         : { tone: "info", text: "No boxes right now. New ones rise nearby." };

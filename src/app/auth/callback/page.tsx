@@ -8,6 +8,7 @@ import { getSupabase } from "@/lib/supabase/client";
 export default function AuthCallbackPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [returnTo, setReturnTo] = useState("/me");
 
   useEffect(() => {
     let cancelled = false;
@@ -17,6 +18,7 @@ export default function AuthCallbackPage() {
       ?? hashParams.get("error_description") ?? hashParams.get("error");
     const rawNext = params.get("next") ?? "/me";
     const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/me";
+    setReturnTo(next);
 
     const finish = async () => {
       if (providerError) throw new Error(providerError);
@@ -51,14 +53,26 @@ export default function AuthCallbackPage() {
     };
   }, [router]);
 
+  const identityConflict = !!error && /identity_already_exists|identity already exists|already linked to another user/i.test(error);
+
   return (
     <main className="grid h-full place-items-center px-6 text-center">
       <div className="max-w-sm">
         {error ? (
           <>
             <h1 className="font-display text-2xl font-black">Sign-in didn&apos;t finish</h1>
-            <p role="alert" className="hint mt-2">{error}</p>
-            <Link href="/account" className="btn mt-5">BACK TO SIGN IN</Link>
+            {identityConflict ? (
+              <>
+                <p role="alert" className="hint mt-2">This Google account is already linked to a different Hoppaz account.</p>
+                <p className="hint mt-2">Log in with that Google account to use it. Guest activity from this session won&apos;t merge automatically.</p>
+                <Link href={`/account?mode=login&next=${encodeURIComponent(returnTo)}`} className="btn mt-5">LOG IN WITH GOOGLE</Link>
+              </>
+            ) : (
+              <>
+                <p role="alert" className="hint mt-2">{error}</p>
+                <Link href={`/account?next=${encodeURIComponent(returnTo)}`} className="btn mt-5">BACK TO SIGN IN</Link>
+              </>
+            )}
           </>
         ) : (
           <>

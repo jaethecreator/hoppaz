@@ -1,6 +1,5 @@
 "use client";
 
-import { create } from "zustand";
 import { introActive, introNeedAccount } from "./intro/active";
 import { getSupabase } from "./supabase/client";
 import { useSessionStore } from "./useSession";
@@ -9,13 +8,11 @@ import { useSessionStore } from "./useSession";
  * The account gate. Browsing is open to everyone; doing things (saying WE
  * OUTSIDE, checking in, claiming rewards, crews, your profile) needs an
  * account. A gated action calls requireAccount(): with an account it is a
- * no-op; without one it opens the sign-up sheet (SignupSheet, mounted once)
- * and remembers what you were doing, so it goes through the moment you're in.
+ * no-op; without one it routes to the full account page.
  *
  * Paz's first-run tour has one sign-up moment of its own (her "keep your Golden
- * Danfo" card). While she is with the Hopper nothing else opens the sheet on its
- * own: the action waits (a short line says so) and Ola's behaviour is back when
- * the tour ends or is skipped.
+ * Danfo" card). Gated actions stay quiet while she is with the Hopper; normal
+ * account routing resumes after the tour ends or is skipped.
  */
 
 /**
@@ -26,30 +23,24 @@ import { useSessionStore } from "./useSession";
 export const NEED_ACCOUNT = "need_account";
 export const isNeedAccount = (msg: string | null | undefined) => msg === NEED_ACCOUNT;
 
-type GateState = {
-  open: boolean;
-  /** Finishes the sentence "Make an account to …". */
-  reason: string;
-  /** The action to finish once signed in. */
-  pending: (() => void) | null;
-  show: (reason: string, then?: () => void) => void;
-  close: () => void;
-};
-
-export const useAccountGate = create<GateState>((set) => ({
-  open: false,
-  reason: "",
-  pending: null,
-  show: (reason, then) => set({ open: true, reason, pending: then ?? null }),
-  close: () => set({ open: false, pending: null }),
-}));
+/** Send a guest to the account page and return them to this screen afterwards. */
+export function goToAccount(reason: string, mode: "create" | "login" = "create", detail?: string): void {
+  if (typeof window === "undefined") return;
+  const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  const target = new URL("/account", window.location.origin);
+  target.searchParams.set("mode", mode);
+  target.searchParams.set("reason", reason);
+  if (detail) target.searchParams.set("detail", detail);
+  target.searchParams.set("next", next.startsWith("/account") ? "/me" : next);
+  window.location.assign(`${target.pathname}${target.search}${target.hash}`);
+}
 
 /**
- * True when the Hopper can go ahead. False when they can't yet: the sign-up
- * sheet is now open, and `then` runs after they sign up or log in.
+ * True when the Hopper can go ahead. False when they need an account; they are
+ * routed to the account page and can repeat the action after signing in.
  * Without a database (local demo) nothing is gated.
  */
-export function requireAccount(reason: string, then?: () => void, opts?: { quiet?: boolean }): boolean {
+export function requireAccount(reason: string, opts?: { quiet?: boolean }): boolean {
   if (!getSupabase()) return true;
   if (useSessionStore.getState().email) return true;
   // Quiet: the caller has asked already this visit (the Today deck's right swipes) and only needs the answer.
@@ -58,6 +49,7 @@ export function requireAccount(reason: string, then?: () => void, opts?: { quiet
     introNeedAccount();
     return false;
   }
-  useAccountGate.getState().show(reason, then);
+  // Return to this screen after sign-in; the Hopper can repeat the action.
+  goToAccount(reason);
   return false;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getSupabase } from "./supabase/client";
 import { BADGES } from "./brand";
 import { areaByName } from "./geo";
@@ -110,8 +110,8 @@ export function useCheckin(userId: string | null, onDone?: () => void) {
         landed();
         return { ok: true, at, xp: 50, badges: demoBadges(event) };
       }
-      // Checking in (and the XP and badges with it) needs an account; the sheet finishes it after.
-      if (!requireAccount("check in and earn XP", () => void checkInRef.current(event, fix))) return { ok: false, reason: "account" };
+      // Checking in (and the XP and badges with it) needs an account. Return here and tap again after sign-in.
+      if (!requireAccount("check in and earn XP")) return { ok: false, reason: "account" };
       const uid = useSessionStore.getState().userId ?? userId;
       if (!uid) {
         // Signed-in session not ready yet: never pretend it was saved.
@@ -155,10 +155,6 @@ export function useCheckin(userId: string | null, onDone?: () => void) {
   );
 
   // The sign-up sheet finishes a gated check-in later; this always reaches the newest checkIn.
-  const checkInRef = useRef(checkIn);
-  useEffect(() => {
-    checkInRef.current = checkIn;
-  });
 
   return { done, checkedAt, busy, checkIn };
 }
