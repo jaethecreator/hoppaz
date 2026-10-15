@@ -47,7 +47,8 @@ if (!rooms.length) {
 for (const room of rooms) {
   const layout = room.layout;
   const art = renderToStaticMarkup(React.createElement(RoomArt, { layout, uid: "r", brand: room.name, content: sample }));
-  let svg = art;
+  // The wordmark is the real logo file under /brand: inline it, since the rasteriser cannot fetch a page-relative path.
+  let svg = art.replace(/href="\/brand\/([a-z-]+\.png)"/g, (_, file) => `href="data:image/png;base64,${fs.readFileSync(path.join(root, "public/brand", file)).toString("base64")}"`);
   if (withProps) {
     const t = layout.grid.tile;
     const boxes = layout.props.map((p) => `<rect x="${p.x * t}" y="${p.y * t}" width="${p.w * t}" height="${p.h * t}" fill="${p.solid ? "rgba(255,0,0,.18)" : "rgba(0,160,255,.18)"}" stroke="${p.solid ? "#f00" : "#09f"}" stroke-width="1"/><text x="${p.x * t + 2}" y="${p.y * t + 9}" font-size="8" fill="#fff" stroke="#000" stroke-width=".4">${p.id}</text>`).join("");
