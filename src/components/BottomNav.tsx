@@ -8,6 +8,7 @@ import { usePlayMode } from "@/lib/usePlayMode";
 import { useLeaveStore } from "@/lib/crew-room/rails";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { sfx } from "@/lib/sound/sfx";
+import { useSocial } from "@/lib/social";
 
 type Tab = { href: string; label: string; Icon: LucideIcon; intro?: string };
 
@@ -42,6 +43,8 @@ export default function BottomNav() {
   const path = usePathname();
   // Play has the whole screen: the map closes around you and the tab bar steps out.
   const playing = usePlayMode((s) => s.active);
+  // Unread messages and waves waiting for me: the dot on CHAT (supabase/crew_friends.sql).
+  const waiting = useSocial((s) => s.unread + s.waves.length);
   if (playing || FULL_SCREEN.some((re) => re.test(path))) return null;
   const parent = PARENT.find(([p]) => path === p || path.startsWith(`${p}/`))?.[1];
   const active = parent ?? path;
@@ -75,7 +78,17 @@ export default function BottomNav() {
               on ? "text-orange" : "text-dim"
             )}
           >
-            <Icon size={19} strokeWidth={on ? 2.4 : 1.9} aria-hidden />
+            <span className="relative">
+              <Icon size={19} strokeWidth={on ? 2.4 : 1.9} aria-hidden />
+              {href === "/chat" && waiting > 0 && (
+                <i
+                  className="absolute -right-2.5 -top-1.5 grid h-[15px] min-w-[15px] place-items-center rounded-full bg-orange px-1 font-mono text-[9px] font-medium not-italic leading-none text-ink"
+                  aria-label={`${waiting} waiting`}
+                >
+                  {waiting > 9 ? "9+" : waiting}
+                </i>
+              )}
+            </span>
             <span className="font-mono text-[10px] font-medium tracking-[0.1em]">{label}</span>
           </Link>
         );

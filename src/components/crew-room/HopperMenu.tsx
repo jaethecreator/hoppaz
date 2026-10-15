@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Footprints, Hand, User, UserPlus } from "lucide-react";
+import { Footprints, Hand, MessageCircle, Pointer, User } from "lucide-react";
 import { FaceDisc } from "@/components/Avatar";
 import ChatFace from "@/components/chat/ChatFace";
 import Sheet from "@/components/Sheet";
-import { sentence } from "@/components/event/copy";
-import { addToCrew, blockPerson, reportThing } from "@/lib/chat";
+import { blockPerson, reportThing } from "@/lib/chat";
 import { canWalkScene, type CampaignLayout } from "@/lib/campaign/layout";
+import { useGoOut } from "@/lib/crew-room/rails";
 import { useRoomStore, type RoomPeerPoint } from "@/lib/crew-room/roomStore";
 import { COOLDOWN_MS, VIBES, sayHi, sayResult, sendVibe, useVibes, vibeBlocked, type VibeId } from "@/lib/crew-room/vibes";
+import { POKE_GAP_MS, messageCrew, pokeCrew, useSocial } from "@/lib/social";
 import { getSupabase } from "@/lib/supabase/client";
 import { useToast } from "@/lib/store";
 import { useSessionStore } from "@/lib/useSession";
@@ -18,7 +18,7 @@ import { VibeArt } from "./VibeLayer";
 import css from "./HopperMenu.module.css";
 
 /**
- * The small menu that opens on a Hopper you tap: VIBE, SAY HI, WALK TO, PROFILE (design section 8).
+ * The small menu that opens on a Hopper you tap: VIBE, SAY HI or POKE, WALK TO, PROFILE (design section 8).
  *
  * SCREEN CHROME, owned by SOCIAL. Mounted by CampaignExperience over the room, outside the scaled world, in screen px.
  * Reads useRoomStore tappedPeer, peers, me, walkTo, sheet; clears with setTappedPeer(null). It finds the tapped avatar on
@@ -27,14 +27,17 @@ import css from "./HopperMenu.module.css";
  *
  *   VIBE     five drawn stickers. Press shows the name, release on it sends, sliding off cancels. Limits are the server's
  *            (1 per 3 s with a ring on the chips, 3 a minute to one person, 12 a minute); a refusal speaks on the label row.
- *   SAY HI   the existing wave: wave(key) when the peer has a room key, otherwise crew_room_wave (supabase/crew_rails.sql).
- *            Mutual: "YOU'RE CONNECTED" with OPEN DM in the hint chip. Never opens the DM by itself.
+ *   SAY HI   for someone who is not my crew: a crew request (supabase/crew_friends.sql). If they wave back we are crew, both
+ *            ways, and the chip says "ADA IS IN YOUR CREW" with MESSAGE. Never opens the chat by itself. Without the new
+ *            calls on the server it is the old wave and "YOU'RE CONNECTED" with OPEN DM.
+ *   POKE     takes SAY HI's place for someone already in my crew: a light nudge, a minute apart.
  *   WALK TO  walks to a free tile next to them (roomStore walkTo) and sends the camera to follow me.
- *   PROFILE  a sheet: SAY HI, ADD TO CREW, Block, Report, through the person's room key (crew_room_peer_key).
+ *   PROFILE  a sheet: SAY HI (not crew) or MESSAGE (crew), Block, Report, through the person's room key (crew_room_peer_key).
  * Closes on a choice, an outside tap, my own walking, the chat sheet changing, Escape, or 8 s of nothing.
  *
  * This file also draws the room's one HINT chip (useVibes hint): "WAVED AT ADA", "ADA WAVED AT YOU" + WAVE BACK,
- * "YOU'RE CONNECTED" + OPEN DM, "ADA VIBED YOU", and the refusals. It rides above the bottom row (--room-bottom).
+ * "ADA IS IN YOUR CREW" + MESSAGE, "ADA POKED YOU", "ADA VIBED YOU", and the refusals. A chip about a person carries their
+ * face. It rides above the bottom row (--room-bottom).
  */
 export type HopperMenuProps = { crewId: string; layout: CampaignLayout };
 
@@ -45,7 +48,7 @@ const TAIL_GAP = 10;
 const REASONS = ["Harassment or threats", "Sexual or unwanted advances", "Spam or selling", "Hate or abuse", "Something else"];
 
 export default function HopperMenu({ crewId, layout }: HopperMenuProps) {
-  const router = useRouter();
+  const goOut = useGoOut();
   const layer = useRef<HTMLDivElement>(null);
   const tapped = useRoomStore((s) => s.tappedPeer);
   const peers = useRoomStore((s) => s.peers);
@@ -55,7 +58,8 @@ export default function HopperMenu({ crewId, layout }: HopperMenuProps) {
   const peer = peers.find((p) => p.id === tapped) ?? null;
 
   const close = useCallback(() => useRoomStore.getState().setTappedPeer(null), []);
-  const openDm = useCallback((dm: string) => router.push(`/chat/dm/${dm}`), [router]);
+  // A chat takes me out of the room, so during a Game Time it asks "Leave the hunt?" first like every other way out.
+  const openDm = useCallback((dm: string) => goOut(`/chat/dm/${dm}`), [goOut]);
 
   // A person who walked out, or a chat sheet that opened, ends the menu.
   useEffect(() => {
@@ -105,6 +109,9 @@ function Menu({
   const [note, setNote] = useState("");
   const cooldownUntil = useVibes((s) => s.cooldownUntil);
   const waved = useVibes((s) => !!s.waved[peer.id]);
+  const isCrew = useSocial((s) => !!s.crewIds[peer.id]);
+  const pokedAt = useSocial((s) => s.pokedAt[peer.id] ?? 0);
+  const poked = Date.now() - pokedAt < POKE_GAP_MS;
   const [, tick] = useState(0);
   const idle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const start = useRef(useRoomStore.getState().me);
@@ -198,13 +205,20 @@ function Menu({
     }
     onClose();
     void sendVibe(crewId, me, peer.id, id).then((r) => {
-      if (!r.ok) useVibes.getState().say(r.text, 3000);
+      if (!r.ok) useVibes.getState().say(r.text, 3000, undefined, { own: true });
     });
   };
 
   const hi = () => {
     onClose();
-    void sayHi(crewId, peer).then((r) => sayResult(r, openDm));
+    void sayHi(crewId, peer).then((r) => sayResult(r, openDm, peer.id));
+  };
+
+  const poke = () => {
+    onClose();
+    void pokeCrew(peer.id).then((r) =>
+      useVibes.getState().say(r.ok ? `POKED ${peer.name.toUpperCase()}` : r.text, r.ok ? 2500 : 3500, undefined, { own: true })
+    );
   };
 
   const walk = () => {
@@ -272,10 +286,17 @@ function Menu({
           ))}
         </div>
         <div className={css.actions}>
-          <button type="button" className={`btn ${css.act}`} onClick={hi} disabled={waved} aria-label={waved ? "Already waved" : `Say hi to ${peer.name}`}>
-            <Hand size={15} aria-hidden />
-            {waved ? "WAVED" : "SAY HI"}
-          </button>
+          {isCrew ? (
+            <button type="button" className={`btn ${css.act}`} onClick={poke} disabled={poked} aria-label={poked ? "Already poked" : `Poke ${peer.name}`}>
+              <Pointer size={15} aria-hidden />
+              {poked ? "POKED" : "POKE"}
+            </button>
+          ) : (
+            <button type="button" className={`btn ${css.act}`} onClick={hi} disabled={waved} aria-label={waved ? "Already waved" : `Say hi to ${peer.name}`}>
+              <Hand size={15} aria-hidden />
+              {waved ? "WAVED" : "SAY HI"}
+            </button>
+          )}
           {!watching && (
             <button type="button" className={`btn btn-ghost ${css.act}`} onClick={walk}>
               <Footprints size={15} aria-hidden />
@@ -306,7 +327,8 @@ function HintChip() {
   if (!hint) return null;
   return (
     <div className={css.hintRow} key={hint.id}>
-      <div className={`${css.hint} animate-stamp`} role="status">
+      <div className={`${css.hint} animate-stamp`} role="status" data-face={hint.who ? "1" : undefined}>
+        {hint.who && <FaceDisc look={hint.who.look} initial={hint.who.name} size={28} className={css.hintFace} />}
         <span className={css.hintText}>{hint.text}</span>
         {hint.action && (
           <button
@@ -331,8 +353,9 @@ function ProfileSheet({ crewId, peer, onClose, openDm }: { crewId: string; peer:
   const [step, setStep] = useState<"actions" | "block" | "report">("actions");
   const [busy, setBusy] = useState(false);
   const waved = useVibes((s) => !!s.waved[peer.id]);
+  const isCrew = useSocial((s) => !!s.crewIds[peer.id]);
 
-  // Block, report and add work on an opaque room key; fetch the crew mate's once.
+  // Block and report work on an opaque room key; fetch the crew mate's once.
   useEffect(() => {
     if (key) return;
     const sb = getSupabase();
@@ -351,15 +374,16 @@ function ProfileSheet({ crewId, peer, onClose, openDm }: { crewId: string; peer:
     const r = await sayHi(crewId, peer);
     setBusy(false);
     onClose();
-    sayResult(r, openDm);
+    sayResult(r, openDm, peer.id);
   };
-  const add = async () => {
-    if (!key) return;
+  const message = async () => {
     setBusy(true);
-    const r = await addToCrew(key);
+    const r = await messageCrew(peer.id);
     setBusy(false);
-    say(sentence(r.text), r.ok ? "ok" : "error");
-    onClose();
+    if (r.dm) {
+      onClose();
+      openDm(r.dm);
+    } else say(r.text ?? "COULD NOT OPEN THE CHAT", "error");
   };
   const block = async () => {
     if (!key) return;
@@ -392,12 +416,15 @@ function ProfileSheet({ crewId, peer, onClose, openDm }: { crewId: string; peer:
         {step === "actions" && (
           <div className="mt-4">
             <div className="flex flex-col gap-2">
-              <button type="button" className="btn w-full" onClick={hi} disabled={busy || waved}>
-                <Hand size={15} aria-hidden /> {waved ? "WAVED" : "SAY HI"}
-              </button>
-              <button type="button" className="btn btn-ghost w-full" onClick={add} disabled={busy || !key}>
-                <UserPlus size={15} aria-hidden /> ADD TO CREW
-              </button>
+              {isCrew ? (
+                <button type="button" className="btn w-full" onClick={message} disabled={busy}>
+                  <MessageCircle size={15} aria-hidden /> MESSAGE
+                </button>
+              ) : (
+                <button type="button" className="btn w-full" onClick={hi} disabled={busy || waved}>
+                  <Hand size={15} aria-hidden /> {waved ? "WAVED" : "SAY HI"}
+                </button>
+              )}
             </div>
             <div className="mt-1 flex items-center justify-center gap-2">
               <button type="button" className="min-h-[44px] px-4 font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-fireant disabled:opacity-50" onClick={() => setStep("block")} disabled={busy || !key}>

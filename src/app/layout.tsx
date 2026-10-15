@@ -12,6 +12,7 @@ import OfflineLine from "@/components/app/OfflineLine"
 import PushAlert from "@/components/app/PushAlert"
 import SoundLane from "@/components/app/SoundLane"
 import GameTimePing from "@/components/game-time/GameTimePing"
+import SocialPing from "@/components/social/SocialPing"
 import IntroHost from "@/components/intro/IntroHost"
 import { INTRO_ENABLED } from "@/lib/intro/flag"
 import { THEME_BOOT_SCRIPT } from "@/lib/theme"
@@ -99,6 +100,7 @@ export default function RootLayout({
           <BottomNav />
         </div>
         <GameTimePing />
+        <SocialPing />
         <Toaster />
         <InstallSheet />
         {INTRO_ENABLED && <IntroHost />}
