@@ -82,10 +82,11 @@ export default function WelcomeTour({ enabled }: { enabled: boolean }) {
   }, [active, at]);
 
   const vh = typeof window === "undefined" ? 800 : window.innerHeight;
+  // The card lives at the bottom, in reach of a thumb, and never under the top of the screen where the page's banners
+  // (a Game Time ping) land. A control in the lower part of the screen (the tab bar) gets the card just above it.
   const place = useMemo(() => {
-    if (!box.box) return { bottom: 24 } as const;
-    const below = box.box.y + box.box.h / 2 < vh * 0.5;
-    return below ? ({ top: box.box.y + box.box.h + PAD + 14 } as const) : ({ bottom: vh - box.box.y + PAD + 14 } as const);
+    if (!box.box || box.box.y < vh * 0.6) return { bottom: 24 } as const;
+    return { bottom: vh - box.box.y + PAD + 14 } as const;
   }, [box.box, vh]);
 
   if (!active) return null;
