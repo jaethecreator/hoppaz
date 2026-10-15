@@ -7,7 +7,7 @@ import { floodFill } from "@/lib/campaign/geometry";
 import { canWalkScene, CLUBHOUSE, type CampaignLayout } from "@/lib/campaign/layout";
 import { PLACE_ROOMS } from "@/lib/campaign/templates";
 import type { RoomPeer, SocialWorld } from "@/lib/crew-room/types";
-import { DEFAULT_LOOK, normalizeLook, randomLook } from "@/lib/avatar";
+import { anonLook, DEFAULT_LOOK, normalizeLook, randomLook } from "@/lib/avatar";
 import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
 import { useSession } from "@/lib/useSession";
 
@@ -30,6 +30,13 @@ const ENTRIES: Entry[] = [
   { key: "clubhouse", name: "Clubhouse", group: "CREW", layout: CLUBHOUSE },
 ];
 
+/**
+ * Hotspot rooms keep aliases (Jae, 15 Oct): people there show as an alias name with an alias look, like hotspot chat
+ * today. Never a real avatar or a real name. The demo people below follow the same rule in a hotspot room.
+ */
+const ALIASES = ["Suya Rider 4F", "Danfo Dave 2K", "Jollof Jedi 9B", "Keke Queen 7A", "Gala Boss 3C", "Zobo Zee 8D", "Okada Ola 5E", "Puff Puff 1G"];
+const HOTSPOT_YOU = "Hotspot You";
+
 /** A small deterministic random, so the same room shows the same demo people every time. */
 function seeded(seed: number) {
   let s = seed || 1;
@@ -43,7 +50,7 @@ function seeded(seed: number) {
  * Demo people for the dev page only: real avatars (the same drawing the app uses for a Hopper), wandering one tile at a
  * time. Nothing here is a person and nothing leaves the page.
  */
-function useDemoPeers(layout: CampaignLayout, count: number) {
+function useDemoPeers(layout: CampaignLayout, count: number, alias: boolean) {
   const [peers, setPeers] = useState<RoomPeer[]>([]);
   const [observedAt, setObservedAt] = useState(() => new Date().toISOString());
   const state = useRef<{ id: string; name: string; look: unknown; x: number; y: number }[]>([]);
@@ -55,7 +62,8 @@ function useDemoPeers(layout: CampaignLayout, count: number) {
     const rand = seeded(layout.id.length * 977 + count);
     state.current = Array.from({ length: open.length ? count : 0 }, (_, i) => {
       const at = open[Math.floor(rand() * open.length)];
-      return { id: `demo-${i + 1}`, name: `Demo ${i + 1}`, look: randomLook(rand), x: at.x, y: at.y };
+      const name = alias ? ALIASES[i % ALIASES.length] : `Demo ${i + 1}`;
+      return { id: `demo-${i + 1}`, name, look: alias ? anonLook(name) : randomLook(rand), x: at.x, y: at.y };
     });
     const publish = () => {
       const now = new Date().toISOString();
@@ -79,13 +87,13 @@ function useDemoPeers(layout: CampaignLayout, count: number) {
       publish();
     }, 1400);
     return () => window.clearInterval(timer);
-  }, [layout, count]);
+  }, [layout, count, alias]);
 
   return { peers, observedAt };
 }
 
 function Walk({ entry, count, look }: { entry: Entry; count: number; look: unknown }) {
-  const { peers, observedAt } = useDemoPeers(entry.layout, count);
+  const { peers, observedAt } = useDemoPeers(entry.layout, count, entry.group === "HOTSPOT");
   const reset = useMemo(() => ({ x: entry.layout.spawn.x, y: entry.layout.spawn.y, revision: 0 }), [entry.layout]);
   const social: SocialWorld = useMemo(
     () => ({ peers, circles: [], selfId: "me", circleId: null, areaId: null, watching: false, observedAt, reset, onStep: () => true }),
@@ -142,7 +150,9 @@ export default function DevRoomTemplates() {
 
   const entry = ENTRIES.find((e) => e.key === key) ?? ENTRIES[0];
   const avatar = profile?.avatar;
-  const look = useMemo(() => (avatar ? normalizeLook(avatar) : DEFAULT_LOOK), [avatar]);
+  const realLook = useMemo(() => (avatar ? normalizeLook(avatar) : DEFAULT_LOOK), [avatar]);
+  const aliasLook = useMemo(() => anonLook(HOTSPOT_YOU), []);
+  const look = entry.group === "HOTSPOT" ? aliasLook : realLook;
 
   return (
     <div className="absolute inset-0 flex flex-col bg-[#101214] text-[#F5EBDD]">

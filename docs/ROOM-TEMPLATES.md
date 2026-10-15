@@ -72,6 +72,14 @@ Hotspot place data: `src/lib/rooms/hotspotRooms.ts` (sign, palette, welcome line
 - The four venue facades carry the real venue name as text. Name only: no logos, no photos, no claim to be the venue.
 - Local objects (danfo, keke, BRT shelter, palms ...) are props too, with stable ids (`danfo-1`, `keke-1`).
 
+## Who is drawn in a room
+
+- **Event rooms** show real avatars and real names, like crew rooms.
+- **Hotspot rooms keep aliases** (Jae, 15 Oct 2026): everyone there is an alias name with an alias look (`anonLook(alias)`),
+  exactly as hotspot chat shows them today. Never a real avatar or a real name, and never a user id in a peer. The
+  `/room/<slug>` preview and the dev page follow this; the walking server (hotspot_rooms.sql) will hand each Hopper their
+  alias.
+
 ## Look (match the 360Playlist room and the Hoppaz brand)
 
 - Pixel look, `shapeRendering="crispEdges"`, flat colour, no gradients (an opacity overlay is fine), 2 px ink outlines,

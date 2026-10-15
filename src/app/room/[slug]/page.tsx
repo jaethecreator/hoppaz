@@ -5,16 +5,15 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import CampaignWorld from "@/components/campaign/CampaignWorld";
-import { DEFAULT_LOOK, normalizeLook } from "@/lib/avatar";
+import { anonLook } from "@/lib/avatar";
 import { hotspotRoom } from "@/lib/campaign/templates";
 import type { SocialWorld } from "@/lib/crew-room/types";
 import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
-import { useSession } from "@/lib/useSession";
 
 /**
  * /room/<hotspot slug>: the hotspot's own room, the entry point for the map pins and the guest peek. Today it is the room
  * and your own avatar only: the walking server for hotspot rooms (hotspot_rooms.sql) is a separate piece, so nobody else
- * is drawn here and nothing is sent. A slug with no room yet (the other hotspots, until their rooms are drawn) says so and
+ * is drawn here and nothing is sent. The avatar is an alias look, not the Hopper's own (hotspot rooms keep aliases). A slug with no room yet (the other hotspots, until their rooms are drawn) says so and
  * leads back to the map, where the crossroads screen is still the way in.
  *
  * Event rooms are addressed by their template key (`eventRoom(key)` in src/lib/campaign/templates.ts) and mount the same
@@ -24,12 +23,12 @@ export default function HotspotRoomPage() {
   const { slug } = useParams<{ slug: string }>();
   const room = hotspotRoom(slug);
   const data = hotspotRoomData(slug);
-  const { profile } = useSession();
   // The world reads the window (device tier, camera): draw it on the client only.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const avatar = profile?.avatar;
-  const look = useMemo(() => (avatar ? normalizeLook(avatar) : DEFAULT_LOOK), [avatar]);
+  // Hotspot rooms keep aliases: an alias look, never the Hopper's real avatar or name. Until the walking server hands this
+  // Hopper their alias (hotspot_rooms.sql, Ola) the solo preview wears a stand-in alias look.
+  const look = useMemo(() => anonLook("Hopper"), []);
   const social: SocialWorld | null = useMemo(
     () => (room ? { peers: [], circles: [], selfId: "me", circleId: null, areaId: null, watching: false, observedAt: new Date().toISOString(), reset: { x: room.layout.spawn.x, y: room.layout.spawn.y, revision: 0 }, onStep: () => true } : null),
     [room]
