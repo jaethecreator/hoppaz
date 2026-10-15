@@ -3,7 +3,7 @@
 import { memo } from "react";
 import clsx from "clsx";
 import type { Map as MLMap } from "maplibre-gl";
-import MapMarker from "../MapMarker";
+import MapMarker from "@/components/map/MapMarker";
 import { BAND_BARS, bandPulses, hereLabel } from "@/lib/hotspots/geometry";
 import type { Hotspot } from "@/lib/hotspots/types";
 import HotspotGlyph from "./HotspotGlyph";

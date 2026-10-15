@@ -584,7 +584,7 @@ The app half of steps 3, 4 and 6 that is not the map: the room Hoppers stand in,
 
 | File | What |
 |---|---|
-| `src/components/play/hotspots/HotspotRoom.tsx` | The room, full screen over Play. `<HotspotRoom slug onLeave name? />`: Play renders it when the avatar arrives and removes it on `onLeave`; `name` only fills the title while the server answers. Default export |
+| `src/components/hotspots/HotspotRoom.tsx` | The room, full screen over Play. `<HotspotRoom slug onLeave name? />`: Play renders it when the avatar arrives and removes it on `onLeave`; `name` only fills the title while the server answers. Default export |
 | `.../room/useHotspotRoom.ts` | One visit: the gates, `enter_hotspot`, the pulse and room read, rejoining, the daily reward, leaving |
 | `.../room/useHotspotChat.ts` | The room's messages: load, the Realtime feed, post, hide a blocked alias |
 | `.../room/Crossroads.tsx`, `room.module.css` | The junction from above with the heads standing around it |
