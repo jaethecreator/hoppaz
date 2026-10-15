@@ -9,6 +9,7 @@ import LoadingStub from "@/components/app/LoadingStub";
 import PageHeader from "@/components/app/PageHeader";
 import HubHeader, { CrewLogo } from "@/components/crew-room/HubHeader";
 import ManageCrew from "@/components/crew-room/ManageCrew";
+import HubGameTime from "@/components/game-time/HubGameTime";
 import Featured from "@/components/crew-room/CrewHubFeatured";
 import RoomNow from "@/components/crew-room/CrewHubNow";
 import { requireAccount } from "@/lib/accountGate";
@@ -107,6 +108,7 @@ function Hub({ card, onChange }: { card: CrewCard; onChange: () => void }) {
 
           <div className="px-4">
             <div className="mt-4"><RoomNow card={card} /></div>
+            <HubGameTime crewId={card.id} isMember={card.is_member} />
 
             <div className="mt-3 flex gap-2">
               {card.is_member ? (

@@ -15,6 +15,7 @@ room (the app). The server half is built: `supabase/game_time.sql`, the staff ro
 - [7. The opening push](#7-the-opening-push)
 - [8. Run one on this Mac](#8-run-one-on-this-mac)
 - [9. Decisions worth knowing](#9-decisions-worth-knowing)
+- [10. The app](#10-the-app)
 
 ## 1. Load it and test it
 
@@ -324,3 +325,28 @@ Do not create a game on a crew that real Hoppers are in without meaning to: STAR
   puts a found box back in play.
 - **Staff codes never leave staff.** The codes are in `game_time_boxes` and the staff views only. The winner
   sees only their own code. Nothing else Hopper-facing has a `code` field for an unfound box.
+
+## 10. The app
+
+The Hopper side of all of the above, in the room, on the hub, in the global ping, on Me and on the staff desk. The look is
+`docs/ROOM-GAME-DESIGN.md` section 13.
+
+| Where | File | What it does |
+|---|---|---|
+| Calls | `src/lib/game-time/api.ts` | the four rpc calls; a refusal becomes a reason, a dropped connection is an answer too |
+| Controller | `src/lib/game-time/controller.ts` | one poll and one Realtime channel for the room (2 s live, 12 s before it opens, 5 s in the last two minutes, 15 s with nothing on, a little jitter per phone, nothing in a hidden tab, one extra ask at `opens_at` minus half a second and just after), the one-at-a-time search with its 2 s animation and the server's `retry_ms`, the held finds so a Hopper is never told about their own win |
+| Clock | `src/lib/game-time/clock.ts` | every countdown is `server_now` plus time passed on the phone (the shortest round trip wins), never the phone's clock |
+| World layer | `src/components/game-time/GameTimeWorld.tsx` | the shimmer (a star on every object in `objects`, brighter near, a ring on the one SEARCH would pick, dots in the full view, the ten nearest animate), a tap on a star walks next to its object, the search frame and dust, the hint chip on the object, the win burst, the puff where someone else found a box |
+| Chrome layer | `src/components/game-time/GameTimeChrome.tsx` | runs the controller, registers the SEARCH pill (`gt-search`, priority 100, shown after 450 ms standing still within one tile, gone at two tiles), sets `huntActive` (live, or opening within 10 minutes) so the exits ask "Leave the hunt?", one tip per Game Time per device |
+| Banner, countdown, sheet | `Banner.tsx`, `Hype.tsx`, `WinSheet.tsx` | the HUD banner, the last ten seconds and GO, the full win sheet with COPY and confetti |
+| Hub, ping, Me | `HubGameTime.tsx`, `GameTimePing.tsx` (mounted in `layout.tsx`), `YourTickets.tsx` | the hub card, the dismissible ping (once per Game Time per device, ENTER ROOM or JOIN THE CREW TO HUNT), "Your tickets" |
+| Staff desk | `src/components/admin/GameTimeSection.tsx` (mounted in `src/app/admin/page.tsx`) | create with pasted codes and the room's objects as checkboxes, START NOW or schedule, edit, CLOSE NOW, live status (every box, its code and where it hides), winners, CSV export |
+
+Where it differs from the design: the room store's action has no cooldown field, so the pill reads SEARCHING for the 2 s
+animation and WAIT for the rest of the gap, instead of drawing a sweeping ring. The sticker on the fountain covers every
+tile beside the fountain, so the floor cannot be tapped there: a tap on the fountain's star walks you next to it, and the
+world layer is raised one step so the star draws over the sticker.
+
+Rehearse it on this Mac: make a Game Time on the local crew (section 8) with `relocate_minutes: 0` and a `campaign_key` of its
+own (so test wins do not use up an account's real limit), open the room as two crew members and walk next to an object with the
+arrow keys. The finder's code and the box on each object are in `game_time_boxes` (service role).

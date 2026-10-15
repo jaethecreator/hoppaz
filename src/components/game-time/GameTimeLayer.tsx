@@ -1,29 +1,29 @@
 "use client";
 
 import type { CampaignLayout } from "@/lib/campaign/layout";
+import GameTimeChrome from "./GameTimeChrome";
+import GameTimeWorld from "./GameTimeWorld";
 
 /**
- * The Game Time slot in a crew room: where the Friday ticket hunt draws and listens. This file is a stub that renders
- * nothing; the Game Time app owns everything under src/components/game-time/** and src/lib/game-time/** and fills it
- * in. The room mounts it TWICE, so a hunt can draw in both places:
+ * The Game Time slot in a crew room: where the Friday ticket hunt draws and listens (docs/GAME-TIME.md for the server,
+ * docs/ROOM-GAME-DESIGN.md section 13 for the look). The room mounts it TWICE, so a hunt can draw in both places:
  *
  *   worldLayer = true   inside the world container (CampaignWorld, the `.world` div, which is scaled by the camera).
- *                       Use this for things that sit on the scene: shimmering objects, the search animation, a
- *                       "found it" burst. It is a full-size, click-through wrapper, so children opt in to pointer
- *                       events themselves (`pointer-events: auto`).
- *   worldLayer = false  in the screen chrome (CampaignExperience, over the room, outside the scaled world). Use this
- *                       for the banner, the countdown and the win sheet. Screen pixels, not scene pixels.
+ *                       Draws what sits on the scene: the shimmer on objects that may hide a box, the search animation, the
+ *                       hint chip on the object, the burst of a win. A full-size, click-through wrapper; nothing takes a tap.
+ *   worldLayer = false  in the screen chrome (CampaignExperience, over the room, outside the scaled world). Runs the
+ *                       controller (one poll and one Realtime channel for both mounts), and draws the banner, the feed lines,
+ *                       the opening countdown and the win sheet. Registers SEARCH as the room's action pill (priority 100)
+ *                       and tells the room a hunt is on (roomStore huntActive) so the exits ask "Leave the hunt?".
  *
  * COORDINATES. A tile is `layout.grid.tile` scene pixels square (32). Tile (x, y) covers the scene rectangle
  * [x * tile, (x + 1) * tile) by [y * tile, (y + 1) * tile), measured from the top-left of the scene, which is the
- * origin of the world container. In a world layer, position a child with `left: x * tile, top: y * tile` and it lines
- * up with the art, whatever the zoom. A prop (layout.props, found by its stable id such as "courtyard-fountain") has
- * its own x, y, w, h in tiles. Walkers stand on a tile; `me` is the tile this Hopper stands on.
+ * origin of the world container. A prop (layout.props, found by its stable id such as "courtyard-fountain") has its own
+ * x, y, w, h in tiles. `me` is the tile this Hopper stands on.
  *
  * ROOM FACTS. `roomId` is the crew id (one room per crew). Everyone who reaches the layer is signed in and in the
  * crew; `isWatcher` is true while the room is full and this Hopper only looks on (no avatar, `me` is null, `walkTo`
- * does nothing). The room also exposes `useRoomStore` (src/lib/crew-room/roomStore.ts): `huntActive` is the flag the
- * hunt sets while a Game Time is scheduled or live, so the door and the rails ask "Leave the hunt?" first.
+ * does nothing, no SEARCH).
  */
 export type GameTimeLayerProps = {
   /** The crew the room belongs to. */
@@ -45,6 +45,10 @@ export type GameTimeLayerProps = {
 };
 
 export default function GameTimeLayer(props: GameTimeLayerProps) {
-  void props;
-  return null;
+  if (!props.isMember) return null;
+  return props.worldLayer ? (
+    <GameTimeWorld layout={props.layout} me={props.me} isWatcher={props.isWatcher} walkTo={props.walkTo} />
+  ) : (
+    <GameTimeChrome crewId={props.crewId} layout={props.layout} isWatcher={props.isWatcher} />
+  );
 }
