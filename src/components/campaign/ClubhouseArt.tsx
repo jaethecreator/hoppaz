@@ -82,6 +82,9 @@ export default function ClubhouseArt({ layout, uid, brand }: { layout: CampaignL
   const { width, height } = sceneSize(layout);
   const tile = layout.grid.tile;
   const pattern = (name: string) => `url(#${uid}-${name})`;
+  const mat = `WELCOME TO ${brand.toUpperCase()}`;
+  // 10 px mono, stepping down for a long name so it always fits the 192 px mat.
+  const matSize = Math.max(6, Math.min(10, (176 / mat.length - 1.5) / 0.6));
   const offset = (name: string, originalX: number) => ((layout.zones.find((zone) => zone.id === name)?.x ?? originalX) - originalX) * tile;
   return <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} aria-hidden="true" shapeRendering="crispEdges">
     <defs>
@@ -131,13 +134,10 @@ export default function ClubhouseArt({ layout, uid, brand }: { layout: CampaignL
     {[420, 466, 512].map((y) => <g key={y}><rect x="37" y={y} width="20" height="34" fill={P.slateLight} stroke={P.ink} strokeWidth="2" /><path d={`M47 ${y + 2}v30M39 ${y + 15}h16`} stroke={P.paper} strokeWidth="2" /></g>)}
     <g transform={`translate(${offset("campaign", 21)},0)`}><rect x="701" y="566" width="151" height="8" fill={P.goldDark} /><path d="M704 568h145" stroke={P.gold} strokeWidth="2" /></g>
 
-    {/* Walkways stay open; room identities live on small, readable architectural plaques. */}
-    <text x={160 + offset("studio", 1)} y="222" fill={P.paper} fontSize="10" fontWeight="700" textAnchor="middle" fontFamily="var(--font-mono),monospace" letterSpacing="1">LISTENING STUDIO</text>
-    <text x={800 + offset("awards", 21)} y="222" fill={P.ink} fontSize="10" fontWeight="700" textAnchor="middle" fontFamily="var(--font-mono),monospace" letterSpacing="1">AWARDS GALLERY</text>
-    <text x={160 + offset("records", 1)} y="596" fill={P.paper} fontSize="10" fontWeight="700" textAnchor="middle" fontFamily="var(--font-mono),monospace" letterSpacing="1">RECORD LOUNGE</text>
-    <text x={800 + offset("campaign", 21)} y="596" fill={P.paper} fontSize="10" fontWeight="700" textAnchor="middle" fontFamily="var(--font-mono),monospace" letterSpacing="1">ARTIST CORNER</text>
+    {/* Walkways stay open. The room names are tags in the world (CampaignWorld), so the art carries no zone plaques. */}
     <text x={width / 2} y="486" fill={P.woodDark} fontSize="10" fontWeight="700" textAnchor="middle" fontFamily="var(--font-mono),monospace" letterSpacing="2">GOOD MUSIC. GOOD COMPANY.</text>
-    <rect x={width / 2 - 65} y="575" width="132" height="20" fill={P.ink} /><text x={width / 2 + 1} y="589" fill={P.cream} fontSize="10" textAnchor="middle" fontFamily="var(--font-mono),monospace" letterSpacing="2">WELCOME TO 360</text>
+    {/* The welcome mat between the two entry planters: 6 tiles wide, the crew's name on it. */}
+    <rect x={width / 2 - 96} y="575" width="192" height="20" fill={P.ink} /><text x={width / 2} y="589" fill={P.cream} fontSize={matSize} textAnchor="middle" fontFamily="var(--font-mono),monospace" fontWeight="500" letterSpacing="1.5">{mat}</text>
 
     {[...layout.props].sort((a, b) => (a.kind === "rug" ? -100 : a.y) - (b.kind === "rug" ? -100 : b.y)).map((prop) => <Prop key={prop.id} prop={prop} tile={tile} />)}
     <path d={`M${width / 2 - 40} ${height - 17}h80`} stroke={P.cream} strokeWidth="4" />

@@ -1,4 +1,11 @@
-/* Interface uses the existing Hoppaz tokens; the scene's materials are defined in its asset palette. */
+/*
+ * The crew room inside the app. Everything here uses the app's own tokens (globals.css) and fonts, so the room reads as
+ * Hoppaz, not a separate site: the header and the tab bar are the same material, the world sits between them, and every
+ * control is a 44 px target. Only the scene itself (the lawn behind it, the clubhouse art) carries its own colours.
+ *
+ * Layers inside .stage (z-index): 0 the world, 2 hints, 6 the HUD pill, 7 the CHAT button, 12 the chrome layer (chat sheet,
+ * Hopper menu, action pill, event sheet, voice), 15 Game Time's banner and sheets, 18 the Explore pop-over, 20 sheets.
+ */
 .experience {
   position: absolute;
   inset: 0;
@@ -8,16 +15,688 @@
   background: rgb(var(--ground));
   color: rgb(var(--text));
 }
+
+/* ---- Header: the app's own, compact (back, title and tick on one line, N here, the round logo) ---- */
 .header {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 12px;
-  padding: calc(env(safe-area-inset-top) + 12px) 16px 12px;
+  gap: 4px;
+  min-height: calc(56px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
   border-bottom: 1px solid rgb(var(--hairline));
   background: rgb(var(--raised));
 }
-.back,
+@media (max-height: 500px) {
+  .header {
+    min-height: calc(44px + env(safe-area-inset-top));
+  }
+}
+.back {
+  display: grid;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  color: rgb(var(--text));
+}
+.titleBlock {
+  flex: 1;
+  min-width: 0;
+  padding-left: 4px;
+}
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.nameRow h1 {
+  min-width: 0;
+  font: 900 22px/24px var(--font-poppins);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nameRow.wrap h1 {
+  white-space: normal;
+  text-overflow: clip;
+  line-height: 1.1;
+}
+.sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1px;
+  font: 500 10.5px/12px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--dim));
+}
+.dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(var(--keke));
+}
+.dotOff {
+  background: rgb(var(--danfo));
+}
+/* The round crew logo at the right end: it opens Explore (other crews and nights). */
+.badge {
+  position: relative;
+  display: grid;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+}
+.badgeFace {
+  display: block;
+  width: 36px;
+  height: 36px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 50%;
+  background: rgb(var(--card));
+}
+.badgeFace img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.badgeLetter {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  font: 900 15px var(--font-poppins);
+}
+.compass {
+  position: absolute;
+  right: 1px;
+  bottom: 3px;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 50%;
+  background: rgb(var(--raised));
+  color: rgb(var(--text));
+}
+.badgePulse .badgeFace {
+  animation: pulseOnce 0.6s ease-out 1;
+}
+@keyframes pulseOnce {
+  0% {
+    box-shadow: 0 0 0 0 rgb(255 77 0 / 0.7);
+  }
+  100% {
+    box-shadow: 0 0 0 12px rgb(255 77 0 / 0);
+  }
+}
+
+/* ---- The stage: everything between the header and the tab bar ---- */
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+  --room-sheet: 0px;
+  --room-bottom: calc(12px + var(--room-sheet));
+}
+
+/* ---- The world ---- */
+.worldShell {
+  position: absolute;
+  inset: 0 var(--room-dock, 0px) 0 0;
+}
+.viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #222A23;
+  background-image: radial-gradient(#394336 1px, transparent 1px);
+  background-size: 16px 16px;
+  isolation: isolate;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  cursor: crosshair;
+}
+.viewport:focus-visible {
+  box-shadow: inset 0 0 0 2px #FF4D00;
+}
+.world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  visibility: hidden;
+  contain: layout style;
+}
+.world[data-ready] {
+  visibility: visible;
+}
+.art {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  --cam-s: 1;
+  --cam-inv: 1;
+}
+.decals,
+.props,
+.walkers,
+.tags,
+.over,
+.cards,
+.gameTimeWorld {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.decals {
+  z-index: 1;
+}
+.props {
+  z-index: 2;
+}
+.walkers {
+  z-index: 3;
+}
+.tags {
+  z-index: 4;
+}
+.over {
+  z-index: 5;
+}
+.cards {
+  z-index: 6;
+}
+.gameTimeWorld {
+  z-index: 1;
+}
+
+/* Walkers move by transform only: the browser's compositor does the moving, not layout. */
+.walker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  transition-property: transform;
+  transition-timing-function: linear;
+}
+.sprite {
+  position: absolute;
+  left: -16px;
+  top: -58px;
+  display: block;
+  width: 32px;
+  height: 58px;
+}
+.sprite img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.walking {
+  animation: steps 0.2s ease-in-out infinite alternate;
+}
+.nudge {
+  animation: nudge 0.16s ease-out 1;
+}
+@keyframes steps {
+  to {
+    transform: translateY(-2px);
+  }
+}
+@keyframes nudge {
+  50% {
+    transform: translateX(var(--nx, 3px));
+  }
+}
+.ring {
+  position: absolute;
+  left: -14px;
+  top: -9px;
+  width: 28px;
+  height: 18px;
+  border: 2px solid #F5EBDD;
+  border-radius: 50%;
+  opacity: 0;
+  animation: ringOut 0.7s ease-out 1;
+}
+@keyframes ringOut {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.5);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+}
+.nameTag {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: max-content;
+  max-width: 96px;
+  padding: 2px 5px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 4px;
+  background: rgb(var(--ground) / 0.88);
+  color: rgb(var(--text));
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transform: translateX(-50%) scale(var(--cam-inv, 1));
+  transform-origin: 50% 0;
+}
+.me .nameTag {
+  background: #F5EBDD;
+  border-color: #F5EBDD;
+  color: #0E0B0A;
+}
+.away {
+  opacity: 0.5;
+}
+
+/* Zone names: readable at every zoom, on a plate, the same size on screen whatever the camera does. */
+.zoneTag {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: max-content;
+  max-width: 112px;
+  padding: 3px 8px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 4px;
+  background: rgb(var(--ground) / 0.88);
+  color: rgb(var(--text));
+  font: 500 11px/12px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  pointer-events: auto;
+  transform: translate(-50%, -100%) scale(var(--cam-inv, 1));
+  transform-origin: 50% 100%;
+  animation: stampIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+}
+.zoneTag::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+.zoneTag b {
+  flex: none;
+  color: #FF6E32;
+  font-weight: 500;
+}
+.zoneTag:nth-child(2) {
+  animation-delay: 40ms;
+}
+.zoneTag:nth-child(3) {
+  animation-delay: 80ms;
+}
+.zoneTag:nth-child(4) {
+  animation-delay: 120ms;
+}
+.zoneTag:nth-child(5) {
+  animation-delay: 160ms;
+}
+.zoneTag:nth-child(6) {
+  animation-delay: 200ms;
+}
+.viewport:not([data-lod="0"]) .zoneTag {
+  opacity: 0.72;
+}
+.viewport:not([data-lod="0"]) .zoneTagHere {
+  display: none;
+}
+@keyframes stampIn {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -100%) scale(calc(var(--cam-inv, 1) * 1.3));
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -100%) scale(var(--cam-inv, 1));
+  }
+}
+.areaTag {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 190px;
+  padding: 3px 6px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 4px;
+  background: rgb(var(--ground) / 0.88);
+  color: rgb(var(--text));
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: auto;
+  transform: translate(0, -100%) scale(var(--cam-inv, 1));
+  transform-origin: 0 100%;
+}
+.areaTag::before {
+  content: "";
+  position: absolute;
+  inset: -16px -6px -8px;
+}
+.areaTag svg {
+  flex: none;
+}
+.areaTag span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.areaTagHere {
+  background: #F5EBDD;
+  border-color: #F5EBDD;
+  color: #0E0B0A;
+}
+.areaTag b {
+  color: #B83600;
+  font-weight: 500;
+}
+
+/* Floor decals */
+.privateArea {
+  position: absolute;
+  border: 2px dashed rgb(244 121 69 / 0.7);
+  border-radius: 5px;
+  background: rgb(238 125 73 / 0.04);
+}
+.privateAreaActive {
+  border-style: solid;
+  border-color: #FF864D;
+  background: rgb(238 125 73 / 0.12);
+}
+.destination {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #F5EBDD;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(var(--cam-inv, 1));
+  animation: destPulse 0.45s ease-out 1;
+}
+@keyframes destPulse {
+  0% {
+    transform: translate(-50%, -50%) scale(calc(var(--cam-inv, 1) * 0.8));
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(calc(var(--cam-inv, 1) * 1.2));
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(var(--cam-inv, 1));
+  }
+}
+.bumpMark {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%) scale(var(--cam-inv, 1));
+  animation: bumpFade 0.6s ease-out forwards;
+}
+.bumpMark::before,
+.bumpMark::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -1px;
+  width: 2px;
+  height: 16px;
+  background: #F5EBDD;
+  transform: translateX(-50%) rotate(45deg);
+}
+.bumpMark::after {
+  transform: translateX(-50%) rotate(-45deg);
+}
+@keyframes bumpFade {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---- Hints inside the stage (never a status bar) ---- */
+.hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--room-bottom) + 64px);
+  z-index: 2;
+  padding: 0 16px;
+  color: rgb(245 235 221 / 0.72);
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.hintOut {
+  opacity: 0;
+}
+.watchChip {
+  position: absolute;
+  left: max(8px, env(safe-area-inset-left));
+  right: calc(64px + var(--room-dock, 0px));
+  top: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  background: rgb(var(--raised) / 0.92);
+  color: rgb(var(--text));
+  font: 500 10px/13px var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.watchChip i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: rgb(var(--danfo));
+}
+
+/* ---- HUD pill (top right): sound, full view or find me, and the owner's settings ---- */
+.hud {
+  position: absolute;
+  top: 8px;
+  right: calc(max(8px, env(safe-area-inset-right)) + var(--room-dock, 0px));
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  background: rgb(var(--raised) / 0.9);
+}
+.hud button {
+  position: relative;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  color: rgb(var(--text));
+}
+.hud button + button {
+  border-top: 1px solid rgb(var(--hairline));
+}
+.hud button[aria-pressed="false"] {
+  color: rgb(var(--dim));
+}
+.hudLabel {
+  position: absolute;
+  right: calc(max(8px, env(safe-area-inset-right)) + var(--room-dock, 0px) + 52px);
+  z-index: 6;
+  padding: 4px 8px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 4px;
+  background: rgb(var(--ground) / 0.92);
+  color: rgb(var(--text));
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: fade 0.12s ease both;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---- CHAT button (bottom left), riding on the chat sheet's top edge ---- */
+.chatBtn {
+  position: absolute;
+  left: max(12px, env(safe-area-inset-left));
+  bottom: var(--room-bottom);
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  min-width: 44px;
+  justify-content: center;
+  padding: 0 14px 0 12px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  background: rgb(var(--raised) / 0.9);
+  color: rgb(var(--text));
+  font: 500 11px/12px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.chatBtn[data-compact] {
+  width: 44px;
+  padding: 0;
+}
+.chatBtn[data-compact] span:not(.unread) {
+  display: none;
+}
+.unread {
+  position: absolute;
+  right: -6px;
+  top: -6px;
+  display: grid;
+  min-width: 16px;
+  height: 16px;
+  place-items: center;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #FF4D00;
+  color: #0E0B0A;
+  font: 500 10px/1 var(--font-mono);
+  letter-spacing: 0;
+}
+
+/* The screen chrome mounts (chat sheet, Hopper menu, action pill, event sheet, voice): one click-through layer. */
+.chromeLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+}
+/* Game Time's layer over the room chrome: click-through, so its banner and sheets opt in to pointer events. */
+.gameTimeChrome {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+}
+
+/* ---- A zone's longer story (the awards, the artist), opened only from its pill ---- */
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  max-height: 72%;
+  padding: 16px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left));
+  border-top: 1px solid rgb(var(--hairline));
+  border-radius: 12px 12px 0 0;
+  background: rgb(var(--raised));
+  box-shadow: 0 -14px 40px rgb(var(--shadow) / 0.55);
+  animation: rise 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes rise {
+  from {
+    transform: translateY(100%);
+  }
+}
+.sheetHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.sheetHead h2 {
+  flex: 1;
+  font: 900 22px/24px var(--font-poppins);
+}
+.sheetBody {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sheetBody p {
+  font: 400 14px/1.55 var(--font-body);
+  color: rgb(var(--dim));
+}
+
+/* ---- Owner settings panel (the same form as before, now reached from the HUD) ---- */
+.eyebrow {
+  margin-bottom: 7px;
+  color: #FF6E32;
+  font: 500 10px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
 .iconButton {
   display: grid;
   flex: none;
@@ -27,344 +706,6 @@
   border: 1px solid rgb(var(--hairline));
   border-radius: 6px;
   background: rgb(var(--card));
-}
-.heading {
-  flex: 1;
-  min-width: 0;
-}
-.heading p {
-  font: 500 10px var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: #FF6E32;
-}
-.heading h1 {
-  font: 900 23px/1.2 var(--font-poppins);
-  margin-top: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* The brand and its verified tick: the name truncates, the tick never does. */
-.title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.title h1 {
-  min-width: 0;
-}
-.title > span {
-  margin-top: 3px;
-}
-.headerActions {
-  display: flex;
-  gap: 8px;
-}
-.headerActions button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid rgb(var(--hairline));
-  border-radius: 6px;
-  font: 500 11px var(--font-mono);
-}
-.body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-.mapColumn {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-}
-.worldShell {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
-.viewport {
-  position: relative;
-  flex: 1;
-  min-height: 200px;
-  overflow: hidden;
-  background: #222A23;
-  background-image: radial-gradient(#394336 1px, transparent 1px);
-  background-size: 16px 16px;
-  isolation: isolate;
-}
-.world {
-  position: absolute;
-  transform-origin: 0 0;
-  transition: left 0.09s linear, top 0.09s linear;
-}
-.floor {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  cursor: crosshair;
-}
-.floor svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-.player {
-  position: absolute;
-  width: 38px;
-  height: 60px;
-  pointer-events: none;
-  transform: translate(-50%, -80%);
-  transition: left 0.085s linear, top 0.085s linear;
-  filter: drop-shadow(3px 4px 0 rgb(24 27 33/0.3));
-  z-index: 2;
-}
-.player > span {
-  display: block;
-  height: 49px;
-  width: 38px;
-}
-.player b {
-  display: block;
-  width: 34px;
-  margin-top: -3px;
-  padding: 2px 3px;
-  border-radius: 3px;
-  color: #F5EBDD;
-  background: #282A31;
-  text-align: center;
-  font: 500 9px var(--font-mono);
-}
-.walking {
-  animation: steps 0.2s ease-in-out infinite alternate;
-}
-.destination {
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  border: 2px dashed #F47945;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-.marker {
-  position: absolute;
-  z-index: 3;
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  transform: translate(-50%, -50%);
-  border-radius: 5px;
-}
-.marker > span {
-  display: grid;
-  width: 27px;
-  height: 25px;
-  place-items: center;
-  color: #F5EBDD;
-  background: #282A31;
-  border: 1px solid #8C8D88;
-  border-radius: 3px;
-  box-shadow: 0 3px 0 #181B21;
-  font: 500 11px var(--font-mono);
-}
-.marker:hover > span,
-.markerSelected > span {
-  color: #282A31;
-  background: #F47945;
-  border-color: #F47945;
-}
-.camera {
-  position: absolute;
-  right: 12px;
-  top: 12px;
-  z-index: 4;
-}
-.camera button {
-  display: flex;
-  height: 44px;
-  align-items: center;
-  gap: 7px;
-  padding: 0 12px;
-  color: #F5EBDD;
-  background: #282A31;
-  border: 1px solid #75777C;
-  border-radius: 6px;
-  font: 500 11px var(--font-mono);
-}
-.overviewHint {
-  position: absolute;
-  left: 16px;
-  bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 10px;
-  border-radius: 4px;
-  color: #EADFC4;
-  background: #282A31;
-  font: 500 10px var(--font-mono);
-}
-.controls {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  z-index: 4;
-  display: grid;
-  grid-template-columns: repeat(3, 44px);
-  gap: 4px;
-}
-.controls>button:first-child {
-  grid-column: 2;
-}
-.controls>button:nth-child(2) {
-  grid-column: 1;
-}
-.controls button {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  border: 1px solid #75777C;
-  border-radius: 6px;
-  background: #282A31;
-  color: #F5EBDD;
-}
-.controls button:disabled {
-  opacity: 0.4;
-}
-.worldStatus {
-  display: flex;
-  flex: none;
-  min-height: 42px;
-  align-items: center;
-  gap: 16px;
-  padding: 8px 16px;
-  border-top: 1px solid rgb(var(--hairline));
-  background: rgb(var(--raised));
-}
-.worldStatus p {
-  flex: 1;
-  font-size: 12px;
-  line-height: 1.4;
-  color: rgb(var(--text));
-}
-.worldStatus > span {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font: 400 10px var(--font-mono);
-  color: rgb(var(--dim));
-  white-space: nowrap;
-}
-.tour {
-  display: flex;
-  flex: none;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 8px 12px;
-  border-top: 1px solid rgb(var(--hairline));
-  scrollbar-width: thin;
-}
-.tour button {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 7px;
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid rgb(var(--hairline));
-  border-radius: 5px;
-  background: rgb(var(--card));
-  font: 500 12px var(--font-body);
-  white-space: nowrap;
-}
-.tour button b {
-  color: rgb(var(--dim));
-  font: 500 10px var(--font-mono);
-}
-.tour button[aria-pressed=true] {
-  border-color: #FF4D00;
-}
-.tour button[aria-pressed=true] b {
-  color: #FF6E32;
-}
-.detail {
-  display: flex;
-  width: 280px;
-  flex: none;
-  flex-direction: column;
-  gap: 20px;
-  overflow-y: auto;
-  padding: 24px 20px;
-  border-left: 1px solid rgb(var(--hairline));
-  background: rgb(var(--raised));
-}
-.detailTop {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-.detailTop>div {
-  flex: 1;
-}
-.eyebrow {
-  margin-bottom: 7px;
-  color: #FF6E32;
-  font: 500 10px var(--font-mono);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.detail h2 {
-  font: 900 24px/1.15 var(--font-poppins);
-}
-.description {
-  color: rgb(var(--dim));
-  font-size: 13px;
-  line-height: 1.7;
-}
-.detailIcon {
-  display: grid;
-  width: 64px;
-  height: 64px;
-  place-items: center;
-  border-radius: 6px;
-  border: 1px solid rgb(var(--hairline));
-  color: #FF6E32;
-  background: rgb(var(--card));
-}
-.detailIcon svg {
-  width: 28px;
-  height: 28px;
-}
-.detail .iconButton {
-  width: 40px;
-  height: 40px;
-}
-.empty {
-  padding: 16px;
-  border: 1px dashed rgb(var(--hairline));
-  border-radius: 6px;
-}
-.empty p:first-child {
-  font: 600 13px var(--font-body);
-}
-.empty p+p {
-  margin-top: 8px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: rgb(var(--dim));
 }
 .action {
   display: inline-flex;
@@ -394,114 +735,6 @@
   font: 400 10px/1.6 var(--font-mono);
   color: rgb(var(--dim));
 }
-.roomList {
-  display: grid;
-  gap: 8px;
-}
-.roomList button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 48px;
-  text-align: left;
-  padding: 7px 10px;
-  border: 1px solid rgb(var(--hairline));
-  border-radius: 5px;
-}
-.roomList button b {
-  color: #FF6E32;
-  font: 500 11px var(--font-mono);
-}
-.roomList button span {
-  font-size: 13px;
-}
-.recordDisc {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid rgb(var(--hairline));
-  border-radius: 6px;
-}
-.recordDisc i {
-  display: block;
-  flex: none;
-  width: 42px;
-  height: 42px;
-  border: 10px solid #282A31;
-  border-radius: 50%;
-  background: #F47945;
-  box-shadow: 0 0 0 1px #75777C;
-}
-.recordDisc strong {
-  display: block;
-  font-size: 13px;
-}
-.recordDisc small {
-  display: block;
-  margin-top: 3px;
-  color: rgb(var(--dim));
-  font-size: 11px;
-}
-/* The room music: what plays, and the Music switch (the same one as Me, Settings). */
-.roomMusic {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid rgb(var(--hairline));
-  border-radius: 6px;
-}
-.roomMusic p {
-  color: rgb(var(--dim));
-  font-size: 12px;
-  line-height: 1.5;
-}
-.musicSwitch {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 6px 10px;
-  border: 1px solid rgb(var(--hairline));
-  border-radius: 6px;
-  font: 500 10px var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  justify-self: start;
-}
-.musicSwitch[aria-pressed="true"] {
-  border-color: #FF4D00;
-  color: #FF6E32;
-}
-/* The crew's next event, on the Stage: one tap to its page. */
-.stageEvent {
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-  border: 1px solid #FF4D00;
-  border-radius: 6px;
-  background: rgb(var(--card));
-}
-.stageEvent .eyebrow {
-  margin-bottom: 2px;
-}
-.stageEvent strong {
-  font: 900 16px/1.25 var(--font-poppins);
-}
-.stageEvent small {
-  color: rgb(var(--dim));
-  font-size: 12px;
-}
-.stageEventGo {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  color: #FF6E32;
-  font: 500 11px var(--font-mono);
-  text-transform: uppercase;
-}
 .awards {
   display: grid;
   gap: 12px;
@@ -513,31 +746,30 @@
 }
 .award strong {
   display: block;
-  font-size: 13px;
+  font-size: 14px;
 }
 .award p {
   margin-top: 5px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
   color: rgb(var(--dim));
 }
 .award a {
   display: inline-flex;
-  min-height: 40px;
+  min-height: 44px;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 13px;
   text-decoration: underline;
 }
 .overlay {
   position: absolute;
   inset: 0;
-  z-index: 20;
+  z-index: 40;
   display: flex;
   justify-content: flex-end;
   padding: 16px;
-  background: rgb(0 0 0/0.6);
-  backdrop-filter: blur(3px);
+  background: rgb(0 0 0 / 0.6);
 }
 .panel {
   display: flex;
@@ -550,7 +782,7 @@
   background: rgb(var(--raised));
   border: 1px solid rgb(var(--hairline));
   border-radius: 8px;
-  box-shadow: 8px 8px 0 rgb(0 0 0/0.18);
+  box-shadow: 8px 8px 0 rgb(0 0 0 / 0.18);
 }
 .panelHead {
   display: flex;
@@ -558,7 +790,7 @@
   gap: 12px;
   margin-bottom: 24px;
 }
-.panelHead>div {
+.panelHead > div {
   flex: 1;
 }
 .panelHead h2 {
@@ -589,10 +821,10 @@
   flex-wrap: wrap;
 }
 .error {
-  color: rgb(var(--fireant))!important;
+  color: rgb(var(--fireant)) !important;
 }
 .success {
-  color: rgb(var(--keke))!important;
+  color: rgb(var(--keke)) !important;
 }
 .mapSizes {
   display: flex;
@@ -611,289 +843,82 @@
   border-radius: 5px;
   text-align: left;
 }
-.mapSizes button[aria-pressed=true] {
+.mapSizes button[aria-pressed="true"] {
   border-color: #FF4D00;
 }
 .mapSizes small {
   color: rgb(var(--dim));
   font: 400 10px var(--font-mono);
 }
-@keyframes steps {
-  to {
-    transform: translateY(-2px);
-  }
-}
-@media (max-width: 900px) {
-  .detail {
-    width: 240px;
-    padding: 20px 16px;
-  }
-  .worldStatus > span {
-    display: none;
-  }
-  .tour button {
-    font-size: 11px;
-    padding: 8px 10px;
-  }
-}
-@media (max-width: 700px) {
-  .header {
-    padding-right: 12px;
-    padding-left: 12px;
-    gap: 10px;
-  }
-  .heading h1 {
-    font-size: 21px;
-  }
-  .headerActions button {
-    width: 44px;
-    padding: 0;
-  }
-  .headerActions button span {
-    display: none;
-  }
-  .body {
-    flex-direction: column;
-  }
-  .detail {
-    width: 100%;
-    max-height: 230px;
-    gap: 12px;
-    padding: 16px;
-    border-left: 0;
-    border-top: 1px solid rgb(var(--hairline));
-  }
-  .detail:not(.detailSelected) {
-    display: none;
-  }
-  .detail h2 {
-    font-size: 20px;
-  }
-  .detailIcon {
-    display: none;
-  }
-  .detailTop {
-    gap: 10px;
-  }
-  .description {
-    font-size: 12px;
-  }
-  .empty {
-    padding: 12px;
-  }
-  .tour {
-    padding: 6px 10px;
-  }
-  .worldStatus {
-    min-height: 38px;
-    padding: 7px 12px;
-  }
-  .worldStatus p {
-    font-size: 11px;
-  }
-  .panel {
-    padding: 20px;
-  }
-  .overlay {
-    padding: 12px;
-  }
-  .overviewHint {
-    left: 12px;
-    bottom: 10px;
-    font-size: 9px;
-  }
-  .camera button span {
-    display: none;
-  }
-}
+
 @media (prefers-reduced-motion: reduce) {
-  .world,
-  .player {
+  .walker {
     transition: none;
   }
-  .walking {
+  .walking,
+  .nudge,
+  .zoneTag,
+  .ring,
+  .destination,
+  .popover,
+  .sheet,
+  .badgePulse .badgeFace {
     animation: none;
   }
-}
-/* Social room overlays share the scene coordinates; controls remain at touch size. */
-.peer {
-  transition: left 0.2s linear, top 0.2s linear;
-  z-index: 1;
-}
-.peer b {
-  width: max-content;
-  max-width: 90px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-left: 50%;
-  transform: translateX(-50%);
-  color: #EADFC4;
-  background: #3E4943;
-}
-.nearPeer b {
-  color: #282A31;
-  background: #B6CEA0;
-}
-.conversationRing {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  border: 2px dashed #6F916D;
-  border-radius: 50%;
-  background: rgb(127 156 121/0.1);
-  pointer-events: none;
-}
-.peerTarget {
-  position: absolute;
-  width: 44px;
-  height: 44px;
-  transform: translate(-50%, -75%);
-  background: transparent;
-  z-index: 3;
-  border-radius: 50%;
-}
-.peerTarget:hover {
-  box-shadow: 0 0 0 2px #F47945;
-}
-@media (prefers-reduced-motion: reduce) {
-  .peer {
-    transition: none;
+  .bumpMark {
+    animation-duration: 0.01s;
   }
 }
-.headerActions a {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 44px;
-  padding: 8px 12px;
+
+/* ---- While the room opens: the lawn and two words ---- */
+.walkingIn {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgb(245 235 221 / 0.72);
+  font: 500 11px/13px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* A line said once (this room opened on another phone): a chip at the top of the world, clear of the HUD pill. */
+.noticeSlot {
+  position: absolute;
+  left: max(8px, env(safe-area-inset-left));
+  right: calc(64px + var(--room-dock, 0px));
+  top: 8px;
+  z-index: 5;
+}
+.noticeSlot p {
   border: 1px solid rgb(var(--hairline));
   border-radius: 6px;
-  font: 500 11px var(--font-mono);
+  background: rgb(var(--raised) / 0.94);
+  padding-left: 12px;
 }
-.nearbyStatus {
+
+/* The one coach mark, under the header at the logo: "Other crews and nights". */
+.coach {
   position: absolute;
-  left: 12px;
-  top: 12px;
+  top: 8px;
+  right: calc(max(8px, env(safe-area-inset-right)) + var(--room-dock, 0px) + 52px);
+  z-index: 6;
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: calc(100% - 80px);
-  min-height: 44px;
-  padding: 8px 10px;
-  border: 1px solid #9EB998;
-  border-radius: 6px;
-  background: #282A31;
-  color: #C8DEB3;
-  font: 500 11px var(--font-mono);
-  z-index: 4;
-}
-@media (max-width: 700px) {
-  .headerActions a {
-    width: 44px;
-    padding: 0;
-  }
-  .headerActions a span {
-    display: none;
-  }
-}
-.privateArea {
-  position: absolute;
+  padding: 6px 8px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 4px;
+  background: rgb(var(--ground) / 0.92);
+  color: rgb(var(--text));
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
   pointer-events: none;
-  border: 2px dashed #A76545;
-  border-radius: 5px;
-  background: rgb(238 125 73/0.04);
+  animation: fade 0.12s ease both;
 }
-.privateArea > span {
-  position: absolute;
-  top: -9px;
-  left: 3px;
-  max-width: calc(100% - 6px);
-  padding: 3px 5px;
-  background: #302D29;
-  color: #F4DFC9;
-  font: 500 9px var(--font-mono);
-  border-radius: 3px;
-}
-.privateAreaActive {
-  border-style: solid;
-  border-color: #FF864D;
-  background: rgb(238 125 73/0.12);
-}
-.areaTarget {
-  position: absolute;
-  z-index: 3;
+.noticeSlot p button {
   width: 44px;
   height: 44px;
-  display: grid;
-  place-items: center;
-  transform: translate(-50%, -50%);
-  border-radius: 5px;
 }
-.areaTarget svg {
-  padding: 4px;
-  box-sizing: content-box;
-  color: #F4DFC9;
-  background: #46352C;
-  border: 1px solid #B98460;
-  border-radius: 4px;
-}
-.areaTarget:hover svg,
-.areaTarget:focus-visible svg {
-  background: #FF4D00;
-  color: #0E0B0A;
-}
-/* A walker who has gone quiet (a locked phone, another app): still here for a moment, shown faded. */
-.away {
-  opacity: 0.45;
-  filter: grayscale(0.6);
-}
-/* The Lagos map on the table by the door, a way back out to the main map. */
-.mapTable > span {
-  color: #282A31;
-  background: #EADFC4;
-  border-color: #282A31;
-}
-/* Watching a full room: said plainly over the scene, which stays live. */
-.watchLine {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  z-index: 4;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid #F47945;
-  border-radius: 6px;
-  background: #282A31;
-  color: #F5EBDD;
-  font-size: 13px;
-  line-height: 1.4;
-}
-.watchLine svg {
-  flex: none;
-  color: #F47945;
-}
-.worldStatus .musicSwitch {
-  flex: none;
-}
-
-/* Game Time's layer inside the scaled world: full size and click-through, so its children opt in to pointer events. */
-.gameTimeWorld {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-}
-/* Game Time's layer over the room chrome: click-through, so its banner and sheets opt in to pointer events. */
-.gameTimeChrome {
-  position: absolute;
-  inset: 0;
-  z-index: 15;
-  pointer-events: none;
-}
-
-/* The screen chrome mounts (chat sheet, Hopper menu, action pill, event sheet, voice): one click-through layer. */
-.chromeLayer { position: absolute; inset: 0; z-index: 12; pointer-events: none; }
