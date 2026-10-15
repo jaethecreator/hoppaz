@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { ChevronRight, Settings2 } from "lucide-react";
 import { useFeatured } from "@/lib/crew-room/featured";
 import { useExploreStore, useGoOut, useRoomRails, type RailEvent } from "@/lib/crew-room/rails";
+import { markAnnouncementsSeen } from "@/lib/crew-room/announcements";
 import OwnerPanel from "./OwnerPanel";
 import { dayLabel } from "@/lib/filters";
 import { eventTitle } from "@/lib/geo";
@@ -42,6 +43,11 @@ export function ExplorePopover({ crewId }: ExploreProps) {
     box.current?.focus();
     return () => window.removeEventListener("keydown", onKey);
   }, [open, hide]);
+
+  // Opening the panel is seeing the announcements in it: the logo stops pulsing.
+  useEffect(() => {
+    if (open) void markAnnouncementsSeen(crewId);
+  }, [open, crewId]);
 
   // Gone when the room is: a popover never outlives its screen.
   useEffect(() => () => useExploreStore.getState().hide(), []);
