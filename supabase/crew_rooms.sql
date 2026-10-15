@@ -14,7 +14,10 @@
 --                     the look of a crew: a round logo and up to 5 header pictures
 --                     for its hub. Written only by crew_update_look (the owner), and
 --                     only ever a /brands/ path or a picture in the crew-images
---                     bucket under that crew's own folder (a check on the table).
+--                     bucket under that crew's own folder, written as a PATH
+--                     (/storage/v1/object/public/crew-images/<crew id>/<file>), never a link
+--                     to some other host (a check on the table). The app puts its own
+--                     storage address in front of the path (src/lib/crew-room/images.ts).
 --   crew_rooms.template, crew_rooms.featured_event_id, crew_rooms.featured_ribbon
 --                     which room template holds the crew's meeting (the owner picks,
 --                     crew_room_set_template), and the event the fountain's sticker
@@ -157,13 +160,14 @@ end $$;
 -- The look of a crew: a round logo and up to 5 header pictures for the hub. Only crew_update_look
 -- writes them (the column grant below stays name and visibility), and the checks hold even for a
 -- write that skips it: a picture is a /brands/ path of ours or sits in this crew's own folder of the
--- public crew-images bucket. Judged by the path, not the host: the same SQL serves a local stack
--- and a hosted one.
+-- public crew-images bucket. Only ever a PATH: a link to any host at all is refused, so a crew owner cannot point
+-- the logo at a server of their own (every viewer's phone, the anonymous invite page included, would fetch it).
+-- The same SQL serves a local stack and a hosted one because the app adds its own storage address.
 create or replace function public._crew_image_ok(p_crew uuid, p_url text) returns boolean
 language sql immutable as $$
   select p_url is not null and (
     p_url ~ '^/brands/[A-Za-z0-9._-]{1,80}\.(jpg|jpeg|png|webp)$'
-    or p_url ~ ('^https?://[^/?#[:space:]]{1,200}/storage/v1/object/public/crew-images/' || p_crew::text || '/[A-Za-z0-9._-]{1,120}\.(jpg|jpeg|png|webp)$'));
+    or p_url ~ ('^/storage/v1/object/public/crew-images/' || p_crew::text || '/[A-Za-z0-9._-]{1,120}\.(jpg|jpeg|png|webp)$'));
 $$;
 create or replace function public._crew_images_ok(p_crew uuid, p_urls text[]) returns boolean
 language sql immutable as $$
@@ -178,6 +182,31 @@ begin
       check ((logo_url is null or public._crew_image_ok(id, logo_url)) and public._crew_images_ok(id, header_images));
   end if;
 end $$;
+-- Pictures saved by the first version were full links to the storage host. Keep the path, drop the host.
+update public.crews set logo_url = regexp_replace(logo_url, '^https?://[^/]+', '')
+ where logo_url ~ '^https?://[^/]+/storage/v1/object/public/crew-images/';
+update public.crews c
+   set header_images = (select coalesce(array_agg(regexp_replace(u, '^https?://[^/]+', '') order by n), '{}')
+                          from unnest(c.header_images) with ordinality as t(u, n))
+ where exists (select 1 from unnest(c.header_images) u where u ~ '^https?://[^/]+/storage/v1/object/public/crew-images/');
+
+-- A name that looks like the brand crew's is not for anyone else to take. The real 360Playlist crew is made by staff
+-- (supabase/setup_360playlist.sql, with no app session) and is verified; a Hopper cannot create or rename an open crew
+-- into "360Playlist", "360 Play List" or "360-playlist fans" and borrow its look in Explore and on the invite page.
+-- The letters and digits are compared with spaces and marks taken out, so the spelling tricks do not work either.
+create or replace function public._crew_name_reserved() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if auth.uid() is not null and not coalesce(new.verified, false)
+     and regexp_replace(lower(new.name), '[^a-z0-9]', '', 'g') like '%360playlist%'
+     and (tg_op = 'INSERT' or new.name is distinct from old.name) then
+    raise exception 'reserved_name';
+  end if;
+  return new;
+end $$;
+drop trigger if exists crews_reserved_name on public.crews;
+create trigger crews_reserved_name before insert or update of name on public.crews
+  for each row execute function public._crew_name_reserved();
 
 -- Whether a Game Time for this crew's room is scheduled or live. The template cannot change under
 -- a hunt. Game Time (supabase/game_time.sql) replaces this with the real check; written only when
@@ -381,6 +410,7 @@ declare
   room  crew_rooms;
   mine  crew_room_presence;
   spawn jsonb;
+  door  jsonb;
   sx    int;
   sy    int;
   took  boolean := false;
@@ -403,13 +433,18 @@ begin
     if (select count(*) from crew_room_presence where crew_id = p_crew) >= room.capacity then
       return _crew_room_snapshot(p_crew) || jsonb_build_object('watching', true);
     end if;
-    select data->'spawn' into spawn from crew_room_layouts where template = room.template and width = room.width;
-    -- Arrive around the entrance without stacking every new avatar on one tile.
+    select data->'spawn', (select b from jsonb_array_elements(data->'blocks') b where b->>'id' = 'entry-map-table')
+      into spawn, door from crew_room_layouts where template = room.template and width = room.width;
+    -- Arrive around the entrance without stacking every new avatar on one tile: the nearest free tile to the spawn,
+    -- out to four tiles, and never one touching the exit door (standing against it is how the exit pill shows).
     select tx, ty into sx, sy
-      from generate_series((spawn->>'x')::int - 2, (spawn->>'x')::int + 2) tx
-     cross join generate_series((spawn->>'y')::int - 2, (spawn->>'y')::int + 2) ty
+      from generate_series((spawn->>'x')::int - 4, (spawn->>'x')::int + 4) tx
+     cross join generate_series((spawn->>'y')::int - 4, (spawn->>'y')::int + 4) ty
      where _crew_room_walkable(room.template, room.width, tx, ty)
        and not exists (select 1 from crew_room_presence p where p.crew_id = p_crew and p.x = tx and p.y = ty)
+       and (door is null
+            or greatest((door->>'x')::int - tx, 0, tx - ((door->>'x')::int + (door->>'w')::int - 1))
+             + greatest((door->>'y')::int - ty, 0, ty - ((door->>'y')::int + (door->>'h')::int - 1)) > 1)
      order by (tx - (spawn->>'x')::int) ^ 2 + (ty - (spawn->>'y')::int) ^ 2, ty, tx
      limit 1;
     insert into crew_room_presence (crew_id, user_id, session_id, x, y)
@@ -755,14 +790,20 @@ begin
     'in_room', (select count(*) from crew_room_presence p
                  where p.crew_id = c.id and p.last_seen > t - _crew_room_ttl()
                    and (auth.uid() is null or not public.is_blocked(auth.uid(), p.user_id))),
+    -- Faces for everyone (an open crew's card is public); names and ids only for the crew's own members. An outsider sees
+    -- the look and a place in the row, so the walkers' user ids and names are not for the reading by the anonymous key.
     'heads', coalesce((
-      select jsonb_agg(h) from (
-        select jsonb_build_object('id', p.user_id, 'name', coalesce(nullif(btrim(pr.display_name), ''), pr.handle, 'A crew member'), 'look', pr.avatar) as h
-          from crew_room_presence p join profiles pr on pr.id = p.user_id
-         where p.crew_id = c.id and p.last_seen > t - _crew_room_ttl()
-           and (auth.uid() is null or not public.is_blocked(auth.uid(), p.user_id))
-         order by p.last_moved_at desc
-         limit 8) heads), '[]'),
+      select jsonb_agg(jsonb_build_object('id', case when member then x.uid::text else 'head-' || x.n end,
+                                          'name', case when member then x.name else '' end,
+                                          'look', x.look) order by x.n)
+        from (
+          select row_number() over (order by p.last_moved_at desc) as n, p.user_id as uid,
+                 coalesce(nullif(btrim(pr.display_name), ''), pr.handle, 'A crew member') as name, pr.avatar as look
+            from crew_room_presence p join profiles pr on pr.id = p.user_id
+           where p.crew_id = c.id and p.last_seen > t - _crew_room_ttl()
+             and (auth.uid() is null or not public.is_blocked(auth.uid(), p.user_id))
+           order by p.last_moved_at desc
+           limit 8) x), '[]'),
     'recent', case when member then coalesce((
       select jsonb_agg(m order by m->>'created_at') from (
         select jsonb_build_object('id', m.id, 'author_id', m.author_id, 'author_name', m.author_name, 'author_look', m.author_look,

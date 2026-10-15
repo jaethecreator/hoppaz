@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronLeft, X } from "lucide-react";
 import RequireAccount from "@/components/app/RequireAccount";
 import CampaignExperience from "@/components/campaign/CampaignExperience";
+import { warmSprites } from "@/components/campaign/spriteCache";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import { validCampaignUrl } from "@/lib/campaign/layout";
 import type { CrewRoomConnection } from "@/lib/crew-room/types";
@@ -36,6 +37,11 @@ export default function CrewRoomScreen({ crewId }: { crewId: string }) {
 function ConnectedRoom({ crewId }: { crewId: string }) {
   const { userId } = useSession();
   const room = useCrewRoom(crewId, userId);
+  // Pay the one-off start-up cost of drawing avatars while the "Walking in" screen is up and nothing moves.
+  useEffect(() => {
+    const t = setTimeout(warmSprites, 120);
+    return () => clearTimeout(t);
+  }, []);
   // The room music, once inside: the owner's own loop when they set one, otherwise the room theme (MusicHost).
   const inside = room.status === "ready";
   const own = room.snapshot ? validCampaignUrl(room.snapshot.room.content.audioUrl) : null;

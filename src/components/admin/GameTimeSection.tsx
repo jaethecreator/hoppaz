@@ -32,9 +32,12 @@ type Game = {
   relocate_minutes: number;
   hot_tiles: number;
   warm_tiles: number;
+  min_member_minutes: number;
   push_sent_at: string | null;
   push_count: number;
   push_ready: boolean;
+  cron_ready: boolean;
+  room_capacity: number | null;
   boxes_total: number;
   boxes_left: number;
   searches: number;
@@ -45,7 +48,26 @@ type Game = {
   objects?: { id: string }[];
   boxes?: Box[];
 };
-type Winner = { game_id: string; title: string; crew_name: string; handle: string | null; name: string | null; email: string | null; code: string; object: string | null; won_at: string };
+type Winner = {
+  game_id: string;
+  title: string;
+  crew_name: string;
+  handle: string | null;
+  name: string | null;
+  email: string | null;
+  code: string;
+  object: string | null;
+  won_at: string;
+  account_created: string | null;
+  email_confirmed: boolean;
+  provider: string | null;
+  joined_crew: string | null;
+  joined_mins_before_open: number | null;
+  account_mins_before_open: number | null;
+  searches: number | null;
+  secs_after_open: number | null;
+  flags: string[];
+};
 type Desk = { games: Game[]; crews: Crew[]; objects: Record<string, RoomObject[]> };
 
 const NOW_KIND: Record<Game["phase"], { tag: string; label: string }> = {
@@ -62,6 +84,26 @@ const lagos = (iso: string | null) =>
 /** An ISO time as a datetime-local value in Lagos time (UTC+1, no daylight saving). */
 const lagosInput = (iso: string) => new Date(Date.parse(iso) + 3_600_000).toISOString().slice(0, 16);
 const SUMMARY = "cursor-pointer py-1 font-mono text-[10.5px] font-bold uppercase tracking-[0.08em] text-orange";
+
+/** Live first, then the ones coming up (soonest first), then everything that ended (newest first): the one in play is never buried. */
+const RANK: Record<Game["phase"], number> = { live: 0, upcoming: 1, all_found: 2, closed: 2, time_up: 2 };
+function inPlayOrder(games: Game[]): Game[] {
+  return [...games].sort((a, b) => {
+    if (RANK[a.phase] !== RANK[b.phase]) return RANK[a.phase] - RANK[b.phase];
+    const d = Date.parse(a.opens_at) - Date.parse(b.opens_at);
+    return a.phase === "upcoming" ? d : -d;
+  });
+}
+
+/** "5 min", "2 h 10 min", "3 days": minutes as a person reads them. */
+function span(mins: number | null): string {
+  if (mins === null || !Number.isFinite(mins)) return "?";
+  const m = Math.abs(Math.round(mins));
+  const sign = mins < 0 ? "-" : "";
+  if (m < 90) return `${sign}${m} min`;
+  if (m < 2880) return `${sign}${Math.floor(m / 60)} h ${m % 60} min`;
+  return `${sign}${Math.round(m / 1440)} days`;
+}
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -177,6 +219,7 @@ export default function GameTimeSection({ token, onLock }: { token: string; onLo
 
   const live = desk.games.filter((g) => g.phase === "live").length;
   const upcoming = desk.games.filter((g) => g.phase === "upcoming").length;
+  const ordered = inPlayOrder(desk.games);
 
   return (
     <>
@@ -194,7 +237,7 @@ export default function GameTimeSection({ token, onLock }: { token: string; onLo
           </button>
         </div>
         <div className="mt-3">
-          {desk.games.map((g) => (
+          {ordered.map((g) => (
             <GameRow
               key={g.id}
               game={g}
@@ -253,9 +296,9 @@ function GameRow({
   const ended = g.status === "over" && g.phase !== "time_up";
   return (
     <div className="border-t border-line py-2 first:border-0" data-gt-admin-game={g.id}>
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="flex flex-wrap items-center gap-2 font-display text-sm font-bold">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="min-w-[min(100%,15rem)] flex-1 basis-[15rem]">
+          <p className="flex flex-wrap items-center gap-2 font-display text-sm font-bold [overflow-wrap:anywhere]">
             {g.title}
             <span className={`pill ${kind.tag}`}>{kind.label}</span>
             {!g.room_ok && <span className="pill pill-fireant">ROOM CHANGED</span>}
@@ -327,8 +370,18 @@ function Details({ id, headers, onExport, reload, summary }: { id: string; heade
         <b className="text-cream">{g.in_room}</b> in the room now · <b className="text-cream">{g.members}</b> members · <b className="text-cream">{g.searchers}</b> searched ·{" "}
         <b className="text-cream">{g.searches}</b> {g.searches === 1 ? "search" : "searches"} · <b className="text-cream">{g.claims}</b> {g.claims === 1 ? "win" : "wins"}. Box moves on after{" "}
         {g.relocate_minutes ? `${g.relocate_minutes} min` : "never"}. Hot to {g.hot_tiles} tiles, warm to {g.warm_tiles}. Campaign {g.campaign_key}.{" "}
-        {g.push_sent_at ? `Push sent to ${g.push_count}.` : g.push_ready ? "Push not sent yet." : "Push is not set up on this database."}
+        {g.min_member_minutes ? `Members of at least ${span(g.min_member_minutes)} before it opens.` : "Any member can hunt."}{" "}
+        {g.push_sent_at ? (g.push_count ? `Push sent to ${g.push_count}.` : "No opening push went out (quiet hours, a rehearsal, or nobody to tell).") : g.push_ready ? "Push not sent yet." : "Push is not set up on this database."}
       </p>
+      <p className="hint mt-1" data-gt-admin-health>
+        Room fits <b className="text-cream">{g.room_capacity ?? "?"}</b> walkers; <b className="text-cream">{g.members}</b> are members. Minute tick{" "}
+        <b className={g.cron_ready ? "text-cream" : "text-fireant"}>{g.cron_ready ? "is running" : "IS OFF (pushes and box moves wait for a Hopper to load the room)"}</b>.
+      </p>
+      {g.room_capacity !== null && g.status !== "over" && g.members > g.room_capacity && (
+        <p className="mt-1 font-mono text-[11px] font-bold uppercase tracking-[0.06em] text-fireant" data-gt-admin-cap-warning>
+          {g.members} members but the room fits {g.room_capacity}. The rest only watch. Raise the room&apos;s capacity before the drop.
+        </p>
+      )}
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-left font-mono text-[11px]">
           <thead className="text-dim">
@@ -351,28 +404,34 @@ function Details({ id, headers, onExport, reload, summary }: { id: string; heade
       </div>
       <p className="seclabel mt-3">WINNERS</p>
       {winners.length ? (
-        <div className="mt-1 overflow-x-auto">
-          <table className="w-full text-left font-mono text-[11px]" data-gt-admin-winners>
-            <thead className="text-dim">
-              <tr>
-                <th className="py-1 pr-3 font-medium">HANDLE</th>
-                <th className="py-1 pr-3 font-medium">EMAIL</th>
-                <th className="py-1 pr-3 font-medium">CODE</th>
-                <th className="py-1 font-medium">WHEN</th>
-              </tr>
-            </thead>
-            <tbody>
-              {winners.map((w) => (
-                <tr key={`${w.game_id}-${w.code}`} className="border-t border-line">
-                  <td className="py-1 pr-3 text-cream">{w.handle ? `@${w.handle}` : w.name || "no handle"}</td>
-                  <td className="py-1 pr-3">{w.email ?? "no email"}</td>
-                  <td className="py-1 pr-3 text-cream">{w.code}</td>
-                  <td className="py-1">{lagos(w.won_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="mt-1 grid gap-2" data-gt-admin-winners>
+          {winners.map((w) => (
+            <li key={`${w.game_id}-${w.code}`} className="min-w-0 rounded border border-line p-2 font-mono text-[11px]" data-gt-admin-winner>
+              <p className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <span className="min-w-0 text-[12px] font-bold text-cream [overflow-wrap:anywhere]">{w.handle ? `@${w.handle}` : w.name || "no handle"}</span>
+                <span className="text-cream [overflow-wrap:anywhere]">{w.code}</span>
+              </p>
+              <p className="mt-0.5 break-all text-dim">{w.email ?? "no email"}</p>
+              <p className="mt-0.5 text-dim">
+                {lagos(w.won_at)} · {w.secs_after_open !== null ? `${w.secs_after_open} s after the opening` : ""} · {w.searches ?? "?"} {w.searches === 1 ? "search" : "searches"}
+              </p>
+              <p className="mt-0.5 text-dim">
+                Joined the crew {w.joined_mins_before_open === null ? "(no longer a member)" : `${span(w.joined_mins_before_open)} before the opening`} · account made{" "}
+                {span(w.account_mins_before_open)} before it · email {w.email_confirmed ? "confirmed" : "NOT confirmed"}
+                {w.provider ? ` (${w.provider})` : ""}
+              </p>
+              {w.flags?.length > 0 && (
+                <p className="mt-1 flex flex-wrap gap-1">
+                  {w.flags.map((f) => (
+                    <span key={f} className="pill pill-fireant">
+                      {f}
+                    </span>
+                  ))}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
       ) : (
         <p className="hint mt-1">Nobody has won yet.</p>
       )}
@@ -420,6 +479,13 @@ function ObjectBoxes({ objects, picked, onChange, disabled }: { objects: RoomObj
 
 const countCodes = (text: string) => text.split(/\r?\n/).map((c) => c.trim()).filter(Boolean).length;
 
+/** A key for a rehearsal: unique, so it never uses up a Hopper's real win. "rehearsal-1016-2035-k3f9" */
+function newRehearsalKey(): string {
+  const d = new Date(Date.now() + 3_600_000).toISOString(); // Lagos wall time
+  const rand = Math.random().toString(36).slice(2, 6);
+  return `rehearsal-${d.slice(5, 7)}${d.slice(8, 10)}-${d.slice(11, 13)}${d.slice(14, 16)}-${rand}`;
+}
+
 function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body: Record<string, unknown>) => Promise<{ game?: Game } | null> }) {
   const say = useToast((s) => s.say);
   const first = desk.crews.find((c) => /360\s*playlist/i.test(c.name)) ?? desk.crews[0];
@@ -427,19 +493,40 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
   const crew = desk.crews.find((c) => c.id === crewId);
   const objects = useMemo(() => (crew ? desk.objects[`${crew.template}:${crew.width}`] ?? [] : []), [crew, desk.objects]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [when, setWhen] = useState<"now" | "later">("now");
+  // SCHEDULE is the default: a hunt that opens by accident pings the whole crew.
+  const [when, setWhen] = useState<"now" | "later">("later");
   const [codes, setCodes] = useState("");
   const [more, setMore] = useState(false);
+  const [campaign, setCampaign] = useState("");
+  const [members, setMembers] = useState("30");
+  const [rehearsal, setRehearsal] = useState(false);
+  const [rehearsalKey, setRehearsalKey] = useState("");
+  // START NOW asks twice: the first press changes the button, the second opens the hunt.
+  const [armed, setArmed] = useState(false);
 
   // A crew's room has its own objects: start from all of them.
   useEffect(() => {
     setPicked(new Set(objects.map((o) => o.id)));
   }, [objects]);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [armed]);
 
   const n = countCodes(codes);
+  // The win limit that will apply, and how many Hoppers have already used it up.
+  const key = rehearsal ? rehearsalKey : campaign.trim() || `crew:${crewId}`;
+  const used = desk.games.filter((g) => g.campaign_key === key).reduce((sum, g) => sum + g.claims, 0);
+
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!crew) return;
+    if (when === "now" && !armed) {
+      setArmed(true);
+      return;
+    }
+    setArmed(false);
     const f = new FormData(e.currentTarget);
     const body: Record<string, unknown> = {
       action: "create",
@@ -448,6 +535,7 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
       codes_text: codes,
       objects: [...picked],
       relocate_minutes: Number(f.get("relocate") ?? 10),
+      min_member_minutes: rehearsal ? 0 : Math.max(0, Math.floor(Number(members) || 0)),
     };
     if (when === "now") {
       body.start_now = true;
@@ -456,13 +544,17 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
       body.opens_at = String(f.get("opens_at") ?? "");
       body.closes_at = String(f.get("closes_at") ?? "");
     }
+    if (rehearsal) {
+      body.silent = true;
+      body.campaign_key = rehearsalKey;
+    } else if (campaign.trim()) {
+      body.campaign_key = campaign.trim();
+    }
     if (more) {
       const hot = String(f.get("hot") ?? "");
       const warm = String(f.get("warm") ?? "");
-      const key = String(f.get("campaign") ?? "").trim();
       if (hot) body.hot_tiles = Number(hot);
       if (warm) body.warm_tiles = Number(warm);
-      if (key) body.campaign_key = key;
     }
     const r = await act(body);
     if (r) {
@@ -472,6 +564,7 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
   };
 
   if (!desk.crews.length) return <p className="hint">No crews on this database.</p>;
+  const label = when === "later" ? "SCHEDULE GAME TIME" : armed ? (rehearsal ? "OPEN IT NOW?" : "OPEN IT AND PING THE CREW?") : "CREATE AND START NOW";
   return (
     <form className="grid gap-3" onSubmit={submit} data-gt-create>
       <label className="label">
@@ -490,16 +583,16 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
       </label>
 
       <div role="radiogroup" aria-label="When" className="flex gap-2">
-        <button type="button" role="radio" aria-checked={when === "now"} className={`chip min-h-[44px] flex-1 ${when === "now" ? "chip-on" : ""}`} onClick={() => setWhen("now")}>
-          START NOW
-        </button>
-        <button type="button" role="radio" aria-checked={when === "later"} className={`chip min-h-[44px] flex-1 ${when === "later" ? "chip-on" : ""}`} onClick={() => setWhen("later")}>
+        <button type="button" role="radio" aria-checked={when === "later"} className={`chip min-h-[44px] flex-1 ${when === "later" ? "chip-on" : ""}`} onClick={() => { setWhen("later"); setArmed(false); }}>
           SCHEDULE
+        </button>
+        <button type="button" role="radio" aria-checked={when === "now"} className={`chip min-h-[44px] flex-1 ${when === "now" ? "chip-on" : ""}`} onClick={() => { setWhen("now"); setArmed(false); }}>
+          START NOW
         </button>
       </div>
       {when === "now" ? (
         <label className="label">
-          Runs for (minutes), opens this second and pings the crew
+          Runs for (minutes), opens this second{rehearsal ? "" : " and pings the crew"}
           <input name="duration" type="number" min={1} max={10080} defaultValue={60} required />
         </label>
       ) : (
@@ -531,8 +624,38 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
         <input name="relocate" type="number" min={0} max={720} defaultValue={10} required />
       </label>
 
+      <div>
+        <label className="label">
+          Members for at least this many minutes before it opens (0 means any member)
+          <input name="members" type="number" min={0} max={10080} value={rehearsal ? "0" : members} disabled={rehearsal} onChange={(e) => setMembers(e.target.value)} data-gt-members />
+        </label>
+        <p className="hint mt-1">One person with a pile of new accounts can clear a hunt in seconds. A Hopper who joined later can watch, not hunt. Use 30 or more for a real drop.</p>
+      </div>
+
+      <div className="rounded border border-line p-2" data-gt-limit>
+        <label className="flex min-h-[44px] items-center gap-2 font-body text-[13px]">
+          <input type="checkbox" className="!h-4 !w-4 flex-none" checked={rehearsal} onChange={(e) => { setRehearsal(e.target.checked); if (e.target.checked) setRehearsalKey(newRehearsalKey()); }} data-gt-rehearsal />
+          <span>
+            <b className="text-cream">REHEARSAL</b>: its own win limit, no opening push, any member can hunt. Use it for tests so nobody&apos;s real win is used up.
+          </span>
+        </label>
+        <label className="label mt-1 block">
+          Win limit (campaign key)
+          <input value={rehearsal ? rehearsalKey : campaign} onChange={(e) => setCampaign(e.target.value)} disabled={rehearsal} maxLength={80} placeholder={`crew:${crewId.slice(0, 8)}… (this crew's own limit)`} data-gt-campaign />
+        </label>
+        <p className="hint mt-1">One win per Hopper for every Game Time that shares the same key.</p>
+        <p className={`hint mt-1 ${used > 0 ? "!text-fireant" : ""}`} data-gt-limit-note>
+          {rehearsal
+            ? "This test has a limit of its own. Nobody's real win is touched."
+            : campaign.trim()
+              ? `Key "${campaign.trim()}".`
+              : "Empty means every Game Time of this crew shares ONE win per Hopper."}{" "}
+          {!rehearsal && used > 0 ? `${used} Hopper${used === 1 ? "" : "s"} already won on this limit and cannot win again.` : ""}
+        </p>
+      </div>
+
       <details onToggle={(e) => setMore((e.currentTarget as HTMLDetailsElement).open)}>
-        <summary className={SUMMARY}>Hints and the win limit</summary>
+        <summary className={SUMMARY}>Hints (hot and warm rings)</summary>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <label className="label">
             Hot up to (tiles)
@@ -543,16 +666,14 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
             <input name="warm" type="number" step="0.5" min={0.5} max={200} defaultValue={10} />
           </label>
         </div>
-        <label className="label mt-2 block">
-          Campaign key (one win per account across games with the same key; empty means this crew&apos;s own limit)
-          <input name="campaign" maxLength={80} placeholder="crew:<crew id>" />
-        </label>
+        <p className="hint mt-1">One box: 5 and 10 gives a useful hint. Three or more boxes: try 3 and 6, or hot will be the answer a third of the time.</p>
       </details>
 
-      <button className="btn" disabled={busy || !crew || n < 1 || n > 10 || picked.size < n}>
-        {when === "now" ? "CREATE AND START NOW" : "SCHEDULE GAME TIME"}
+      <button className={`btn ${armed ? "!bg-fireant" : ""}`} disabled={busy || !crew || n < 1 || n > 10 || picked.size < n} data-gt-submit={when}>
+        {label}
       </button>
-      {when === "now" && <p className="hint">START NOW opens the hunt this second and sends the opening push to the crew&apos;s members.</p>}
+      {when === "now" && !rehearsal && <p className="hint">START NOW opens the hunt this second and sends the opening push to the crew&apos;s members. Press twice.</p>}
+      {rehearsal && <p className="hint">A rehearsal sends no push. Members with the app open will still see the in-app Game Time card.</p>}
     </form>
   );
 }
@@ -615,6 +736,8 @@ function EditForm({
     if (!opened && opens && opens !== lagosInput(game.opens_at)) patch.opens_at = opens;
     const relocate = Number(f.get("relocate"));
     if (relocate !== game.relocate_minutes) patch.relocate_minutes = relocate;
+    const minMembers = Number(f.get("members"));
+    if (!opened && Number.isFinite(minMembers) && minMembers !== game.min_member_minutes) patch.min_member_minutes = minMembers;
     const hot = Number(f.get("hot"));
     if (hot !== game.hot_tiles) patch.hot_tiles = hot;
     const warm = Number(f.get("warm"));
@@ -652,6 +775,10 @@ function EditForm({
         <p className="label">Objects that may hide a box (boxes on a removed object move to a free one)</p>
         <ObjectBoxes objects={objects} picked={picked} onChange={setPicked} />
       </div>
+      <label className="label">
+        Members for at least (minutes) before it opens{opened ? ", already open" : ""}
+        <input name="members" type="number" min={0} max={10080} defaultValue={game.min_member_minutes} disabled={opened} />
+      </label>
       <div className="grid grid-cols-3 gap-2">
         <label className="label">
           Moves on (min)

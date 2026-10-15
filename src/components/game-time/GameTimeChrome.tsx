@@ -8,6 +8,7 @@ import { pressSearch, showChip, startGameTime } from "@/lib/game-time/controller
 import { nearestSpot, spotRects, tilesFrom } from "@/lib/game-time/proximity";
 import { useGameTime } from "@/lib/game-time/store";
 import Banner from "./Banner";
+import HintLayer from "./HintLayer";
 import Hype from "./Hype";
 import WinSheet from "./WinSheet";
 import css from "./GameTime.module.css";
@@ -15,7 +16,7 @@ import css from "./GameTime.module.css";
 /**
  * The Game Time half that sits over the room, in screen pixels (design 13.8). It also runs the controller: one poll, one
  * Realtime channel, for both mounts. What it draws: the banner and the feed lines, the opening countdown, the win sheet.
- * What it wires: the SEARCH pill (the room store's action, priority 100), the "Leave the hunt?" flag, and one tip.
+ * What it wires: the SEARCH pill (the room store's action, priority 100), the "Leave the hunt?" flag, and one tip card.
  */
 export type GameTimeChromeProps = { crewId: string; layout: CampaignLayout; isWatcher: boolean };
 
@@ -31,11 +32,12 @@ export default function GameTimeChrome({ crewId, layout, isWatcher }: GameTimeCh
     <>
       <HuntFlag isWatcher={isWatcher} />
       <SearchPill layout={layout} isWatcher={isWatcher} />
-      <LiveTip isWatcher={isWatcher} />
       <Hype isWatcher={isWatcher} />
-      <div className={css.top} data-below={isWatcher || undefined}>
+      <HintLayer layout={layout} />
+      <div className={css.top} data-below={isWatcher || undefined} data-gt-top>
         <Banner isWatcher={isWatcher} />
         <Feed />
+        <TipCard isWatcher={isWatcher} />
       </div>
       <WinSheet />
     </>
@@ -67,6 +69,7 @@ function HuntFlag({ isWatcher }: { isWatcher: boolean }) {
     !isWatcher &&
     mine.member &&
     !mine.won &&
+    !mine.blocked &&
     game.room_ok &&
     (game.status === "live" || (game.status === "upcoming" && Date.parse(game.opens_at) - now <= 10 * 60_000));
   useEffect(() => {
@@ -76,36 +79,62 @@ function HuntFlag({ isWatcher }: { isWatcher: boolean }) {
   return null;
 }
 
-/** One tip, once per Game Time per device, when it goes live for me: what the shimmer means. */
-function LiveTip({ isWatcher }: { isWatcher: boolean }) {
+/** Tips already shown this visit (the saved flag below carries it to the next one). */
+const tipDone = new Set<string>();
+const TIP_MS = 20_000;
+
+/**
+ * The one instruction, once per Game Time per device, in the banner column for the first 20 seconds it is live for me (or
+ * until my first search). It sits under the banner, not in the room's pop-ups, so a zone card can never cover it. It also
+ * says what HOT, WARM and COLD mean, because nothing else does.
+ */
+function TipCard({ isWatcher }: { isWatcher: boolean }) {
   const gameId = useGameTime((s) => (s.game?.status === "live" && s.game.room_ok && s.me.can_search && !s.me.won ? s.game.id : null));
+  const searching = useGameTime((s) => !!s.searching);
+  const [show, setShow] = useState(false);
+  const key = gameId ? `hz-gt-tip-${gameId}` : "";
+
   useEffect(() => {
-    if (!gameId || isWatcher) return;
-    const key = `hz-gt-tip-${gameId}`;
+    if (!gameId || isWatcher || tipDone.has(gameId)) {
+      setShow(false);
+      return;
+    }
     try {
-      if (localStorage.getItem(key)) return;
+      if (localStorage.getItem(key)) {
+        tipDone.add(gameId);
+        setShow(false);
+        return;
+      }
     } catch {
       /* storage blocked: the tip shows each visit, which is fine */
     }
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(key, "1");
-      } catch {
-        /* nothing to do */
-      }
-      // Anchored two tiles below me, so the card sits over my avatar and not under the banner at the top of the screen.
-      const at = useRoomStore.getState().me;
-      useRoomStore.getState().pushPopup({
-        id: "gt-live",
-        title: "GAME TIME IS LIVE",
-        body: "Boxes hide in the shimmering things. Stand next to one and SEARCH.",
-        tile: at ? { x: at.x, y: at.y + 2 } : undefined,
-        ttlMs: 6000,
-      });
-    }, 3200);
+    setShow(true);
+    const t = setTimeout(() => done(gameId, key, setShow), TIP_MS);
     return () => clearTimeout(t);
-  }, [gameId, isWatcher]);
-  return null;
+  }, [gameId, isWatcher, key]);
+
+  // My first search is the proof I understood.
+  useEffect(() => {
+    if (searching && show && gameId) done(gameId, key, setShow);
+  }, [searching, show, gameId, key]);
+
+  if (!show) return null;
+  return (
+    <div className={css.tip} role="status" data-gt-tip>
+      <b>WALK NEXT TO A SHIMMER. PRESS SEARCH.</b>
+      <span>HOT MEANS A BOX IS CLOSE. COLD MEANS FAR.</span>
+    </div>
+  );
+}
+
+function done(gameId: string, key: string, setShow: (v: boolean) => void) {
+  tipDone.add(gameId);
+  try {
+    localStorage.setItem(key, "1");
+  } catch {
+    /* nothing to do */
+  }
+  setShow(false);
 }
 
 /**

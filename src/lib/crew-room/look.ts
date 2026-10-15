@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { getSupabase } from "@/lib/supabase/client";
 import type { CrewCard, CrewEvent } from "./hub";
+import { crewImagePath } from "./images";
 
 /**
  * The look of a crew, and the owner's tools to change it (MANAGE CREW on the hub): header pictures, the round logo,
@@ -10,6 +11,13 @@ import type { CrewCard, CrewEvent } from "./hub";
  * (supabase/crew_rooms.sql: crew_update_look, crew_room_set_featured, crew_room_set_template, the crew-images bucket);
  * this file shrinks pictures on the phone, talks to those calls and turns their errors into short lines a Hopper can act on.
  */
+
+/**
+ * The owner's picture and room tools (header pictures, the logo, the meeting room template) are OFF for launch: the owner
+ * dashboard is more than the first night needs. The code is all here. Set NEXT_PUBLIC_CREW_OWNER_UPLOADS=1 at build time to
+ * show them again. The featured event with its ribbon and the invite link stay on either way.
+ */
+export const OWNER_UPLOADS = process.env.NEXT_PUBLIC_CREW_OWNER_UPLOADS === "1";
 
 export const MAX_HEADERS = 5;
 /** Longest ribbon text under the fountain's sticker (the column's own check). */
@@ -34,7 +42,8 @@ export function lookError(error: { message?: string } | null | undefined, fallba
 
 /** Shrinks a picture before it leaves the phone: a JPEG no wider than `max`, squeezed until it is under the bucket's cap. */
 export async function toJpeg(file: File, opts: { max?: number; square?: boolean } = {}): Promise<Blob> {
-  const max = opts.max ?? 1600;
+  // 1080 px wide at JPEG quality about 0.72 is a crisp header on a phone and 100 to 250 KB on Lagos data (1600 px was 4 times that).
+  const max = opts.max ?? 1080;
   let img: ImageBitmap;
   try {
     img = await createImageBitmap(file);
@@ -64,14 +73,14 @@ export async function toJpeg(file: File, opts: { max?: number; square?: boolean 
   g.imageSmoothingQuality = "high";
   g.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
   img.close();
-  for (const q of [0.82, 0.72, 0.62, 0.5, 0.4]) {
+  for (const q of [0.72, 0.62, 0.5, 0.4]) {
     const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/jpeg", q));
     if (blob && blob.size <= MAX_BYTES) return blob;
   }
   throw new Error("That picture is too big even after shrinking. Try another.");
 }
 
-/** Puts a shrunk picture in this crew's folder of the crew-images bucket and returns its public link. */
+/** Puts a shrunk picture in this crew's folder of the crew-images bucket and returns the PATH to keep (images.ts adds our host back). */
 export async function uploadCrewImage(crewId: string, blob: Blob): Promise<string> {
   const sb = getSupabase();
   if (!sb) throw new Error("No connection. Try again.");
@@ -79,7 +88,7 @@ export async function uploadCrewImage(crewId: string, blob: Blob): Promise<strin
   const path = `${crewId}/${name}`;
   const { error } = await sb.storage.from(BUCKET).upload(path, blob, { contentType: "image/jpeg", upsert: false, cacheControl: "31536000" });
   if (error) throw new Error(/row-level|policy|permission|unauthori/i.test(error.message) ? "Only the crew owner can add pictures." : "The upload didn't go through. Try again.");
-  return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+  return crewImagePath(sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl);
 }
 
 /** Takes a picture we hold out of the bucket once nothing shows it. Quiet when it is not ours (a /brands/ path) or the call fails. */

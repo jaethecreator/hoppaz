@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import clsx from "clsx";
 import VerifiedBadge from "@/components/VerifiedBadge";
+import { crewImageSrc, crewImageSrcs } from "@/lib/crew-room/images";
 import css from "./HubHeader.module.css";
 
 /** How long each picture stays before the next one slides in. */
@@ -30,8 +31,9 @@ function useReducedMotion() {
  * The crew's round badge. The owner's logo when there is one (and it loads), otherwise the crew's first letter on the
  * app's card colour, so a crew with no logo still has a face.
  */
-export function CrewLogo({ url, name, size = 64, className }: { url?: string | null; name: string; size?: number; className?: string }) {
+export function CrewLogo({ url: stored, name, size = 64, className }: { url?: string | null; name: string; size?: number; className?: string }) {
   const [failed, setFailed] = useState<string | null>(null);
+  const url = crewImageSrc(stored);
   const show = !!url && failed !== url;
   return (
     <span
@@ -56,7 +58,8 @@ export function CrewLogo({ url, name, size = 64, className }: { url?: string | n
  * after), when the page is hidden or scrolled away, and always with reduced motion. One picture is a still: no dots,
  * no timer. A picture that will not load is swapped for the room's art, so the header is never a hole.
  */
-function Carousel({ images, label }: { images: string[]; label: string }) {
+function Carousel({ images: stored, label }: { images: string[]; label: string }) {
+  const images = useMemo(() => crewImageSrcs(stored), [stored]);
   const track = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const at = useRef(0);

@@ -165,7 +165,7 @@
 .plate::before {
   content: "";
   position: absolute;
-  inset: -8px -6px;
+  inset: -9px -6px;
 }
 .plate:active {
   box-shadow: none;

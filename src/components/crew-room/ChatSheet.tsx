@@ -5,7 +5,7 @@ import { ChevronDown, Compass, MessageCircle, X } from "lucide-react";
 import type { CampaignLayout } from "@/lib/campaign/layout";
 import { useChatDock } from "@/lib/crew-room/chatStore";
 import { useReactions } from "@/lib/crew-room/chatReactions";
-import { useRoomStore, type RoomSheet } from "@/lib/crew-room/roomStore";
+import { OPEN_SHEET, useRoomStore, type RoomSheet } from "@/lib/crew-room/roomStore";
 import type { CrewRoomConnection } from "@/lib/crew-room/types";
 import ChatWelcome from "./ChatWelcome";
 import CrewRoomChat, { type PullHandlers } from "./CrewRoomChat";
@@ -20,13 +20,18 @@ import css from "./ChatSheet.module.css";
  * (the area between the header and the bottom nav) and is click-through. This component opts in to pointer events on
  * the sheet only.
  *
- * It draws nothing while roomStore.sheet is "closed" (the shell's CHAT button opens it by setting "half"). From there it
- * owns every change of state and writes it back: setSheet on every snap (pull-down to "closed" included),
+ * It draws nothing while roomStore.sheet is "closed". Every way of opening it (the shell's CHAT button, ?chat=1, a
+ * bubble, a notification) opens it FULL, with the newest messages and the input in view: people do not know a short
+ * sheet can be pulled up. A caller that asks for "peek" or "half" while it is closed is lifted to full here. From there
+ * it owns every change of state and writes it back: setSheet on every snap (pull-down to "closed" included),
  * setSheetHeight (px from the stage bottom to the sheet's top edge, keyboard lift included, 0 when closed or docked)
  * when it settles, and setUnread. On a landscape phone and on a tablet or desktop it is a side panel instead
  * (useChatDock().dock is its width), with no states.
  *
  *   closed 0   peek 156 (192 in an area)   half clamp(280, 46% of the stage, 420)   full stage height minus 132
+ *
+ * Peek and half are reached only by dragging a sheet that is already up (or by walking to someone from a message, which
+ * drops it to a peek). A tap on the handle or the input only ever takes it up, never down; a hard pull down closes it.
  */
 export type ChatSheetProps = { crewId: string; layout: CampaignLayout; room: CrewRoomConnection; userId: string };
 
@@ -60,11 +65,16 @@ function useKeyboardLift(root: React.RefObject<HTMLElement | null>) {
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
     window.addEventListener("resize", update);
+    // The stage itself can move under the keyboard (the tab bar hides, the browser's bars slide): read again when it does,
+    // not only when the visual viewport reports.
+    const ro = typeof ResizeObserver === "undefined" || !root.current ? null : new ResizeObserver(update);
+    if (root.current) ro?.observe(root.current);
     update();
     return () => {
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
+      ro?.disconnect();
     };
   }, [root]);
   return lift;
@@ -142,6 +152,16 @@ export default function ChatSheet({ crewId, layout, room, userId }: ChatSheetPro
     live.current = { sheet, heights, docked, tab: shown };
   });
 
+  // Opening means full. The CHAT button asks for it, but anything else that opens the chat (the ?chat=1 link, a bubble, a
+  // notification) may still ask for "half" or "peek": a sheet that goes from closed to a short state is lifted to full
+  // before it paints. A layout effect, so the short state is never drawn.
+  const prevSheet = useRef<RoomSheet>("closed");
+  useLayoutEffect(() => {
+    const was = prevSheet.current;
+    prevSheet.current = sheet;
+    if (was === "closed" && (sheet === "peek" || sheet === "half")) setSheet(OPEN_SHEET);
+  }, [sheet, setSheet]);
+
   // The height is written straight to the element during a drag and a close, so React's own value can be stale:
   // put it back in step whenever the state, the stage or the keyboard changes.
   useLayoutEffect(() => {
@@ -208,7 +228,7 @@ export default function ChatSheet({ crewId, layout, room, userId }: ChatSheetPro
     setTab(next);
     setNote("");
     if (next === "area") setAreaUnread(0);
-    if (next === "explore" && live.current.sheet === "peek") setSheet("half");
+    if (next === "explore" && live.current.sheet === "peek") setSheet(OPEN_SHEET);
   };
 
   // ---------------------------------------------------------------- unread --
@@ -323,7 +343,8 @@ export default function ChatSheet({ crewId, layout, room, userId }: ChatSheetPro
         const from = stops.findIndex((s) => s.state === d.s0);
         let to = stops.reduce((best, s, i) => (Math.abs(s.h - here) < Math.abs(stops[best].h - here) ? i : best), 0);
         if (Math.abs(d.v) > FLICK) {
-          if (d.v > 0) to = d.v > HARD_FLICK && d.s0 === "half" ? 0 : Math.max(0, from - 1);
+          // A hard pull down closes outright from full (where it opens) as well as from half; a gentler flick steps down one.
+          if (d.v > 0) to = d.v > HARD_FLICK && (d.s0 === "half" || d.s0 === "full") ? 0 : Math.max(0, from - 1);
           else to = Math.min(3, from + 1);
         }
         const next = stops[to];
@@ -353,13 +374,16 @@ export default function ChatSheet({ crewId, layout, room, userId }: ChatSheetPro
     const moved = Math.abs(e.clientY - drag.current.y0) > 6;
     const s0 = drag.current.s0;
     pull.end();
-    // A tap on the handle steps the sheet: peek opens, half drops to peek, full drops to half.
-    if (!moved && e.type === "pointerup") setSheet(s0 === "peek" ? "half" : s0 === "half" ? "peek" : "half");
+    // A tap on the handle (or the title) only opens further: peek or half go to full, and full stays full. It never drops
+    // the sheet to a short state; pulling down (or the close control) is the way out.
+    if (!moved && e.type === "pointerup" && s0 !== "full") setSheet(OPEN_SHEET);
   };
 
-  // The keyboard lifts a peeking sheet to half, so the words being typed have room.
+  // The keyboard lifts a short sheet to full, so the words being typed (and the messages above them) have room. The full
+  // height is capped to what the keyboard leaves free (heights.full), so the input stays above it.
   const onInputFocus = useCallback(() => {
-    if (live.current.sheet === "peek") setSheet("half");
+    const s = live.current.sheet;
+    if (s === "peek" || s === "half") setSheet(OPEN_SHEET);
   }, [setSheet]);
   // Walking to someone from a message: the sheet drops to a peek so the walk shows.
   const onWalked = useCallback(() => {

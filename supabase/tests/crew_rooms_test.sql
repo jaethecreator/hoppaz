@@ -244,12 +244,15 @@ begin
   perform pg_temp.fail_as(d, format('select public.crew_join_code(%L)', later_code), 'slow_down');
 
   -- ----------------------------------------------------------- the look of a crew ---
-  base := 'http://127.0.0.1:54321/storage/v1/object/public/crew-images/' || crew || '/';
+  base := '/storage/v1/object/public/crew-images/' || crew || '/';
   perform pg_temp.fail_as(c, format('select public.crew_update_look(%L,%L,%L)', crew, '/brands/360playlist.jpg', '{}'::text[]), 'owner_only');
   perform pg_temp.fail_as(d, format('select public.crew_update_look(%L,null,%L)', crew, '{}'::text[]), 'owner_only');
   perform pg_temp.fail_as(g, format('select public.crew_update_look(%L,null,%L)', crew, '{}'::text[]), 'need_account');
   perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,null,%L)', crew, array[base||'1.jpg',base||'2.jpg',base||'3.jpg',base||'4.jpg',base||'5.jpg',base||'6.jpg']), 'too_many_images');
-  perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,null,%L)', crew, array['http://127.0.0.1:54321/storage/v1/object/public/crew-images/' || other_crew || '/x.jpg']), 'invalid_image');
+  perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,null,%L)', crew, array['/storage/v1/object/public/crew-images/' || other_crew || '/x.jpg']), 'invalid_image');
+  -- Only a path: a link to any host, ours included, is refused (a crew owner cannot point a logo at a server of their own).
+  perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,%L,%L)', crew, 'https://evil.example' || base || 'x.jpg', '{}'::text[]), 'invalid_image');
+  perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,null,%L)', crew, array['http://127.0.0.1:54321' || base || 'x.jpg']), 'invalid_image');
   perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,null,%L)', crew, array['javascript:alert(1)']), 'invalid_image');
   perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,%L,%L)', crew, base||'logo.gif', '{}'::text[]), 'invalid_image');
   perform pg_temp.fail_as(a, format('select public.crew_update_look(%L,%L,%L)', crew, base||'sub/logo.jpg', '{}'::text[]), 'invalid_image');
@@ -370,5 +373,82 @@ begin
   end if;
 
   raise notice 'ALL CREW ROOM TESTS PASSED';
+end $$;
+
+-- ------------------------------------------------------------ the launch night: a crowd, the door, the card, the names ---
+do $$
+declare
+  i int;
+  boss uuid := pg_temp.newuser(); outsider uuid := pg_temp.newuser();
+  crew2 uuid := gen_random_uuid(); fresh uuid; res jsonb; who uuid;
+  users uuid[] := '{}';
+  tiles int; near_door int; at_spawn int; far int;
+begin
+  -- 40 members walk in, one after another, the way a crowd arrives at the door of the 360Playlist room.
+  insert into public.crews (id, name, created_by, visibility) values (crew2, 'Crowd test crew', boss, 'open');
+  insert into public.crew_members (crew_id, user_id, role) values (crew2, boss, 'owner');
+  for i in 1..40 loop
+    who := pg_temp.newuser();
+    users := users || who;
+    insert into public.crew_members (crew_id, user_id, role) values (crew2, who, 'member');
+  end loop;
+  insert into public.crew_rooms (crew_id, capacity) values (crew2, 90);
+  foreach who in array users loop
+    perform pg_temp.actor(who); perform public.crew_room_enter(crew2, gen_random_uuid()); perform pg_temp.admin();
+  end loop;
+  select count(distinct (x, y)), count(*) filter (where x = 15 and y = 17) into tiles, at_spawn from public.crew_room_presence where crew_id = crew2;
+  perform pg_temp.ok(tiles = 40, 'forty arrivals stand on forty different tiles (no pile on the spawn tile): ' || tiles);
+  -- The door is at (13,16) 2 wide, 1 tall. Standing against it is one tile away or less.
+  select count(*) into near_door from public.crew_room_presence
+   where crew_id = crew2
+     and greatest(13 - x, 0, x - 14) + greatest(16 - y, 0, y - 16) <= 1;
+  perform pg_temp.ok(near_door = 0, 'nobody arrives touching the exit door, so the pill is never the first thing a Hopper sees: ' || near_door);
+  select max(abs(x - 15) + abs(y - 17)) into far from public.crew_room_presence where crew_id = crew2;
+  perform pg_temp.ok(far <= 8, 'a crowd of forty still lands around the entrance: ' || far);
+
+  -- The crew card: faces for anyone, names and user ids only for the crew's members.
+  perform pg_temp.actor(outsider); res := public.crew_card(crew2, null); perform pg_temp.admin();
+  perform pg_temp.ok(jsonb_array_length(res->'heads') = 8 and (res->'heads'->0->>'name') = '' and (res->'heads'->0->>'id') like 'head-%'
+    and not exists (select 1 from jsonb_array_elements(res->'heads') h where h->>'id' = any (select u::text from unnest(users) u)),
+    'an outsider sees faces, not names or user ids');
+  perform pg_temp.actor(users[1]); res := public.crew_card(crew2, null); perform pg_temp.admin();
+  perform pg_temp.ok((res->'heads'->0->>'name') <> '' and exists (select 1 from jsonb_array_elements(res->'heads') h where h->>'id' = any (select u::text from unnest(users) u)),
+    'a member sees names and ids of the faces in the room');
+  perform set_config('request.jwt.claims', '', true);
+  perform pg_temp.ok(jsonb_array_length(public.crew_card(crew2, null)->'heads') = 8 and (public.crew_card(crew2, null)->'heads'->0->>'name') = '',
+    'the public key sees the same: faces without names');
+
+  -- Names: nobody else can take the brand's name or a look-alike of it.
+  perform pg_temp.fail_as(outsider, 'select public.create_crew(''360Playlist'', ''open'')', 'reserved_name');
+  perform pg_temp.fail_as(outsider, 'select public.create_crew(''360 Play List'', ''open'')', 'reserved_name');
+  perform pg_temp.fail_as(outsider, 'select public.create_crew(''3-6-0 PLAYLIST fans'', ''open'')', 'reserved_name');
+  perform pg_temp.fail_as(boss, format('update public.crews set name = %L where id = %L', '360 playlist', crew2), 'reserved_name');
+  perform pg_temp.actor(outsider); fresh := public.create_crew('Lekki Runners', 'open'); perform pg_temp.admin();
+  perform pg_temp.ok(fresh is not null, 'an ordinary crew name is fine');
+  perform set_config('request.jwt.claims', '', true);
+  insert into public.crews (name, created_by, visibility, verified) values ('360Playlist', boss, 'open', true) returning id into fresh;
+  perform pg_temp.ok(fresh is not null, 'staff (no app session) can make the real 360Playlist crew');
+  perform pg_temp.actor(boss); update public.crews set name = '360Playlist' where id = fresh; perform pg_temp.admin();
+  perform pg_temp.ok(true, 'the verified crew can be renamed by its owner without tripping the guard');
+
+  -- Explore lists an open crew once it is verified or has people in it. A brand new empty one stays out of sight.
+  perform set_config('request.jwt.claims', '', true);
+  update public.crews set verified = false where id = fresh;
+  delete from public.crews where id = fresh;
+  insert into public.crews (id, name, created_by, visibility) values (gen_random_uuid(), 'Empty open crew', outsider, 'open') returning id into fresh;
+  insert into public.crew_members (crew_id, user_id, role) values (fresh, outsider, 'owner');
+  perform pg_temp.actor(users[1]); res := public.room_rails(crew2); perform pg_temp.admin();
+  perform pg_temp.ok(not exists (select 1 from jsonb_array_elements(res->'crews') c where c->>'id' = fresh::text), 'Explore leaves out a new open crew with one member');
+  update public.crews set verified = true where id = fresh;
+  perform pg_temp.actor(users[1]); res := public.room_rails(crew2); perform pg_temp.admin();
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(res->'crews') c where c->>'id' = fresh::text), 'Explore lists it once it is verified');
+  update public.crews set verified = false where id = fresh;
+  for i in 1..4 loop
+    insert into public.crew_members (crew_id, user_id) values (fresh, pg_temp.newuser());
+  end loop;
+  perform pg_temp.actor(users[1]); res := public.room_rails(crew2); perform pg_temp.admin();
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(res->'crews') c where c->>'id' = fresh::text), 'Explore lists an unverified crew with five members');
+
+  raise notice 'ALL LAUNCH NIGHT TESTS PASSED';
 end $$;
 rollback;

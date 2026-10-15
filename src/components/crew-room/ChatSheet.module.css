@@ -148,7 +148,7 @@
 .ctl::before {
   content: "";
   position: absolute;
-  inset: -4px -2px;
+  inset: -4px;
 }
 .ctl[aria-pressed="true"] {
   border-color: #ff4d00;

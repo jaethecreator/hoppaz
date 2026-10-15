@@ -235,7 +235,9 @@
   z-index: 1;
 }
 
-/* Walkers move by transform only: the browser's compositor does the moving, not layout. */
+/* Walkers move by transform only: the browser's compositor does the moving, not layout. walkMotion.ts writes the transform
+   every frame from the clock, so there is deliberately no CSS transition here: one would ease every write a second time and
+   make the walk lag, jitter and run at a different speed on a 60 Hz and a 120 Hz phone. */
 .walker {
   position: absolute;
   left: 0;
@@ -243,8 +245,6 @@
   width: 0;
   height: 0;
   pointer-events: none;
-  transition-property: transform;
-  transition-timing-function: linear;
 }
 .sprite {
   position: absolute;
@@ -258,6 +258,37 @@
   display: block;
   width: 100%;
   height: 100%;
+}
+/* The placeholder while a Hopper's avatar is still being drawn (spriteCache.ts): a head and hair, a top and trousers in
+   their own colours, one cheap node with two pseudo elements. 32 by 58 like the avatar, feet on the bottom edge. */
+.blob {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(circle at 50% 26%, var(--skin) 0 6.5px, transparent 7px),
+    radial-gradient(circle at 50% 22%, var(--hair) 0 9px, transparent 9.5px);
+}
+.blob::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 28px;
+  height: 17px;
+  border-radius: 6px 6px 2px 2px;
+  background: var(--top);
+}
+.blob::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 44px;
+  bottom: 2px;
+  border-radius: 1px 1px 3px 3px;
+  background: var(--bottom);
 }
 .walking {
   animation: steps 0.2s ease-in-out infinite alternate;
@@ -348,10 +379,12 @@
   transform-origin: 50% 100%;
   animation: stampIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
 }
+/* Only a little beyond the plate: a bigger halo covers the floor and the props round a label, and a tap meant for those
+   walks to the label instead. */
 .zoneTag::before {
   content: "";
   position: absolute;
-  inset: -6px;
+  inset: -4px;
 }
 .zoneTag b {
   flex: none;
@@ -411,7 +444,7 @@
 .areaTag::before {
   content: "";
   position: absolute;
-  inset: -16px -6px -8px;
+  inset: -4px;
 }
 .areaTag svg {
   flex: none;
@@ -428,6 +461,58 @@
 .areaTag b {
   color: #B83600;
   font-weight: 500;
+}
+
+/* The other rooms' names at the edge of the screen when the camera is close (EdgeArrows.tsx). Screen space. */
+.edgeArrows {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+.edgeArrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  max-width: 150px;
+  padding: 0 8px 0 6px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 13px;
+  background: rgb(var(--ground) / 0.78);
+  color: rgb(var(--text));
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  will-change: transform;
+}
+.edgeArrow[hidden] {
+  display: none;
+}
+.edgeArrow::before {
+  content: "";
+  position: absolute;
+  inset: -9px -4px;
+}
+.edgeArrow svg {
+  flex: none;
+  color: #ff6e32;
+}
+.edgeArrow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.edgeArrow:active {
+  background: #f5ebdd;
+  color: #0e0b0a;
 }
 
 /* Floor decals */
@@ -852,9 +937,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .walker {
-    transition: none;
-  }
   .walking,
   .nudge,
   .zoneTag,

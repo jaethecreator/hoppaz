@@ -29,9 +29,14 @@ export class RoomCamera {
   cx = 0;
   cy = 0;
   s = 0.4;
-  /** The applied translation (screen px) after clamping, for hit tests. */
+  /**
+   * What is on the glass right now, for hit tests: the translation and scale exactly as the last paint wrote them (rounded
+   * the way the transform string rounds them). `s` and `cx`/`cy` can be a frame ahead of this (a pinch or a wheel sets them
+   * before the paint), and a tap must land where the finger saw the room, not where the next frame will put it.
+   */
   tx = 0;
   ty = 0;
+  drawnScale = 0.4;
   private w = 390;
   private h = 700;
   private freeH = 700;
@@ -52,6 +57,8 @@ export class RoomCamera {
   onMode: (mode: CamMode) => void = () => {};
   /** Called when the scale crosses a label threshold. */
   onScale: (s: number) => void = () => {};
+  /** Called after every paint, so a screen-space overlay (the room arrows at the edge) can follow the camera. Keep it cheap. */
+  onPaint: () => void = () => {};
 
   constructor(
     private world: HTMLElement,
@@ -77,6 +84,13 @@ export class RoomCamera {
   }
   get minScale() {
     return this.fullScale;
+  }
+  /** The stage's width and the height the chat sheet leaves free, in screen px. */
+  get viewW() {
+    return this.w;
+  }
+  get viewH() {
+    return this.freeH;
   }
 
   private setMode(mode: CamMode) {
@@ -194,8 +208,7 @@ export class RoomCamera {
   /** Zoom to a scale about a screen point (double tap, wheel). Leaves the camera free. */
   zoomAbout(sx: number, sy: number, scale: number, ms = 0) {
     const s = clamp(scale, this.fullScale, MAX_SCALE);
-    const sceneX = (sx - this.tx) / this.s;
-    const sceneY = (sy - this.ty) / this.s;
+    const { x: sceneX, y: sceneY } = this.screenToScene(sx, sy);
     this.setMode("free");
     this.tween = null;
     const ax = this.w / 2;
@@ -275,11 +288,12 @@ export class RoomCamera {
     return [tx, ty];
   }
 
+  /** A point in the stage (px from its top left corner) to the scene point drawn under it. */
   screenToScene(sx: number, sy: number) {
-    return { x: (sx - this.tx) / this.s, y: (sy - this.ty) / this.s };
+    return { x: (sx - this.tx) / this.drawnScale, y: (sy - this.ty) / this.drawnScale };
   }
   sceneToScreen(px: number, py: number) {
-    return { x: this.tx + px * this.s, y: this.ty + py * this.s };
+    return { x: this.tx + px * this.drawnScale, y: this.ty + py * this.drawnScale };
   }
 
   private kick() {
@@ -335,10 +349,15 @@ export class RoomCamera {
   };
 
   private paint() {
-    const [tx, ty] = this.place(this.cx, this.cy, this.s);
+    const [px, py] = this.place(this.cx, this.cy, this.s);
+    // The numbers the browser is given, so a hit test reads exactly what is drawn.
+    const tx = Number(px.toFixed(2));
+    const ty = Number(py.toFixed(2));
+    const scale = Number(this.s.toFixed(4));
     this.tx = tx;
     this.ty = ty;
-    const t = `translate3d(${tx.toFixed(2)}px,${ty.toFixed(2)}px,0) scale(${this.s.toFixed(4)})`;
+    this.drawnScale = scale;
+    const t = `translate3d(${tx}px,${ty}px,0) scale(${scale})`;
     if (t !== this.lastPainted) {
       this.lastPainted = t;
       this.world.style.transform = t;
@@ -349,6 +368,7 @@ export class RoomCamera {
       this.layer.style.setProperty("--cam-inv", (1 / this.s).toFixed(4));
       this.onScale(this.s);
     }
+    this.onPaint();
   }
 
   /** Write the current camera at once (first paint, resize). */

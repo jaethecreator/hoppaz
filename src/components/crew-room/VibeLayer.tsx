@@ -6,6 +6,7 @@ import type { CampaignLayout } from "@/lib/campaign/layout";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { useSessionStore } from "@/lib/useSession";
 import { haptics } from "@/lib/haptics";
+import { vibeMute } from "@/lib/crew-room/vibeMute";
 import { sfx } from "@/lib/sound/sfx";
 import {
   HEAD_PX,
@@ -201,6 +202,8 @@ export default function VibeLayer({ crewId, layout }: VibeLayerProps) {
         });
         return;
       }
+      // Mute vibes (Me, Settings): other people's vibes do not show, sound or buzz.
+      if (vibeMute.isMuted()) return;
       const forMe = v.to === userId;
       const near = !!sender && !!room.me && dist(sender, room.me) <= NEAR_TILES;
       if (!forMe && !near) return;

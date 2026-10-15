@@ -107,7 +107,8 @@ if (resetLook || look.header_images.length === 0) {
   for (const [i, buf] of pictures.entries()) {
     const path = `${crew.id}/seed-${i + 1}.jpg`;
     checked(await admin.storage.from("crew-images").upload(path, buf, { contentType: "image/jpeg", upsert: true, cacheControl: "60" }));
-    urls.push(admin.storage.from("crew-images").getPublicUrl(path).data.publicUrl);
+    // The database keeps the path (the app adds its storage address), never a link to a host.
+    urls.push(`/storage/v1/object/public/crew-images/${path}`);
   }
   patch.header_images = urls;
 }

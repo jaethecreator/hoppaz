@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 /**
  * Test hosts only: /reset wipes this browser's Hoppaz data (the sign-in, the
  * tour, saved switches, cached files) and opens the app again as a brand new
- * Hopper, so the first-run tour with Paz plays from the top. It touches
+ * Hopper, so the first-run flow plays from the top (while the intro is switched
+ * off, src/lib/intro/flag.ts, that is the plain map). It touches
  * nothing on the server. On any other host it does nothing, including vercel.app,
  * where production is served.
  */

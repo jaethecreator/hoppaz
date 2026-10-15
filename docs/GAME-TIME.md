@@ -16,6 +16,8 @@ room (the app). The server half is built: `supabase/game_time.sql`, the staff ro
 - [8. Run one on this Mac](#8-run-one-on-this-mac)
 - [9. Decisions worth knowing](#9-decisions-worth-knowing)
 - [10. The app](#10-the-app)
+- [11. The Friday drop, for staff](#11-the-friday-drop-for-staff)
+- [12. Reviewed and what is left](#12-reviewed-and-what-is-left)
 
 ## 1. Load it and test it
 
@@ -29,7 +31,7 @@ docker exec -i supabase_db_hoppaz-local psql -U postgres -d postgres -q -v ON_ER
 docker exec -i supabase_db_hoppaz-local psql -U postgres -d postgres -v ON_ERROR_STOP=1 < hoppaz/supabase/tests/game_time_test.sql
 ```
 
-The test ends with `ALL GAME TIME TESTS PASSED` (about 10 seconds, 420 checks). Part 1 rolls back. Part 2
+The test ends with `ALL GAME TIME TESTS PASSED` (about 10 seconds, 459 checks). Part 1 rolls back. Part 2
 (50 Hoppers searching at the same moment) needs real parallel sessions, so it commits its own fixtures
 (users `gtconc-NN@gametime.invalid` and a private crew named GT CONCURRENCY), starts the sessions with
 psql's `\!` (which runs inside the database container, as the command above does) and removes them again.
@@ -45,7 +47,7 @@ next search. Only the exact minute is lost.
 |---|---|
 | Window | A game is **upcoming** until `opens_at`, **live** until `closes_at`, and **over** when every box is found (`all_found`), staff press CLOSE NOW (`closed`) or the time runs out (`time_up`). Two unfinished games of one crew never overlap. At most 7 days long. |
 | A game never opens by accident | Staff say when (`opens_at`) or say `start_now: true`. Leaving the time out is refused. |
-| Who | Members of the crew with an account. A guest (no email) and a non-member are refused. |
+| Who | Members of the crew with an account whose email is **confirmed**. A guest (no email), an unconfirmed email and a non-member are refused. A game can also ask for members of at least `min_member_minutes` before it opens (default 0: any member); a Hopper who joined later can watch, not hunt. Both rules exist because one person with a handful of accounts cleared a 3-box hunt in 3.5 s. **Auth "Confirm email" must be ON in the project**: with it off Supabase stamps every email as confirmed at sign-up and the first rule does nothing. |
 | Where | The server compares the searcher's **server-side presence tile** (`crew_room_presence`, written only by `crew_room_step`) with the object's rectangle. It must be within **one tile**, diagonals included (Chebyshev distance to the rectangle, 1 or less). No live walker (left, timed out after 45 s, or only watching a full room) means no search. |
 | Pace | One counted search per account per 3 seconds, across every game. Every answer carries `retry_ms: 3000`; the app waits that long. The server floor is **2.5 s**, so a slow network that bunches two honest searches is not punished (`slow_down`, with the wait in ms in the error detail). A refused search does not use up the gap. |
 | The answer | `nothing` with a `hint`, or a `win`. The hint is the distance from the searched object to the **nearest box nobody has found**, between object centres, in tiles: `hot` up to `hot_tiles` (5), `warm` up to `warm_tiles` (10), else `cold`. Staff can set both per game. |
@@ -95,7 +97,7 @@ game is live (every 10 to 15 s while it is upcoming, with a local countdown from
 {
   "server_now": "2026-10-14T22:45:44Z",
   "game": null,
-  "me": { "member": true, "won": false, "code": null, "won_at": null, "can_search": false }
+  "me": { "member": true, "won": false, "code": null, "won_at": null, "blocked": null, "can_search": false }
 }
 ```
 
@@ -114,11 +116,12 @@ opening within 48 hours, else the one that ended in the last 30 minutes (so the 
     "boxes_total": 2, "boxes_left": 2,
     "search_gap_ms": 3000,
     "room_ok": true,
+    "join_in_time": true,
     "objects": ["courtyard-fountain", "mixing-desk", "record-wall"],
     "feed_tail": 60,
     "found": [ { "id": 60, "at": "...", "name": "Ada", "object": "mixing-desk", "boxes_left": 1 } ]
   },
-  "me": { "member": true, "won": false, "code": null, "won_at": null, "can_search": true }
+  "me": { "member": true, "won": false, "code": null, "won_at": null, "blocked": null, "can_search": true }
 }
 ```
 
@@ -132,8 +135,11 @@ opening within 48 hours, else the one that ended in the last 30 minutes (so the 
 - `found`: the last 10 finds, newest first (members only). `feed_tail` is the newest feed id.
 - `me.won`: this account has won the game's **campaign** (not necessarily this game). `me.code` is
   filled only with **your own** code from **this** game. `me.can_search` is the server's view: member,
-  has an account, live, `room_ok`, not already a winner. It does not know the walker's tile; the app
-  decides SEARCH from the tile.
+  has an account, live, `room_ok`, not already a winner, not blocked. It does not know the walker's tile; the app
+  decides SEARCH from the tile. `me.blocked` is `need_confirmed` (the account's email was never confirmed) or
+  `joined_late` (the game wants members from `min_member_minutes` before it opened), else `null`: the room tells a
+  blocked member so, and lets them watch. `game.join_in_time` is false once joining the crew now would be too late
+  for a members-only game (the hub and the ping say so to a newcomer).
 
 ### `game_time_list() -> jsonb`
 
@@ -144,11 +150,12 @@ see (open crews, and their own), with a box left. At most 5.
 { "server_now": "...", "games": [ {
   "id": "uuid", "crew_id": "uuid", "crew_name": "360Playlist", "brand": "360Playlist", "verified": true,
   "title": "Find the box", "status": "upcoming | live", "opens_at": "...", "closes_at": "...",
-  "boxes_total": 2, "boxes_left": 2, "is_member": true, "won": false } ] }
+  "boxes_total": 2, "boxes_left": 2, "is_member": true, "blocked": null, "join_in_time": true, "won": false } ] }
 ```
 
-`is_member` picks the button: ENTER ROOM, or JOIN THE CREW TO HUNT. `won` means the Hopper has nothing left
-to hunt in that campaign. Dismissal ("once per Game Time per device") is the app's, keyed by `id`.
+`is_member` picks the button: ENTER ROOM, or JOIN AND HUNT (one tap: joins the open crew and walks in). `won` means the
+Hopper has nothing left to hunt in that campaign. `blocked` (a member who cannot hunt) and a newcomer with
+`join_in_time` false get no ping. Dismissal ("once per Game Time per device") is the app's, keyed by `id`.
 
 ### `game_time_search(p_crew uuid, p_object text) -> jsonb`
 
@@ -171,6 +178,8 @@ Errors (`error.message`):
 | Reason | Meaning | What the room says |
 |---|---|---|
 | `need_account` | no session, or a guest without an email | sign up to hunt |
+| `need_confirmed` | the account's email was never confirmed | CONFIRM YOUR EMAIL TO HUNT |
+| `joined_late` | the game wants members from `min_member_minutes` before it opened, and this Hopper joined later | YOU JOINED TOO LATE. WATCH. |
 | `not_in_crew` | not a member | JOIN THE CREW TO HUNT |
 | `no_game` | the crew has no game to search | nothing is on |
 | `not_open_yet` | upcoming | the countdown |
@@ -230,6 +239,7 @@ staff token as the rest of the admin desk (`Authorization: Bearer $HOPPAZ_ADMIN_
 | `game_time_tick()` | (pg_cron, every minute) |
 
 **Create.** `{ crew_id, title (2 to 60), codes (1 to 10: an array, or codes_text with one per line),
+min_member_minutes? (0 to 10080, default 0), silent? (true: no opening push, for a rehearsal),
 objects (ids), start_now: true | opens_at, closes_at | duration_minutes (1 to 10080), relocate_minutes?
 (0 to 720, default 10), campaign_key? (up to 80), hot_tiles? (default 5), warm_tiles? (default 10) }`.
 The route turns the ids into rectangles from `templates.ts` for the crew's current room (falling back to
@@ -252,7 +262,8 @@ the same body with status 200, or `{ "ok": false, "error": "<reason>", "message"
 `game` in the staff answers holds everything: `id, crew_id, crew_name, brand, title, status (upcoming | live | over),
 phase (upcoming | live | all_found | closed | time_up), opens_at, closes_at, ended_at, campaign_key,
 room_template, room_width, room_ok, relocate_minutes, hot_tiles, warm_tiles, push_sent_at, push_count,
-push_ready, boxes_total, boxes_left, searches, searchers, claims, members, in_room, objects [{id,x,y,w,h}]`
+min_member_minutes, push_ready, cron_ready (the minute tick is scheduled and on), room_capacity, boxes_total, boxes_left,
+searches, searchers, claims, members, in_room, objects [{id,x,y,w,h}]`
 and `boxes [{id, code, spot, placed_at, claimed_at, claimed_by, handle, name}]` (the list call leaves
 `boxes` and `objects` out). That is the **live status**: who is in the room, how many searches, which box
 sits where, who found what.
@@ -260,11 +271,14 @@ sits where, who found what.
 **Reasons** (create, update, start now, close): `bad_args`, `unknown_field`, `bad_crew`, `bad_title`,
 `bad_times`, `in_past`, `too_long`, `bad_codes`, `dup_codes`, `bad_objects` (not a list of ids, or a
 repeat), `unknown_objects` (not a hiding prop of this room), `not_enough_spots`, `bad_relocate`,
-`bad_tiles`, `bad_campaign`, `room_changed`, `overlaps`, `not_found`, `ended`, `time_up`, `already_open`,
-`codes_locked`, `campaign_locked`.
+`bad_tiles`, `bad_campaign`, `bad_members`, `room_changed`, `overlaps`, `not_found`, `ended`, `time_up`, `already_open`
+(also: changing `min_member_minutes` once it is open), `codes_locked`, `campaign_locked`.
 
-**Winners.** `admin_game_time_winners` and the CSV: `game, crew, handle, name, email, code, object, won_at`,
-oldest first. The CSV defuses spreadsheet formulas (a cell that starts with `=`, `+`, `-` or `@` gets a
+**Winners.** `admin_game_time_winners` and the CSV: `game, crew, handle, name, email, code, object, won_at`, then the
+facts that tell a real winner from one person with a few accounts, before a ticket is redeemed: `account_created,
+email_confirmed, joined_crew, mins_joined_before_open, mins_account_before_open, searches, secs_after_open, flags`
+(`flags`: LEFT THE CREW, JOINED AFTER OPENING, JOINED UNDER 30 MIN BEFORE, ACCOUNT UNDER 1 HOUR OLD, EMAIL NOT CONFIRMED).
+Oldest first. The CSV defuses spreadsheet formulas (a cell that starts with `=`, `+`, `-` or `@` gets a
 leading apostrophe).
 
 ## 7. The opening push
@@ -311,8 +325,10 @@ Do not create a game on a crew that real Hoppers are in without meaning to: STAR
 
 ## 9. Decisions worth knowing
 
-- **The server floor is 2.5 s, the app paces at 3 s.** "About one search per 3 s" holds for an honest client;
-  the floor only forgives network jitter. Change `_gt_gap()` to tighten it.
+- **The server floor is 2.5 s, the app paces at 3 s, on purpose.** "About one search per 3 s" holds for an honest client;
+  the floor forgives network jitter on Lagos mobile data (the app counts its 3 s from when it SENDS, the server from when the
+  call ARRIVES, so a slow first call and a quick second one can land 2 s apart). A modified client searching every 2.5 s is
+  a small edge next to a pile of accounts, which the confirmed-email and joined-before rules answer. Change `_gt_gap()` to tighten it.
 - **The door never hides a box**, because tapping it leaves the room (the action button would read the map,
   not SEARCH). It is excluded in both the route and the database.
 - **One lock per game, not per room.** A search takes the game's advisory lock (`game-time:<id>`), never the
@@ -334,19 +350,66 @@ The Hopper side of all of the above, in the room, on the hub, in the global ping
 | Where | File | What it does |
 |---|---|---|
 | Calls | `src/lib/game-time/api.ts` | the four rpc calls; a refusal becomes a reason, a dropped connection is an answer too |
-| Controller | `src/lib/game-time/controller.ts` | one poll and one Realtime channel for the room (2 s live, 12 s before it opens, 5 s in the last two minutes, 15 s with nothing on, a little jitter per phone, nothing in a hidden tab, one extra ask at `opens_at` minus half a second and just after), the one-at-a-time search with its 2 s animation and the server's `retry_ms`, the held finds so a Hopper is never told about their own win |
+| Controller | `src/lib/game-time/controller.ts` | one poll and one Realtime channel for the room (2 s live, 12 s before it opens, 5 s in the last two minutes, 15 s with nothing on, a little jitter per phone, nothing in a hidden tab, one extra ask at `opens_at` minus half a second and just after), the one-at-a-time search with its 2 s animation and the server's `retry_ms`, the held finds so a Hopper is never told about their own win, and the lost-reply net: a poll that brings `me.code` when no win sheet has shown that code on this device (kept in localStorage per game and code) opens the sheet and clears the NO SIGNAL chip; offline and busy answers ask the database at once |
 | Clock | `src/lib/game-time/clock.ts` | every countdown is `server_now` plus time passed on the phone (the shortest round trip wins), never the phone's clock |
-| World layer | `src/components/game-time/GameTimeWorld.tsx` | the shimmer (a star on every object in `objects`, brighter near, a ring on the one SEARCH would pick, dots in the full view, the ten nearest animate), a tap on a star walks next to its object, the search frame and dust, the hint chip on the object, the win burst, the puff where someone else found a box |
-| Chrome layer | `src/components/game-time/GameTimeChrome.tsx` | runs the controller, registers the SEARCH pill (`gt-search`, priority 100, shown after 450 ms standing still within one tile, gone at two tiles), sets `huntActive` (live, or opening within 10 minutes) so the exits ask "Leave the hunt?", one tip per Game Time per device |
+| World layer | `src/components/game-time/GameTimeWorld.tsx` | the shimmer (an 18 px gold star with a dark edge and a halo on every object in `objects`, brighter near, a steady ring on the one SEARCH would pick, a soft pulsing outline round the whole object for the ten nearest (four on a weak phone), a bigger pulsing dot in the full view), a tap on a star walks next to its object, the search frame and dust, the win burst, the puff where someone else found a box |
+| Hint chip | `src/components/game-time/HintLayer.tsx` | the answer to a search ("NOTHING HERE · WARM", or what went wrong), drawn in the screen layer over the object so a zone label never covers it; above the object, or under it when its top would meet the banner, the feed lines or the tip (it reads their real boxes); follows the object while the camera moves |
+| Chrome layer | `src/components/game-time/GameTimeChrome.tsx` | runs the controller, registers the SEARCH pill (`gt-search`, priority 100, shown after 450 ms standing still within one tile, gone at two tiles), sets `huntActive` (live, or opening within 10 minutes) so the exits ask "Leave the hunt?", one tip card per Game Time per device: in the banner column for the first 20 s (or until the first search), so no zone card covers it, and it says what HOT and COLD mean |
 | Banner, countdown, sheet | `Banner.tsx`, `Hype.tsx`, `WinSheet.tsx` | the HUD banner, the last ten seconds and GO, the full win sheet with COPY and confetti |
-| Hub, ping, Me | `HubGameTime.tsx`, `GameTimePing.tsx` (mounted in `layout.tsx`), `YourTickets.tsx` | the hub card, the dismissible ping (once per Game Time per device, ENTER ROOM or JOIN THE CREW TO HUNT), "Your tickets" |
-| Staff desk | `src/components/admin/GameTimeSection.tsx` (mounted in `src/app/admin/page.tsx`) | create with pasted codes and the room's objects as checkboxes, START NOW or schedule, edit, CLOSE NOW, live status (every box, its code and where it hides), winners, CSV export |
+| Hub, ping, Me | `HubGameTime.tsx`, `GameTimePing.tsx` (mounted in `layout.tsx`), `YourTickets.tsx` | the hub card, the dismissible ping (once per Game Time per device, ENTER ROOM or the one-tap JOIN AND HUNT; none for a member who cannot hunt or a newcomer who would be too late), "Your tickets" |
+| Staff desk | `src/components/admin/GameTimeSection.tsx` (mounted in `src/app/admin/page.tsx`) | the list (live first, then coming up, then ended), create (opens on SCHEDULE; START NOW asks twice; members-for-at-least minutes; the win limit on the form with how many Hoppers already used it; a REHEARSAL tick: own key, no push, any member), edit, CLOSE NOW, live status (every box, its code and where it hides, room cap, minute tick, push) and winner cards with the facts above, CSV export |
 
 Where it differs from the design: the room store's action has no cooldown field, so the pill reads SEARCHING for the 2 s
 animation and WAIT for the rest of the gap, instead of drawing a sweeping ring. The sticker on the fountain covers every
 tile beside the fountain, so the floor cannot be tapped there: a tap on the fountain's star walks you next to it, and the
 world layer is raised one step so the star draws over the sticker.
 
-Rehearse it on this Mac: make a Game Time on the local crew (section 8) with `relocate_minutes: 0` and a `campaign_key` of its
-own (so test wins do not use up an account's real limit), open the room as two crew members and walk next to an object with the
-arrow keys. The finder's code and the box on each object are in `game_time_boxes` (service role).
+Rehearse it on this Mac: make a Game Time on the local crew (section 8) with `relocate_minutes: 0`, `silent: true` and a `campaign_key` of its
+own (so test wins do not use up an account's real limit; on the desk that is the REHEARSAL tick), open the room as two crew members and walk
+next to an object with the arrow keys. The finder's code and the box on each object are in `game_time_boxes` (service role).
+
+## 11. The Friday drop, for staff
+
+Read this before Friday 16 Oct. About 60 people, mostly on phones on Lagos mobile data.
+
+**Once, on production, before Friday**
+
+1. Supabase Auth, Providers, Email: **Confirm email ON**. With it off, the check that stops one person making a pile of
+   accounts does nothing. Try a sign-up on the live app with it on first: a new Hopper must confirm before they can log in.
+2. Load `supabase/game_time.sql` (additive, safe to run again) after `crew_rooms.sql` and `push.sql`. Then check
+   `select jobname, active from cron.job where jobname = 'hoppaz-game-time-tick'` (pg_cron) and that pg_net and the push
+   config exist. The desk says it for you: open any game's LIVE STATUS and read "Minute tick is running" and the push line.
+3. Raise the room cap: `update crew_rooms set capacity = 120 where crew_id = '<360Playlist crew id>';` (default 60, staff only). A Hopper
+   past the cap only watches. The desk warns when members outnumber the cap. Size the database compute up for the night.
+4. The day before, rehearse with as many real phones as you can on the real project. Use the REHEARSAL tick (its own win
+   limit, no push). A rehearsal on the real crew does not use up anybody's real win.
+5. Tell people on WhatsApp: sign up, confirm your email, join the crew before the drop, be in the room at the time.
+
+**Making the drop**
+
+- Hunts with 60 phones end fast: the first box falls about 3 s after GO, the last of three about 7 s. Run **waves**: several
+  one-code Game Times a few minutes apart (the room shows the next one as upcoming; overlapping windows are refused). Keep
+  the Campaign key empty so one Hopper wins once across all the waves.
+- Use SCHEDULE for the real thing: the room shows the countdown and the ten second GO. The opening push rides the minute tick
+  and can be up to a minute late, so say "be in the room at 8:00 sharp". START NOW (press twice) opens it this second and pushes
+  at once.
+- Members for at least: 30 or more for the drop. The form opens on 30. Anyone who joined later can watch.
+- With three boxes or more, set hot 3 and warm 6 (Hints), or HOT is the answer a third of the time. One box: 5 and 10.
+
+**During and after**
+
+- LIVE STATUS shows who is in the room, searches, which box is where and who found what. CLOSE NOW ends it.
+- Before you hand over a ticket, read the winner card: handle, email, searches, seconds after the opening, how long before the
+  opening they joined, account age, email confirmed, and the flags. Several winners with brand new accounts and the same kind
+  of email is the sign. Void by not redeeming; EXPORT WINNERS gives the same facts as a CSV.
+
+## 12. Reviewed and what is left
+
+The Hopper-facing server held up under review (no code or hiding spot reaches a Hopper, the claim is atomic, the distance and
+pace rules hold). Fixed after review: the many-accounts hole (confirmed email, joined-before, winner facts), the hint hidden
+under the banner, a faint shimmer, an unreadable first tip, a win claimed on the server but never shown on the phone, a staff
+desk that could open a hunt by accident and used up Friday eligibility, the plain-text join line, unexplained HOT and COLD, the
+staff list order and narrow layout. Left on purpose or for later: a "starts in 5 minutes" push (staff say it on WhatsApp);
+slimmer room step responses (about 11 KB per step, not this feature); the 2.5 s server floor (section 9); zone pop-ups that slide
+under the banner (the room's, not this feature's); push inside quiet hours was checked in SQL only; audio, real iOS Safari and
+real push delivery were not tested.

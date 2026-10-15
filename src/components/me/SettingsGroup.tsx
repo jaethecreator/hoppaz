@@ -24,8 +24,10 @@ import { supabaseConfigured } from "@/lib/supabase/client";
 import { sfx } from "@/lib/sound/sfx";
 import { music } from "@/lib/sound/music";
 import { haptics } from "@/lib/haptics";
+import { vibeMute } from "@/lib/crew-room/vibeMute";
 import { useSessionStore } from "@/lib/useSession";
 import ReplayTourRow from "@/components/intro/ReplayTourRow";
+import { INTRO_ENABLED } from "@/lib/intro/flag";
 
 const LOOKS: ReadonlyArray<[ThemePref, string]> = [
   ["night", "Dark"],
@@ -83,6 +85,7 @@ function SoundRows() {
   const muted = useSyncExternalStore(sfx.subscribe, sfx.isMuted, () => false);
   const tunes = useSyncExternalStore(music.subscribe, music.isOn, () => true);
   const buzz = useSyncExternalStore(haptics.subscribe, haptics.isOn, () => true);
+  const vibesMuted = useSyncExternalStore(vibeMute.subscribe, vibeMute.isMuted, () => false);
   const [canBuzz, setCanBuzz] = useState(true);
   // Whether the phone can buzz is only known in the browser, so read it after mount.
   useEffect(() => setCanBuzz(typeof navigator.vibrate === "function"), []);
@@ -117,6 +120,12 @@ function SoundRows() {
           haptics.setOn(!buzz);
           if (!buzz) haptics.buzz("snap");
         }}
+      />
+      <SwitchRow
+        label="VIBES"
+        on={!vibesMuted}
+        line={vibesMuted ? "Vibes from other people stay quiet in crew rooms. You can still send them." : "Vibes people send you show over their heads in a crew room."}
+        onToggle={() => vibeMute.setMuted(!vibesMuted)}
       />
     </>
   );
@@ -364,7 +373,7 @@ export default function SettingsGroup({
               ) : (
                 <RowLink href="/account" icon={UserRound} title="Make an account" hint="Wave at people, join crews, chat privately. Your XP comes with you." />
               ))}
-            <RowButton icon={Play} title="Replay the intro" onClick={onReplayIntro} />
+            {INTRO_ENABLED && <RowButton icon={Play} title="Replay the intro" onClick={onReplayIntro} />}
             <ReplayTourRow />
             <RowLink href="/privacy" icon={Lock} title="Privacy" />
             <RowLink href="/community" icon={FileText} title="Community rules" />

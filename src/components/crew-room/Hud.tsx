@@ -4,15 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Maximize2, LocateFixed, MessageCircle, Settings2 } from "lucide-react";
 import { MusicIcon, useMusicSwitch } from "@/components/campaign/RoomMusic";
 import css from "@/components/campaign/Campaign.module.css";
-import { useRoomStore } from "@/lib/crew-room/roomStore";
+import { OPEN_SHEET, useRoomStore } from "@/lib/crew-room/roomStore";
 
 /**
  * The room's small controls, drawn by the shell (docs/ROOM-GAME-DESIGN.md sections 6.1 and 6.2):
  *
  *   HUD pill, top right: sound (an icon, the same switch as Me, Settings), full view or find me, and the owner's room
  *   settings. The voice control belongs to RoomVoice, which sits right under this pill (--room-hud-bottom).
- *   CHAT button, bottom left, with the unread count. It opens the chat sheet at half height; the sheet owns every state
- *   from there (ChatSheet.tsx) and the button hides while the sheet is up.
+ *   CHAT button, bottom left, with the unread count. It opens the chat sheet at FULL height (OPEN_SHEET), messages and
+ *   input in view, because people do not know a short sheet can be pulled up. The sheet owns every state from there
+ *   (ChatSheet.tsx) and the button hides while the sheet is up.
  *
  * Every icon button says what it is for one second the first time it changes, and carries an aria-label.
  */
@@ -82,11 +83,11 @@ export function ChatButton({ compact }: { compact: boolean }) {
       type="button"
       className={css.chatBtn}
       data-compact={compact || undefined}
-      aria-label={unread ? `Open chat. ${unread} unread` : "Open chat"}
-      onClick={() => useRoomStore.getState().setSheet("half")}
+      aria-label={unread ? `Open chat in this room. ${unread} unread` : "Open chat in this room"}
+      onClick={() => useRoomStore.getState().setSheet(OPEN_SHEET)}
     >
       <MessageCircle size={18} aria-hidden />
-      <span>Chat</span>
+      <span>Room chat</span>
       {unread > 0 && <span className={css.unread}>{unread > 9 ? "9+" : unread}</span>}
     </button>
   );

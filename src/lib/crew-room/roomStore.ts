@@ -12,6 +12,8 @@ import type { Tile } from "@/lib/campaign/geometry";
  * ME AND WALKING
  *   me         my tile right now (steps every 85 ms while walking), or null while watching a full room
  *   walkTo     walk my avatar to a tile: the same call a tap on the floor makes (null until the world is mounted)
+ *   walked     I have taken a step since I came in (set by the world's walk). The exit door waits for it: the pill must
+ *              not greet someone who only arrived next to the door (the entrance fills up and the next arrivals land beside it)
  *   tile       px per tile in world space (layout.grid.tile, 32). Set by the world when it mounts
  *   zone       the area or zone id I am standing in ("stage", "studio", "awards", "courtyard", "records", "campaign"
  *              for the zones; an area id for a conversation area, which wins over the zone), or null
@@ -30,8 +32,11 @@ import type { Tile } from "@/lib/campaign/geometry";
  *   popups     the small cards inside the world (zone cards, "can't walk there" hints). pushPopup replaces a popup with
  *              the same id. The popup layer (PopUps.tsx) draws them and calls dismissPopup when they fade; the store
  *              also drops each one itself a little after its ttlMs, so a layer that never mounts cannot pile them up
- *   sheet      the chat sheet: "closed" (nothing drawn but the CHAT button), "peek", "half" or "full". The shell's CHAT
- *              button sets "half"; the sheet (ChatSheet) owns every change after that and writes the new state here
+ *   sheet      the chat sheet: "closed" (nothing drawn but the CHAT button), "peek", "half" or "full". Every way of
+ *              opening it (the CHAT button, ?chat=1, a bubble, a notification) lands on "full" (OPEN_SHEET): people do
+ *              not know a short sheet can be pulled up, so the short ones are never the first thing they see. ChatSheet
+ *              enforces that even if a caller asks for "half" or "peek" while the sheet is closed. From there the sheet
+ *              owns every change (dragging can reach "half" and "peek") and writes the new state here
  *   sheetHeight px from the bottom of the stage (the world area between the header and the tab bar) up to the top edge of
  *              the sheet, keyboard lift included; 0 when closed. ChatSheet writes it when the sheet settles and when
  *              the keyboard changes it (not on every drag frame). The camera keeps my avatar above this line and the
@@ -52,10 +57,13 @@ export type RoomPopup = { id: string; title: string; body?: string; tile?: { x: 
 export type RoomPeerPoint = { id: string; name: string; x: number; y: number; look: unknown; key?: string };
 export type RoomSheet = "closed" | "peek" | "half" | "full";
 export type RoomView = "full" | "me";
+/** What opening the chat means: the full sheet, messages and input in view. Callers that open it use this, not a literal. */
+export const OPEN_SHEET: Exclude<RoomSheet, "closed"> = "full";
 
 type RoomStore = {
   me: Tile | null;
   walkTo: ((x: number, y: number) => void) | null;
+  walked: boolean;
   speaking: string[];
   huntActive: boolean;
   /** The one action pill that shows: the highest priority registered, or null. */
@@ -71,6 +79,7 @@ type RoomStore = {
   view: RoomView;
   setMe: (me: Tile | null) => void;
   setWalkTo: (walkTo: ((x: number, y: number) => void) | null) => void;
+  setWalked: () => void;
   setSpeaking: (ids: string[]) => void;
   setHuntActive: (active: boolean) => void;
   setAction: (action: RoomAction) => void;
@@ -108,6 +117,7 @@ const samePeers = (a: RoomPeerPoint[], b: RoomPeerPoint[]) =>
 const initial = {
   me: null,
   walkTo: null,
+  walked: false,
   speaking: [] as string[],
   huntActive: false,
   action: null,
@@ -115,6 +125,7 @@ const initial = {
   peers: [] as RoomPeerPoint[],
   tile: 32,
   tappedPeer: null,
+  // Closed until something opens it, and whatever opens it opens it at OPEN_SHEET ("full").
   sheet: "closed" as RoomSheet,
   sheetHeight: 0,
   unread: 0,
@@ -126,6 +137,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   ...initial,
   setMe: (me) => set((s) => (s.me?.x === me?.x && s.me?.y === me?.y ? s : { me })),
   setWalkTo: (walkTo) => set({ walkTo }),
+  setWalked: () => set((s) => (s.walked ? s : { walked: true })),
   setSpeaking: (ids) => set((s) => (s.speaking.length === ids.length && s.speaking.every((id, i) => id === ids[i]) ? s : { speaking: ids })),
   setHuntActive: (huntActive) => set({ huntActive }),
   setAction: (action) => {

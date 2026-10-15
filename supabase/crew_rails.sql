@@ -6,7 +6,9 @@
 --
 -- room_rails(p_crew) hands the room one small answer, read once per visit:
 --   crews     up to 8 open crews other than p_crew, verified first, then the bigger crews. Public
---             fields only (id, name, verified, logo, members). A private crew is never listed.
+--             fields only (id, name, verified, logo, members). A private crew is never listed, and an open one
+--             only shows once it is verified or has at least 5 members: anyone signed in can make an open crew
+--             with any name in one call, so a brand new empty one must not get a spot in front of a whole room.
 --   trending  up to 8 live events from three hours ago to seven days ahead, ranked by the people
 --             going (swipes decision 'in') plus check-ins. The counts come from the event_heat
 --             view: swipes and checkins are own-rows-only under RLS, so a raw count from the app
@@ -25,7 +27,7 @@ language sql stable security definer set search_path = public as $$
                  c.id, c.name, c.verified, nullif(to_jsonb(c) ->> 'logo_url', '') as logo_url, m.members
             from crews c
             cross join lateral (select count(*)::int as members from crew_members x where x.crew_id = c.id) m
-           where c.visibility = 'open' and (p_crew is null or c.id <> p_crew)
+           where c.visibility = 'open' and (p_crew is null or c.id <> p_crew) and (c.verified or m.members >= 5)
            order by rank
            limit 8) t), '[]'::jsonb),
     'trending', coalesce((

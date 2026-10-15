@@ -1,5 +1,10 @@
 # Paz's first-run tour
 
+> **Status: switched off.** The whole first-run intro (the city title sequence, Paz's tour, the Replay rows on Me, the
+> first-run location sheet) is off behind one flag, `INTRO_ENABLED` in `src/lib/intro/flag.ts` (currently `false`). New
+> people open straight onto the map with every event, and an account is asked for at the first action. Nothing was deleted.
+> To bring it back, set the flag to `true`. Everything below describes the tour as it works with the flag on.
+
 The gamified setup Jae approved (DECISIONS.md, "Gamified first-run setup"): Paz the Conductor walks a new Hopper round the real screens. This note is the contract for the module and the exact wiring list. The module is built and reviewable on its own at `/dev/intro`, and it is wired into the app (see "Wired" at the end).
 
 ## What was built (all new files)

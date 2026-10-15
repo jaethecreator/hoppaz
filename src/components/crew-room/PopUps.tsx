@@ -152,12 +152,15 @@ export default function PopUps({ layout, lines }: PopUpsProps) {
       const key = `${at.x},${at.y}`;
       const lift = stacked.get(key) ?? 0;
       stacked.set(key, lift + h + 6);
+      // A card never sits under Game Time's banner (it hangs from the top of the room): the top limit is below it.
+      const bar = document.querySelector("[data-gt-banner]")?.parentElement?.getBoundingClientRect();
+      const topMin = Math.max(clip.top + MARGIN, bar && bar.height > 0 ? bar.bottom + 6 : 0);
       let left = ax - w / 2;
       let top = ay - h - GAP - lift;
-      const flip = top < clip.top + MARGIN && lift === 0;
+      const flip = top < topMin && lift === 0;
       if (flip) top = ay + HEAD_PX * s + 10;
       left = Math.min(Math.max(left, clip.left + MARGIN), Math.max(clip.left + MARGIN, clip.right - MARGIN - w));
-      top = Math.min(Math.max(top, clip.top + MARGIN), Math.max(clip.top + MARGIN, clip.bottom - MARGIN - h));
+      top = Math.min(Math.max(top, topMin), Math.max(topMin, clip.bottom - MARGIN - h));
       el.style.transform = `translate3d(${((left - layer.left) / s).toFixed(2)}px, ${((top - layer.top) / s).toFixed(2)}px, 0) scale(${(1 / s).toFixed(4)})`;
       el.style.setProperty("--tx", `${Math.min(Math.max(ax - left, 18), w - 18).toFixed(1)}px`);
       el.dataset.flip = flip ? "1" : "";

@@ -3,6 +3,7 @@
 import { goToAccount } from "@/lib/accountGate";
 import { askToInstall, enablePush } from "@/lib/push";
 import { useToast } from "@/lib/store";
+import { INTRO_ENABLED } from "./flag";
 import { fireInstallPrompt } from "./install";
 import { EXTRA } from "./lines";
 import { introEvent, introWantLocate } from "./store";
@@ -23,6 +24,8 @@ const handlers: Partial<Record<IntroActionName, Handler>> = {};
 
 /** Replace an action. Returns the undo. */
 export function registerIntroAction(name: IntroActionName, fn: Handler): () => void {
+  // Intro switched off (flag.ts): no card to press, so no handler to keep.
+  if (!INTRO_ENABLED) return () => {};
   handlers[name] = fn;
   return () => {
     if (handlers[name] === fn) delete handlers[name];
@@ -74,6 +77,7 @@ const defaults: Record<IntroActionName, Handler> = {
 };
 
 export async function runIntroAction(name: IntroActionName, step?: StepId): Promise<void> {
+  if (!INTRO_ENABLED) return;
   try {
     await (handlers[name] ?? defaults[name])(step);
   } catch (err) {

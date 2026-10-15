@@ -15,6 +15,7 @@ import {
   type IntroSave,
 } from "./machine";
 import { playSeen } from "@/lib/usePlayMode";
+import { INTRO_ENABLED } from "./flag";
 import { mirrorDone, profileSaysDone } from "./mirror";
 import { STEP_IDS, type IntroEventName, type IntroEventPayload, type StepId } from "./steps";
 
@@ -126,6 +127,8 @@ function commit(next: IntroSave) {
  * any number of times: events are facts, not steps.
  */
 export function introEvent(name: IntroEventName, payload?: IntroEventPayload): void {
+  // Intro switched off (flag.ts): nothing listens, nothing queues.
+  if (!INTRO_ENABLED) return;
   listeners.forEach((fn) => {
     try {
       fn(name, payload);
@@ -163,6 +166,7 @@ function handle(name: IntroEventName, payload?: IntroEventPayload) {
  * to their own id (the anonymous user is made a moment after the page opens).
  */
 export function bindIntro(opts: { scope: string; userId: string | null; profile?: Record<string, unknown> | null }) {
+  if (!INTRO_ENABLED) return;
   const { scope, userId } = opts;
   profileRef = { profile: opts.profile ?? null, userId };
   const key = `${PREFIX}:${scope}:${userId ?? "anon"}`;
@@ -217,6 +221,7 @@ export function introCloseTour(): void {
 
 /** The Replay the tour row on Me. */
 export function introReplay(): void {
+  if (!INTRO_ENABLED) return;
   set({ nudge: false, wantLocate: false });
   commit(replaySave(get().save));
 }
@@ -253,6 +258,7 @@ export function introSettle(ctx: IntroCtx): void {
  * The map's first-run location sheet leaves the question to her, so a new Hopper meets Paz first and is asked once.
  */
 export function introAsksLocation(): boolean {
+  if (!INTRO_ENABLED) return false;
   const { key, save } = get();
   return !!key && (save.status === "idle" || save.status === "running") && save.mode === "first" && save.loc === "unknown" && !save.seen.includes("locate");
 }
@@ -262,6 +268,7 @@ export function introAsksLocation(): boolean {
  * The map's first-run location sheet stays shut for all of it: Paz asks, once, in her own step.
  */
 export function introPending(): boolean {
+  if (!INTRO_ENABLED) return false;
   const { key, save } = get();
   return !!key && (save.status === "idle" || save.status === "running") && save.mode === "first";
 }

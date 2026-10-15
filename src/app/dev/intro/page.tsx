@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { INTRO_ENABLED } from "@/lib/intro/flag";
 import DevIntro from "./DevIntro";
 
 /**
@@ -12,5 +13,17 @@ import DevIntro from "./DevIntro";
  */
 export default function DevIntroPage() {
   if (process.env.NODE_ENV === "production") notFound();
+  // The tour is switched off in the app (src/lib/intro/flag.ts), and this page runs the real tour code, so it waits too.
+  if (!INTRO_ENABLED) {
+    return (
+      <div className="fixed inset-0 grid place-items-center bg-ink px-6 text-center">
+        <p className="font-mono text-[11px] leading-relaxed tracking-[0.12em] text-dim">
+          THE INTRO IS SWITCHED OFF.
+          <br />
+          SET INTRO_ENABLED TO TRUE IN SRC/LIB/INTRO/FLAG.TS TO REVIEW IT HERE.
+        </p>
+      </div>
+    );
+  }
   return <DevIntro />;
 }

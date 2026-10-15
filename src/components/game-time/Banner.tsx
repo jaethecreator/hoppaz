@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { clockText, useServerNow } from "@/lib/game-time/clock";
 import { openTicket } from "@/lib/game-time/controller";
 import { useGameTime } from "@/lib/game-time/store";
-import type { GtGame, GtOverReason } from "@/lib/game-time/types";
+import type { GtBlocked, GtGame, GtOverReason } from "@/lib/game-time/types";
 import css from "./GameTime.module.css";
 
 /**
@@ -14,6 +14,8 @@ import css from "./GameTime.module.css";
  */
 
 const OVER_WORD: Record<GtOverReason, string> = { all_found: "ALL FOUND", time_up: "TIME UP", closed: "CLOSED" };
+/** Why a member can watch but not hunt, as the banner says it. */
+export const BLOCKED_WORD: Record<GtBlocked, string> = { need_confirmed: "CONFIRM YOUR EMAIL TO HUNT", joined_late: "YOU JOINED TOO LATE. WATCH." };
 const SOON_MS = 10 * 60_000;
 const OVER_MS = 10_000;
 
@@ -99,7 +101,7 @@ function BannerBody({ isWatcher }: { isWatcher: boolean }) {
           <span className={css.countKicker}>OPENS IN</span>
           <span className={cls}>{clockText(openIn)}</span>
         </span>
-        <b className={css.title}>{game.title}</b>
+        <b className={css.title}>{me.blocked ? BLOCKED_WORD[me.blocked] : game.title}</b>
       </div>
     );
   }
@@ -132,6 +134,20 @@ function BannerBody({ isWatcher }: { isWatcher: boolean }) {
         </span>
         {count}
         <b className={css.title}>WATCHING. WALK IN TO HUNT.</b>
+        <Pips total={total} left={game.boxes_left} text={leftText(game)} />
+      </div>
+    );
+  }
+
+  if (me.blocked && !me.won) {
+    return (
+      <div className={css.banner} data-gt-banner="blocked" data-muted>
+        <span className={css.label}>
+          <i className={css.dotLive} />
+          GAME TIME
+        </span>
+        {count}
+        <b className={css.title}>{BLOCKED_WORD[me.blocked]}</b>
         <Pips total={total} left={game.boxes_left} text={leftText(game)} />
       </div>
     );

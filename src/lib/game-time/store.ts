@@ -16,7 +16,7 @@ export type GtFeedChip = { k: number; text: string };
 /** The win sheet. */
 export type GtWin = { code: string; title: string; object: string; gameId: string; over: boolean; fresh: boolean };
 
-export const NO_ME: GtMe = { member: false, won: false, code: null, won_at: null, can_search: false };
+export const NO_ME: GtMe = { member: false, won: false, code: null, won_at: null, blocked: null, can_search: false };
 
 type GtStore = {
   crewId: string | null;

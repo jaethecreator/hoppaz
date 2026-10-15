@@ -37,6 +37,7 @@ import { DEMO_DROP_TITLES } from "@/lib/demoData";
 import { NEXT_COUNT, nextEvents } from "@/lib/filters";
 import { usePlayMode } from "@/lib/usePlayMode";
 import { introEvent, introPending, registerIntroAction } from "@/lib/intro";
+import { INTRO_ENABLED } from "@/lib/intro/flag";
 
 // MapLibre touches window on import, so it stays out of the server bundle.
 const NightMap = dynamic(() => import("@/components/map/NightMap"), {
@@ -88,7 +89,10 @@ export default function MapPage() {
   // reads it waits a tick, or the server HTML would disagree with the first paint.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const titles = mounted && !seenTitle;
+  // The city title sequence is part of the first-run intro: with the intro switched off (src/lib/intro/flag.ts) it never plays,
+  // and the camera swoops in at once, as it does for a Hopper who has seen it.
+  const titles = INTRO_ENABLED && mounted && !seenTitle;
+  const titleOut = mounted && (!INTRO_ENABLED || seenTitle);
 
   // Clocks: the bus and the scrubber re-place themselves every half minute.
   const [now, setNow] = useState(() => Date.now());
@@ -233,12 +237,13 @@ export default function MapPage() {
   const hopActive = !!hop && hop.hop_date === (mode === "next" ? todayStr : dayKey);
 
   // The first-run title plays once; after it, ask for a location once, never nag.
+  // That ask is part of the intro: switched off, a new Hopper meets the map, not a sheet (the locate button is still there).
   const signNames = useMemo(
     () => [...allEvents].sort((a, b) => b.heat - a.heat).slice(0, 12).map((e) => e.title),
     [allEvents]
   );
   useEffect(() => {
-    if (!mounted || !seenTitle) return;
+    if (!INTRO_ENABLED || !mounted || !seenTitle) return;
     if (!fix && !seenIntro) {
       const t = setTimeout(() => {
         // A new Hopper meets Paz first: her "Let's find you" step is the one ask, so the sheet stays shut for the whole tour.
@@ -293,7 +298,7 @@ export default function MapPage() {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
   }, [setFix, say]);
-  useEffect(() => registerIntroAction("locate", locateMe), [locateMe]);
+  useEffect(() => (INTRO_ENABLED ? registerIntroAction("locate", locateMe) : undefined), [locateMe]);
 
   /* ------------------------------------------------------------- Play -- */
   // Opening Play leaves whatever card was open; the camera is Play's from here.
@@ -375,7 +380,7 @@ export default function MapPage() {
         onBus={() => setHopOpen(true)}
         hudTop={hud.top}
         hudBottom={hud.bottom}
-        swoop={mounted && seenTitle}
+        swoop={titleOut}
         mode={playing ? "play" : "events"}
         onMapReady={onMapReady}
         onMapUnavailable={onMapUnavailable}
