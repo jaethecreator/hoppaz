@@ -112,7 +112,11 @@ function RoomTitle({ name, verified }: { name: string; verified: boolean }) {
   );
 }
 
-/** The crew's round logo at the right end of the header. It opens Explore: other crews and this week's nights. */
+/**
+ * The crew's round logo at the right end of the header. It opens the owner and admins panel, with the announcements
+ * (crew-room/OwnerPanel.tsx, through Explore), never other crews. While a member has an announcement they have not seen it
+ * beats and wears an orange "!" (AnnouncementBeam.tsx draws that on `data-room-logo`).
+ */
 function LogoBadge({ crewId, name, pulse }: { crewId: string; name: string; pulse: boolean }) {
   const { logoUrl: stored } = useFeatured(crewId);
   const logoUrl = crewImageSrc(stored);
@@ -123,7 +127,7 @@ function LogoBadge({ crewId, name, pulse }: { crewId: string; name: string; puls
     <button
       type="button"
       className={`${css.badge} ${pulse ? css.badgePulse : ""}`}
-      aria-label="Explore other crews and nights"
+      aria-label="Owner and admins"
       aria-expanded={open}
       aria-haspopup="dialog"
       data-room-logo
