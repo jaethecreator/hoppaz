@@ -9,6 +9,15 @@ import HotspotYabaArt from "./art/HotspotYabaArt";
 import HotspotLekkiArt from "./art/HotspotLekkiArt";
 import HotspotVictoriaIslandArt from "./art/HotspotVictoriaIslandArt";
 import HotspotIkejaArt from "./art/HotspotIkejaArt";
+import HotspotLagosIslandArt from "./art/HotspotLagosIslandArt";
+import HotspotIkoyiArt from "./art/HotspotIkoyiArt";
+import HotspotSurulereArt from "./art/HotspotSurulereArt";
+import HotspotOjotaArt from "./art/HotspotOjotaArt";
+import HotspotFestacArt from "./art/HotspotFestacArt";
+import HotspotAjahArt from "./art/HotspotAjahArt";
+import HotspotAlimoshoArt from "./art/HotspotAlimoshoArt";
+import HotspotOjoBadagryArt from "./art/HotspotOjoBadagryArt";
+import HotspotIkoroduArt from "./art/HotspotIkoroduArt";
 
 import type { RoomArtContent, RoomArtProps } from "./art/kit";
 import type { CampaignLayout } from "@/lib/campaign/layout";
@@ -30,6 +39,15 @@ const ART: Record<string, ComponentType<RoomArtProps>> = {
   "hotspot-lekki": HotspotLekkiArt,
   "hotspot-victoria-island": HotspotVictoriaIslandArt,
   "hotspot-ikeja": HotspotIkejaArt,
+  "hotspot-lagos-island": HotspotLagosIslandArt,
+  "hotspot-ikoyi": HotspotIkoyiArt,
+  "hotspot-surulere": HotspotSurulereArt,
+  "hotspot-ojota": HotspotOjotaArt,
+  "hotspot-festac": HotspotFestacArt,
+  "hotspot-ajah": HotspotAjahArt,
+  "hotspot-alimosho": HotspotAlimoshoArt,
+  "hotspot-ojo-badagry": HotspotOjoBadagryArt,
+  "hotspot-ikorodu": HotspotIkoroduArt,
 };
 
 export function hasRoomArt(layoutId: string) {
