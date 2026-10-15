@@ -191,6 +191,40 @@
   background: #0e0b0a;
 }
 
+/* the pinned Game Time line: one short row, like the "left" note */
+.ticket {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 5px 14px;
+  border: 0;
+  border-bottom: 1px solid rgb(var(--hairline));
+  background: rgb(var(--raised) / 0.95);
+  color: rgb(var(--text));
+  font: 500 10.5px/14px var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+button.ticket {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.ticket i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(var(--keke));
+}
+
 .left {
   flex: none;
   padding: 4px 14px;

@@ -7,6 +7,8 @@ import { useChatDock } from "@/lib/crew-room/chatStore";
 import { useReactions } from "@/lib/crew-room/chatReactions";
 import { OPEN_SHEET, useRoomStore, type RoomSheet } from "@/lib/crew-room/roomStore";
 import type { CrewRoomConnection } from "@/lib/crew-room/types";
+import { clockText, useServerNow } from "@/lib/game-time/clock";
+import { useGameTime } from "@/lib/game-time/store";
 import ChatWelcome from "./ChatWelcome";
 import CrewRoomChat, { type PullHandlers } from "./CrewRoomChat";
 import Explore from "./Explore";
@@ -94,6 +96,36 @@ function useDockWidth() {
     return () => window.removeEventListener("resize", read);
   }, []);
   return dock;
+}
+
+/**
+ * One pinned line at the top of the sheet about this crew's Game Time, from the same store and server clock the banner
+ * uses (no polling of its own): "Next ticket in 2:41:10" while one is coming, "Ticket hunt is live. 3 boxes left" while
+ * one is on (a tap closes the sheet to the room), nothing otherwise.
+ */
+function TicketLine({ crewId, onRoom }: { crewId: string; onRoom: () => void }) {
+  const game = useGameTime((s) => s.game);
+  const member = useGameTime((s) => s.me.member);
+  const storeCrew = useGameTime((s) => s.crewId);
+  const upcoming = game?.status === "upcoming";
+  const now = useServerNow(1000);
+  if (!game || !member || storeCrew !== crewId || !game.room_ok) return null;
+  if (upcoming) {
+    return (
+      <p className={css.ticket} data-gt-chat-line="upcoming">
+        <i aria-hidden />
+        Next ticket in {clockText(Date.parse(game.opens_at) - now)}
+      </p>
+    );
+  }
+  if (game.status !== "live") return null;
+  const n = game.boxes_left;
+  return (
+    <button type="button" className={css.ticket} data-gt-chat-line="live" onClick={onRoom}>
+      <i aria-hidden />
+      Ticket hunt is live. {n} {n === 1 ? "box" : "boxes"} left
+    </button>
+  );
 }
 
 export default function ChatSheet({ crewId, layout, room, userId }: ChatSheetProps) {
@@ -438,6 +470,7 @@ export default function ChatSheet({ crewId, layout, room, userId }: ChatSheetPro
             </div>
           )}
         </div>
+        {!peek && !explore && <TicketLine crewId={crewId} onRoom={close} />}
         {inArea && area && !explore && (
           <div className={css.tabs} role="group" aria-label="Conversation">
             <button type="button" className="chip" aria-pressed={shown === "general"} onClick={() => pickTab("general")}>

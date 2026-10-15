@@ -164,7 +164,7 @@ export default function GameTimeSection({ token, onLock }: { token: string; onLo
 
   /** POST an action; on success reload the list. Returns the answer, or null after telling staff why not. */
   const act = useCallback(
-    async (body: Record<string, unknown>) => {
+    async (body: Record<string, unknown>, onError?: (message: string) => void) => {
       setBusy(true);
       try {
         const r = await fetch("/api/admin/game-time", { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -174,7 +174,8 @@ export default function GameTimeSection({ token, onLock }: { token: string; onLo
           return null;
         }
         if (!r.ok || !data.ok) {
-          say((data.message ?? "That did not work.").toUpperCase());
+          if (onError) onError(data.message ?? "That did not work.");
+          else say((data.message ?? "That did not work.").toUpperCase());
           return null;
         }
         await load();
@@ -477,6 +478,17 @@ function ObjectBoxes({ objects, picked, onChange, disabled }: { objects: RoomObj
   );
 }
 
+/** "Thu 21:30" in Lagos time, from a time in ms. */
+function lagosShort(ms: number): string {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ms));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("weekday")} ${get("hour")}:${get("minute")}`;
+}
+/** A datetime-local value (Lagos wall time, no zone) as ms; NaN when empty or invalid. */
+const lagosMs = (v: string) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v) ? Date.parse(`${v}:00+01:00`) : NaN);
+const HOUR = 3_600_000;
+
+const codeLines = (text: string) => text.split(/\r?\n/).map((c) => c.trim()).filter(Boolean);
 const countCodes = (text: string) => text.split(/\r?\n/).map((c) => c.trim()).filter(Boolean).length;
 
 /** A key for a rehearsal: unique, so it never uses up a Hopper's real win. "rehearsal-1016-2035-k3f9" */
@@ -486,7 +498,7 @@ function newRehearsalKey(): string {
   return `rehearsal-${d.slice(5, 7)}${d.slice(8, 10)}-${d.slice(11, 13)}${d.slice(14, 16)}-${rand}`;
 }
 
-function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body: Record<string, unknown>) => Promise<{ game?: Game } | null> }) {
+function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body: Record<string, unknown>, onError?: (message: string) => void) => Promise<{ game?: Game } | null> }) {
   const say = useToast((s) => s.say);
   const first = desk.crews.find((c) => /360\s*playlist/i.test(c.name)) ?? desk.crews[0];
   const [crewId, setCrewId] = useState(first?.id ?? "");
@@ -504,6 +516,14 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
   const [rehearsalKey, setRehearsalKey] = useState("");
   // START NOW asks twice: the first press changes the button, the second opens the hunt.
   const [armed, setArmed] = useState(false);
+  // REPEAT (schedule only): the same hunt every few hours, one code and one box per drop.
+  const [repeat, setRepeat] = useState(false);
+  const [every, setEvery] = useState("3");
+  const [drops, setDrops] = useState("8");
+  const [opensAt, setOpensAt] = useState("");
+  const [closesAt, setClosesAt] = useState("");
+  const [running, setRunning] = useState(false);
+  const [outcome, setOutcome] = useState("");
 
   // A crew's room has its own objects: start from all of them.
   useEffect(() => {
@@ -520,6 +540,27 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
   const key = rehearsal ? rehearsalKey : campaign.trim() || `crew:${crewId}`;
   const used = desk.games.filter((g) => g.campaign_key === key).reduce((sum, g) => sum + g.claims, 0);
 
+  // The repeat plan: drop i opens at the first opening + i * interval and stays open as long as the first one.
+  const repeating = repeat && when === "later" && !rehearsal;
+  const everyN = Math.floor(Number(every));
+  const dropsN = Math.floor(Number(drops));
+  const plan = useMemo(() => {
+    if (!repeating) return { problem: "", times: [] as number[] };
+    if (!(everyN >= 1 && everyN <= 12)) return { problem: "Every: 1 to 12 hours.", times: [] };
+    if (!(dropsN >= 2 && dropsN <= 24)) return { problem: "Drops: 2 to 24.", times: [] };
+    const o = lagosMs(opensAt);
+    const c = lagosMs(closesAt);
+    if (!Number.isFinite(o) || !Number.isFinite(c)) return { problem: "Set the first opens and closes time.", times: [] };
+    if (c <= o) return { problem: "Closes must be after opens.", times: [] };
+    if (c - o >= everyN * HOUR) return { problem: "Each window must be shorter than the gap between drops.", times: [] };
+    return { problem: "", times: Array.from({ length: dropsN }, (_, i) => o + i * everyN * HOUR) };
+  }, [repeating, everyN, dropsN, opensAt, closesAt]);
+  const codeProblem = repeating && n !== dropsN ? `Repeat needs one code per drop: ${dropsN} drops, ${n} code${n === 1 ? "" : "s"}.` : "";
+  const repeatOk = !repeating || (!plan.problem && !codeProblem && picked.size >= 1);
+  const preview = plan.times.length
+    ? `${plan.times.length} drops: ${(plan.times.length > 8 ? [...plan.times.slice(0, 6).map(lagosShort), "...", lagosShort(plan.times[plan.times.length - 1])] : plan.times.map(lagosShort)).join(", ")}`
+    : "";
+
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!crew) return;
@@ -528,6 +569,7 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
       return;
     }
     setArmed(false);
+    setOutcome("");
     const f = new FormData(e.currentTarget);
     const body: Record<string, unknown> = {
       action: "create",
@@ -556,6 +598,32 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
       const warm = String(f.get("warm") ?? "");
       if (hot) body.hot_tiles = Number(hot);
       if (warm) body.warm_tiles = Number(warm);
+    }
+    if (repeating) {
+      if (!repeatOk) return;
+      const lines = codeLines(codes);
+      const windowMs = lagosMs(closesAt) - lagosMs(opensAt);
+      setRunning(true);
+      let done = 0;
+      let reason = "";
+      try {
+        for (let i = 0; i < plan.times.length; i++) {
+          const opens = plan.times[i];
+          const r = await act({ ...body, codes_text: lines[i], opens_at: lagosInput(new Date(opens).toISOString()), closes_at: lagosInput(new Date(opens + windowMs).toISOString()) }, (m) => (reason = m));
+          if (!r) break;
+          done++;
+        }
+      } finally {
+        setRunning(false);
+      }
+      if (done === plan.times.length) {
+        setOutcome(`${done} of ${done} scheduled.`);
+        say(`${done} DROPS SCHEDULED`, "violet");
+        setCodes("");
+      } else {
+        setOutcome(`${done} of ${plan.times.length} scheduled. Stopped: ${reason || "that did not work."}`);
+      }
+      return;
     }
     const r = await act(body);
     if (r) {
@@ -600,24 +668,51 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
         <div className="grid grid-cols-2 gap-2">
           <label className="label">
             Opens (Lagos time)
-            <input name="opens_at" type="datetime-local" required />
+            <input name="opens_at" type="datetime-local" required value={opensAt} onChange={(e) => setOpensAt(e.target.value)} />
           </label>
           <label className="label">
             Closes (Lagos time)
-            <input name="closes_at" type="datetime-local" required />
+            <input name="closes_at" type="datetime-local" required value={closesAt} onChange={(e) => setClosesAt(e.target.value)} />
           </label>
+        </div>
+      )}
+      {when === "later" && !rehearsal && (
+        <div className="rounded border border-line p-2" data-gt-repeat>
+          <label className="flex min-h-[44px] items-center gap-2 font-body text-[13px]">
+            <input type="checkbox" role="switch" className="!h-4 !w-4 flex-none" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} data-gt-repeat-switch />
+            <span>
+              <b className="text-cream">REPEAT</b>: the same hunt again and again
+            </span>
+          </label>
+          {repeat && (
+            <>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <label className="label">
+                  Every (hours)
+                  <input type="number" inputMode="numeric" min={1} max={12} value={every} onChange={(e) => setEvery(e.target.value)} data-gt-repeat-every />
+                </label>
+                <label className="label">
+                  Drops
+                  <input type="number" inputMode="numeric" min={2} max={24} value={drops} onChange={(e) => setDrops(e.target.value)} data-gt-repeat-drops />
+                </label>
+              </div>
+              <p className="hint mt-1">One code per line, one per drop. Each drop opens the same time after the last and stays open as long as the first.</p>
+              {(plan.problem || codeProblem) && <p className="hint mt-1 !text-fireant" data-gt-repeat-problem>{plan.problem || codeProblem}</p>}
+              {preview && <p className="hint mt-1" data-gt-repeat-preview>{preview}</p>}
+            </>
+          )}
         </div>
       )}
 
       <label className="label">
-        Ticket codes, one per line (1 to 10, one box per code): <b className="text-cream">{n}</b>
+        {repeating ? `Ticket codes, one per line (one per drop, ${dropsN > 0 ? dropsN : "?"} needed)` : "Ticket codes, one per line (1 to 10, one box per code)"}: <b className="text-cream">{n}</b>
         <textarea value={codes} onChange={(e) => setCodes(e.target.value)} rows={4} placeholder={"DAVE-1111\nDAVE-2222"} spellCheck={false} data-gt-codes />
       </label>
 
       <div>
         <p className="label">Objects that may hide a box</p>
         <ObjectBoxes objects={objects} picked={picked} onChange={setPicked} />
-        {n > 0 && picked.size < n && <p className="hint mt-1 text-fireant">Every code needs its own object: pick at least {n}.</p>}
+        {n > 0 && picked.size < (repeating ? 1 : n) && <p className="hint mt-1 text-fireant">Every code needs its own object: pick at least {repeating ? 1 : n}.</p>}
       </div>
 
       <label className="label">
@@ -670,9 +765,10 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
         <p className="hint mt-1">One box: 5 and 10 gives a useful hint. Three or more boxes: try 3 and 6, or hot will be the answer a third of the time.</p>
       </details>
 
-      <button className={`btn ${armed ? "!bg-fireant" : ""}`} disabled={busy || !crew || n < 1 || n > 10 || picked.size < n} data-gt-submit={when}>
-        {label}
+      <button className={`btn ${armed ? "!bg-fireant" : ""}`} disabled={busy || running || !crew || n < 1 || (repeating ? !repeatOk : n > 10 || picked.size < n)} data-gt-submit={when}>
+        {running ? "SCHEDULING…" : repeating ? `SCHEDULE ${dropsN > 0 ? dropsN : ""} DROPS` : label}
       </button>
+      {outcome && <p className="hint !text-cream" role="status" data-gt-repeat-outcome>{outcome}</p>}
       {when === "now" && !rehearsal && <p className="hint">START NOW opens the hunt this second and sends the opening push to the crew&apos;s members. Press twice.</p>}
       {rehearsal && <p className="hint">A rehearsal sends no push. Members with the app open will still see the in-app Game Time card.</p>}
     </form>
