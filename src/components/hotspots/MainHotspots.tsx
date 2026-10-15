@@ -154,6 +154,7 @@ export default function MainHotspots({
           <button
             type="button"
             data-hz-obstacle
+            data-tour="hotspots"
             onClick={showHotspotList}
             aria-label={open.length ? `Hotspots, ${open.length} open` : "Hotspots"}
             className="pointer-events-auto flex min-h-[44px] flex-none items-center gap-2 rounded-hz border border-line bg-ink-2/95 px-3 font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-cream backdrop-blur"
@@ -165,6 +166,7 @@ export default function MainHotspots({
             <button
               type="button"
               data-hz-obstacle
+              data-tour="home"
               onClick={() => peekHotspot(yours.slug)}
               className="pointer-events-auto flex min-h-[44px] min-w-0 flex-col items-start justify-center rounded-hz border border-orange bg-ink-2/95 px-2.5 py-1 text-left backdrop-blur"
             >
