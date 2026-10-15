@@ -129,7 +129,7 @@ function Hub({ card, onChange }: { card: CrewCard; onChange: () => void }) {
                   disabled={busy || session === "loading" || card.visibility !== "open"}
                   data-join
                   onClick={() => {
-                    if (requireAccount("join this crew", () => void join())) void join();
+                    if (requireAccount("join this crew")) void join();
                   }}
                 >
                   <DoorOpen size={18} aria-hidden /> {busy ? "JOINING…" : card.visibility === "open" ? "JOIN AND WALK IN" : "INVITE ONLY"}
