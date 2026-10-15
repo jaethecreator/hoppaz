@@ -9,6 +9,7 @@ import type { Hotspot } from "@/lib/hotspots/types";
 import {
   closeHotspots,
   enterCrossroads,
+  hasHotspotRoom,
   leaveHotspot,
   openHotspot,
   resetHotspots,
@@ -118,19 +119,23 @@ export default function MainHotspots({
     };
   }, [map, sheet, listOpen]);
 
-  // /?hotspot=yaba (a link for the WhatsApp Community, and the crew hub's tiles) opens that hotspot's sheet once.
+  // /?hotspot=yaba (a link for the WhatsApp Community, and the crew hub's tiles) opens that hotspot once: its room at
+  // /room/<slug> straight away when one is drawn (the room says itself if it is shut), otherwise its sheet once the list is in.
   const linked = useRef(false);
   useEffect(() => {
-    if (linked.current || !loaded) return;
+    if (linked.current) return;
     // A timer, not a straight call: Strict Mode mounts, cleans up and mounts again, and the cleanup must not eat the link.
     const t = setTimeout(() => {
       if (linked.current) return;
-      linked.current = true;
       const url = new URL(window.location.href);
       const slug = url.searchParams.get("hotspot");
+      const drawn = !!slug && hasHotspotRoom(slug);
+      if (slug && !drawn && !loaded) return;
+      linked.current = true;
       if (!slug) return;
       url.searchParams.delete("hotspot");
       window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+      if (drawn) return void openHotspot(slug);
       const h = bySlug(slug);
       if (h && h.status !== "paused") openHotspot(h.slug);
     }, 0);
