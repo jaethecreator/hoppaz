@@ -126,8 +126,11 @@ export default function DevRoomTemplates() {
   const [mode, setMode] = useState<"still" | "walk">("walk");
   const [count, setCount] = useState(6);
   const [chrome, setChrome] = useState(true);
+  // The world reads the window (device tier, camera): draw it on the client only.
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const q = new URLSearchParams(window.location.search);
     const room = q.get("room");
     if (room && ENTRIES.some((e) => e.key === room)) setKey(room);
@@ -138,7 +141,8 @@ export default function DevRoomTemplates() {
   }, []);
 
   const entry = ENTRIES.find((e) => e.key === key) ?? ENTRIES[0];
-  const look = useMemo(() => (profile?.avatar ? normalizeLook(profile.avatar) : DEFAULT_LOOK), [profile?.avatar]);
+  const avatar = profile?.avatar;
+  const look = useMemo(() => (avatar ? normalizeLook(avatar) : DEFAULT_LOOK), [avatar]);
 
   return (
     <div className="absolute inset-0 flex flex-col bg-[#101214] text-[#F5EBDD]">
@@ -172,7 +176,7 @@ export default function DevRoomTemplates() {
         </div>
       )}
       <div className="relative min-h-0 flex-1 overflow-hidden" style={{ isolation: "isolate" }}>
-        {mode === "walk" ? <Walk key={entry.key} entry={entry} count={count} look={look} /> : <Still entry={entry} />}
+        {!mounted ? null : mode === "walk" ? <Walk key={entry.key} entry={entry} count={count} look={look} /> : <Still entry={entry} />}
       </div>
     </div>
   );
