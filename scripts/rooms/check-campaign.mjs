@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { loadCampaign, loadFile } from "./load-campaign.mjs";
+import { placeLayoutsSql } from "./place-layouts-sql.mjs";
 
 const { CLUBHOUSE: layout, clubhouseWidth, sceneSize, sceneBlocks, canWalkScene, scenePath, privateAreaAt, validCampaignUrl, EMPTY_CAMPAIGN,
   ROOM_TEMPLATES, ROOM_WIDTHS, TEMPLATE_KEYS, roomTemplate, templateFor, PLACE_ROOMS, EVENT_ROOMS, HOTSPOT_ROOMS, placeRoom, hotspotRoom, eventRoom } = loadCampaign();
@@ -181,6 +182,13 @@ check("There are 13 hotspot zones, and every hotspot room belongs to one", () =>
   }
   assert.equal(hotspotRoom("nope"), null);
   for (const slug of WAVE_1) assert.ok(hotspotRoom(slug), `wave 1 hotspot ${slug} has no room`);
+});
+check("The place layout SQL seed is exactly what the rooms generate (never hand-merged: regenerate it)", () => {
+  const file = new URL("../../supabase/place_room_layouts.sql", import.meta.url);
+  const onDisk = fs.readFileSync(file, "utf8");
+  const keys = [...onDisk.matchAll(/^  \('([a-z0-9-]+)', '(?:event|hotspot)'/gm)].map((m) => m[1]).sort();
+  assert.equal(JSON.stringify(keys), JSON.stringify(PLACE_ROOMS.map((r) => r.key).sort()), "the SQL seed's keys differ from PLACE_ROOMS: run node scripts/rooms/export-place-layouts.mjs");
+  assert.ok(onDisk === placeLayoutsSql(), "supabase/place_room_layouts.sql is out of date: run node scripts/rooms/export-place-layouts.mjs");
 });
 for (const room of PLACE_ROOMS) {
   check(`Room ${room.key}: size, spawn, unique ids, in bounds, door, stops and the whole floor are reachable`, () => {
