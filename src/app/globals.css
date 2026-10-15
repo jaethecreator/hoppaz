@@ -1562,3 +1562,39 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
 .hz-room-open .maplibregl-marker {
   visibility: hidden !important;
 }
+
+/* ------------------------------------------------ first run: Paz from the side -- */
+/* The mascot slides in from the left edge, then the bubble opens beside it. */
+.hz-side-in {
+  animation: hz-side-in 0.38s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@keyframes hz-side-in {
+  from {
+    transform: translateX(-120px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.hz-bubble-in {
+  transform-origin: 0 100%;
+  animation: hz-bubble-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) 0.22s both;
+}
+@keyframes hz-bubble-in {
+  from {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hz-side-in,
+  .hz-bubble-in {
+    animation: none;
+  }
+}

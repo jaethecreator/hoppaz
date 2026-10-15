@@ -23,6 +23,7 @@ function HotspotMarker({
   picked,
   far,
   z,
+  bob = false,
   onTap,
 }: {
   map: MLMap;
@@ -35,6 +36,8 @@ function HotspotMarker({
   far: boolean;
   /** Stacking order among the map's markers (the event signs use 1 to 4; the Play shell used millions, see PIN_Z in HotspotsLayer). */
   z: number;
+  /** Bobs open: your avatar has just arrived (the first run's pull to the hotspot). */
+  bob?: boolean;
   onTap: (h: Hotspot) => void;
 }) {
   const soon = h.status !== "open";
@@ -46,7 +49,7 @@ function HotspotMarker({
       lng={h.lng}
       lat={h.lat}
       anchor="center"
-      className={clsx("hz-pin", mine && "hz-pin-mine", picked && "hz-pin-on", s.spot, mine && s.mine, picked && s.picked, soon && s.soon, far && s.far)}
+      className={clsx("hz-pin", mine && "hz-pin-mine", picked && "hz-pin-on", s.spot, mine && s.mine, picked && s.picked, soon && s.soon, far && s.far, bob && s.bob)}
       label={label}
       onClick={() => onTap(h)}
       style={{ zIndex: z }}

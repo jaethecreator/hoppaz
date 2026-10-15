@@ -50,7 +50,9 @@ function AvatarEditorPage() {
     setLook(look);
     await patchProfile({ avatar: look });
     say("LOOK SAVED");
-    router.push("/me");
+    // Sent here from somewhere (the first run's room): go back there.
+    const back = new URLSearchParams(window.location.search).get("next");
+    router.push(back && back.startsWith("/") && !back.startsWith("//") ? back : "/me");
   };
 
   const labelName = (key: string) => LABELS.find((l) => l.key === key)?.name ?? key;

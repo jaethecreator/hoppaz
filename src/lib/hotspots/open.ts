@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { requireAccount } from "@/lib/accountGate";
+import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
 
 /**
  * What is open of the hotspots on the map: a hotspot's sheet, the list of all of them, the room. One small store, so a
@@ -74,16 +75,44 @@ export function useHotspotBackButton() {
   }, []);
 }
 
+/** How to go to a page without a reload: the map registers the router. Before it does, a plain navigation. */
+let navigate: ((href: string) => void) | null = null;
+export function setHotspotNavigator(fn: (href: string) => void) {
+  navigate = fn;
+  return () => {
+    if (navigate === fn) navigate = null;
+  };
+}
+
+/** Does this hotspot have a room drawn (the room-templates rooms at /room/<slug>)? */
+export const hasHotspotRoom = (slug: string) => !!hotspotRoomData(slugOf(slug));
+
 /**
- * THE way into a hotspot's room: ENTER on a sheet and every other "open this hotspot" goes through here, so there is one
- * place to change where a hotspot leads. Today it opens the hotspot room (components/hotspots/HotspotRoom) straight over
- * the map, with no avatar run. To send people to the new /room/<slug> rooms instead, change the body of this function (a
- * router.push or window.location.assign after the account check) and nothing else.
+ * THE way into a hotspot: a pin, the "Your home base" chip, a list row, the /?hotspot= link and the first run's home base
+ * card all go through here, so there is one place to change where a hotspot leads.
  *
- * Browsing is open to everyone; being in a room needs an account, so a guest goes to the account page and comes back
- * to this screen. The room asks the 18 and over question itself. Returns false when the Hopper was sent to sign up.
+ * It opens the hotspot's own room, /room/<slug>, when one is drawn (all thirteen are). For a hotspot with no room yet it
+ * falls back to the sheet, whose ENTER opens the crossroads chat screen (enterCrossroads below).
  */
 export function openHotspot(slug: string): boolean {
+  const s = slugOf(slug);
+  if (hasHotspotRoom(s)) {
+    const href = `/room/${s}`;
+    if (navigate) navigate(href);
+    else window.location.href = href;
+    return true;
+  }
+  peekHotspot(s);
+  return true;
+}
+
+/**
+ * ENTER on a sheet (a hotspot with no room drawn): the crossroads chat screen over the map, the way hotspots worked before
+ * the rooms (components/hotspots/HotspotRoom). Browsing is open to everyone; being in a room needs an account, so a guest
+ * goes to the account page and comes back to this screen. The room asks the 18 and over question itself. Returns false
+ * when the Hopper was sent to sign up.
+ */
+export function enterCrossroads(slug: string): boolean {
   if (!requireAccount("enter a hotspot")) return false;
   try {
     // Spread the current state so Next's own bookkeeping on the entry survives.

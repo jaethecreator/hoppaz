@@ -66,6 +66,8 @@ function toHotspot(r: Raw): Hotspot | null {
  */
 let cached: { list: Hotspot[]; at: number } | null = null;
 let inFlight: Promise<Hotspot[] | null> | null = null;
+/** Every hook that is mounted hears a new list, whoever asked for it (the map, the first run's home base card, the crew hub). */
+const listeners = new Set<(list: Hotspot[]) => void>();
 
 /** One call to hotspot_list(), shared by whoever asks while it is out. Null when it failed (an old database, a flaky network). */
 function fetchList(): Promise<Hotspot[] | null> {
@@ -81,6 +83,7 @@ function fetchList(): Promise<Hotspot[] | null> {
         .filter((h): h is Hotspot => !!h)
         .sort((a, b) => Number(b.slug === "yaba") - Number(a.slug === "yaba") || a.wave - b.wave);
       cached = { list: rows, at: Date.now() };
+      listeners.forEach((f) => f(rows));
       return rows;
     } catch {
       return null;
@@ -121,9 +124,24 @@ export function useHotspots({ active, at }: { active: boolean; at: Pt | null }) 
     }
   }, []);
 
-  // Once per visit: a copy already in hand (the crew hub, an earlier visit to the map) is not fetched again.
   useEffect(() => {
-    if (active && !cached) void reload(true);
+    const on = (rows: Hotspot[]) => {
+      setList(rows);
+      setLoaded(true);
+      setFailed(false);
+    };
+    listeners.add(on);
+    return () => void listeners.delete(on);
+  }, []);
+
+  // Once per visit: a copy already in hand (the crew hub, an earlier visit to the map) is not fetched again; this hook
+  // takes it from there if it mounted before the copy came in.
+  useEffect(() => {
+    if (!active || DEMO) return;
+    if (cached) {
+      setList(cached.list);
+      setLoaded(true);
+    } else void reload(true);
   }, [active, reload]);
 
   // Position jitters every second; the answers only change by a street or two. Work from a ~110 m grid.

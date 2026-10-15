@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import CampaignWorld from "@/components/campaign/CampaignWorld";
-import { anonLook } from "@/lib/avatar";
+import { anonLook, normalizeLook } from "@/lib/avatar";
 import { hotspotRoom } from "@/lib/campaign/templates";
 import type { SocialWorld } from "@/lib/crew-room/types";
 import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
+import { useHoppaz } from "@/lib/store";
+import { useSession } from "@/lib/useSession";
 
 /**
  * /room/<hotspot slug>: the hotspot's own room, the entry point for the map pins and the guest peek. Today it is the room
@@ -26,9 +28,12 @@ export default function HotspotRoomPage() {
   // The world reads the window (device tier, camera): draw it on the client only.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  // Hotspot rooms keep aliases: an alias look, never the Hopper's real avatar or name. Until the walking server hands this
-  // Hopper their alias (hotspot_rooms.sql, Ola) the solo preview wears a stand-in alias look.
-  const look = useMemo(() => anonLook("Hopper"), []);
+  // Hotspot rooms keep aliases for everyone else; the walking server will hand each Hopper theirs (hotspot_rooms.sql, Ola).
+  // Until then this is a solo room that only you see, so it wears your own Hopper (the first run says "This is your
+  // Hopper"), and falls back to a stand-in alias look when you have not made one.
+  const { profile } = useSession();
+  const stored = useHoppaz((s) => s.look);
+  const look = useMemo(() => normalizeLook(profile?.avatar ?? stored ?? anonLook("Hopper")), [profile?.avatar, stored]);
   const social: SocialWorld | null = useMemo(
     () => (room ? { peers: [], circles: [], selfId: "me", circleId: null, areaId: null, watching: false, observedAt: new Date().toISOString(), reset: { x: room.layout.spawn.x, y: room.layout.spawn.y, revision: 0 }, onStep: () => true } : null),
     [room]
