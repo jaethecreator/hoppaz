@@ -33,7 +33,10 @@ export default function CrewPanel({
   onPlan,
   onSubmit,
   onRsvp,
+  bare = false,
 }: {
+  /** Inside a room card on the Rooms tab: no name, no pill and no ENTER button (the card has them). */
+  bare?: boolean;
   group: CrewGroup;
   events: { id: string; title: string }[];
   moving: boolean;
@@ -54,7 +57,8 @@ export default function CrewPanel({
   };
 
   return (
-    <div className="mt-4 border-t border-line pt-4">
+    <div className={bare ? "" : "mt-4 border-t border-line pt-4"}>
+      {!bare && (
       <div className="flex items-center gap-2">
         <h2 className="flex min-w-0 flex-1 items-center gap-1.5 font-display text-[19px] font-black leading-tight">
           <Link href={`/crew/${group.id}`} className="min-w-0 truncate">
@@ -64,12 +68,15 @@ export default function CrewPanel({
         </h2>
         <span className="pill flex-none">{group.visibility}</span>
       </div>
+      )}
 
       <InviteSerial code={group.invite_code} />
 
+      {!bare && (
       <Link href={`/crew/${group.id}/room`} className="btn mt-3 w-full">
         <DoorOpen size={16} aria-hidden /> Enter crew room
       </Link>
+      )}
 
       <button
         type="button"

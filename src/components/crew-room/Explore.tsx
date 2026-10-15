@@ -1,23 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { ChevronRight, Settings2 } from "lucide-react";
-import VerifiedBadge from "@/components/VerifiedBadge";
 import { useFeatured } from "@/lib/crew-room/featured";
-import { crewImageSrc } from "@/lib/crew-room/images";
-import { useExploreStore, useGoOut, useRoomRails, type RailCrew, type RailEvent } from "@/lib/crew-room/rails";
+import { useExploreStore, useGoOut, useRoomRails, type RailEvent } from "@/lib/crew-room/rails";
+import { markAnnouncementsSeen } from "@/lib/crew-room/announcements";
+import OwnerPanel from "./OwnerPanel";
 import { dayLabel } from "@/lib/filters";
 import { eventTitle } from "@/lib/geo";
 import css from "./Places.module.css";
 
 /**
- * Other crews (verified first, each opens /crew/<id>) and trending this week (each opens /?e=<id>) (design section
- * 10). Owned by PLACES.
+ * Trending this week (each opens /?e=<id>) (design section 10). Owned by PLACES.
  *
- * Two ways to show it, one body:
- *   <Explore crewId />          the list on its own, for the chat sheet's EXPLORE tab (no fixed positioning)
- *   <ExplorePopover crewId />   the design's popover from the logo badge in the header. EventSheet.tsx mounts it, and
- *                               the badge opens it with useExploreStore().toggle() (rails.ts)
+ * It used to carry an OTHER CREWS tab too. A room is a place and a crew is your friends, so the owner's logo no longer
+ * lists other crews: it opens the owner and admins (OwnerPanel.tsx). Other open rooms are found by name on ROOMZ.
+ *
+ * Two things live here:
+ *   <Explore crewId />          this week's nights on their own, for the chat sheet's EXPLORE control (no fixed positioning)
+ *   <ExplorePopover crewId />   the popover from the logo badge in the header (EventSheet.tsx mounts it, the badge opens it
+ *                               with useExploreStore().toggle() in rails.ts). It draws the OWNER AND ADMINS panel.
  *
  * Nothing is read until the list is first on screen (room_rails, kept 5 minutes). A row leaves the room, so it goes
  * through useGoOut(): during a Game Time it asks "Leave the hunt?" first. The owner gets a ROOM SETTINGS row at the foot.
@@ -42,6 +44,11 @@ export function ExplorePopover({ crewId }: ExploreProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, hide]);
 
+  // Opening the panel is seeing the announcements in it: the logo stops pulsing.
+  useEffect(() => {
+    if (open) void markAnnouncementsSeen(crewId);
+  }, [open, crewId]);
+
   // Gone when the room is: a popover never outlives its screen.
   useEffect(() => () => useExploreStore.getState().hide(), []);
 
@@ -49,17 +56,14 @@ export function ExplorePopover({ crewId }: ExploreProps) {
   return (
     <>
       <div className={css.scrim} style={{ background: "transparent" }} onPointerDown={hide} aria-hidden />
-      <div ref={box} role="dialog" aria-label="Other crews and this week's nights" tabIndex={-1} className={`${css.popover} animate-pop`}>
-        <ExploreBody crewId={crewId} />
+      <div ref={box} role="dialog" aria-label="Owner and admins" tabIndex={-1} className={`${css.popover} animate-pop`}>
+        <OwnerPanel crewId={crewId} />
       </div>
     </>
   );
 }
 
-type Tab = "crews" | "week";
-
 function ExploreBody({ crewId }: ExploreProps) {
-  const [tab, setTab] = useState<Tab>("crews");
   const rails = useRoomRails(crewId, true);
   const { isOwner } = useFeatured(crewId);
   const goOut = useGoOut();
@@ -67,14 +71,7 @@ function ExploreBody({ crewId }: ExploreProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-explore>
-      <div className="flex flex-none gap-2 px-3 pb-2 pt-3" role="group" aria-label="Explore">
-        <button type="button" className="chip" aria-pressed={tab === "crews"} onClick={() => setTab("crews")}>
-          OTHER CREWS
-        </button>
-        <button type="button" className="chip" aria-pressed={tab === "week"} onClick={() => setTab("week")}>
-          THIS WEEK
-        </button>
-      </div>
+      <p className="seclabel flex-none px-3 pb-2 pt-3">This week</p>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" style={{ touchAction: "pan-y" }}>
         {loading ? (
           <Skeleton />
@@ -85,12 +82,6 @@ function ExploreBody({ crewId }: ExploreProps) {
               RETRY
             </button>
           </div>
-        ) : tab === "crews" ? (
-          rails.crews.length ? (
-            rails.crews.map((c) => <CrewRow key={c.id} crew={c} onGo={() => goOut(`/crew/${c.id}`)} />)
-          ) : (
-            <p className="hint px-3 py-4">No other crews on the block yet.</p>
-          )
         ) : rails.trending.length ? (
           rails.trending.map((e) => <NightRow key={e.id} event={e} onGo={() => goOut(`/?e=${e.id}`)} />)
         ) : (
@@ -116,30 +107,6 @@ function ExploreBody({ crewId }: ExploreProps) {
 }
 
 const row = "flex w-full items-center gap-3 border-b border-line px-3 text-left active:bg-ink-3";
-
-function CrewRow({ crew, onGo }: { crew: RailCrew; onGo: () => void }) {
-  return (
-    <a
-      href={`/crew/${crew.id}`}
-      onClick={(e) => {
-        e.preventDefault();
-        onGo();
-      }}
-      className={`${row} min-h-[60px]`}
-      data-explore-crew={crew.id}
-    >
-      <Dot url={crew.logo_url} name={crew.name} />
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5">
-          <b className="truncate font-body text-[15px] font-semibold leading-5">{crew.name}</b>
-          {crew.verified && <VerifiedBadge size={14} />}
-        </span>
-        <span className="block font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-dim">{crew.members} IN THE CREW</span>
-      </span>
-      <ChevronRight size={16} className="flex-none text-dim" aria-hidden />
-    </a>
-  );
-}
 
 function NightRow({ event, onGo }: { event: RailEvent; onGo: () => void }) {
   const day = dayLabel(event.starts_at).split(" · ")[0];
@@ -177,25 +144,6 @@ function NightRow({ event, onGo }: { event: RailEvent; onGo: () => void }) {
       </span>
       <ChevronRight size={16} className="flex-none text-dim" aria-hidden />
     </a>
-  );
-}
-
-/** A crew's round badge at list size: the logo, or the first letter on the card colour. */
-function Dot({ url: stored, name }: { url: string | null; name: string }) {
-  const [failed, setFailed] = useState<string | null>(null);
-  const url = crewImageSrc(stored);
-  const show = !!url && failed !== url;
-  return (
-    <span className="grid h-10 w-10 flex-none place-items-center overflow-hidden rounded-full border border-line bg-ink-3">
-      {show ? (
-        // eslint-disable-next-line @next/next/no-img-element -- the crew's own upload or a /brands/ path, already sized for a badge
-        <img src={url} alt="" width={40} height={40} loading="lazy" className="h-full w-full object-cover" onError={() => setFailed(url ?? null)} draggable={false} />
-      ) : (
-        <span className="font-display text-[16px] font-black leading-none" aria-hidden>
-          {name.trim().charAt(0).toUpperCase() || "H"}
-        </span>
-      )}
-    </span>
   );
 }
 

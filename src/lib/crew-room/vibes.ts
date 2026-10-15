@@ -4,6 +4,7 @@ import { useEffect, type RefObject } from "react";
 import { create } from "zustand";
 import { getSupabase } from "@/lib/supabase/client";
 import { wave as waveByKey } from "@/lib/chat";
+import { isMissing, rememberCrew } from "@/lib/social";
 import { haptics } from "@/lib/haptics";
 import { sfx } from "@/lib/sound/sfx";
 
@@ -13,8 +14,9 @@ import { sfx } from "@/lib/sound/sfx";
  *   VIBES        the fixed catalogue. A vibe is a sticker id and nothing else, never text (the server checks it too).
  *   sendVibe     one sticker to one person. Limits mirror supabase/crew_rails.sql so the sender hears "no" without a
  *                request: 1 every 3 s, 3 a minute to the same person, 12 a minute in all. The server has the last word.
- *   sayHi        the wave. With a room key it is src/lib/chat.ts wave(key); without one (crew room peers carry user
- *                ids) it is the crew_room_wave call, which answers the same way and opens the DM when it is mutual.
+ *   sayHi        the wave, and in a crew room a CREW REQUEST (supabase/crew_friends.sql): a wave back makes you crew, both
+ *                ways, and opens the chat. With a room key it is src/lib/chat.ts wave(key); without one (crew room peers carry
+ *                user ids) it is crew_friend_wave, falling back to the old crew_room_wave when that is not on the server.
  *   subscribeVibes  the Realtime feed of vibes and wave taps for one crew (RLS keeps it to crew members).
  *   useVibes     what is on screen right now (stickers over heads, the one hint chip, the cooldown ring), shared by
  *                VibeLayer (draws and receives), HopperMenu (sends, shows the hint) and PopUps (nothing).
@@ -53,7 +55,23 @@ export type ActiveVibe = {
   /** I sent it (it shows over my own head). */
   mine: boolean;
 };
-export type Hint = { id: number; text: string; ttl: number; action?: { label: string; onPress: () => void } };
+/**
+ * The room's one hint chip. A HELD chip (a wave for me, "in your crew", a poke) is not wiped by a vibe or a refusal that comes
+ * after it: the next held chip waits its turn behind it, and only my own tap (`own`) replaces it. `key` is the person it is
+ * about, so their "WAVED AT YOU" gives way to their "IN YOUR CREW" and not to someone else's. `who` draws their face.
+ */
+export type Hint = {
+  id: number;
+  text: string;
+  ttl: number;
+  action?: { label: string; onPress: () => void };
+  who?: { name: string; look: unknown };
+  key?: string;
+  hold?: boolean;
+};
+export type HintOpts = { who?: Hint["who"]; key?: string; hold?: boolean; own?: boolean };
+/** How long a wave for me stays up: long enough to read it and answer, and the one that must not be missed. */
+export const WAVE_HINT_MS = 12_000;
 
 type VibeState = {
   active: ActiveVibe[];
@@ -64,7 +82,7 @@ type VibeState = {
   waved: Record<string, true>;
   addVibe: (v: ActiveVibe) => void;
   removeVibe: (id: string) => void;
-  say: (text: string, ttl?: number, action?: Hint["action"]) => void;
+  say: (text: string, ttl?: number, action?: Hint["action"], opts?: HintOpts) => void;
   clearHint: (id?: number) => void;
   markWaved: (userId: string) => void;
   reset: () => void;
@@ -72,6 +90,8 @@ type VibeState = {
 
 let hintSeq = 0;
 let hintTimer: ReturnType<typeof setTimeout> | null = null;
+/** Held chips waiting behind the one on screen (at most 3: the Chat tab keeps every wave, a busy room only needs the latest). */
+let waiting: Hint[] = [];
 
 export const useVibes = create<VibeState>((set, get) => ({
   active: [],
@@ -88,23 +108,43 @@ export const useVibes = create<VibeState>((set, get) => ({
       return { active: next.slice(-3) };
     }),
   removeVibe: (id) => set((s) => (s.active.some((x) => x.id === id) ? { active: s.active.filter((x) => x.id !== id) } : s)),
-  say: (text, ttl = 2500, action) => {
-    if (hintTimer) clearTimeout(hintTimer);
-    const id = ++hintSeq;
-    set({ hint: { id, text, ttl, action } });
-    hintTimer = setTimeout(() => get().clearHint(id), ttl);
+  say: (text, ttl = 2500, action, opts = {}) => {
+    const cur = get().hint;
+    const next: Hint = { id: ++hintSeq, text, ttl, action, who: opts.who, key: opts.key, hold: !!opts.hold };
+    const show = () => {
+      if (hintTimer) clearTimeout(hintTimer);
+      set({ hint: next });
+      hintTimer = setTimeout(() => get().clearHint(next.id), ttl);
+    };
+    // My own tap replaces what is up, but a held chip it displaces (another person's) waits its turn instead of vanishing.
+    if (cur?.hold && opts.own && cur.key !== next.key) waiting = [cur, ...waiting].slice(0, 3);
+    if (cur?.hold && !opts.own) {
+      // Something I must not miss is up. A later vibe or refusal never wipes it.
+      if (!opts.hold) return;
+      if (cur.key && cur.key === next.key) {
+        if (cur.text !== text) show(); // the same person, a newer word (WAVED AT YOU, then IN YOUR CREW)
+        return;
+      }
+      waiting = [...waiting.filter((w) => !(w.key && w.key === next.key)), next].slice(-3);
+      return;
+    }
+    show();
   },
   clearHint: (id) => {
     const h = get().hint;
     if (!h || (id != null && h.id !== id)) return;
     if (hintTimer) clearTimeout(hintTimer);
     hintTimer = null;
-    set({ hint: null });
+    const upNext = waiting.shift();
+    if (!upNext) return set({ hint: null });
+    set({ hint: upNext });
+    hintTimer = setTimeout(() => get().clearHint(upNext.id), upNext.ttl);
   },
   markWaved: (userId) => set((s) => (s.waved[userId] ? s : { waved: { ...s.waved, [userId]: true } })),
   reset: () => {
     if (hintTimer) clearTimeout(hintTimer);
     hintTimer = null;
+    waiting = [];
     sent.length = 0;
     set({ active: [], cooldownUntil: 0, hint: null, waved: {} });
   },
@@ -131,7 +171,7 @@ const REFUSED: Record<string, string> = {
   gone: "THEY LEFT THE ROOM",
   not_in_room: "WALK IN FIRST, THEN VIBE",
   self: "THAT'S YOU",
-  not_in_crew: "JOIN THE CREW FIRST",
+  not_in_crew: "JOIN THE ROOM FIRST",
   need_account: "MAKE AN ACCOUNT TO VIBE",
 };
 
@@ -168,7 +208,14 @@ export async function sendVibe(crewId: string, me: string, to: string, sticker: 
   return { ok: true, text: "SENT" };
 }
 
-export type HiResult = { kind: "sent" | "matched" | "already" | "failed"; text: string; dm?: string };
+export type HiResult = {
+  kind: "sent" | "matched" | "already" | "failed";
+  text: string;
+  dm?: string;
+  /** The wave made us crew (the new calls). Without it, "matched" is the old "connected, open the chat". */
+  crew?: boolean;
+  who?: { name: string; look: unknown };
+};
 
 const HI_TEXT: Record<string, string> = {
   already: "ALREADY WAVED",
@@ -181,9 +228,16 @@ const HI_TEXT: Record<string, string> = {
   need_account: "MAKE AN ACCOUNT TO WAVE",
 };
 
-/** SAY HI. A room key goes through the existing wave(key); a crew room peer without one through crew_room_wave. */
-export async function sayHi(crewId: string, peer: { id: string; name: string; key?: string }): Promise<HiResult> {
+/** "ADA IS IN YOUR CREW": said to both of them the moment a wave is answered. */
+export const crewText = (name: string) => `${name.toUpperCase()} IS IN YOUR CREW`;
+
+/**
+ * SAY HI. A room key goes through the existing wave(key); a crew room peer without one through crew_friend_wave (a crew
+ * request: wave back and you are crew), or the old crew_room_wave when the server does not have it yet.
+ */
+export async function sayHi(crewId: string, peer: { id: string; name: string; key?: string; look?: unknown }): Promise<HiResult> {
   const who = peer.name.toUpperCase();
+  const face = { name: peer.name, look: peer.look };
   let result: HiResult;
   if (peer.key) {
     const r = await waveByKey(peer.key);
@@ -194,24 +248,35 @@ export async function sayHi(crewId: string, peer: { id: string; name: string; ke
   } else {
     const sb = getSupabase();
     if (!sb) return { kind: "failed", text: "NO CONNECTION" };
-    const { data, error } = await sb.rpc("crew_room_wave", { p_crew: crewId, p_peer: peer.id });
+    let { data, error } = await sb.rpc("crew_friend_wave", { p_crew: crewId, p_peer: peer.id });
+    let crew = true;
+    if (isMissing(error)) {
+      ({ data, error } = await sb.rpc("crew_room_wave", { p_crew: crewId, p_peer: peer.id }));
+      crew = false;
+    }
     const answer = String(data);
     if (error) result = { kind: "failed", text: "NO CONNECTION" };
-    else if (answer.startsWith("matched:")) result = { kind: "matched", text: "YOU'RE CONNECTED", dm: answer.slice(8) };
+    else if (crew && answer.startsWith("crew:")) {
+      const dm = answer.slice(5);
+      rememberCrew({ id: peer.id, name: peer.name, look: peer.look, dm });
+      result = { kind: "matched", text: crewText(peer.name), dm, crew: true };
+    } else if (answer.startsWith("matched:")) result = { kind: "matched", text: "YOU'RE CONNECTED", dm: answer.slice(8) };
     else if (answer === "sent") result = { kind: "sent", text: `WAVED AT ${who}` };
     else if (answer === "already") result = { kind: "already", text: HI_TEXT.already };
     else result = { kind: "failed", text: HI_TEXT[answer] ?? "COULD NOT WAVE" };
   }
   if (result.kind === "sent" || result.kind === "matched" || result.kind === "already") useVibes.getState().markWaved(peer.id);
-  return result;
+  return { ...result, who: face };
 }
 
-/** Say what a wave came to: a mutual wave offers OPEN DM (never automatic), anything else is a short hint. */
-export function sayResult(r: HiResult, open: (dm: string) => void) {
+/** Say what a wave came to: crew offers MESSAGE (never automatic), anything else is a short hint. */
+export function sayResult(r: HiResult, open: (dm: string) => void, personId?: string) {
   const { say } = useVibes.getState();
   const dm = r.dm;
-  if (r.kind === "matched" && dm) say(r.text, 7000, { label: "OPEN DM", onPress: () => open(dm) });
-  else say(r.text, r.kind === "failed" ? 3500 : 2500);
+  const key = personId ? `u:${personId}` : undefined;
+  if (r.kind === "matched" && dm) {
+    say(r.text, WAVE_HINT_MS, { label: r.crew ? "MESSAGE" : "OPEN DM", onPress: () => open(dm) }, { who: r.who, key, hold: true, own: true });
+  } else say(r.text, r.kind === "failed" ? 3500 : 2500, undefined, { own: true });
 }
 
 export type IncomingVibe = { id: string; sticker: VibeId | "wave"; from: string; to: string; at: number };

@@ -178,8 +178,16 @@
   pointer-events: auto;
 }
 
+.hint[data-face] {
+  padding-left: 8px;
+}
+.hintFace {
+  flex: none;
+}
+
 .hintText {
   min-width: 0;
+  overflow-wrap: anywhere;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 11px;
   font-weight: 500;

@@ -1,100 +1,96 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
-import Link from "next/link";
+import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import clsx from "clsx";
 import { useSession } from "@/lib/useSession";
 import { useEvents } from "@/lib/useEvents";
 import { useHoppaz, useToast } from "@/lib/store";
+import { setMapShare, useSocial } from "@/lib/social";
 import { useInbox, useMyEventRooms, type PeopleOf } from "@/lib/chat";
 import PageHeader from "@/components/app/PageHeader";
-import Inbox from "@/components/chat/Inbox";
+import ChatList from "@/components/chat/ChatList";
+import CrewTab from "@/components/chat/CrewTab";
 import RoomView from "@/components/chat/RoomView";
+import { sentence } from "@/components/event/copy";
 
 export default function ChatPage() {
   return <Suspense fallback={<div className="grid h-full place-items-center"><span className="hint">LOADING…</span></div>}><Chat /></Suspense>;
 }
 
-type Room = { id: string; label: string; kind: "event" | "hop"; closesAt?: number; member: boolean };
-
 /**
- * Rooms are temporary and automatic: each event you're checked in at has one,
- * gone for good three days after the event. Opening chat from an event card or
- * the Hop shows that room too. The permanent group chats (from saying you're
- * going) live in Crew.
+ * Chat is people: CHATS (your private chats, with what is unread) and CREW (waves waiting for you, then everyone who is in
+ * your crew). Rooms are places, so the event rooms live under ROOMZ (/crew); one is still opened from its event card or
+ * from ROOMZ as /chat?c=<event id>, which shows that room with a way back.
  */
 function Chat() {
   const params = useSearchParams();
+  const linked = params.get("c");
+  if (linked && !linked.startsWith("area:")) return <EventRoom id={linked} />;
+  return <People />;
+}
+
+function People() {
   const router = useRouter();
+  const { userId, hasAccount } = useSession();
+  const [view, setView] = useState<"chats" | "crew">("chats");
+  const say = useToast((s) => s.say);
+  const { waves, crew, dms, unread, mentions, respond } = useInbox(userId);
+  const supported = useSocial((s) => s.supported);
+  const onMap = useSocial((s) => s.onMap);
+
+  return <div className="mx-auto flex h-full w-full max-w-[560px] flex-col overflow-hidden px-4">
+    <PageHeader title="Chat" caption="Say hi on your terms" className="flex-none" />
+    <div role="tablist" aria-label="Chat" className="mb-3 flex flex-none gap-6 border-b border-line">
+      <Tab on={view === "chats"} onClick={() => setView("chats")}>CHATS{unread + mentions.length > 0 ? ` · ${unread + mentions.length}` : ""}</Tab>
+      <Tab on={view === "crew"} onClick={() => setView("crew")}>CREW{waves.length > 0 ? ` · ${waves.length}` : ""}</Tab>
+    </div>
+
+    {view === "chats" ? <ChatList dms={dms} mentions={mentions} hasAccount={hasAccount} /> : <CrewTab
+      waves={waves}
+      crew={crew}
+      hasAccount={hasAccount}
+      // The switch is on the server's new calls; an older server has nothing to remember it with.
+      onMap={supported ? onMap : undefined}
+      onToggleMap={() => void setMapShare(!onMap).then((ok) => { if (!ok) say("Couldn't save that. Try again.", "error"); })}
+      onAnswer={async (w) => {
+        const r = await respond(w.id, true);
+        if (r.needAccount) { say("Make an account to chat."); router.push("/account?next=/chat"); }
+        // Waving back made them crew: say so, and they join the list right here. Anyone else (an event room wave) opens
+        // their chat, as before.
+        else if (r.crew) say(`${r.name ?? w.name} is in your crew.`, "ok");
+        else if (r.dm) router.push(`/chat/dm/${r.dm}`);
+        else if (r.text) say(sentence(r.text), "error");
+      }}
+      onPass={(w) => void respond(w.id, false)}
+    />}
+  </div>;
+}
+
+/** One event room (or the Hop's), opened from its event card or from ROOMZ. */
+function EventRoom({ id }: { id: string }) {
   const { userId, hasAccount } = useSession();
   const { fix } = useHoppaz();
   const { events } = useEvents(fix, 45);
   const eventRooms = useMyEventRooms(userId);
-  const [view, setView] = useState<"room" | "inbox">("room");
-  const [picked, setPicked] = useState<string | null>(null);
-  const say = useToast((s) => s.say);
-  const { waves, dms, respond } = useInbox(userId);
+  const mine = eventRooms.find((r) => r.id === id);
+  const hop = id.startsWith("hop-");
+  const title = hop ? "The Hop" : events.find((e) => e.id === id)?.title ?? mine?.title ?? "Event room";
+  const member = !!mine;
 
-  const linked = params.get("c");
-  const rooms = useMemo(() => {
-    const list: Room[] = eventRooms.map((r) => ({ id: r.id, label: r.title.toUpperCase(), kind: "event", closesAt: r.closesAt, member: true }));
-    if (linked && !list.some((r) => r.id === linked) && !linked.startsWith("area:")) {
-      if (linked.startsWith("hop-")) list.push({ id: linked, label: "THE HOP", kind: "hop", member: false });
-      else {
-        const title = events.find((e) => e.id === linked)?.title;
-        list.push({ id: linked, label: title ? title.toUpperCase() : "EVENT ROOM", kind: "event", member: false });
-      }
-    }
-    return list;
-  }, [eventRooms, linked, events]);
-  const room = rooms.find((r) => r.id === (picked ?? linked)) ?? rooms[0] ?? null;
-  const inboxCount = waves.length + dms.length;
-
-  return <div className="flex h-full flex-col overflow-hidden px-4">
-    <PageHeader title="Chat" caption="Say hi on your terms" className="flex-none" />
-    <div role="tablist" aria-label="Chat" className="mb-3 flex flex-none gap-6 border-b border-line">
-      <Tab on={view === "room"} onClick={() => setView("room")}>ROOMS</Tab>
-      <Tab on={view === "inbox"} onClick={() => setView("inbox")}>WAVES &amp; DMS{inboxCount > 0 ? ` · ${inboxCount}` : ""}</Tab>
-    </div>
-
-    {view === "room" ? <>
-      {rooms.length > 1 && <div className="flex-none overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"><div className="flex gap-1.5">
-        {rooms.map((r) => <button key={r.id} onClick={() => setPicked(r.id)} aria-pressed={room?.id === r.id} className={clsx("min-h-[36px] flex-none whitespace-nowrap rounded-full border px-3 font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] transition-colors", room?.id === r.id ? "border-cream text-cream" : "border-line text-dim")}>{r.label}</button>)}
-      </div></div>}
-      {rooms.length === 1 && room && <p className="mb-2 flex-none truncate font-display text-sm font-black">{room.kind === "hop" ? "The Hop" : events.find((e) => e.id === room.id)?.title ?? eventRooms.find((r) => r.id === room.id)?.title ?? "Event room"}</p>}
-      {room ? <RoomView
-        key={room.id}
-        channel={room.id}
-        people={{ kind: "event", id: room.id } satisfies PeopleOf}
-        userId={userId}
-        hasAccount={hasAccount}
-        note={room.closesAt ? `CLOSES ${closes(room.closesAt)}` : undefined}
-        empty={!room.member
-          ? room.kind === "hop" ? "This is the Hop's room, for riders on the bus." : "This room is for everyone going. Tap WE OUTSIDE on the event and you're in."
-          : "You're in. Be the first to break the ice, and keep it friendly."}
-        noPeople={room.kind === "event" && room.member ? "Nobody else in yet. Bring your people." : undefined}
-      /> : (
-        <div className="card">
-          <p className="font-display text-sm font-black">No party room open</p>
-          <p className="hint mt-1">Tap WE OUTSIDE on an event and you&apos;re in its room with everyone going, before the night and after. It closes three days after the event.</p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <Link href="/" className="btn">FIND A PARTY</Link>
-            <Link href="/crew" className="btn btn-ghost">GROUP CHATS</Link>
-          </div>
-        </div>
-      )}
-    </> : <Inbox
-      waves={waves}
-      dms={dms}
+  return <div className="mx-auto flex h-full w-full max-w-[560px] flex-col overflow-hidden px-4">
+    <PageHeader title={title} caption={mine ? `CLOSES ${closes(mine.closesAt)}` : undefined} back="/crew" className="flex-none" />
+    <RoomView
+      key={id}
+      channel={id}
+      people={{ kind: "event", id } satisfies PeopleOf}
+      userId={userId}
       hasAccount={hasAccount}
-      onAnswer={async (w) => {
-        const r = await respond(w.id, true);
-        if (r.needAccount) { say("Make an account to chat."); router.push("/account?next=/chat"); }
-        else if (r.dm) router.push(`/chat/dm/${r.dm}`);
-      }}
-      onPass={(w) => void respond(w.id, false)}
-    />}
+      empty={!member
+        ? hop ? "This is the Hop's room, for riders on the bus." : "This room is for everyone going. Tap WE OUTSIDE on the event and you're in."
+        : "You're in. Be the first to break the ice, and keep it friendly."}
+      noPeople={!hop && member ? "Nobody else in yet. Bring your people." : undefined}
+    />
   </div>;
 }
 

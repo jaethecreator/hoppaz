@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import TaggedText from "./TaggedText";
 
 const LAGOS = "Africa/Lagos";
 
@@ -46,6 +47,7 @@ export default function Bubble({
   image,
   imageAlt,
   imageLoading,
+  myAlias,
   className,
 }: {
   own: boolean;
@@ -60,6 +62,8 @@ export default function Bubble({
   imageAlt?: string;
   /** True while a picture is expected but its URL has not arrived. */
   imageLoading?: boolean;
+  /** In a hotspot: my alias there, so a tag of me is drawn in orange (the others in bold). */
+  myAlias?: string | null;
   className?: string;
 }) {
   return (
@@ -83,7 +87,7 @@ export default function Bubble({
       ) : (
         imageLoading && <span className="mt-1.5 block h-32 w-40 rounded-hz border border-line bg-ink" aria-label="Loading picture" />
       )}
-      {body && <span className={clsx("block break-words font-body text-[15px] leading-snug text-cream", (author || image || imageLoading) && "mt-1")}>{body}</span>}
+      {body && <span className={clsx("block break-words font-body text-[15px] leading-snug text-cream", (author || image || imageLoading) && "mt-1")}><TaggedText body={body} mine={myAlias} /></span>}
       {time && <span className="mt-1 block text-right font-mono text-[10px] leading-none text-dim">{time}</span>}
     </span>
   );

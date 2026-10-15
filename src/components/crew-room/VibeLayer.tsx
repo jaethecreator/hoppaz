@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
 import type { CampaignLayout } from "@/lib/campaign/layout";
+import { useGoOut } from "@/lib/crew-room/rails";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { useSessionStore } from "@/lib/useSession";
 import { haptics } from "@/lib/haptics";
@@ -13,6 +13,7 @@ import {
   NEAR_TILES,
   VIBES,
   VIBE_MS,
+  WAVE_HINT_MS,
   findClip,
   sayHi,
   sayResult,
@@ -34,7 +35,8 @@ import css from "./VibeLayer.module.css";
  *   - a vibe for me: the sticker over the sender, a sound and a tap (Android); if the sender is off my screen, the hint
  *     chip "ADA VIBED YOU" (HopperMenu draws the chip);
  *   - a vibe for someone else within 8 tiles of me: the sticker only;
- *   - a wave for me: the hint chip "ADA WAVED AT YOU" with WAVE BACK.
+ *   - a wave for me: the hint chip "ADA WAVED AT YOU" with their face and WAVE BACK, held for 12 s and never wiped by a
+ *     vibe or another hint (src/lib/crew-room/vibes.ts). Waving back makes us crew (supabase/crew_friends.sql).
  * Reads useRoomStore me, peers, tile; useSessionStore userId. Hidden from screen readers (the picture and sound carry it).
  */
 export type VibeLayerProps = { crewId: string; layout: CampaignLayout };
@@ -133,7 +135,7 @@ const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.
 
 export default function VibeLayer({ crewId, layout }: VibeLayerProps) {
   const root = useRef<HTMLDivElement>(null);
-  const router = useRouter();
+  const goOut = useGoOut();
   const tile = useRoomStore((s) => s.tile) || layout.grid.tile;
   const me = useRoomStore((s) => s.me);
   const peers = useRoomStore((s) => s.peers);
@@ -174,8 +176,9 @@ export default function VibeLayer({ crewId, layout }: VibeLayerProps) {
   }, []);
 
   // The live feed: vibes and wave taps for this crew.
-  const open = useRef((dm: string) => router.push(`/chat/dm/${dm}`));
-  open.current = (dm: string) => router.push(`/chat/dm/${dm}`);
+  // A chat leaves the room, so during a Game Time it asks "Leave the hunt?" first.
+  const open = useRef((dm: string) => goOut(`/chat/dm/${dm}`));
+  open.current = (dm: string) => goOut(`/chat/dm/${dm}`);
   useEffect(() => {
     if (!userId) return;
     return subscribeVibes(crewId, (v) => {
@@ -187,19 +190,26 @@ export default function VibeLayer({ crewId, layout }: VibeLayerProps) {
         if (v.to !== userId) return;
         sfx.wave();
         haptics.buzz("wave");
-        // I waved at them first this visit, so this is their wave coming back: it is mutual now, and the same SAY HI says so
-        // (CONNECTED, with OPEN DM) instead of offering to wave back at someone I already waved at.
+        const who = { id: v.from, name: sender?.name ?? "A Hopper", key: sender?.key, look: sender?.look };
+        // I waved at them first this visit, so this is their wave coming back (an older server's tap: the new one says it as a
+        // crew ping): it is mutual now, and the same SAY HI says so instead of offering to wave back at someone I already waved at.
         if (useVibes.getState().waved[v.from]) {
-          void sayHi(crewId, { id: v.from, name: sender?.name ?? "A Hopper", key: sender?.key }).then((r) => sayResult(r, open.current));
+          void sayHi(crewId, who).then((r) => sayResult(r, open.current, v.from));
           return;
         }
-        useVibes.getState().say(`${name} WAVED AT YOU`, 6000, {
-          label: "WAVE BACK",
-          onPress: () => {
-            useVibes.getState().clearHint();
-            void sayHi(crewId, { id: v.from, name: sender?.name ?? "A Hopper", key: sender?.key }).then((r) => sayResult(r, open.current));
+        // The one chip I must not miss: it has their face, it stays 12 s, and nothing else in the room wipes it.
+        useVibes.getState().say(
+          `${name} WAVED AT YOU`,
+          WAVE_HINT_MS,
+          {
+            label: "WAVE BACK",
+            onPress: () => {
+              useVibes.getState().clearHint();
+              void sayHi(crewId, who).then((r) => sayResult(r, open.current, v.from));
+            },
           },
-        });
+          { who: { name: who.name, look: who.look }, key: `u:${v.from}`, hold: true }
+        );
         return;
       }
       // Mute vibes (Me, Settings): other people's vibes do not show, sound or buzz.
