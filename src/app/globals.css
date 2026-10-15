@@ -1610,3 +1610,11 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
     --hz-nav-bottom: 1.25rem;
   }
 }
+
+/* ------------------------------------------------------------ one ping at a time -- */
+/* The Game Time card (GameTimePing) and the who-reached-me toast (SocialPing) both sit at the top of the screen, mounted
+   side by side in layout.tsx. While a toast is up (6 s) the Game Time card steps aside, so they never stack on each other;
+   it comes back by itself when the toast goes. */
+[data-gt-ping]:has(~ [data-social-ping]) {
+  visibility: hidden;
+}
