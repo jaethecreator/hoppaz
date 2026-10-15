@@ -16,6 +16,7 @@ import {
   eventPrice,
   eventPriceShort,
   eventTitle,
+  insideLagos,
   isEventLead,
   travelEstimate,
 } from "@/lib/geo";
@@ -126,8 +127,6 @@ const SRC = {
   hop: "hoppaz-hop",
   lots: "hoppaz-lots",
   radius: "hoppaz-radius",
-  /** Where you are: the point the radius ring is drawn around. */
-  you: "hoppaz-you",
 } as const;
 
 /** The little Hop bus: cream body, orange windows. */
@@ -313,25 +312,6 @@ function setupLayers(m: MLMap, theme: Theme, cityGrown: boolean) {
         "circle-opacity": ["interpolate", ["linear"], ["zoom"], STREET_ZOOM - 0.6, 1, STREET_ZOOM, 0],
         "circle-stroke-opacity": ["interpolate", ["linear"], ["zoom"], STREET_ZOOM - 0.6, 1, STREET_ZOOM, 0],
       },
-    });
-  }
-
-  /* ---- you: a small cream dot with a soft halo, where the radius ring is. Part of the map, never tappable. ---- */
-  if (!m.getSource(SRC.you)) m.addSource(SRC.you, { type: "geojson", data: fc([]) });
-  if (!m.getLayer("you-halo")) {
-    m.addLayer({
-      id: "you-halo",
-      type: "circle",
-      source: SRC.you,
-      paint: { "circle-radius": 15, "circle-color": P.text, "circle-opacity": 0.18, "circle-pitch-alignment": "map" },
-    });
-  }
-  if (!m.getLayer("you-dot")) {
-    m.addLayer({
-      id: "you-dot",
-      type: "circle",
-      source: SRC.you,
-      paint: { "circle-radius": 6, "circle-color": P.text, "circle-stroke-color": P.ground, "circle-stroke-width": 2.5 },
     });
   }
 }
@@ -526,9 +506,10 @@ export default function NightMap({
       const c = ctrl.getBoundingClientRect();
       if (c.width) taken.push([c.left - h0.left, c.top - h0.top, c.right - h0.left, c.bottom - h0.top]);
     }
-    // Anything else on the page over the map that signs must keep clear of (the Hotspots buttons) says so with data-hz-obstacle.
+    // Anything else over the map that signs must keep clear of says so: the Hotspots buttons (data-hz-obstacle) and your own
+    // avatar on the map (.hz-obstacle).
     if (h0) {
-      document.querySelectorAll<HTMLElement>("[data-hz-obstacle]").forEach((el) => {
+      document.querySelectorAll<HTMLElement>("[data-hz-obstacle], .hz-obstacle").forEach((el) => {
         const r = el.getBoundingClientRect();
         if (r.width) taken.push([r.left - h0.left, r.top - h0.top, r.right - h0.left, r.bottom - h0.top]);
       });
@@ -867,10 +848,6 @@ export default function NightMap({
       )
     );
 
-    (m.getSource(SRC.you) as GeoJSONSource).setData(
-      fc(fix ? [{ type: "Feature", geometry: { type: "Point", coordinates: [fix.lng, fix.lat] }, properties: {} }] : [])
-    );
-
     // Later: the venue models follow the same events and selection.
     updateVenueModels(m, { theme: themeRef.current, events, selectedId });
   }, [epoch, events, hopStops, showHop, fix, radiusKm, selectedId, at, live, allHot]);
@@ -1001,9 +978,10 @@ export default function NightMap({
     const m = map.current;
     if (!m || !ready.current || !swoop || swooped.current) return;
     swooped.current = true;
-    const to = fixRef.current ?? LAGOS_CENTER;
+    const at = fixRef.current;
+    const to = at && insideLagos(at.lat, at.lng) ? at : LAGOS_CENTER;
     m.jumpTo({ center: [LAGOS_CENTER.lng - 0.08, LAGOS_CENTER.lat + 0.03], zoom: 9.6, pitch: 0, bearing: 0 });
-    m.flyTo({ center: [to.lng, to.lat], zoom: fixRef.current ? 12.2 : 11.2, pitch: 50, bearing: -14, duration: ms(3400), curve: 1.3 });
+    m.flyTo({ center: [to.lng, to.lat], zoom: to !== LAGOS_CENTER ? 12.2 : 11.2, pitch: 50, bearing: -14, duration: ms(3400), curve: 1.3 });
   }, [epoch, swoop]);
 
   /* -------------------------------------------- frame the filtered events ---- */
@@ -1185,7 +1163,9 @@ export default function NightMap({
     if (!f || fixKey === lastFix.current) return;
     lastFix.current = fixKey;
     if (selectedRef.current) return;
-    m.easeTo({ center: [f.lng, f.lat], zoom: Math.max(m.getZoom(), 11.4), duration: ms(700) });
+    // The map is Lagos only (maxBounds): a location outside it is shown as Lagos, not as an edge of the bounds.
+    const to = insideLagos(f.lat, f.lng) ? f : LAGOS_CENTER;
+    m.easeTo({ center: [to.lng, to.lat], zoom: Math.max(m.getZoom(), 12.4), duration: ms(900) });
   }, [epoch, fixKey]);
 
   // Inline on purpose: MapLibre's own CSS gives .maplibregl-map position relative, and when the

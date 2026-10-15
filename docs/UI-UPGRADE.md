@@ -41,12 +41,14 @@ end; avoid the waitlist tab in IMG_1951.
 
 ## 2. Sign-up: early, short and fun (no guest mode)
 
-> **Built as a first cut on `jae/map-cleanup` (15 Oct 2026).** `/welcome` runs steps 1 to 7 below and the map shows the
-> four-step tour of section 8 (`src/lib/welcome.ts`, `src/components/welcome/`). It uses the room-templates rooms, so
-> the nearest hotspot's own room (Adeola Odeku is the test room) is the peek and the place you spawn in. What is still a
-> stand-in: the room is solo (no walking server), the Hopper maker is shuffle and skin tone only, the sign-up is
-> Ola's `/account` page, and Ask Paz is a written FAQ. Every step has Skip, and Skip ends the welcome for good.
-> Test hosts: `/?welcome` starts it again.
+> **Replaced on 15 Oct 2026 (Jae, after testing the first cut): no splash, no pager, no sign-up gate.** The first run is
+> layers on the map as it always was (`src/lib/firstRun.ts`, `src/components/firstrun/`): (1) a small card, "Set your
+> location to see the best events near you", in the look of Ola's location ask; once it is set the map zooms to you and shows
+> your mini avatar; (2) Paz at the side: the best events near you are on the map, zoom in or pick any day; (3) when the map
+> has been looked at and left still (or after a while), the map moves to the closest hotspot, your avatar runs there, the pin
+> bobs and its room (`/room/<slug>`) opens, and Paz says to chat with someone in your area. Then they are free. Every layer
+> closes, and closing ends it. The Hopper maker and the four-step tour below were dropped from the first run. Test hosts:
+> `/?welcome` starts it again.
 
 Jae chose this direction on 14 Oct: his flow, plus hooks that keep the whole city in view.
 
@@ -137,9 +139,7 @@ crews.
 
 ## 8. Tour: four steps, under a minute
 
-> Built (15 Oct 2026, `src/components/welcome/WelcomeTour.tsx`): a card with dots and Skip, a spotlight on the real
-> control (`data-tour` on the Hotspots button, the EVENTS tab and the Your home base chip), and a last card with ASK PAZ
-> and a big DONE.
+> Not part of the first run any more (15 Oct 2026): the layered first run above replaced it. The four steps stay here as the tour design.
 
 The first-run tour points at the real controls, with dots and Skip (Lagos Life 2035–2041):
 1. **The map:** "Events and your people, live."

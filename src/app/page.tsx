@@ -29,14 +29,13 @@ import { useEvents, useHop } from "@/lib/useEvents";
 import { useCheckin } from "@/lib/useCheckin";
 import { useGameDashboard } from "@/lib/game";
 import { haversineKm, hasVenue } from "@/lib/geo";
-import type { HopStop } from "@/lib/types";
+import type { EventRow, HopStop } from "@/lib/types";
 import { busPosition } from "@/lib/busPosition";
 import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
 import { NEXT_COUNT, nextEvents } from "@/lib/filters";
 import { closeHotspots, useHotspotNav } from "@/lib/hotspots/open";
-import { useWelcomeGate } from "@/lib/welcome";
-import WelcomeTour from "@/components/welcome/WelcomeTour";
+import YouMarker from "@/components/map/YouMarker";
 
 // MapLibre touches window on import, so it stays out of the server bundle.
 const NightMap = dynamic(() => import("@/components/map/NightMap"), {
@@ -60,12 +59,13 @@ let firstDayChosen = false;
 
 const IS_DEV = process.env.NODE_ENV !== "production";
 
+/** With a location, events this close (km) go to the front of NEXT 20. */
+const NEAR_KM = 12;
+
 export default function MapPage() {
-  const { fix, radiusKm, dateFilter, setDateFilter, types, setTypes } = useHoppaz();
-  const { userId, refresh } = useSession();
+  const { fix, radiusKm, dateFilter, setDateFilter, types, setTypes, look } = useHoppaz();
+  const { userId, refresh, profile } = useSession();
   const [map, setMap] = useState<MLMap | null>(null);
-  // A new Hopper is taken to the first run (/welcome); once it is done, or if they have an account, the tour shows on this page.
-  useWelcomeGate();
   const { events: allEvents, demo, ready, failed, reload } = useEvents(fix, radiusKm);
   const hop = useHop();
   const { done, checkedAt, busy, checkIn } = useCheckin(userId, refresh);
@@ -99,7 +99,16 @@ export default function MapPage() {
   const typed = useMemo(() => allEvents.filter((e) => hasVenue(e) && matchesType(e, shownTypes)), [allEvents, shownTypes]);
   const counts = useMemo(() => countByDay(typed), [typed]);
   // NEXT 20: the next events from now, whatever night they fall on, so the map never opens empty.
-  const next = useMemo(() => nextEvents(typed, NEXT_COUNT, now), [typed, now]);
+  // With a location (the first run asks for one), the ones close by come first, topped up with the rest: Ola's rule for the
+  // deck on the Events page (NEAR_KM in src/app/discover/page.tsx, upstream 1c1ebe0), here for any location.
+  const next = useMemo(() => {
+    if (!fix) return nextEvents(typed, NEXT_COUNT, now);
+    const far = (e: EventRow) => !(e.distance_m <= NEAR_KM * 1000);
+    const near = nextEvents(typed.filter((e) => !far(e)), NEXT_COUNT, now).list;
+    const taken = new Set(near.map((e) => e.id));
+    const rest = nextEvents(typed.filter((e) => !taken.has(e.id)), NEXT_COUNT - near.length, now).list;
+    return { list: [...near, ...rest] };
+  }, [typed, now, fix]);
   // Otherwise everything on the map (pins, heat, the scrubber) works off the one chosen day.
   const dayEvents = useMemo(() => typed.filter((e) => nightOf(Date.parse(e.starts_at)) === dayKey), [typed, dayKey]);
   const events = mode === "next" ? next.list : dayEvents;
@@ -337,6 +346,9 @@ export default function MapPage() {
         />
       </div>
 
+      {/* You: your own mini avatar at your location. Nothing to tap. */}
+      {mounted && map && <YouMarker map={map} fix={fix} look={profile?.avatar ?? look} />}
+
       {/* Hotspots: a pin on each open one, the Hotspots button and list, the sheet and the room. Placed under the chrome's measured height. */}
       {mounted && <MainHotspots map={map} fix={fix} top={hud.top} hidden={!!event || filtering || picking || hopOpen} />}
 
@@ -416,9 +428,6 @@ export default function MapPage() {
           </div>
         </div>
       )}
-
-      {/* The first-run tour: four cards pointing at the real controls. It waits while a card or sheet has the screen. */}
-      <WelcomeTour enabled={mounted && !event && !filtering && !picking && !hopOpen && !hotspotUi} />
 
       {/* ----------------------------------------------------------- sheets -- */}
       <AreaPicker open={picking} onClose={() => setPicking(false)} showRadius />

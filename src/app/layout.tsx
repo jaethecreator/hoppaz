@@ -12,6 +12,7 @@ import OfflineLine from "@/components/app/OfflineLine"
 import PushAlert from "@/components/app/PushAlert"
 import SoundLane from "@/components/app/SoundLane"
 import GameTimePing from "@/components/game-time/GameTimePing"
+import FirstRun from "@/components/firstrun/FirstRun"
 import { THEME_BOOT_SCRIPT } from "@/lib/theme"
 import "@fontsource/archivo/400.css"
 import "@fontsource/archivo/500.css"
@@ -99,6 +100,7 @@ export default function RootLayout({
         <GameTimePing />
         <Toaster />
         <InstallSheet />
+        <FirstRun />
       </body>
     </html>
   )
