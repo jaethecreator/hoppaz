@@ -14,6 +14,7 @@ import GameTimePing from "@/components/game-time/GameTimePing"
 import SignupSheet from "@/components/app/SignupSheet"
 import SoundLane from "@/components/app/SoundLane"
 import IntroHost from "@/components/intro/IntroHost"
+import { INTRO_ENABLED } from "@/lib/intro/flag"
 import { THEME_BOOT_SCRIPT } from "@/lib/theme"
 import "@fontsource/archivo/400.css"
 import "@fontsource/archivo/500.css"
@@ -102,7 +103,7 @@ export default function RootLayout({
         <Toaster />
         <SignupSheet />
         <InstallSheet />
-        <IntroHost />
+        {INTRO_ENABLED && <IntroHost />}
       </body>
     </html>
   )

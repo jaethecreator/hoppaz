@@ -9,6 +9,7 @@ import { runIntroAction } from "@/lib/intro/actions";
 import { accountReady, makeCtx } from "@/lib/intro/active";
 import { useIntroBridges } from "@/lib/intro/bridges";
 import { readEnv, type IntroEnv } from "@/lib/intro/env";
+import { INTRO_ENABLED } from "@/lib/intro/flag";
 import { useInstallPrompt, usePromptWindow } from "@/lib/intro/install";
 import { EXTRA, type Line } from "@/lib/intro/lines";
 import { currentStep, type IntroCtx } from "@/lib/intro/machine";
@@ -40,19 +41,30 @@ import s from "./intro.module.css";
 /** The party moments get a bigger Paz. */
 const BIG: StepId[] = ["welcome", "outside", "box2", "me"];
 
-export default function IntroHost({
-  scope = "app",
-  path: pathProp,
-  inPlay: inPlayProp,
-  bridges = true,
-  env: envProp,
-}: {
+type HostProps = {
   scope?: string;
   path?: string;
   inPlay?: boolean;
   bridges?: boolean;
   env?: Partial<IntroEnv>;
-}) {
+};
+
+/**
+ * The tour's one door into the screen. While the intro is switched off (src/lib/intro/flag.ts) it draws nothing, binds no
+ * save and bridges no events, wherever it is mounted (layout.tsx does not mount it at all while the flag is off).
+ */
+export default function IntroHost(props: HostProps) {
+  if (!INTRO_ENABLED) return null;
+  return <IntroHostLive {...props} />;
+}
+
+function IntroHostLive({
+  scope = "app",
+  path: pathProp,
+  inPlay: inPlayProp,
+  bridges = true,
+  env: envProp,
+}: HostProps) {
   const pathname = usePathname();
   const path = pathProp ?? pathname ?? "/";
   const playActive = usePlayMode((x) => x.active);

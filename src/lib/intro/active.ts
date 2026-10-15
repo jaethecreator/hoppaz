@@ -8,6 +8,7 @@ import { usePlayMode } from "@/lib/usePlayMode";
 import { useSessionStore } from "@/lib/useSession";
 import { readEnv, type IntroEnv } from "./env";
 import { promptWindowOpen, useInstallPrompt } from "./install";
+import { INTRO_ENABLED } from "./flag";
 import { EXTRA } from "./lines";
 import { currentStep, type InstallKind, type IntroCtx, type IntroSave } from "./machine";
 import { INTRO_QUIET, stepDef, type StepId } from "./steps";
@@ -71,7 +72,7 @@ function stepFor(key: string | null, save: IntroSave, nudge: boolean, ctx: Intro
 
 /** The step Paz is on, if she is with the Hopper on this screen. Not for render: use useIntroActive there. */
 export function introStepNow(path?: string): StepId | null {
-  if (typeof window === "undefined") return null;
+  if (!INTRO_ENABLED || typeof window === "undefined") return null;
   const p = path ?? window.location.pathname;
   const { key, save, nudge } = useIntro.getState();
   const { email, state } = useSessionStore.getState();
@@ -98,7 +99,8 @@ export function useIntroActive(): boolean {
   const playing = usePlayMode((s) => s.active);
   const canPrompt = useInstallPrompt((s) => !!s.prompt);
   const client = useSyncExternalStore(noSubscribe, () => true, () => false);
-  if (!client) return false;
+  // Intro switched off (flag.ts): Paz is never with the Hopper, so every gate behaves as it does without a tour.
+  if (!INTRO_ENABLED || !client) return false;
   return stepFor(key, save, nudge, makeCtx(path ?? "/", playing, readEnv(), accountReady(email, sessionState), canPrompt)) !== null;
 }
 
@@ -108,5 +110,6 @@ export function useIntroActive(): boolean {
  * points at her card, where the one sign-up moment is.)
  */
 export function introNeedAccount(): void {
+  if (!INTRO_ENABLED) return;
   useToast.getState().say(introStepNow() === "keep" ? EXTRA.signupOnCard : EXTRA.signupLater);
 }

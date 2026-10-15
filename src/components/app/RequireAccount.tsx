@@ -3,6 +3,7 @@
 import AccountWall from "@/components/app/AccountWall";
 import LoadingStub from "@/components/app/LoadingStub";
 import { useIntroActive, introNeedAccount } from "@/lib/intro/active";
+import { INTRO_ENABLED } from "@/lib/intro/flag";
 import { supabaseConfigured } from "@/lib/supabase/client";
 import { useSession } from "@/lib/useSession";
 
@@ -14,6 +15,8 @@ import { useSession } from "@/lib/useSession";
  * `preview` (Crew, Me): while Paz's tour is with the Hopper, they see the page
  * itself, look only (every tap on a control says "sign up first"), so her tour
  * can show it. The wall is back the moment the tour ends or is skipped.
+ * While the intro is switched off (src/lib/intro/flag.ts) there is no tour, so
+ * the wall is always what a signed-out Hopper sees.
  */
 export default function RequireAccount({
   title,
@@ -36,7 +39,7 @@ export default function RequireAccount({
       </div>
     );
   }
-  if (preview && touring) return <TourPreview>{children}</TourPreview>;
+  if (INTRO_ENABLED && preview && touring) return <TourPreview>{children}</TourPreview>;
   return <AccountWall title={title} caption={caption} />;
 }
 
