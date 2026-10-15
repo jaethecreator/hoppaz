@@ -51,12 +51,7 @@ export type NightMapProps = {
   busFocus?: number;
   /** Flips true once the page has mounted: the camera then swoops in. */
   swoop?: boolean;
-  /**
-   * "events" is the map as it always was. "play" closes it around the Hopper: event signs, the bus, the stops,
-   * heat, houses, rings and the basemap's text go quiet, gestures lock, and the Play layer owns the camera.
-   */
-  mode?: "events" | "play";
-  /** Called once with the MapLibre map when the style and our layers are in (the Play layer hangs its avatar and crates on it). */
+  /** Called once with the MapLibre map when the style and our layers are in (the hotspot pins hang on it). */
   onMapReady?: (map: MLMap) => void;
   onMapUnavailable?: () => void;
   selectedId: string | null;
@@ -126,13 +121,7 @@ const SRC = {
   hop: "hoppaz-hop",
   lots: "hoppaz-lots",
   radius: "hoppaz-radius",
-  /** Play: the reach ring around you, and the dashed line to a box that needs a walk. Empty until the Play layer fills them. */
-  reach: "hoppaz-play-reach",
-  path: "hoppaz-play-path",
 } as const;
-
-/** What Play hides on the map, by layer id. The basemap's own text layers are found by type. */
-const PLAY_HIDDEN = ["heat-blur", "lots", "pins", "pins-halo", "hop-line", "radius-fill", "radius-line"];
 
 /** The little Hop bus: cream body, orange windows. */
 const BUS_ART =
@@ -319,37 +308,6 @@ function setupLayers(m: MLMap, theme: Theme, cityGrown: boolean) {
       },
     });
   }
-
-  /* ---- Play: the reach ring (violet, in metres on the ground) and the dashed line to a far box ---- */
-  if (!m.getSource(SRC.reach)) m.addSource(SRC.reach, { type: "geojson", data: fc([]) });
-  if (!m.getLayer("play-reach-fill")) {
-    m.addLayer({
-      id: "play-reach-fill",
-      type: "fill",
-      source: SRC.reach,
-      layout: { visibility: "none" },
-      paint: { "fill-color": BRAND.violet, "fill-opacity": 0.12 },
-    });
-  }
-  if (!m.getLayer("play-reach-line")) {
-    m.addLayer({
-      id: "play-reach-line",
-      type: "line",
-      source: SRC.reach,
-      layout: { visibility: "none" },
-      paint: { "line-color": "#8A66FF", "line-width": 2, "line-opacity": 0.85, "line-dasharray": [2, 2] },
-    });
-  }
-  if (!m.getSource(SRC.path)) m.addSource(SRC.path, { type: "geojson", data: fc([]) });
-  if (!m.getLayer("play-path")) {
-    m.addLayer({
-      id: "play-path",
-      type: "line",
-      source: SRC.path,
-      layout: { visibility: "none", "line-cap": "round" },
-      paint: { "line-color": BRAND.cream, "line-width": 3, "line-opacity": 0.9, "line-dasharray": [0.1, 2.2], "line-opacity-transition": { duration: 400, delay: 0 } },
-    });
-  }
 }
 
 export default function NightMap({
@@ -363,7 +321,6 @@ export default function NightMap({
   bus,
   busFocus = 0,
   swoop = true,
-  mode = "events",
   onMapReady,
   selectedId,
   onSelect,
@@ -400,11 +357,8 @@ export default function NightMap({
   const [fontsEpoch, setFontsEpoch] = useState(0);
   /** Bumps every minute so "TODAY" and "ENDED" on the signs do not go stale. */
   const [minute, setMinute] = useState(0);
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
   useEffect(() => {
-    // Play has no signs to keep fresh: the interval waits it out.
-    const t = setInterval(() => modeRef.current !== "play" && setMinute((n) => n + 1), 60_000);
+    const t = setInterval(() => setMinute((n) => n + 1), 60_000);
     return () => clearInterval(t);
   }, []);
 
@@ -509,8 +463,7 @@ export default function NightMap({
   // Runs on every move.
   declutter.current = () => {
     const m = map.current;
-    // Play shows no signs, so there is nothing to place.
-    if (!m || modeRef.current === "play") return;
+    if (!m) return;
     const street = m.getZoom() >= STREET_ZOOM;
     // Up close the house stands under the sign, so the sign floats above its roof and diamond.
     const mpp = (156543.03 * Math.cos((m.getCenter().lat * Math.PI) / 180)) / 2 ** m.getZoom();
@@ -528,9 +481,7 @@ export default function NightMap({
     // The open event's card covers the right of the map: nothing else may hide under it.
     const side = sideRef.current && !!selectedRef.current;
     if (side) taken.push([vw - sidePanelWidth(vw) - SIDE_PANEL.gap * 2, 0, vw, vh]);
-    // Your avatar sits above your point (the Play layer draws it), the bus hangs below its own, the stops and zoom buttons stay clear.
-    const me = fixRef.current;
-    if (me) reserve(me.lng, me.lat, 26, 54, 26, 14);
+    // The bus hangs below its own point, the stops and zoom buttons stay clear.
     const h0 = holder.current?.getBoundingClientRect();
     const busEl = busMk.current?.getElement();
     if (busEl && h0) {
@@ -775,36 +726,6 @@ export default function NightMap({
     })();
   }, [theme, epoch]);
 
-  /* ---------------------------------------------------------- Play mode ---- */
-  // Play closes the map around the Hopper: our layers and the basemap's text go quiet, the Hopper's own gestures lock
-  // (the camera follows the avatar), the signs, bus and stops fade, and the zoom buttons step aside.
-  const savedVis = useRef<{ epoch: number; vis: Map<string, string> }>({ epoch: -1, vis: new Map() });
-  useEffect(() => {
-    const m = map.current;
-    if (!m || !ready.current || epoch === 0) return;
-    const play = mode === "play";
-    if (savedVis.current.epoch !== epoch) savedVis.current = { epoch, vis: new Map() };
-    const { vis } = savedVis.current;
-    for (const layer of m.getStyle().layers ?? []) {
-      if (!PLAY_HIDDEN.includes(layer.id) && layer.type !== "symbol") continue;
-      if (play) {
-        if (!vis.has(layer.id)) vis.set(layer.id, (m.getLayoutProperty(layer.id, "visibility") as string | undefined) ?? "visible");
-        m.setLayoutProperty(layer.id, "visibility", "none");
-      } else if (vis.has(layer.id)) {
-        m.setLayoutProperty(layer.id, "visibility", vis.get(layer.id) as "visible" | "none");
-      }
-    }
-    for (const id of ["play-reach-fill", "play-reach-line", "play-path"]) {
-      if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", play ? "visible" : "none");
-    }
-    if (!play) vis.clear();
-    const handlers = [m.dragPan, m.scrollZoom, m.doubleClickZoom, m.touchZoomRotate, m.touchPitch, m.boxZoom, m.keyboard];
-    handlers.forEach((h) => (play ? h.disable() : h.enable()));
-    if (!play) m.touchZoomRotate.disableRotation();
-    holder.current?.classList.toggle("hz-playing", play);
-    declutter.current();
-  }, [mode, epoch]);
-
   /* ------------------------------------------------ chrome insets as CSS ---- */
   useEffect(() => {
     const h = holder.current;
@@ -1020,8 +941,6 @@ export default function NightMap({
     const m = map.current;
     if (!m || !ready.current || fitKey === lastFit.current) return;
     lastFit.current = fitKey;
-    // Play owns the camera: a filter change made earlier does not pull it away.
-    if (modeRef.current === "play") return;
     if (!events.length) return;
     // Frame what is within your reach, so a day spread from Ikeja to Tarkwa Bay does not shrink
     // into one blob where no sign fits. Fewer than two in reach: the whole day. Hop day keeps its route in.
@@ -1046,11 +965,6 @@ export default function NightMap({
     if (!m || !ready.current) return;
     // The camera is about to fly the venue under the cursor: drop any hover card first.
     peek.current.hide();
-    // Play owns the camera. Leaving an event for Play must not ease back to where the map was.
-    if (modeRef.current === "play") {
-      before.current = null;
-      return;
-    }
     const e = eventsRef.current.find((x) => x.id === selectedId);
     if (!e) {
       if (before.current) m.easeTo({ ...before.current, duration: ms(800) });
@@ -1199,7 +1113,7 @@ export default function NightMap({
     const f = fixRef.current;
     if (!f || fixKey === lastFix.current) return;
     lastFix.current = fixKey;
-    if (selectedRef.current || modeRef.current === "play") return;
+    if (selectedRef.current) return;
     m.easeTo({ center: [f.lng, f.lat], zoom: Math.max(m.getZoom(), 11.4), duration: ms(700) });
   }, [epoch, fixKey]);
 

@@ -74,7 +74,7 @@ function SwitchRow({ label, on, line, onToggle }: { label: string; on: boolean; 
 }
 
 /**
- * Sound, Music and Buzz. Sound is the app's one mute (the speaker in Play and the button on Today are the same
+ * Sound, Music and Buzz. Sound is the app's one mute (the speaker on Today and this row are the same
  * switch, saved as hz-sound). Music is its own switch for the background loops (lib/sound/music.ts, hz-music), on by
  * default; Sound off silences it as well. Buzz is its own switch for the Android buzz (lib/haptics.ts), on by default.
  * Turning Sound or Buzz on answers with a tiny tick or tap, so the tap is felt; Music answers by starting.
