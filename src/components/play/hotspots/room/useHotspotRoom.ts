@@ -259,9 +259,9 @@ export function useHotspotRoom(slug: string) {
     void last.then(() => leaveNow());
   }, [entered, refresh, say]);
 
-  /** The sign-up sheet, and back in once there is an account. */
+  /** Route to account creation; the user can retry joining when they return. */
   const askAccount = useCallback(() => {
-    if (requireAccount("join hotspots and chat", retry)) retry();
+    if (requireAccount("join hotspots and chat")) retry();
   }, [retry]);
 
   /** The server said the avatar is not in this room: come back in, unless another screen has it somewhere else. */

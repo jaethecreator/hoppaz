@@ -114,7 +114,7 @@ export default function GameTimePing() {
           disabled={joining}
           data-gt-ping-cta
           onClick={() => {
-            if (requireAccount("join this crew", () => void join())) void join();
+            if (requireAccount("join this crew")) void join();
           }}
         >
           <DoorOpen size={18} aria-hidden /> {joining ? "JOINING…" : "JOIN AND HUNT"}

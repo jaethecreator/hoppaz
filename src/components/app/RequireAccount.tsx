@@ -1,11 +1,12 @@
 "use client";
 
-import AccountWall from "@/components/app/AccountWall";
+import { useEffect } from "react";
 import LoadingStub from "@/components/app/LoadingStub";
 import { useIntroActive, introNeedAccount } from "@/lib/intro/active";
 import { INTRO_ENABLED } from "@/lib/intro/flag";
 import { supabaseConfigured } from "@/lib/supabase/client";
 import { useSession } from "@/lib/useSession";
+import { goToAccount } from "@/lib/accountGate";
 
 /**
  * Wraps a page that needs an account (Crew, Me, the avatar editor). Anonymous
@@ -31,6 +32,10 @@ export default function RequireAccount({
 }) {
   const { hasAccount, state } = useSession();
   const touring = useIntroActive();
+  const needsAccount = supabaseConfigured() && state !== "offline" && state !== "loading" && !hasAccount && !(preview && touring);
+  useEffect(() => {
+    if (needsAccount) goToAccount(title.toLowerCase().replace(/[.!?]$/, ""), "create", caption);
+  }, [needsAccount, title, caption]);
   if (!supabaseConfigured() || state === "offline" || hasAccount) return <>{children}</>;
   if (state === "loading") {
     return (
@@ -40,7 +45,11 @@ export default function RequireAccount({
     );
   }
   if (INTRO_ENABLED && preview && touring) return <TourPreview>{children}</TourPreview>;
-  return <AccountWall title={title} caption={caption} />;
+  return (
+    <div className="h-full px-4 pt-16">
+      <LoadingStub label="Opening sign up" lines={2} />
+    </div>
+  );
 }
 
 /** The page, look only: a tap on anything that does something is turned into Paz's short "sign up first" line. */

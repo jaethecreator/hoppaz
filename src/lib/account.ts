@@ -73,6 +73,9 @@ export async function continueWithGoogle(next: string, linkGuest: boolean): Prom
   if (result.error && /manual.*link.*disabled/i.test(result.error.message)) {
     return "Google sign-up is not enabled yet. The Hoppaz admin needs to enable manual identity linking in Supabase. You can use email sign-up for now.";
   }
+  if (result.error && /identity_already_exists|identity already exists|already linked to another user/i.test(result.error.message)) {
+    return "This Google account already has a Hoppaz account. Switch to Log in and choose Continue with Google to access it.";
+  }
   return result.error?.message ?? null;
 }
 

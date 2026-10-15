@@ -62,7 +62,7 @@ export default function JoinCrew({ code }: { code: string }) {
   const onJoin = () => {
     // Marked first, so a sign-in that leaves the page (Google) comes back knowing what was asked.
     if (!hasAccount) window.history.replaceState(window.history.state, "", `${window.location.pathname}?go=1`);
-    if (requireAccount("join this crew", () => void join())) void join();
+    if (requireAccount("join this crew")) void join();
   };
 
   if (state === "loading" && !card) {
