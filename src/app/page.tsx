@@ -35,6 +35,8 @@ import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
 import { NEXT_COUNT, nextEvents } from "@/lib/filters";
 import { closeHotspots, useHotspotNav } from "@/lib/hotspots/open";
+import { useWelcomeGate } from "@/lib/welcome";
+import WelcomeTour from "@/components/welcome/WelcomeTour";
 
 // MapLibre touches window on import, so it stays out of the server bundle.
 const NightMap = dynamic(() => import("@/components/map/NightMap"), {
@@ -62,6 +64,8 @@ export default function MapPage() {
   const { fix, radiusKm, dateFilter, setDateFilter, types, setTypes } = useHoppaz();
   const { userId, refresh } = useSession();
   const [map, setMap] = useState<MLMap | null>(null);
+  // A new Hopper is taken to the first run (/welcome); once it is done, or if they have an account, the tour shows on this page.
+  useWelcomeGate();
   const { events: allEvents, demo, ready, failed, reload } = useEvents(fix, radiusKm);
   const hop = useHop();
   const { done, checkedAt, busy, checkIn } = useCheckin(userId, refresh);
@@ -412,6 +416,9 @@ export default function MapPage() {
           </div>
         </div>
       )}
+
+      {/* The first-run tour: four cards pointing at the real controls. It waits while a card or sheet has the screen. */}
+      <WelcomeTour enabled={mounted && !event && !filtering && !picking && !hopOpen && !hotspotUi} />
 
       {/* ----------------------------------------------------------- sheets -- */}
       <AreaPicker open={picking} onClose={() => setPicking(false)} showRadius />

@@ -41,6 +41,13 @@ end; avoid the waitlist tab in IMG_1951.
 
 ## 2. Sign-up: early, short and fun (no guest mode)
 
+> **Built as a first cut on `jae/map-cleanup` (15 Oct 2026).** `/welcome` runs steps 1 to 7 below and the map shows the
+> four-step tour of section 8 (`src/lib/welcome.ts`, `src/components/welcome/`). It uses the room-templates rooms, so
+> the nearest hotspot's own room (Adeola Odeku is the test room) is the peek and the place you spawn in. What is still a
+> stand-in: the room is solo (no walking server), the Hopper maker is shuffle and skin tone only, the sign-up is
+> Ola's `/account` page, and Ask Paz is a written FAQ. Every step has Skip, and Skip ends the welcome for good.
+> Test hosts: `/?welcome` starts it again.
+
 Jae chose this direction on 14 Oct: his flow, plus hooks that keep the whole city in view.
 
 1. **City splash.** About 2 seconds of Lagos at night. No buttons.
@@ -129,6 +136,10 @@ crews.
 - No "Tap your avatar" copy. Play is gone.
 
 ## 8. Tour: four steps, under a minute
+
+> Built (15 Oct 2026, `src/components/welcome/WelcomeTour.tsx`): a card with dots and Skip, a spotlight on the real
+> control (`data-tour` on the Hotspots button, the EVENTS tab and the Your home base chip), and a last card with ASK PAZ
+> and a big DONE.
 
 The first-run tour points at the real controls, with dots and Skip (Lagos Life 2035–2041):
 1. **The map:** "Events and your people, live."
