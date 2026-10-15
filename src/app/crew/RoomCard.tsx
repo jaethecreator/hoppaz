@@ -7,13 +7,15 @@ import VerifiedBadge from "@/components/VerifiedBadge";
 import { clockShort } from "@/lib/geo";
 import { useCrewCard } from "@/lib/crew-room/hub";
 import type { CrewGroup } from "@/lib/game";
+import { isMystery } from "@/lib/game-time/drops";
 import type { GtListGame } from "@/lib/game-time/types";
 import CrewPanel, { type Rsvp } from "./CrewPanel";
 
 /**
  * One of my rooms on the Rooms tab: its badge, its name (to the hub), how many are in the room right now, and the one big
  * button, ENTER ROOM. The invite code and the planned moves fold away under "INVITE AND MOVES" (CrewPanel, as it was).
- * A Game Time for this room says so on the card.
+ * A Game Time for this room says so on the card. Drop 2 onward of a mystery series (lib/game-time/drops.ts) says SOON, never
+ * a time.
  */
 export default function RoomCard({
   group,
@@ -58,7 +60,7 @@ export default function RoomCard({
           </span>
         </Link>
         {game && (
-          <span className={live ? "pill pill-lagoon flex-none" : "pill flex-none"}>{live ? "GAME TIME LIVE" : `GAME TIME ${clockShort(game.opens_at)}`}</span>
+          <span className={live ? "pill pill-lagoon flex-none" : "pill flex-none"}>{live ? "GAME TIME LIVE" : isMystery(game) ? "GAME TIME SOON" : `GAME TIME ${clockShort(game.opens_at)}`}</span>
         )}
       </div>
       <Link href={`/crew/${group.id}/room`} className="btn mt-3 w-full text-[14px] lg:w-auto lg:px-10">
