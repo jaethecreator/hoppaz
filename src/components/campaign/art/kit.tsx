@@ -732,6 +732,17 @@ const torn = (w: number, h: number, step = 6) => {
  * caps. With a `url` it shows the image inside the same frame and keyline. About 25 nodes.
  *   id   optional suffix for the clip id when a room hangs two
  */
+/** The leading whole words of `text` that fit in `max` characters (the first word is cut when even it does not fit). */
+function fitWords(text: string, max: number): string {
+  const out: string[] = [];
+  for (const word of text.trim().split(/\s+/)) {
+    const next = [...out, word].join(" ");
+    if (next.length > max) break;
+    out.push(word);
+  }
+  return out.length ? out.join(" ") : text.trim().slice(0, max);
+}
+
 export function HopFlyer({ x, y, w, h, url, title, line, uid, id }: { x: number; y: number; w: number; h: number; url?: string | null; title: string; line?: string; uid: string; id?: string }) {
   const clip = `${uid}-hopflyer${id ? `-${id}` : ""}`;
   const ix = x + 4;
@@ -740,7 +751,8 @@ export function HopFlyer({ x, y, w, h, url, title, line, uid, id }: { x: number;
   const ih = h - 8;
   const sun = { x: ix + iw * 0.7, y: iy + ih * 0.3, r: iw * 0.2 };
   const stops = [[0.12, 0.54], [0.3, 0.46], [0.47, 0.5]].map(([a, b]): [number, number] => [ix + iw * a, iy + ih * b]);
-  const t = title.toUpperCase().slice(0, 18);
+  // A narrow slot (a 2 tile flyer) keeps the leading words that fit at the smallest size, never a clipped word.
+  const t = fitWords(title.toUpperCase(), Math.max(6, Math.min(18, Math.floor((iw - 10) / (6 * 0.66)))));
   const size = Math.max(6, Math.min(iw * 0.16, (iw - 10) / Math.max(4, t.length * 0.66)));
   const wm = Math.max(4.5, iw * 0.085);
   return (
@@ -759,7 +771,7 @@ export function HopFlyer({ x, y, w, h, url, title, line, uid, id }: { x: number;
           <path d={torn(iw, ih * 0.42)} transform={`translate(${ix} ${iy + ih * 0.6})`} fill={P.night} />
           <HoppazWordmark x={ix + 4} y={iy + 3 + wm * 0.8} h={wm} fill={P.paper} />
           <text x={ix + 5} y={iy + ih * 0.8} fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize={size}>{t}</text>
-          {line && <text x={ix + 5} y={iy + ih * 0.91} fill={P.paper} fontFamily={FONT.mono} fontSize={Math.max(4, iw * 0.07)} letterSpacing=".6">{line.toUpperCase().slice(0, 24)}</text>}
+          {line && <text x={ix + 5} y={iy + ih * 0.91} fill={P.paper} fontFamily={FONT.mono} fontSize={Math.max(4, iw * 0.07)} letterSpacing=".6">{fitWords(line.toUpperCase(), Math.min(24, Math.floor((iw - 10) / (Math.max(4, iw * 0.07) * 0.6 + 0.6))))}</text>}
         </g>
       )}
       <rect x={x + 6} y={y + 6} width={w - 12} height={h - 12} fill="none" stroke={P.paper} strokeWidth="1.5" />

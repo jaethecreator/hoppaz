@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { CampaignProp } from "@/lib/campaign/layout";
 import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
-import { Defs, Floor, FONT, Frame, P, Plate, Props, Shade, StringLights, type RoomArtProps } from "./kit";
+import { BRAND_LINES, BrandSign, Defs, Floor, FONT, Frame, HopBus, P, Plate, Props, RouteLine, Shade, Stamp, StringLights, type RoomArtProps } from "./kit";
 
 /**
  * Allen Roundabout, Ikeja: a bright late afternoon in green and warm yellow. The big circular island is the room's
@@ -11,6 +11,10 @@ import { Defs, Floor, FONT, Frame, P, Plate, Props, Shade, StringLights, type Ro
  * stalls under umbrellas) and The Place GRA (a restaurant with a patio). Names, sign and palette come from the place data
  * (src/lib/rooms/hotspotRooms.ts). Same pixel look as the clubhouse: 2 px ink, top-left light, hard shadow to the lower
  * right, flat colour. Names only on the venues: no logos, no photos.
+ *
+ * The Hoppaz layer (brand kit, docs/ROOM-TEMPLATES.md "Look"): the orange Hop bus parked in its bay on the plaza (it is the
+ * `danfo-3` prop, so the id and kind stay), the route running Stop 1 in the Shrine yard to the bus, the billboard as the
+ * bounce wordmark sign, and one stamp in the yard. The Shrine banner is the room's one violet shape.
  */
 const PLACE = hotspotRoomData("ikeja");
 const SIGN = PLACE?.sign ?? "ALLEN";
@@ -45,7 +49,7 @@ const RING_ARROWS = [50, 90, 130, 230, 270, 310].map((deg, k) => {
 const ARROW = "M-9 -3H1V-7L10 0L1 7V3H-9Z";
 
 const DESTINATIONS = ["OSHODI", "YABA", "CMS", "IKEJA"];
-const UMBRELLAS: [string, string][] = [[YELLOW, GREEN], [P.orange, P.white], [GREEN, P.white]];
+const UMBRELLAS: [string, string][] = [[YELLOW, GREEN], [P.orange, P.paper], [GREEN, P.white]];
 
 /** A street palm: base at (0,0), trunk up to about -40, crown about 70 px wide. Taller than the kit's, to stand over a tile. */
 function TallPalm({ s = 1 }: { s?: number }) {
@@ -210,7 +214,7 @@ function ComputerVillage({ w, h, uid, name }: { w: number; h: number; uid: strin
           <g key={i}>
             <rect x={x} y="50" width={bw} height="9" fill={i % 2 ? P.white : YELLOW} stroke={P.ink} strokeWidth="2" />
             <rect x={x + 1} y="59" width={bw - 2} height="26" fill={NIGHT} />
-            <Plate x={x + 3} y={62} w={bw - 6} h={9} text={signs[i]} fill={GREEN} color={P.white} mono size={5.5} />
+            <Plate x={x + 3} y={62} w={bw - 6} h={9} text={signs[i]} fill={GREEN} color={P.paper} mono size={5.5} />
             <rect x={x + 5} y="74" width="7" height="10" fill={P.white} />
             <rect x={x + 15} y="74" width="7" height="10" fill={YELLOW} />
             <rect x={x + 25} y="74" width="7" height="10" fill={P.lagoonLight} />
@@ -369,18 +373,14 @@ function MapPost({ w, h }: { w: number; h: number }) {
   );
 }
 
-/** The Hoppaz billboard: orange board, night band, two legs. */
+/** The Hoppaz billboard: the brand sign (bounce wordmark on orange, HOP OR STAY on the night strip) on two legs. */
 function Billboard({ w, h }: { w: number; h: number }) {
   return (
     <g>
       <rect x="8" y="28" width={w - 6} height={h - 28} fill={P.shadow} opacity=".25" />
       <rect x="14" y="36" width="5" height={h - 38} fill={P.ink} />
       <rect x={w - 19} y="36" width="5" height={h - 38} fill={P.ink} />
-      <rect x="2" y="2" width={w - 4} height="40" fill={P.orange} stroke={P.ink} strokeWidth="2" />
-      <rect x="4" y="4" width={w - 8} height="2" fill={P.paper} opacity=".4" />
-      <text x={w / 2} y="23" textAnchor="middle" fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize="17" letterSpacing="1">HOPPAZ</text>
-      <rect x="4" y="28" width={w - 8} height="12" fill={NIGHT} />
-      <text x={w / 2} y="37" textAnchor="middle" fill={YELLOW} fontFamily={FONT.mono} fontSize="6" letterSpacing=".5">HOP OR STAY</text>
+      <BrandSign x={2} y={0} w={w - 4} h={42} wordmark tone="orange" sub={BRAND_LINES.hop} />
     </g>
   );
 }
@@ -517,6 +517,7 @@ export default function HotspotIkejaArt({ layout, uid, brand }: RoomArtProps) {
     allensign: (p, tl) => <AllenSign w={p.w * tl} h={p.h * tl} />,
     billboard: (p, tl) => <Billboard w={p.w * tl} h={p.h * tl} />,
     "entry-map-table": (p, tl) => <MapPost w={p.w * tl} h={p.h * tl} />,
+    "danfo-3": (p, tl) => <HopBus w={p.w * tl} h={p.h * tl} />,
     danfo: (p, tl) => <Danfo w={p.w * tl} h={p.h * tl} v={p.variant ?? 0} />,
     keke: (p, tl) => <Keke w={p.w * tl} flip={(p.variant ?? 0) === 1} />,
     umbrella: (p, tl) => <Umbrella w={p.w * tl} v={p.variant ?? 0} />,
@@ -574,9 +575,7 @@ export default function HotspotIkejaArt({ layout, uid, brand }: RoomArtProps) {
       <Floor uid={uid} rect={{ x: 1, y: 15, w: 7, h: 4 }} material="concrete" tile={tile} />
       <Floor uid={uid} rect={{ x: 22, y: 15, w: 7, h: 4 }} material="deck" tile={tile} />
       <path d={`M${t(1)} ${t(15)}H${t(8)}M${t(22)} ${t(15)}H${t(29)}`} stroke={P.ink} strokeWidth="2" />
-      <ellipse cx={t(4) + 16} cy={t(17) + 8} rx="52" ry="26" fill="none" stroke={GREEN} strokeWidth="4" opacity=".6" />
-      <ellipse cx={t(4) + 16} cy={t(17) + 8} rx="30" ry="14" fill="none" stroke={YELLOW} strokeWidth="4" opacity=".6" />
-      <rect x={t(16) + 6} y={t(17) + 4} width={t(5) - 12} height={t(1) - 8} fill="none" stroke={YELLOW} strokeWidth="2" strokeDasharray="8 6" />
+      <rect x={t(16) + 6} y={t(17) + 4} width={t(5) - 12} height={t(1) - 8} fill="none" stroke={P.orange} strokeWidth="2" strokeDasharray="8 6" />
 
       {/* The roads: a planted verge, the kerb, Allen Avenue, the two stubs and the ring. */}
       <ellipse cx={CX} cy={CY} rx={ROAD.rx + 20} ry={ROAD.ry + 20} fill={fill("grass")} stroke={P.ink} strokeWidth="2" />
@@ -601,10 +600,16 @@ export default function HotspotIkejaArt({ layout, uid, brand }: RoomArtProps) {
       {/* Building backs along the top, the fence and the gate's pillars are drawn with the venue. */}
       {layout.walls.map((wl, i) => <WallPiece key={i} x={t(wl.x)} y={t(wl.y)} w={t(wl.w)} h={t(wl.h)} tall={wl.h >= 2} uid={uid} />)}
 
+      {/* The Hop's route: Stop 1 in the Shrine yard (the natural first stop), along the plaza, finale at the bus in its bay. */}
+      <RouteLine points={[[144, 552], [240, 552], [400, 552], [536, 552]]} />
+
       <Props layout={layout} uid={uid} custom={custom} />
 
+      {/* A rubber stamp in the Shrine yard, under Stop 1. */}
+      <Stamp x={t(4) + 16} y={t(18) + 8} text={BRAND_LINES.hop} size={7} rotate={-5} />
+
       {/* Late sun: a warm wash over everything. */}
-      <rect width={W} height={H} fill={YELLOW} opacity=".05" />
+      <rect width={W} height={H} fill={P.orange} opacity=".05" />
     </svg>
   );
 }

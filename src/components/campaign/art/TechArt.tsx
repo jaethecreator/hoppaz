@@ -1,17 +1,34 @@
 import type { ReactNode } from "react";
 import type { CampaignProp } from "@/lib/campaign/layout";
-import { Defs, Flyer, Floor, FONT, Frame, Lineup, P, Plate, Props, Shade, Walls, type RoomArtProps } from "./kit";
+import { BRAND_LINES, Defs, Floor, FONT, Frame, HopFlyer, HoppazWordmark, Lineup, P, Plate, Props, RouteLine, Shade, Stamp, Walls, type RoomArtProps } from "./kit";
 
 /**
  * Tech event: a founders' night or a meetup in a hub or a hotel hall. A bright daytime office: cool grey tile, slate walls,
- * white and cream furniture, Hoppaz orange on the signs and the sponsor banners (one violet bean-bag, nothing else).
+ * cream and wood furniture, Hoppaz orange on the signs and the sponsor banners (the one violet shape is the flyer's sun).
  * A projector screen with a slide on the back wall, a banner with the event title over it, a stage you can walk onto,
  * session seats, demo and sponsor booths down the side walls, a coffee bar and a registration desk by the door.
+ * Hoppaz is on the selfie wall (the bounce wordmark), a stamp on the back wall and the route from the door to the stage.
  * Everything here draws from the layout (src/lib/campaign/rooms/eventTech.ts); the kit does the flyer and the agenda board.
  */
 
 type Draw = (prop: CampaignProp, tile: number) => ReactNode;
 type Size = { w: number; h: number };
+
+/**
+ * The flyer slot on the wall is two tiles wide, about 39 px of type inside HopFlyer's frame, and HopFlyer never sets its
+ * title below 6 px: keep the leading words that fit (`max` characters) so a name or a date line ends on a whole word
+ * instead of running off the paper.
+ */
+function fitWords(text: string, max: number) {
+  const words = text.trim().split(/\s+/);
+  let out = "";
+  for (const word of words) {
+    const next = out ? `${out} ${word}` : word;
+    if (next.length > max) break;
+    out = next;
+  }
+  return (out || words[0].slice(0, max + 1)).replace(/[\s·/|•,.-]+$/, "");
+}
 
 /** The slide on the big screen: a title block, three grey lines and a bar chart that ends on an orange bar. */
 function Screen({ w, h }: Size) {
@@ -20,7 +37,7 @@ function Screen({ w, h }: Size) {
     <g>
       <rect x="6" y="9" width={w - 4} height={h - 12} fill={P.shadow} opacity=".25" />
       <rect x="2" y="3" width={w - 4} height={h - 10} fill={P.night} stroke={P.ink} strokeWidth="2" />
-      <rect x="7" y="8" width={w - 14} height={h - 20} fill={P.white} />
+      <rect x="7" y="8" width={w - 14} height={h - 20} fill={P.paper} />
       <rect x="7" y="8" width={w - 14} height="2" fill={P.paper} />
       <rect x="16" y="16" width="96" height="28" fill={P.orange} stroke={P.ink} strokeWidth="2" />
       <rect x="24" y="23" width="62" height="5" fill={P.night} />
@@ -58,7 +75,7 @@ function Whiteboard({ w, h }: Size) {
     <g>
       <rect x="6" y="8" width={w - 8} height={h - 10} fill={P.shadow} opacity=".25" />
       <rect x="2" y="2" width={w - 8} height={h - 12} fill={P.slateLight} stroke={P.ink} strokeWidth="2" />
-      <rect x="5" y="5" width={w - 14} height={h - 18} fill={P.white} />
+      <rect x="5" y="5" width={w - 14} height={h - 18} fill={P.paper} />
       <rect x="10" y="10" width="18" height="11" fill="none" stroke={P.ink} strokeWidth="2" />
       <rect x="40" y="10" width="18" height="11" fill="none" stroke={P.ink} strokeWidth="2" />
       <path d="M28 15H40M54 21L62 32" stroke={P.orange} strokeWidth="2" />
@@ -77,7 +94,7 @@ function WifiSign({ w, h }: Size) {
     <g>
       <rect x="10" y="10" width={w - 10} height={h - 14} fill={P.shadow} opacity=".25" />
       <rect x="6" y="6" width={w - 12} height={h - 14} fill={P.paper} stroke={P.ink} strokeWidth="2" />
-      <rect x="8" y="8" width={w - 16} height="2" fill={P.white} />
+      <rect x="8" y="8" width={w - 16} height="2" fill={P.paper} />
       <path d="M44 27a6 6 0 0 1 8 0M39 23a12 12 0 0 1 18 0M34 19a18 18 0 0 1 28 0" fill="none" stroke={P.slate} strokeWidth="3" />
       <rect x="46" y="30" width="4" height="4" fill={P.orange} />
       <text x={w / 2} y="47" textAnchor="middle" fill={P.ink} fontFamily={FONT.mono} fontWeight={700} fontSize="8" letterSpacing=".5">WIFI: GUEST</text>
@@ -223,9 +240,9 @@ function DemoTable({ w, h, variant }: Size & { variant: number }) {
   );
 }
 
-/** A bean-bag: variant 0 ember, 1 slate, 2 violet (the room's one violet shape). */
+/** A bean-bag: variant 0 orange, 1 slate, 2 night (the room's one violet shape is the flyer's sun, not a bean-bag). */
 function Beanbag({ variant }: { variant: number }) {
-  const main = variant === 0 ? P.ember : variant === 1 ? P.slate : P.violet;
+  const main = variant === 0 ? P.orange : variant === 1 ? P.slate : P.nightCard;
   return (
     <g>
       <rect x="7" y="27" width="24" height="5" fill={P.shadow} opacity=".25" />
@@ -280,17 +297,15 @@ function SwagTable({ w, h }: Size) {
   );
 }
 
-/** A step-and-repeat backdrop on two legs, with a camera on it: the corner where everyone takes the same photo. */
-function SelfieWall({ w, h, uid }: Size & { uid: string }) {
+/** A step-and-repeat backdrop on two legs, a night board with the bounce wordmark: the corner where everyone takes the same photo. */
+function SelfieWall({ w, h }: Size) {
   return (
     <g>
       <rect x="8" y="9" width={w - 8} height={h - 14} fill={P.shadow} opacity=".25" />
       <rect x="6" y={h - 12} width="5" height="10" fill={P.ink} /><rect x={w - 17} y={h - 12} width="5" height="10" fill={P.ink} />
-      <rect x="2" y="2" width={w - 6} height={h - 12} fill={`url(#${uid}-repeat)`} stroke={P.ink} strokeWidth="2" />
-      <rect x="5" y="5" width={w - 12} height="2" fill={P.paper} opacity=".4" />
-      <rect x={w / 2 - 12} y="14" width="24" height="16" fill={P.ink} stroke={P.paper} strokeWidth="2" />
-      <circle cx={w / 2} cy="22" r="5" fill={P.slateLight} stroke={P.paper} strokeWidth="2" />
-      <rect x={w / 2 - 9} y="11" width="7" height="4" fill={P.paper} />
+      <rect x="2" y="2" width={w - 6} height={h - 12} fill={P.night} stroke={P.ink} strokeWidth="2" />
+      <rect x="5" y="5" width={w - 12} height={h - 18} fill="none" stroke={P.paper} strokeWidth="1.5" />
+      <HoppazWordmark x={w / 2 - 1} y={26} h={13} fill={P.orange} anchor="middle" />
     </g>
   );
 }
@@ -318,8 +333,8 @@ function Vending({ w, h }: Size) {
   return (
     <g>
       <rect x="6" y="8" width={w - 2} height={h - 4} fill={P.shadow} opacity=".25" />
-      <rect x="1" y="2" width={w - 2} height={h - 4} fill={P.lagoon} stroke={P.ink} strokeWidth="2" />
-      <rect x={w - 6} y="4" width="3" height={h - 8} fill={P.lagoonDark} />
+      <rect x="1" y="2" width={w - 2} height={h - 4} fill={P.night} stroke={P.ink} strokeWidth="2" />
+      <rect x={w - 6} y="4" width="3" height={h - 8} fill={P.orange} />
       <rect x="4" y="6" width="18" height="36" fill={P.ink} />
       {snacks.map((c, i) => <rect key={i} x={6 + (i % 3) * 5.5} y={9 + Math.floor(i / 3) * 12} width="4" height="7" fill={c} />)}
       <rect x="24" y="8" width="5" height="9" fill={P.ink} /><rect x="25" y="10" width="3" height="2" fill={P.paper} /><rect x="25" y="14" width="3" height="2" fill={P.paper} />
@@ -367,7 +382,7 @@ function RegDesk({ w, h }: Size) {
     <g>
       <Shade w={w} h={h} />
       <rect x="1" y="12" width={w - 2} height="19" fill={P.cream} stroke={P.ink} strokeWidth="2" />
-      <rect x="2" y="5" width={w - 4} height="14" fill={P.white} stroke={P.ink} strokeWidth="2" />
+      <rect x="2" y="5" width={w - 4} height="14" fill={P.paper} stroke={P.ink} strokeWidth="2" />
       <rect x="4" y="24" width={w - 8} height="3" fill={P.orange} />
       <rect x="6" y="-1" width="14" height="12" fill={P.wood} stroke={P.ink} strokeWidth="2" />
       {[0, 1, 2].map((i) => <g key={i}><rect x={8 + i * 4} y="1" width="3" height="6" fill={P.paper} /><rect x={8 + i * 4} y="1" width="3" height="2" fill={i === 1 ? P.orange : P.slate} /></g>)}
@@ -394,7 +409,7 @@ export default function TechArt({ layout, uid, brand, content }: RoomArtProps) {
   const sized = (p: CampaignProp, t: number): Size => ({ w: p.w * t, h: p.h * t });
 
   const custom: Record<string, Draw> = {
-    "event-flyer": (p, t) => <Flyer uid={uid} x={6} y={4} w={p.w * t - 12} h={p.h * t - 8} url={content?.flyerUrl} title={title} line={content?.line} />,
+    "event-flyer": (p, t) => <HopFlyer uid={uid} x={6} y={4} w={p.w * t - 12} h={p.h * t - 8} url={content?.flyerUrl} title={fitWords(title, 8)} line={content?.line ? fitWords(content.line, 13) : undefined} />,
     "event-lineup": (p, t) => <Lineup x={2} y={4} w={p.w * t - 4} h={p.h * t - 8} items={lineup} title="AGENDA" />,
     titlebanner: (p, t) => <TitleBanner {...sized(p, t)} title={banner} />,
     screen: (p, t) => <Screen {...sized(p, t)} />,
@@ -412,7 +427,7 @@ export default function TechArt({ layout, uid, brand, content }: RoomArtProps) {
     beanbag: (p) => <Beanbag variant={p.variant ?? 0} />,
     hightable: (p, t) => <HighTable w={p.w * t} />,
     swagtable: (p, t) => <SwagTable {...sized(p, t)} />,
-    selfiewall: (p, t) => <SelfieWall {...sized(p, t)} uid={uid} />,
+    selfiewall: (p, t) => <SelfieWall {...sized(p, t)} />,
     charger: (p, t) => <Charger {...sized(p, t)} />,
     vending: (p, t) => <Vending {...sized(p, t)} />,
     coffeebar: (p, t) => <CoffeeBar {...sized(p, t)} />,
@@ -434,11 +449,6 @@ export default function TechArt({ layout, uid, brand, content }: RoomArtProps) {
           <rect width="16" height="16" fill="#9EB1BA" />
           <path d="M0 0H16V16" fill="none" stroke="#8FA4AE" strokeWidth="1" />
           <path d="M4 5h2M11 12h2" stroke="#B3C4CB" strokeWidth="1" />
-        </pattern>
-        <pattern id={`${uid}-repeat`} width="16" height="16" patternUnits="userSpaceOnUse">
-          <rect width="16" height="16" fill={P.night} />
-          <rect x="2" y="2" width="4" height="4" fill={P.orange} />
-          <rect x="10" y="10" width="4" height="4" fill={P.paper} opacity=".7" />
         </pattern>
         <pattern id={`${uid}-chair`} width="32" height="32" patternUnits="userSpaceOnUse">
           <rect x="6" y="11" width="24" height="20" fill={P.shadow} opacity=".22" />
@@ -490,8 +500,12 @@ export default function TechArt({ layout, uid, brand, content }: RoomArtProps) {
 
       <Props layout={layout} uid={uid} custom={custom} order={(p) => (p.solid ? p.y : p.y - 100)} />
 
+      {/* The route: from the registration desk up the aisle to the stage, drawn over the floor props (the runner, the stage). */}
+      <RouteLine points={[[480, 560], [480, 470], [480, 344], [480, 232, 0], [432, 232]]} />
+      <Stamp x={662} y={90} text={BRAND_LINES.hop} size={8} />
+
       {/* The welcome mat at the bottom centre, the event's name on it. */}
-      <rect x={W / 2 - 96} y={H - tile - 33} width="192" height="20" fill={P.ink} />
+      <rect x={W / 2 - 96} y={H - tile - 33} width="192" height="20" fill={P.night} />
       <rect x={W / 2 - 94} y={H - tile - 31} width="188" height="2" fill={P.cap} />
       <text x={W / 2} y={H - tile - 19} textAnchor="middle" fill={P.cream} fontFamily={FONT.mono} fontWeight={500} fontSize={matSize} letterSpacing="1.5">{mat}</text>
 
