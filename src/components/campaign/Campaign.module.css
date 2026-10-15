@@ -235,7 +235,9 @@
   z-index: 1;
 }
 
-/* Walkers move by transform only: the browser's compositor does the moving, not layout. */
+/* Walkers move by transform only: the browser's compositor does the moving, not layout. walkMotion.ts writes the transform
+   every frame from the clock, so there is deliberately no CSS transition here: one would ease every write a second time and
+   make the walk lag, jitter and run at a different speed on a 60 Hz and a 120 Hz phone. */
 .walker {
   position: absolute;
   left: 0;
@@ -243,8 +245,6 @@
   width: 0;
   height: 0;
   pointer-events: none;
-  transition-property: transform;
-  transition-timing-function: linear;
 }
 .sprite {
   position: absolute;
@@ -379,10 +379,12 @@
   transform-origin: 50% 100%;
   animation: stampIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
 }
+/* Only a little beyond the plate: a bigger halo covers the floor and the props round a label, and a tap meant for those
+   walks to the label instead. */
 .zoneTag::before {
   content: "";
   position: absolute;
-  inset: -13px -6px;
+  inset: -4px;
 }
 .zoneTag b {
   flex: none;
@@ -442,7 +444,7 @@
 .areaTag::before {
   content: "";
   position: absolute;
-  inset: -18px -6px -10px;
+  inset: -4px;
 }
 .areaTag svg {
   flex: none;
@@ -935,9 +937,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .walker {
-    transition: none;
-  }
   .walking,
   .nudge,
   .zoneTag,

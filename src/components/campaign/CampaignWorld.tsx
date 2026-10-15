@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle } from "lucide-react";
 import GameTimeLayer from "@/components/game-time/GameTimeLayer";
 import Bubbles from "@/components/crew-room/Bubbles";
@@ -8,8 +8,8 @@ import ExitDoor from "@/components/crew-room/ExitDoor";
 import FountainSticker from "@/components/crew-room/FountainSticker";
 import PopUps from "@/components/crew-room/PopUps";
 import VibeLayer from "@/components/crew-room/VibeLayer";
-import type { Tile } from "@/lib/campaign/geometry";
-import { areaArrival, canWalkScene, privateAreaAt, scenePath, sceneSize, type CampaignLayout, type CampaignZone } from "@/lib/campaign/layout";
+import { floodFill, floodPath, nearestReachable, type Tile } from "@/lib/campaign/geometry";
+import { areaArrival, canWalkScene, privateAreaAt, sceneBlocks, scenePath, sceneSize, type CampaignLayout, type CampaignZone } from "@/lib/campaign/layout";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import type { CrewRoomConnection, RoomPeer, SocialWorld } from "@/lib/crew-room/types";
 import { deviceTier } from "@/lib/deviceTier";
@@ -17,9 +17,9 @@ import { haptics } from "@/lib/haptics";
 import { sfx } from "@/lib/sound/sfx";
 import AvatarSprite from "./AvatarSprite";
 import ClubhouseArt from "./ClubhouseArt";
-import EdgeArrows from "./EdgeArrows";
 import { RoomCamera, type CamMode } from "./roomCamera";
 import { prioritise, spritesPending, spritesReady } from "./spriteCache";
+import { Motion } from "./walkMotion";
 import css from "./Campaign.module.css";
 
 /** A walker whose last heartbeat is this old (ms) is shown as away: a locked phone or another app. The server keeps them 45 s. */
@@ -28,10 +28,9 @@ const AWAY = 25_000;
 const when = (at: string) => Date.parse(at.replace(/(\.\d{3})\d+/, "$1"));
 const isAway = (peer: RoomPeer, observedAt: string) => when(observedAt) - when(peer.last_seen) > AWAY;
 
-/** My walk: one tile per 85 ms. */
-const STEP_MS = 85;
-/** Other walkers move between the server's snapshots (about 1.5 s apart), so they glide a little longer. */
-const PEER_MS = 300;
+/** A tap is a press that stays within this many px of where it landed and is over within this many ms (a drag or a hold is not one). */
+const TAP_SLOP = 10;
+const TAP_MS = 250;
 /** Open sequence: the whole room, then a zoom to me. */
 const HOLD_MS = 1500;
 const HOLD_AGAIN_MS = 900;
@@ -61,11 +60,15 @@ type WalkerProps = {
   walking?: boolean;
   ring?: number;
   nudge?: number;
+  /** Hands the node to the motion loop (walkMotion.ts). */
+  attach: (id: string, el: HTMLElement | null) => void;
 };
 
 /**
- * One walker: one positioned node (moved by transform, so the browser's compositor does the moving), one sprite, and a
- * name tag that keeps its size on screen at every zoom (it scales by --cam-inv).
+ * One walker: one positioned node, one sprite, and a name tag that keeps its size on screen at every zoom (it scales by
+ * --cam-inv). The node is moved by transform and drawn on the compositor, but not by React and not by a CSS transition:
+ * walkMotion.ts writes its transform (and z-index) every frame from the clock. React only gives it the place it starts at;
+ * those two style values never change after that, so a re-render never puts the node back on a tile.
  */
 const Walker = memo(WalkerView, (a, b) => {
   for (const k of ["id", "x", "y", "name", "tile", "tag", "away", "me", "walking", "ring", "nudge"] as const) if (a[k] !== b[k]) return false;
@@ -73,16 +76,12 @@ const Walker = memo(WalkerView, (a, b) => {
   return a.look === b.look || JSON.stringify(a.look) === JSON.stringify(b.look);
 });
 
-function WalkerView({ id, x, y, look, name, tile, tag, away, me, walking, ring, nudge }: WalkerProps) {
-  const px = (x + 0.5) * tile;
-  const py = (y + 0.6) * tile;
+function WalkerView({ id, x, y, look, name, tile, tag, away, me, walking, ring, nudge, attach }: WalkerProps) {
+  const [first] = useState(() => ({ transform: `translate3d(${(x + 0.5) * tile}px,${(y + 0.6) * tile}px,0)`, zIndex: 10 + y }));
+  const hold = useCallback((el: HTMLDivElement | null) => attach(id, el), [attach, id]);
   const attrs = me ? { "data-player-tile": `${x},${y}` } : { "data-room-peer": id, "data-peer-tile": `${x},${y}`, "data-away": away || undefined };
   return (
-    <div
-      {...attrs}
-      className={`${css.walker} ${me ? css.me : css.peer} ${away ? css.away : ""}`}
-      style={{ transform: `translate3d(${px}px,${py}px,0)`, zIndex: 10 + y, transitionDuration: `${me ? STEP_MS : PEER_MS}ms` }}
-    >
+    <div {...attrs} ref={hold} className={`${css.walker} ${me ? css.me : css.peer} ${away ? css.away : ""}`} style={first}>
       {!!ring && <i key={ring} className={css.ring} aria-hidden />}
       <span className={`${css.sprite} ${walking ? css.walking : ""} ${nudge ? css.nudge : ""}`} style={nudge ? ({ "--nx": `${nudge}px` } as React.CSSProperties) : undefined}>
         <AvatarSprite look={look} label={me ? "Your character" : away ? `${name}'s character, away` : `${name}'s character`} />
@@ -94,10 +93,15 @@ function WalkerView({ id, x, y, look, name, tile, tag, away, me, walking, ring, 
 
 /**
  * A tap that opens something under the finger (the Hopper menu, a hint) is followed about 30 ms later by the browser's own
- * click, which would land on the thing that just opened and press its first button. Swallow that one click.
+ * click, which would land on the thing that just opened and press its first button. Swallow that one click. Only the one
+ * that lands where the finger was (a tap on the chat button a moment later, somewhere else, is its own tap), and never a
+ * keyboard click (detail 0).
  */
-function eatGhostClick() {
+function eatGhostClick(x?: number, y?: number) {
   const eat = (event: Event) => {
+    const click = event as MouseEvent;
+    if (click.detail === 0) return;
+    if (x !== undefined && y !== undefined && Math.hypot(click.clientX - x, click.clientY - y) > 48) return;
     event.stopPropagation();
     event.preventDefault();
     window.removeEventListener("click", eat, true);
@@ -139,14 +143,13 @@ export default function CampaignWorld({
   const camRef = useRef<RoomCamera | null>(null);
   const start = social?.reset ? { x: social.reset.x, y: social.reset.y } : layout.spawn;
   const [player, setPlayer] = useState<Tile>(start);
+  /** The tile I am on, or (mid-step) heading to: where the next path starts from. What is drawn lags it by up to one tile. */
   const current = useRef<Tile>(start);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [walking, setWalking] = useState(false);
   const [destination, setDestination] = useState<Tile | null>(null);
   const [lod, setLod] = useState(0);
   const [ring, setRing] = useState(0);
   const [nudge, setNudge] = useState(0);
-  const sheet = useRoomStore((s) => s.sheet);
   const [bump, setBump] = useState<{ x: number; y: number; k: number } | null>(null);
   const [say, setSay] = useState("");
   const uid = useId().replace(/:/g, "");
@@ -155,6 +158,30 @@ export default function CampaignWorld({
   const watching = !!social?.watching;
   const watchingRef = useRef(watching);
   watchingRef.current = watching;
+  const socialRef = useRef(social);
+  socialRef.current = social;
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+  /** Set when a press begins on a zone or area pill, so only a click that follows a real press on one walks (never a ghost click). */
+  const pillArmed = useRef(0);
+  // How I and everyone else move (walkMotion.ts): on the clock, one transform write a frame, no CSS transitions.
+  const [motion] = useState(
+    () =>
+      new Motion(layout.grid.tile, start, {
+        step: (next) => {
+          const s = socialRef.current;
+          return s ? s.onStep(next) : true;
+        },
+        began: (next) => {
+          current.current = next;
+        },
+        arrived: (next) => setPlayer(next),
+        walking: setWalking,
+        follow: (px, py) => camRef.current?.follow(px, py),
+        stopped: () => setDestination(null),
+      }),
+  );
+  useEffect(() => () => motion.dispose(), [motion]);
   const phase = useRef<"init" | "hold" | "zoom" | "done" | "watching">("init");
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const zoomInRef = useRef<(ms: number) => void>(() => {});
@@ -192,6 +219,7 @@ export default function CampaignWorld({
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const cam = new RoomCamera(world, layer, scene.width, scene.height, tile);
     cam.reduced = reduced;
+    motion.reduced = reduced;
     cam.onMode = (mode: CamMode) => useRoomStore.getState().setView(mode === "follow" ? "me" : "full");
     cam.onScale = (s) => {
       const n = s >= NEAR_AREAS ? 2 : s >= NEAR ? 1 : 0;
@@ -201,9 +229,11 @@ export default function CampaignWorld({
     // A new camera starts a new opening (React runs effects twice in development).
     phase.current = "init";
     const fit = () => {
-      const r = el.getBoundingClientRect();
-      if (r.width < 10 || r.height < 10) return;
-      cam.setViewport(r.width, r.height, r.height - useRoomStore.getState().sheetHeight);
+      // The stage's own layout size, not its bounding box: a page transition or a zoom on a parent scales the box, never the layout.
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w < 10 || h < 10) return;
+      cam.setViewport(w, h, h - useRoomStore.getState().sheetHeight);
       cam.paintNow();
       world.dataset.ready = "1";
     };
@@ -244,7 +274,7 @@ export default function CampaignWorld({
       camRef.current = null;
       if (holdTimer.current) clearTimeout(holdTimer.current);
     };
-  }, [scene.width, scene.height, tile, crewId, setPhase, skipOpen]);
+  }, [scene.width, scene.height, tile, crewId, setPhase, skipOpen, motion]);
 
   // The open sequence: the whole room for a moment, then a zoom to me at the entrance. A full room only looks on.
   useEffect(() => {
@@ -285,67 +315,62 @@ export default function CampaignWorld({
     };
   }, [watching, crewId, setPhase, scene.width, scene.height, tile]);
 
-  // Follow my avatar.
-  useEffect(() => {
-    camRef.current?.follow((player.x + 0.5) * tile, (player.y + 0.5) * tile);
-  }, [player, tile]);
-
   // ---- Walking -------------------------------------------------------------------------------------------------
+  // The server put me somewhere (I came in, or it and this phone disagreed about where I stand): stand there and stop. A
+  // report of the tile I am already heading for changes nothing, so a walk is never cut short by an echo.
   useEffect(() => {
     if (!social?.reset) return;
-    if (timer.current) clearTimeout(timer.current);
     const t = { x: social.reset.x, y: social.reset.y };
+    if (t.x === current.current.x && t.y === current.current.y) return;
     current.current = t;
+    motion.snapMe(t);
     setPlayer(t);
-    setWalking(false);
     setDestination(null);
-  }, [social?.reset]);
+  }, [social?.reset, motion]);
 
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
+  // Everyone else glides to where the server last put them, along the room's tiles (walkMotion.ts).
+  useLayoutEffect(() => {
+    motion.syncPeers(peers, (from, to) => scenePath(layout, from, to));
+  }, [peers, layout, motion]);
+
+  const blocks = useMemo(() => sceneBlocks(layout), [layout]);
+
+  /**
+   * Where a tap on a tile sends me, and the path there: the tile itself when it is floor I can reach; otherwise (a prop, a
+   * shrub, a chair, a wall edge) the tile beside it that is the fewest steps from where I am. Null only when nothing
+   * within reach of it can be walked to. `point` is the finger in scene px, for breaking ties.
+   */
+  const aim = useCallback(
+    (tx: number, ty: number, point: { x: number; y: number }): { to: Tile; path: Tile[] } | null => {
+      const walkable = (x: number, y: number) => canWalkScene(layout, { x, y });
+      const flood = floodFill(current.current, layout.grid.width, layout.grid.height, walkable);
+      const to = nearestReachable(flood, { x: tx, y: ty }, point, tile, blocks);
+      const path = to ? floodPath(flood, to) : null;
+      return to && path ? { to, path } : null;
     },
-    [],
+    [layout, tile, blocks],
   );
 
-  const move = useCallback(
-    (to: Tile, after?: () => void): boolean => {
-      if (social?.watching) return false;
-      const path = scenePath(layout, current.current, to);
-      if (!path) return false;
-      if (timer.current) clearTimeout(timer.current);
-      setWalking(false);
+  /** Walk along a path: the one place a walk starts. The destination ring shows where it ends. */
+  const walkPath = useCallback(
+    (path: Tile[], to: Tile) => {
       setDestination(path.length ? to : null);
-      if (!path.length) {
-        after?.();
-        return true;
-      }
-      setWalking(true);
-      useRoomStore.getState().setWalked();
-      const step = () => {
-        const next = path[0];
-        if (!next) {
-          setWalking(false);
-          setDestination(null);
-          after?.();
-          return;
-        }
-        // The server has not taken the last step yet (no connection): wait and keep walking.
-        if (social && !social.onStep(next)) {
-          setWalking(false);
-          timer.current = setTimeout(step, 200);
-          return;
-        }
-        path.shift();
-        setWalking(true);
-        current.current = next;
-        setPlayer(next);
-        timer.current = setTimeout(step, STEP_MS);
-      };
-      step();
+      if (path.length) useRoomStore.getState().setWalked();
+      motion.go(path);
+    },
+    [motion],
+  );
+
+  /** Walk to a tile, or to the nearest one beside it. */
+  const move = useCallback(
+    (to: Tile): boolean => {
+      if (watchingRef.current) return false;
+      const goal = aim(to.x, to.y, { x: (to.x + 0.5) * tile, y: (to.y + 0.5) * tile });
+      if (!goal) return false;
+      walkPath(goal.path, goal.to);
       return true;
     },
-    [layout, social],
+    [aim, walkPath, tile],
   );
   const moveRef = useRef(move);
   moveRef.current = move;
@@ -357,24 +382,10 @@ export default function CampaignWorld({
     else if (cam.mode !== "follow") cam.goFollow(450);
   }, [skipOpen]);
 
-  /** The nearest walkable tile within one tile of the one tapped (closest to the tap point first) that I can reach. */
-  const snap = useCallback(
-    (tx: number, ty: number, at?: { x: number; y: number }): Tile | null => {
-      const px = at?.x ?? (tx + 0.5) * tile;
-      const py = at?.y ?? (ty + 0.5) * tile;
-      const options: Tile[] = [];
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (canWalkScene(layout, { x: tx + dx, y: ty + dy })) options.push({ x: tx + dx, y: ty + dy });
-      const dist = (c: Tile) => Math.hypot((c.x + 0.5) * tile - px, (c.y + 0.5) * tile - py);
-      options.sort((a, b) => dist(a) - dist(b));
-      return options.find((c) => scenePath(layout, current.current, c)) ?? null;
-    },
-    [layout, tile],
-  );
-
   /** A tap with nowhere to go: a tiny bump, an X where I pressed and a one second hint. No status line. */
   const bumpAt = useCallback(
-    (sceneX: number, sceneY: number) => {
-      eatGhostClick();
+    (sceneX: number, sceneY: number, clientX?: number, clientY?: number) => {
+      eatGhostClick(clientX, clientY);
       setBump({ x: sceneX, y: sceneY, k: Date.now() });
       setNudge(sceneX >= (current.current.x + 0.5) * tile ? 3 : -3);
       window.setTimeout(() => setNudge(0), 160);
@@ -388,12 +399,12 @@ export default function CampaignWorld({
   const walkToTile = useCallback(
     (x: number, y: number) => {
       if (watchingRef.current) return;
-      const target = snap(x, y);
-      if (!target) return;
+      const goal = aim(x, y, { x: (x + 0.5) * tile, y: (y + 0.5) * tile });
+      if (!goal) return;
       ensureFollow();
-      moveRef.current(target);
+      walkPath(goal.path, goal.to);
     },
-    [snap, ensureFollow],
+    [aim, walkPath, ensureFollow, tile],
   );
 
   // The room store lets the screen chrome (outside this scaled world) see my tile and walk me: Game Time's banner and
@@ -427,16 +438,18 @@ export default function CampaignWorld({
     if (place) setSay(`You are in ${shortName(place)}`);
   }, [zoneId, hereArea, layout.zones]);
 
-  // A conversation area picked from the chat sheet (visit) arrives as a destination.
+  // A conversation area picked from the chat sheet (visit) arrives as a destination. Each one is walked once: a new snapshot
+  // (or a parent that has not cleared it yet) must never send me there again.
   const socialDestination = social?.destination;
-  const socialDestinationHandled = social?.onDestinationHandled;
+  const walkedDestination = useRef<Tile | null>(null);
   useEffect(() => {
-    if (!socialDestination) return;
-    const area = privateAreaAt(layout, socialDestination);
+    if (!socialDestination || walkedDestination.current === socialDestination) return;
+    walkedDestination.current = socialDestination;
+    const area = privateAreaAt(layoutRef.current, socialDestination);
     ensureFollow();
-    move(area ? areaArrival(layout, area, socialPeers?.filter((p) => p.id !== socialSelf) ?? [], current.current) : socialDestination);
-    socialDestinationHandled?.();
-  }, [socialDestination, socialDestinationHandled, socialPeers, socialSelf, layout, move, ensureFollow]);
+    moveRef.current(area ? areaArrival(layoutRef.current, area, peersRef.current, current.current) : socialDestination);
+    socialRef.current?.onDestinationHandled?.();
+  }, [socialDestination, ensureFollow]);
 
   const chooseZone = useCallback(
     (zone: CampaignZone) => {
@@ -460,43 +473,71 @@ export default function CampaignWorld({
     [layout, move, ensureFollow],
   );
 
+  /**
+   * A zone or area label walks me only when a press began on a label a moment ago (the input effect arms it), or when it is a
+   * keyboard or screen reader click (detail 0). A click with no press before it (the ghost click after a menu closes
+   * under the finger) is not mine to obey.
+   */
+  const pillClick = useCallback((event: React.MouseEvent, go: () => void) => {
+    const armed = performance.now() - pillArmed.current < 600;
+    pillArmed.current = 0;
+    if (event.detail === 0 || armed) go();
+  }, []);
+
   // ---- Input: tap to walk, drag to look, pinch and wheel to zoom --------------------------------------------------
+  // What a finger does is decided once, when it lands: where in the scene it is (read off the camera as it was drawn at that
+  // instant, so a camera that is moving after me does not move the tap), and which Hoppers were under it. When it lifts,
+  // it is a tap if it stayed within TAP_SLOP px and TAP_MS; anything else is a drag, a hold or a pinch and never a walk.
   useEffect(() => {
     const el = viewportRef.current;
     const cam = camRef.current;
     if (!el || !cam) return;
-    const pts = new Map<number, { x: number; y: number }>();
-    let down: { id: number; x: number; y: number; t: number; moved: boolean; object: boolean } | null = null;
-    /** Pointers that began on a room object (the door plate, the fountain sticker), and whether a pinch used any of them. */
-    const objectPointers = new Set<number>();
-    let objectPinched = false;
+    type Pt = { x: number; y: number };
+    type Hit = { p: RoomPeer; d: number };
+    /** floor: a press on the room (or on a label that sits over a prop); object / pill: a press on a thing that has its own tap. */
+    type Kind = "floor" | "object" | "pill";
+    type Down = { id: number; x: number; y: number; t: number; moved: boolean; kind: Kind; via: boolean; scene: Pt; hits: Hit[] };
+    const pts = new Map<number, Pt>();
+    let down: Down | null = null;
+    /** Pointers that began on an object or a pill (not captured: the thing takes the click), and whether a pinch used any of them. */
+    const loose = new Set<number>();
+    let loosePinched = false;
     let pinch: { d0: number; s0: number; sx: number; sy: number } | null = null;
-    let lastTap = { t: 0, x: 0, y: 0 };
-    const rel = (cx: number, cy: number) => {
+    // Stage coordinates (px from the stage's top left corner). The stage's own rect is read at every press, so the header, the
+    // safe areas and a page that is still sliding in never shift a tap; a scaled ancestor is divided out. devicePixelRatio does
+    // not enter: pointer events, layout and the camera all count CSS px.
+    const rel = (cx: number, cy: number): Pt => {
       const r = el.getBoundingClientRect();
-      return { x: cx - r.left, y: cy - r.top };
+      const kx = el.offsetWidth ? r.width / el.offsetWidth : 1;
+      const ky = el.offsetHeight ? r.height / el.offsetHeight : 1;
+      return { x: (cx - r.left) / (kx || 1), y: (cy - r.top) / (ky || 1) };
     };
     // Buttons, links and anything marked data-hit (a zone tag, the sticker, the door plate) take their own taps.
     const interactive = (target: EventTarget | null) => target instanceof Element && !!target.closest('button, a, input, textarea, select, [role="button"], [data-hit]');
+    const solidAt = (t: Tile) => !canWalkScene(layout, t);
 
     /**
-     * The Hopper under a point in the viewport, if any: a 44 px target around the avatar at whatever zoom. Avatars stacked
-     * on one spot (the entrance fills up) are told apart by tapping again: `cycle` hands the tap to the next one under the
-     * finger each time, so the one at the bottom of the pile can be picked too.
+     * The Hoppers under a point in the stage, nearest first: a 44 px target around the avatar at whatever zoom, at the spot
+     * the avatar is drawn (it may be mid-glide). Avatars stacked on one spot (the entrance fills up) are told apart by
+     * tapping again: `pickPeer` hands the tap to the next one under the finger each time, so the one at the bottom of the
+     * pile can be picked too.
      */
-    let lastPick = { id: "", t: 0 };
-    const peerAt = (x: number, y: number, cycle = false): RoomPeer | null => {
+    const peersAt = (x: number, y: number): Hit[] => {
       const reach = Math.max(14, Math.min(26, 30 * cam.s));
-      const found: { p: RoomPeer; d: number }[] = [];
+      const found: Hit[] = [];
       for (const p of peersRef.current) {
-        const at = cam.sceneToScreen((p.x + 0.5) * tile, (p.y + 0.5) * tile - 24);
+        const v = motion.point(p.id) ?? p;
+        const at = cam.sceneToScreen((v.x + 0.5) * tile, (v.y + 0.5) * tile - 24);
         const d = Math.hypot(at.x - x, at.y - y);
         if (d < reach) found.push({ p, d });
       }
+      return found.sort((a, b) => a.d - b.d || (a.p.id < b.p.id ? -1 : 1));
+    };
+    let lastPick = { id: "", t: 0 };
+    const pickPeer = (found: Hit[]): RoomPeer | null => {
       if (!found.length) return null;
-      found.sort((a, b) => a.d - b.d || (a.p.id < b.p.id ? -1 : 1));
       const pile = found.filter((f) => f.d - found[0].d < 7);
-      if (!cycle || pile.length < 2) return found[0].p;
+      if (pile.length < 2) return found[0].p;
       pile.sort((a, b) => (a.p.id < b.p.id ? -1 : 1));
       const prev = performance.now() - lastPick.t < 6000 ? pile.findIndex((f) => f.p.id === lastPick.id) : -1;
       const pick = pile[(prev + 1) % pile.length].p;
@@ -504,64 +545,73 @@ export default function CampaignWorld({
       return pick;
     };
 
-    const tap = (cx: number, cy: number) => {
-      const { x, y } = rel(cx, cy);
+    const tap = (d: Down) => {
+      // A label over a prop gave this tap to the prop: the label's own click must not also walk me to the label's place.
+      if (d.via) eatGhostClick(d.x, d.y);
       // Any tap during the whole-room moment shortens it, and is not a walk.
       if (phase.current === "hold") {
         skipOpen(500);
         return;
       }
-      const now = performance.now();
-      if (now - lastTap.t < 300 && Math.hypot(x - lastTap.x, y - lastTap.y) < 28) {
-        lastTap = { t: 0, x: 0, y: 0 };
-        // Double tap: in close on that spot, or back to me.
-        if (cam.s < cam.followScale * 1.3) cam.zoomAbout(x, y, Math.min(2.2, cam.followScale * 1.8), 320);
-        else cam.goFollow(450);
-        return;
-      }
-      lastTap = { t: now, x, y };
-      // Another Hopper under the finger: a 44 px target around the avatar at whatever zoom. Close up the menu opens on
-      // them; from far away the first tap just flies in.
-      const hit = peerAt(x, y, true);
+      // Another Hopper under the finger. Close up the menu opens on them; from far away the first tap just flies in.
+      const hit = pickPeer(d.hits);
       if (hit) {
         if (cam.s >= NEAR) {
-          eatGhostClick();
+          eatGhostClick(d.x, d.y);
           useRoomStore.getState().setTappedPeer(hit.id);
+        } else {
+          const v = motion.point(hit.id) ?? hit;
+          cam.focus((v.x + 0.5) * tile, (v.y + 0.5) * tile, 650);
         }
-        else cam.focus((hit.x + 0.5) * tile, (hit.y + 0.5) * tile, 650);
         return;
       }
-      const at = cam.screenToScene(x, y);
-      const tx = Math.floor(at.x / tile);
-      const ty = Math.floor(at.y / tile);
+      const at = d.scene;
+      // The stage shows up to half a tile of dark beyond the scene; further out than that is nothing to walk to.
+      const inScene = at.x >= -tile / 2 && at.y >= -tile / 2 && at.x <= scene.width + tile / 2 && at.y <= scene.height + tile / 2;
+      const tx = Math.min(layout.grid.width - 1, Math.max(0, Math.floor(at.x / tile)));
+      const ty = Math.min(layout.grid.height - 1, Math.max(0, Math.floor(at.y / tile)));
       if (watchingRef.current) {
-        eatGhostClick();
+        eatGhostClick(d.x, d.y);
         useRoomStore.getState().pushPopup({ id: "bump", title: "ROOM'S FULL", body: "You walk in when a spot opens.", tile: { x: tx, y: ty }, ttlMs: 1600 });
         return;
       }
-      const target = tx >= 0 && ty >= 0 && tx < layout.grid.width && ty < layout.grid.height ? snap(tx, ty, at) : null;
-      if (!target) {
-        bumpAt(at.x, at.y);
+      const goal = inScene ? aim(tx, ty, at) : null;
+      if (!goal) {
+        bumpAt(at.x, at.y, d.x, d.y);
         return;
       }
       ensureFollow();
-      moveRef.current(target);
+      // Already beside it: a ring at my feet says the tap was heard.
+      if (!goal.path.length) setRing((n) => n + 1);
+      walkPath(goal.path, goal.to);
     };
 
     const onDown = (e: PointerEvent) => {
-      let onObject = false;
-      if (interactive(e.target)) {
-        // The door plate and the fountain sticker sit under the avatars, and the sticker is big. A Hopper standing over one
-        // is tapped as a Hopper (the tap then swallows the click that follows, so the plate does not also leave the room).
-        // Anything else on one keeps its own tap, but a drag or a pinch that starts on it still moves the camera.
-        const object = e.target instanceof Element && e.target.closest("[data-room-object]");
-        if (!object) return;
-        const at = rel(e.clientX, e.clientY);
-        if (!(cam.s >= NEAR && peerAt(at.x, at.y))) onObject = true;
-      }
       if (e.pointerType === "mouse" && e.button !== 0) return;
+      const target = e.target instanceof Element ? e.target : null;
+      const at = rel(e.clientX, e.clientY);
+      const scene = cam.screenToScene(at.x, at.y);
+      const hits = peersAt(at.x, at.y);
+      let kind: Kind = "floor";
+      let via = false;
+      if (interactive(target)) {
+        const pill = target?.closest("[data-zone-tag], [data-area-tag]");
+        const object = target?.closest("[data-room-object]");
+        if (pill) {
+          // A label sitting on a wall or a prop (the Courtyard Corner tag over the shrub) is that prop's tap: the label gives
+          // way. On open floor it is the label's own tap, and a drag from it still moves the camera.
+          if (solidAt({ x: Math.floor(scene.x / tile), y: Math.floor(scene.y / tile) })) via = true;
+          else kind = "pill";
+        } else if (object) {
+          // The door plate and the fountain sticker sit under the avatars, and the sticker is big. A Hopper standing over
+          // one is tapped as a Hopper (the tap then swallows the click that follows, so the plate does not also leave the
+          // room). Anything else on one keeps its own tap, but a drag or a pinch that starts on it still moves the camera.
+          if (cam.s >= NEAR && hits.length) via = true;
+          else kind = "object";
+        } else return;
+      }
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (onObject) objectPointers.add(e.pointerId);
+      if (kind !== "floor") loose.add(e.pointerId);
       else {
         try {
           el.setPointerCapture(e.pointerId);
@@ -569,10 +619,12 @@ export default function CampaignWorld({
           /* a synthetic pointer: no capture, the gesture still works */
         }
       }
-      if (pts.size === 1) down = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), moved: false, object: onObject };
+      if (kind === "pill") pillArmed.current = performance.now();
+      if (pts.size === 1) down = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), moved: false, kind, via, scene, hits };
       else if (pts.size === 2) {
         down = null;
-        if (objectPointers.size) objectPinched = true;
+        pillArmed.current = 0;
+        if (loose.size) loosePinched = true;
         const [a, b] = [...pts.values()];
         const m = rel((a.x + b.x) / 2, (a.y + b.y) / 2);
         const sc = cam.screenToScene(m.x, m.y);
@@ -592,8 +644,9 @@ export default function CampaignWorld({
         const m = rel((a.x + b.x) / 2, (a.y + b.y) / 2);
         cam.pinch(pinch.s0, Math.hypot(a.x - b.x, a.y - b.y) / pinch.d0, pinch.sx, pinch.sy, m.x, m.y);
       } else if (down && down.id === e.pointerId) {
-        if (!down.moved && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) {
+        if (!down.moved && Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP) {
           down.moved = true;
+          pillArmed.current = 0;
           if (phase.current === "hold") skipOpen(0);
           cam.panBy(e.clientX - down.x, e.clientY - down.y);
           return;
@@ -601,30 +654,36 @@ export default function CampaignWorld({
         if (down.moved) cam.panBy(dx, dy);
       }
     };
+    const endPinch = () => {
+      pinch = null;
+      cam.pinchEnd();
+      // A finger left on the glass keeps dragging the camera, and lifting it is never a tap.
+      const rest = [...pts.entries()][0];
+      if (rest) down = { id: rest[0], x: rest[1].x, y: rest[1].y, t: 0, moved: true, kind: "floor", via: false, scene: { x: 0, y: 0 }, hits: [] };
+    };
     const onUp = (e: PointerEvent) => {
       if (!pts.delete(e.pointerId)) return;
-      const fromObject = objectPointers.delete(e.pointerId);
-      if (pinch && pts.size < 2) {
-        pinch = null;
-        cam.pinchEnd();
-      }
+      const fromLoose = loose.delete(e.pointerId);
+      if (pinch && pts.size < 2) endPinch();
       if (down && down.id === e.pointerId) {
         const d = down;
         down = null;
-        // A drag that began on an object is a camera move, not a press on it.
-        if (d.moved && d.object) eatGhostClick();
-        else if (!d.moved && !d.object && performance.now() - d.t < 450) tap(e.clientX, e.clientY);
-      } else if (fromObject && objectPinched) eatGhostClick();
-      if (!pts.size) objectPinched = false;
+        if (d.kind === "floor") {
+          const still = !d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) <= TAP_SLOP;
+          if (still && performance.now() - d.t <= TAP_MS) tap(d);
+          else if (d.via) eatGhostClick(d.x, d.y);
+        } else if (d.moved) {
+          // A drag that began on an object or a pill is a camera move, not a press on it.
+          eatGhostClick(d.x, d.y);
+        } else if (d.kind === "pill") pillArmed.current = performance.now();
+      } else if (fromLoose && loosePinched) eatGhostClick(e.clientX, e.clientY);
+      if (!pts.size) loosePinched = false;
     };
     const onCancel = (e: PointerEvent) => {
       pts.delete(e.pointerId);
-      objectPointers.delete(e.pointerId);
+      loose.delete(e.pointerId);
       if (down?.id === e.pointerId) down = null;
-      if (pinch && pts.size < 2) {
-        pinch = null;
-        cam.pinchEnd();
-      }
+      if (pinch && pts.size < 2) endPinch();
     };
     const onWheel = (e: WheelEvent) => {
       if (interactive(e.target)) return;
@@ -645,7 +704,7 @@ export default function CampaignWorld({
       el.removeEventListener("pointercancel", onCancel);
       el.removeEventListener("wheel", onWheel);
     };
-  }, [layout, tile, snap, bumpAt, ensureFollow, skipOpen, scene.width]);
+  }, [layout, tile, aim, bumpAt, ensureFollow, skipOpen, walkPath, motion, scene.width, scene.height]);
 
   // Desktop: arrow keys and WASD walk one tile. Nothing happens while a field has focus or a dialog is open.
   useEffect(() => {
@@ -771,9 +830,9 @@ export default function CampaignWorld({
             <div className={css.walkers}>
               {drawn.map((peer) => {
                 const away = !!social && isAway(peer, observedAt);
-                return <Walker key={peer.id} id={peer.id} x={peer.x} y={peer.y} look={peer.look} name={peer.name} tile={tile} tag={tagged.has(peer.id)} away={away} />;
+                return <Walker key={peer.id} id={peer.id} x={peer.x} y={peer.y} look={peer.look} name={peer.name} tile={tile} tag={tagged.has(peer.id)} away={away} attach={motion.attach} />;
               })}
-              {!watching && <Walker id="me" me x={player.x} y={player.y} look={look} name="You" tile={tile} tag={lod >= 1} walking={walking} ring={ring} nudge={nudge} />}
+              {!watching && <Walker id="me" me x={player.x} y={player.y} look={look} name="You" tile={tile} tag={lod >= 1} walking={walking} ring={ring} nudge={nudge} attach={motion.attach} />}
             </div>
             <div className={css.tags}>
               {layout.zones.filter((zone) => shownZones.has(zone.id)).map((zone) => {
@@ -788,7 +847,7 @@ export default function CampaignWorld({
                     className={`${css.zoneTag} ${inside ? css.zoneTagHere : ""}`}
                     style={{ left: (zone.plaque.x + 0.5) * tile, top: (zone.id === "courtyard" ? zone.y : zone.plaque.y) * tile - 6 + (zone.id === "courtyard" ? -12 : 0) }}
                     aria-label={`${zone.name}${n ? `, ${n} here` : ""}. Walk there.`}
-                    onClick={() => chooseZone(zone)}
+                    onClick={(e) => pillClick(e, () => chooseZone(zone))}
                   >
                     <span>{shortName(zone.name)}</span>
                     {n > 0 && <b>{n}</b>}
@@ -809,7 +868,7 @@ export default function CampaignWorld({
                       className={`${css.areaTag} ${inside ? css.areaTagHere : ""}`}
                       style={{ left: area.x * tile + 2, top: area.y * tile }}
                       aria-label={`${area.name}. Walk in to chat here.`}
-                      onClick={() => chooseArea(area.id)}
+                      onClick={(e) => pillClick(e, () => chooseArea(area.id))}
                     >
                       <MessageCircle size={12} aria-hidden />
                       <span>{area.name.replace(/^Listening /, "")}</span>
@@ -825,7 +884,6 @@ export default function CampaignWorld({
             <div className={css.cards}>{cards}</div>
           </div>
         </div>
-        <EdgeArrows layout={layout} camRef={camRef} enabled={opened && lod >= 1 && !watching && sheet !== "full"} onGo={chooseZone} />
         <p className="sr-only" role="status" aria-live="polite">
           {walking ? "Walking" : say}
         </p>

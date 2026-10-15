@@ -131,6 +131,10 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
     let lastBeat = 0;
     let lastTry = 0;
     let retryAt = 0;
+    /** Where the server last said this walker stands. Steps I have taken but it has not heard of yet are ahead of it. */
+    let ack: Tile | null = null;
+    /** The steps in hand were thrown away (the server refused them): the next snapshot says where I stand, whatever it is. */
+    let resync = false;
     let token: string | null = null;
     walking.current = false;
     queue.current = [];
@@ -167,12 +171,22 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
         stop("replaced", "room_session_replaced");
         return;
       }
-      if ((force || version.current !== data.room.version) && data.self) {
-        queue.current = [];
-        batch.current = null;
-        sequence.current = data.self.seq;
+      if (data.self) {
         const at = data.self;
-        setReset((old) => ({ x: at.x, y: at.y, revision: old.revision + 1 }));
+        // The room's version moves for every owner edit (a caption, the fountain's ribbon), and the server's position is
+        // always a little behind mine while I walk. Neither is a reason to move anyone. I am put on the server's tile only
+        // when it is not a tile I have walked (or am about to be told I walked): it was moved (a new width or template sends
+        // everyone to the entrance), I entered again, or the steps in hand were refused.
+        const ahead = (t: Tile) => t.x === at.x && t.y === at.y;
+        const known = !!ack && (ahead(ack) || !!batch.current?.steps.some(ahead) || queue.current.some(ahead));
+        if (force || resync || !known) {
+          queue.current = [];
+          batch.current = null;
+          resync = false;
+          sequence.current = at.seq;
+          setReset((old) => ({ x: at.x, y: at.y, revision: old.revision + 1 }));
+        }
+        ack = { x: at.x, y: at.y };
       }
       version.current = data.room.version;
       current.current = data;
@@ -268,10 +282,21 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
           } else if (/room_session_replaced/.test(problem.message)) stop("replaced", problem.message);
           else if (/not_in_crew|need_account/.test(problem.message)) stop("error", problem.message);
           else if (/invalid_movement|invalid_sequence|moving_too_fast/.test(problem.message)) {
+            // The server and this phone disagree about where I stand. Drop the steps in hand, take no more until the server
+            // has said where I am, and stand there.
             queue.current = [];
             batch.current = null;
+            resync = true;
+            walking.current = false;
             const fresh = await sb.rpc("crew_room_state", { p_crew: crewId });
-            if (!stopped && fresh.data) apply(fresh.data as RoomSnapshot, true);
+            if (!stopped && mine === session && fresh.data) {
+              apply(fresh.data as RoomSnapshot, true);
+              walking.current = !!session;
+            } else {
+              // No answer: the next beat asks again.
+              retryAt = Date.now() + BACKOFF;
+              lastBeat = 0;
+            }
           } else {
             walking.current = false;
             setConnected(false);
@@ -279,11 +304,13 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
           }
           return;
         }
+        const snap = data as RoomSnapshot;
+        // The server has these steps now: its position is where the batch ended, which is not "behind" me any more.
+        if (snap.self && snap.room.version >= version.current && !resync) ack = { x: snap.self.x, y: snap.self.y };
         if (batch.current === request) {
           queue.current.splice(0, request.steps.length);
           batch.current = null;
         }
-        const snap = data as RoomSnapshot;
         if (snap.room.version >= version.current && snap.self) sequence.current = snap.self.seq;
         lastBeat = Date.now();
         apply(snap);
