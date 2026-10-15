@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { clockText, useServerNow } from "@/lib/game-time/clock";
 import { openTicket } from "@/lib/game-time/controller";
+import { isMystery, ticketsLeft } from "@/lib/game-time/drops";
 import { useGameTime } from "@/lib/game-time/store";
 import type { GtBlocked, GtGame, GtOverReason } from "@/lib/game-time/types";
 import css from "./GameTime.module.css";
@@ -84,6 +85,24 @@ function BannerBody({ isWatcher }: { isWatcher: boolean }) {
           GAME TIME
         </span>
         <b className={css.title} style={{ gridColumn: "1 / -1" }}>GAME TIME PAUSED</b>
+      </div>
+    );
+  }
+
+  if (game.status === "upcoming" && isMystery(game)) {
+    // Drop 2 onward: no countdown and no "starting soon", which would tell the time. Just the count of tickets left.
+    const left = ticketsLeft(game) ?? 0;
+    return (
+      <div className={css.banner} data-gt-banner="upcoming" data-mystery>
+        <span className={css.label}>
+          <i className={`${css.dotLive} ${css.dotOff}`} />
+          GAME TIME
+        </span>
+        <span className={css.count}>
+          <span className={css.countKicker}>CAN DROP</span>
+          <span>SOON</span>
+        </span>
+        <b className={css.title}>{me.blocked ? BLOCKED_WORD[me.blocked] : `${left} ${left === 1 ? "TICKET" : "TICKETS"} LEFT · ${game.title}`}</b>
       </div>
     );
   }

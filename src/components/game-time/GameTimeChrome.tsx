@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CampaignLayout } from "@/lib/campaign/layout";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { useServerNow } from "@/lib/game-time/clock";
+import { isMystery } from "@/lib/game-time/drops";
 import { pressSearch, showChip, startGameTime } from "@/lib/game-time/controller";
 import { nearestSpot, spotRects, tilesFrom } from "@/lib/game-time/proximity";
 import { useGameTime } from "@/lib/game-time/store";
@@ -71,7 +72,7 @@ function HuntFlag({ isWatcher }: { isWatcher: boolean }) {
     !mine.won &&
     !mine.blocked &&
     game.room_ok &&
-    (game.status === "live" || (game.status === "upcoming" && Date.parse(game.opens_at) - now <= 10 * 60_000));
+    (game.status === "live" || (game.status === "upcoming" && !isMystery(game) && Date.parse(game.opens_at) - now <= 10 * 60_000));
   useEffect(() => {
     useRoomStore.getState().setHuntActive(active);
     return () => useRoomStore.getState().setHuntActive(false);
