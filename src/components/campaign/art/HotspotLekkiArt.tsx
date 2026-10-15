@@ -14,7 +14,7 @@ import { Defs, FONT, HopBus, HoppazWordmark, P, Plate, Props, RouteLine, type Ro
 
 type Skin = { blue: string; cream: string; hot: string };
 const FALLBACK_PALETTE = { primary: "#3E8FB8", secondary: "#F5EBDD", accent: "#FF4D00" };
-const FALLBACK_NAMES = ["Bay Lounge", "Circa Lagos", "Ilé Eros", "Lekki Conservation Centre"];
+const FALLBACK_NAMES = ["Bay Lounge", "Circa Lagos", "Ilé Eros", "LCC"];
 const SKY = { high: "#A9D3E6", mid: "#C6E4EF", low: "#EEEBD3", sun: "#FBE2A0", far: "#B3CBD4", shore: "#8FB7A0" } as const;
 
 const rep = (n: number, f: (i: number) => string) => Array.from({ length: n }, (_, i) => f(i)).join("");
@@ -291,7 +291,7 @@ function Eros({ name, blue, cream, hot }: Skin & { name: string }) {
   );
 }
 
-/** Lekki Conservation Centre: a planted corner, tall crowns over a dense hedge, a raised canopy walkway and a name banner. 6 by 4 tiles. */
+/** LCC (the Lekki Conservation Centre): a planted corner, tall crowns over a dense hedge, a raised canopy walkway and a name banner. 6 by 4 tiles. */
 function Grove({ name, hot, grass, hedge }: Skin & { name: string; grass: string; hedge: string }) {
   const planks = rep(16, (i) => `M${14 + i * 11} 72v12`);
   const posts = rep(12, (i) => `M${12 + i * 16} 60v12`);
@@ -312,7 +312,7 @@ function Grove({ name, hot, grass, hedge }: Skin & { name: string; grass: string
       <path d="M6 60H186" stroke={P.ink} strokeWidth="3" />
       <path d="M6 59H186" stroke={P.paper} strokeWidth="1" opacity=".5" />
       <path d={posts} stroke={P.ink} strokeWidth="2" />
-      <Plate x={8} y={42} w={176} h={18} text={name} fill={P.woodDark} color={P.paper} size={10} />
+      <Plate x={46} y={40} w={100} h={22} text={name} fill={P.woodDark} color={P.paper} size={16} />
       <path d="M78 85H114V93H122V101H128V109H64V101H70V93H78ZM66 85V109M126 85V109" fill={P.woodLight} stroke={P.ink} strokeWidth="2" />
       <path d="M72 97H120M68 105H124" stroke={P.woodDark} strokeWidth="2" />
       <path d="M0 128V116H10V110H26V116H40V112H52V118H60V128ZM132 128V118H140V112H156V116H168V110H184V116H192V128Z" fill={P.leaf} stroke={P.ink} strokeWidth="2" />

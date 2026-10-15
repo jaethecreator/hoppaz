@@ -3,8 +3,8 @@ import { exitProp, floorProp, prop, room, wall, zone } from "./build";
 
 /**
  * Jibowu, the Yaba hotspot: the junction of Herbert Macaulay Street and Murtala Muhammed Way, on a Lagos afternoon.
- * A street plaza, not a building. Four venue facades along the top (UNILAG, Ozone Cinemas, Mila, Beeriga, left to right),
- * the railway cutting down the room between Mila and Beeriga with crossing barriers and a red light, and the road under
+ * A street plaza, not a building. Four venue facades along the top (UNILAG, Ozone Cinemas, CcHub, Beeriga, left to right),
+ * the railway cutting down the room between CcHub and Beeriga with crossing barriers and a red light, and the road under
  * it: a BRT shelter (the hero) in the median with a footbridge over it. The danfo park, newspaper stand, suya grill and
  * the map signpost sit on the paved plaza below, and the spawn lands in front of the junction.
  *
@@ -24,7 +24,7 @@ export const HOTSPOT_YABA = room("hotspot-yaba", {
     zone("hero", data?.junction ?? "Jibowu", "Danfos, trains, BRT", "asphalt", { x: 8, y: 6, w: 12, h: 7 }, { x: 13, y: 11 }, { x: 12, y: 7 }),
     zone("venue-1", landmark(0, "UNILAG"), "The campus gate", "paving", { x: 1, y: 1, w: 6, h: 5 }, { x: 3, y: 5 }, { x: 3, y: 5 }),
     zone("venue-2", landmark(1, "Ozone Cinemas"), "What's showing", "paving", { x: 7, y: 1, w: 6, h: 5 }, { x: 9, y: 5 }, { x: 9, y: 5 }),
-    zone("venue-3", landmark(2, "Mila"), "Opening soon", "paving", { x: 13, y: 1, w: 7, h: 5 }, { x: 16, y: 5 }, { x: 16, y: 5 }),
+    zone("venue-3", landmark(2, "CcHub"), "Laptops out, ideas loud", "paving", { x: 13, y: 1, w: 7, h: 5 }, { x: 16, y: 5 }, { x: 16, y: 5 }),
     zone("venue-4", landmark(3, "Beeriga"), "Down at the jetty", "paving", { x: 23, y: 1, w: 6, h: 5 }, { x: 25, y: 5 }, { x: 25, y: 5 }),
     zone("park", "Danfo Park", "Yellow, black, loud", "concrete", { x: 1, y: 13, w: 12, h: 6 }, { x: 6, y: 16 }, { x: 6, y: 16 }),
   ],
