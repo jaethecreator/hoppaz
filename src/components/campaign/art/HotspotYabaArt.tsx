@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { CampaignProp } from "@/lib/campaign/layout";
 import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
-import { Defs, FONT, Frame, P, Plate, Props, Shade, type RoomArtProps } from "./kit";
+import { Defs, FONT, Frame, HopBus, HoppazWordmark, P, Plate, Props, RouteLine, Shade, type RoomArtProps } from "./kit";
 
 /**
  * Jibowu, the Yaba hotspot (hotspot-yaba): the junction of Herbert Macaulay Street and Murtala Muhammed Way on a busy
@@ -94,7 +94,7 @@ function Parasol({ uid }: { uid: string }) {
     <g>
       <ellipse cx="20" cy="28" rx="13" ry="3" fill={P.shadow} opacity=".3" />
       <rect x="15" y="-8" width="3" height="34" fill={P.ink} />
-      <path d="M-2 -6H34L28 -17H4Z" fill={`url(#${uid}-awning)`} stroke={P.ink} strokeWidth="2" />
+      <path d="M-2 -6H34L28 -17H4Z" fill={`url(#${uid}-hzawning)`} stroke={P.ink} strokeWidth="2" />
       <rect x="6" y="14" width="22" height="5" fill={P.woodLight} stroke={P.ink} strokeWidth="2" />
       <path d="M9 19V27M25 19V27" stroke={P.ink} strokeWidth="2" />
       <path d={rects([9, 14, 19], 6, 3, 8)} fill={P.orange} stroke={P.ink} strokeWidth="1" />
@@ -129,7 +129,7 @@ function Newsstand({ uid }: { uid: string }) {
       <rect x="3" y="7" width="56" height="23" fill={P.wood} stroke={P.ink} strokeWidth="2" />
       <rect x="5" y="9" width="52" height="4" fill={P.woodLight} />
       {colours.map((c, i) => <rect key={i} x={8 + i * 8} y="15" width="6" height="9" fill={c} stroke={P.ink} strokeWidth="1" />)}
-      <rect x="2" y="2" width="58" height="9" fill={`url(#${uid}-awning)`} stroke={P.ink} strokeWidth="2" />
+      <rect x="2" y="2" width="58" height="9" fill={`url(#${uid}-hzawning)`} stroke={P.ink} strokeWidth="2" />
       <Plate x={14} y={-10} w={36} h={10} text="NEWS" fill={P.night} color={P.danfo} size={7} spacing={0.4} />
     </g>
   );
@@ -355,8 +355,8 @@ function Mila({ uid, pal, name, ribbon }: { uid: string; pal: Pal; name: string;
   return (
     <g>
       <Shade w={224} h={128} dx={5} dy={7} o={0.3} />
-      <rect x="1" y="1" width="222" height="126" fill={P.emberDark} stroke={P.ink} strokeWidth="2" />
-      <rect x="3" y="3" width="218" height="5" fill={P.ember} />
+      <rect x="1" y="1" width="222" height="126" fill={P.nightCard} stroke={P.ink} strokeWidth="2" />
+      <rect x="3" y="3" width="218" height="5" fill={P.nightLine} />
       <rect x="3" y="8" width="218" height="5" fill={P.ink} />
       <path d="M8 17H216M8 60H216" stroke={P.brandEmber} strokeWidth="2" opacity=".6" />
       <Plate x={68} y={15} w={88} h={28} text={name} fill={pal.secondary} color={pal.primary} size={22} spacing={2} />
@@ -472,6 +472,7 @@ export default function HotspotYabaArt({ layout, uid, brand }: RoomArtProps) {
       <Defs uid={uid} names={["concrete", "paving", "asphalt", "grass", "water", "deck", "sand"]} />
       <defs>
         <pattern id={`${uid}-awning`} width="16" height="16" patternUnits="userSpaceOnUse"><rect width="8" height="16" fill={pal.primary} /><rect x="8" width="8" height="16" fill={pal.secondary} /></pattern>
+        <pattern id={`${uid}-hzawning`} width="16" height="16" patternUnits="userSpaceOnUse"><rect width="8" height="16" fill={P.orange} /><rect x="8" width="8" height="16" fill={P.paper} /></pattern>
         <pattern id={`${uid}-hazard`} width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="4" fill={P.paper} /><rect y="4" width="8" height="4" fill={P.red} /></pattern>
         <pattern id={`${uid}-ballast`} width="16" height="16" patternUnits="userSpaceOnUse"><rect width="16" height="16" fill={P.cap} /><path d="M2 3h3v2H2ZM10 7h3v2h-3ZM5 12h3v2H5Z" fill={P.wall} /><path d="M12 2h2v2h-2ZM3 8h2v2H3Z" fill={P.stone} /></pattern>
         <pattern id={`${uid}-sleepers`} width="8" height="12" patternUnits="userSpaceOnUse"><rect y="3" width="8" height="6" fill={P.woodDark} /><rect y="3" width="8" height="1" fill={P.wood} /></pattern>
@@ -508,6 +509,11 @@ export default function HotspotYabaArt({ layout, uid, brand }: RoomArtProps) {
       <rect x={t(11)} y={t(15)} width={t(7)} height={t(4)} fill={`url(#${uid}-concrete)`} opacity=".7" />
       <rect x={t(11) + 3} y={t(15) + 3} width={t(7) - 6} height={t(4) - 6} fill="none" stroke={P.concreteDark} strokeWidth="2" />
 
+      {/* The Hop route along the pavement: UNILAG 1, Ozone 2, Mila 3, Beeriga the finale (the rails cover it where it crosses). */}
+      <RouteLine points={[[112, 176], [304, 176], [528, 176], [816, 176]]} />
+      {/* The one bounce wordmark: road paint on the paving apron under the map signpost. */}
+      <HoppazWordmark x={480} y={566} h={18} fill={P.orange} shadow={P.brandEmber} anchor="middle" />
+
       <Props
         layout={layout}
         uid={uid}
@@ -524,6 +530,7 @@ export default function HotspotYabaArt({ layout, uid, brand }: RoomArtProps) {
           rails: () => <Rails uid={uid} />,
           zebra: () => <rect x="0" y="0" width="96" height="224" fill={`url(#${uid}-zebra)`} />,
           crossing: (p) => <Crossing uid={uid} left={(p.variant ?? 0) % 2 === 0} />,
+          "danfo-5": () => <HopBus w={96} h={32} />,
           danfo: (p) => face(p, <Danfo flip={false} />, <Danfo flip />),
           keke: (p) => face(p, <Keke flip={false} />, <Keke flip />),
           brtbus: () => <BrtBus pal={pal} />,

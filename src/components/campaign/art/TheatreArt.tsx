@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { CampaignProp } from "@/lib/campaign/layout";
-import { Defs, Flyer, Floor, FONT, Frame, Lineup, P, Plate, Props, Shade, Walls, type RoomArtProps } from "./kit";
+import { BRAND_LINES, Defs, Floor, FONT, Frame, HopFlyer, HoppazWordmark, Lineup, P, PaperScraps, Plate, Props, RouteLine, Shade, Stamp, Walls, type RoomArtProps } from "./kit";
 
 /** The red velvet family and the dark room tones this room adds to the kit's palette. */
 const V = {
@@ -12,9 +12,14 @@ type Draw = (p: CampaignProp, tile: number) => ReactNode;
 
 /**
  * Theatre night. The back wall (rows 1 to 3) carries the proscenium: a gold arch, red drapes and valance, the marquee with
- * the show title, and the flyer and line-up in frames either side. The stage is the 12 tile floor under the arch with
- * footlights on its lip and a few spot cones. The stalls fill the middle (a red runner up the centre aisle), box seats
- * line both side walls, a foyer with the box office (the exit) sits under the foyer wall.
+ * the show title (an orange frame round a night plate: the Hoppaz sign), and the flyer and line-up in frames either side,
+ * with a patch of pasted scraps and a rubber stamp at the far ends. The stage is the 12 tile floor under the arch with
+ * footlights on its lip and a few spot cones. The stalls fill the middle (a red runner up the centre aisle, the route
+ * running up it to centre stage), box seats line both side walls, a foyer with the box office (the exit) sits under the
+ * foyer wall and the merch table carries the room's bounce wordmark.
+ *
+ * Brand: the velvet hall, the gold metalwork and the wood are the place; everything Hoppaz says (marquee, plates, merch,
+ * the flyer, the route, the scraps and the stamp) is orange, night and cream. HopFlyer's sun is the room's one violet.
  */
 export default function TheatreArt({ layout, uid, brand, content }: RoomArtProps) {
   const t = layout.grid.tile;
@@ -25,6 +30,9 @@ export default function TheatreArt({ layout, uid, brand, content }: RoomArtProps
   const line = (content?.line ?? "").toUpperCase().slice(0, 44);
   const lineup = content?.lineup?.length ? content.lineup : [{ name: "Opening act", time: "7PM" }, { name: "Spoken word", time: "8PM" }, { name: "The main show", time: "9PM" }];
   const titleSize = Math.max(8, Math.min(16, 376 / Math.max(6, title.length * 0.74)));
+  // The back wall stamp prints the brand line "HOP OR STAY" over two rows: HOP, then OR STAY.
+  const [hopWord, ...hopTail] = BRAND_LINES.hop.split(" ");
+  const hopRest = hopTail.join(" ");
 
   // The proscenium opening is the stage's 12 tiles (x 9 to 20); the back wall ends at y = 4 tiles.
   const AX0 = 9 * t;
@@ -55,7 +63,7 @@ export default function TheatreArt({ layout, uid, brand, content }: RoomArtProps
     "event-flyer": (p) => (
       <g>
         <rect x="-3" y="1" width={p.w * t + 6} height={p.h * t - 2} fill={P.gold} stroke={P.ink} strokeWidth="2" />
-        <Flyer uid={uid} x={0} y={4} w={p.w * t} h={p.h * t - 8} url={content?.flyerUrl} title={title} line={content?.line} />
+        <HopFlyer uid={uid} x={0} y={4} w={p.w * t} h={p.h * t - 8} url={content?.flyerUrl} title={title} line={content?.line} />
         <rect x={p.w * t / 2 - 9} y="-3" width="18" height="4" fill={P.goldDark} stroke={P.ink} strokeWidth="1" />
       </g>
     ),
@@ -253,7 +261,7 @@ export default function TheatreArt({ layout, uid, brand, content }: RoomArtProps
           <rect x="3" y="3" width={w - 6} height="2" fill={P.paper} />
           <path d="M12 6h3v6h-3zM44 6h3v6h-3zM76 6h3v6h-3zM104 6h3v6h-3z" fill={P.slateLight} stroke={P.ink} strokeWidth="1" />
           <rect x="4" y="27" width={w - 8} height="3" fill={P.gold} />
-          <Plate x={w / 2 - 15} y={16} w={30} h={10} text="Bar" fill={V.wine} color={P.gold} size={6} />
+          <Plate x={w / 2 - 15} y={16} w={30} h={10} text="Bar" fill={P.night} color={P.paper} size={6} />
         </g>
       );
     },
@@ -287,15 +295,15 @@ export default function TheatreArt({ layout, uid, brand, content }: RoomArtProps
           <path d="M8 6h8M8 9h6" stroke={P.ink} strokeWidth="1" />
           <circle cx="32" cy="8" r="3" fill={P.gold} stroke={P.ink} strokeWidth="1" />
           <path d="M46 5h4v7h-4zM54 5h4v7h-4zM62 5h4v7h-4zM70 5h4v7h-4z" fill={P.cream} stroke={P.ink} strokeWidth="1" />
-          <Plate x={w / 2 - 22} y={17} w={44} h={10} text="Coats" fill={V.wine} color={P.gold} size={6} />
+          <Plate x={w / 2 - 22} y={17} w={44} h={10} text="Coats" fill={P.night} color={P.paper} size={6} />
         </g>
       );
     },
     merchrack: (p, tile) => {
       const w = p.w * tile;
       const n = Math.floor((w - 8) / 15);
-      const tones = [V.red, P.cream, P.gold, P.slate];
-      const row = (y: number, k: number) => Array.from({ length: n }, (_, i) => i).filter((i) => i % 4 === k).map((i) => `M${6 + i * 15} ${y}h12v9h-12z`).join("");
+      const tones = [P.orange, P.paper, P.night, P.orange];
+      const row =(y: number, k: number) => Array.from({ length: n }, (_, i) => i).filter((i) => i % 4 === k).map((i) => `M${6 + i * 15} ${y}h12v9h-12z`).join("");
       return (
         <g>
           <rect x="5" y="5" width={w - 6} height="26" fill={P.shadow} opacity=".25" />
@@ -319,7 +327,9 @@ export default function TheatreArt({ layout, uid, brand, content }: RoomArtProps
           <rect x="30" y="4" width="10" height="8" fill={P.ink} />
           <rect x="32" y="5" width="6" height="3" fill={P.mint} />
           <path d="M52 5h4v7h-4zM60 5h4v7h-4zM68 5h4v7h-4z" fill={P.cream} stroke={P.ink} strokeWidth="1" />
-          <Plate x={w / 2 - 22} y={17} w={44} h={10} text="Merch" fill={V.wine} color={P.gold} size={6} />
+          {/* The room's wordmark: Hoppaz merch, the bounce wordmark on a night plate. */}
+          <rect x={w / 2 - 26} y={15} width={52} height={13} fill={P.night} stroke={P.ink} strokeWidth="2" />
+          <HoppazWordmark x={w / 2} y={19} h={7} fill={P.orange} anchor="middle" />
         </g>
       );
     },
@@ -336,7 +346,7 @@ export default function TheatreArt({ layout, uid, brand, content }: RoomArtProps
           <rect x="31" y="4" width="11" height="8" fill={P.paper} stroke={P.ink} strokeWidth="1" />
           <rect x="33" y="5" width="3" height="6" fill={V.red} />
           <circle cx={w - 14} cy="8" r="3" fill={P.gold} stroke={P.ink} strokeWidth="1" />
-          <Plate x={3} y={17} w={w - 10} h={10} text="Box office" fill={V.wine} color={P.gold} size={6} />
+          <Plate x={3} y={17} w={w - 10} h={10} text="Box office" fill={P.night} color={P.paper} size={6} />
           <rect x={w / 2 - 17} y="-8" width="28" height="9" fill={P.orange} stroke={P.ink} strokeWidth="2" />
           <text x={w / 2 - 3} y="-1" textAnchor="middle" fill={P.night} fontFamily={FONT.display} fontWeight={900} fontSize="6.5" letterSpacing=".8">EXIT</text>
         </g>
@@ -362,8 +372,8 @@ export default function TheatreArt({ layout, uid, brand, content }: RoomArtProps
           <rect x="8" y="1" width={w - 16} height="24" fill={P.paper} stroke={P.ink} strokeWidth="2" />
           {red ? (
             <>
-              <rect x="11" y="4" width={w - 22} height="18" fill={V.red} />
-              <circle cx="24" cy="13" r="5" fill={P.gold} />
+              <rect x="11" y="4" width={w - 22} height="18" fill={P.night} />
+              <circle cx="24" cy="13" r="5" fill={P.orange} />
               <rect x="34" y="8" width="16" height="3" fill={P.paper} />
               <rect x="34" y="14" width="12" height="2" fill={P.paper} />
             </>
@@ -451,17 +461,18 @@ export default function TheatreArt({ layout, uid, brand, content }: RoomArtProps
       <rect x={t + 3} y={104} width={W - t * 2 - 6} height="17" fill={V.wainscot} />
       <rect x={t + 3} y={104} width={W - t * 2 - 6} height="2" fill={P.gold} />
 
-      {/* Framed pictures on the back wall either side of the flyer and the line-up. */}
-      {frame(66, 56, 30, 44, P.paper, V.red)}
-      {frame(212, 56, 30, 44, V.wine, P.gold)}
-      {frame(702, 56, 28, 44, V.wine, P.gold)}
-      {frame(882, 56, 30, 44, P.paper, V.red)}
-      {/* Framed posters on the foyer wall. */}
+      {/* The back wall's Lagos texture, outermost either side: a patch of pasted scraps on the left, a rubber stamp on the right. Two framed pictures sit between these and the flyer and line-up. */}
+      <PaperScraps x={40} y={44} w={84} h={60} />
+      {frame(212, 56, 30, 44, P.night, P.orange)}
+      {frame(702, 56, 28, 44, P.night, P.orange)}
+      <circle cx="900" cy="78" r="23" fill={P.night} stroke={P.ink} strokeWidth="2" />
+      <Stamp x={900} y={78} text={hopWord} sub={hopRest} shape="circle" size={8} rotate={-8} />
+      {/* Framed posters on the foyer wall: gold mouldings (metal), brand pictures. */}
       {[70, 214, 306, 398, 534, 626, 718, 870].map((x) => (
         <g key={x}>
           <rect x={x} y={456} width="22" height="15" fill={P.gold} stroke={P.ink} strokeWidth="2" />
-          <rect x={x + 3} y={459} width="16" height="9" fill={x % 3 === 0 ? P.paper : V.wine} />
-          <rect x={x + 5} y={461} width="8" height="2" fill={x % 3 === 0 ? V.red : P.gold} />
+          <rect x={x + 3} y={459} width="16" height="9" fill={x % 3 === 0 ? P.paper : P.night} />
+          <rect x={x + 5} y={461} width="8" height="2" fill={x % 3 === 0 ? P.night : P.orange} />
         </g>
       ))}
 
@@ -482,11 +493,11 @@ export default function TheatreArt({ layout, uid, brand, content }: RoomArtProps
       ))}
       <path d={valance} fill={url("velvet")} stroke={P.ink} strokeWidth="2" />
       <path d={`M${AX0 + 6} ${OPEN_Y + 16}H${AX1}`} stroke={P.gold} strokeWidth="3" strokeDasharray="2 10" />
-      <rect x={AX0 - 24} y="35" width={AW + 48} height="38" fill={P.gold} stroke={P.ink} strokeWidth="2" />
-      <rect x={AX0 - 18} y="40" width={AW + 36} height="28" fill={V.wine} stroke={P.ink} strokeWidth="2" />
+      <rect x={AX0 - 24} y="35" width={AW + 48} height="38" fill={P.orange} stroke={P.ink} strokeWidth="2" />
+      <rect x={AX0 - 18} y="40" width={AW + 36} height="28" fill={P.night} stroke={P.ink} strokeWidth="2" />
       <rect x={AX0 - 15} y="43" width={AW + 30} height="22" fill="none" stroke={P.paper} strokeWidth="2" strokeDasharray="2 8" />
-      <text x={W / 2} y={line ? 55 : 59} textAnchor="middle" fill={P.gold} fontFamily={FONT.display} fontWeight={900} fontSize={titleSize} letterSpacing="2">{title}</text>
-      {line && <text x={W / 2} y="63" textAnchor="middle" fill={P.cream} fontFamily={FONT.mono} fontSize="6.5" letterSpacing="1.5">{line}</text>}
+      <text x={W / 2} y={line ? 55 : 59} textAnchor="middle" fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize={titleSize} letterSpacing="2">{title}</text>
+      {line && <text x={W / 2} y="63" textAnchor="middle" fill={P.paper} fontFamily={FONT.mono} fontSize="6.5" letterSpacing="1.5">{line}</text>}
 
       {/* Spot rig under the valance and the light cones that fall on the stage. */}
       <rect x="336" y="90" width="288" height="3" fill={P.ink} />
@@ -494,7 +505,7 @@ export default function TheatreArt({ layout, uid, brand, content }: RoomArtProps
         <g key={cx}>
           <rect x={cx - 6} y="92" width="12" height="8" fill={P.ink} />
           <rect x={cx - 4} y="99" width="8" height="3" fill={P.gold} />
-          <path d={`M${cx - 4} 102L${cx - 34} ${LIP_Y - 8}H${cx + 34}L${cx + 4} 102Z`} fill="#FFF3C4" opacity=".1" />
+          <path d={`M${cx - 4} 102L${cx - 34} ${LIP_Y - 8}H${cx + 34}L${cx + 4} 102Z`} fill={P.paper} opacity=".1" />
         </g>
       ))}
 
@@ -506,6 +517,9 @@ export default function TheatreArt({ layout, uid, brand, content }: RoomArtProps
       <rect x={AX0 + 2} y={LIP_Y + 2} width={AW - 4} height="2" fill={P.gold} />
       <rect x={14 * t - 8} y={LIP_Y + 12} width={2 * t + 16} height="7" fill="#8E6D53" stroke={P.ink} strokeWidth="2" />
       <rect x={14 * t - 4} y={LIP_Y + 19} width={2 * t + 8} height="7" fill={P.woodLight} stroke={P.ink} strokeWidth="2" />
+
+      {/* The route up the centre aisle, from the foyer to centre stage (floor decoration: props stand on it). */}
+      <RouteLine points={[[480, 600], [480, 440], [480, 312], [480, 208]]} />
 
       <Props layout={layout} uid={uid} custom={custom} />
 

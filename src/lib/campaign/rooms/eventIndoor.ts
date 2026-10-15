@@ -11,7 +11,7 @@ export const EVENT_INDOOR = room("event-indoor", {
     zone("booth", "The Booth", "DJ is on", "stagewood", { x: 11, y: 4, w: 8, h: 3 }, { x: 14, y: 5 }, { x: 14, y: 4 }),
     zone("floor", "Dance Floor", "Everybody up", "dance", { x: 9, y: 8, w: 12, h: 6 }, { x: 15, y: 11 }, { x: 15, y: 8 }),
     zone("bar", "The Bar", "Drinks this way", "checker", { x: 21, y: 4, w: 7, h: 4 }, { x: 23, y: 5 }, { x: 24, y: 4 }),
-    zone("vip", "VIP Booths", "Bottle service", "carpet", { x: 2, y: 4, w: 6, h: 7 }, { x: 6, y: 7 }, { x: 5, y: 4 }),
+    zone("vip", "VIP Booths", "Your table, your people", "carpet", { x: 2, y: 4, w: 6, h: 7 }, { x: 6, y: 7 }, { x: 5, y: 4 }),
     zone("lounge", "Lounge", "Sit, chat, repeat", "carpet", { x: 2, y: 13, w: 6, h: 6 }, { x: 6, y: 16 }, { x: 5, y: 13 }),
   ],
   props: [

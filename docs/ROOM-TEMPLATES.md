@@ -80,16 +80,50 @@ Hotspot place data: `src/lib/rooms/hotspotRooms.ts` (sign, palette, welcome line
   `/room/<slug>` preview and the dev page follow this; the walking server (hotspot_rooms.sql) will hand each Hopper their
   alias.
 
-## Look (match the 360Playlist room and the Hoppaz brand)
+## Look (the Hoppaz brand, drawn in the 360Playlist pixel style)
 
-- Pixel look, `shapeRendering="crispEdges"`, flat colour, no gradients (an opacity overlay is fine), 2 px ink outlines,
-  one light from the top left, a hard shadow to the lower right, three tones per material.
-- Palette: the clubhouse tones in `kit.tsx` `P`, plus Hoppaz orange `#FF4D00`, ember, night `#0E0B0A`, violet `#5B2EFF`
-  (one violet shape per room at most) and the Lagos street colours (danfo yellow, keke green, lagoon blue). Orange is the
-  loudest thing on a wall: signs, doors, the flyer. Never a fifth brand colour.
-- Type on art: `FONT.display` (Poppins 900) for signs, `FONT.mono` for small captions. Text sits on a plate, never bare.
-- No people (the engine draws the avatars), no logos, no emoji, no real photos.
-- Copy: no em dashes, "360Playlist" as one word, "Hoppaz", the mascot is "Paz". Short, second person, Lagos-street.
+The clubhouse is the pixel reference only, not the brand reference. The brand kit is the block at the end of `kit.tsx`
+(`BRAND`, `BRAND_LINES`, `HoppazWordmark`, `HopBus`, `RouteLine`, `Stamp`, `BrandSign`, `HopFlyer`, `PaperScraps`,
+`Scrawl`, `HopBay`, `BrandDefs`); the full review and per-room punch lists are in Jae's side-session notes
+(`rooms-brand-review.md`).
+
+**Pixel craft.** `shapeRendering="crispEdges"`, flat fills, 2 px ink outlines, one light from the top left, a hard shadow
+to the lower right, three tones per material. No gradients, and no stacked bands faking one on a sign or a screen (flat
+low-opacity light pools are fine).
+
+**Colour.**
+- A Hoppaz surface (the exit, anything Hoppaz says, billboards, the bus, the route, stamps, scraps, the flyer placeholder,
+  a room's own welcome sign) uses the five brand colours only: `P.orange`, `P.night` (and the night ramp `nightRaised`,
+  `nightCard`, `nightLine`, `nightDim`), `P.paper` (= `brandCream`), `P.violet`, and `P.brandEmber` for shadows and lips.
+- Orange is the loudest designed colour in every room: squint at the render and the first sign you see is orange or
+  carries orange.
+- One violet shape per room in total. In an event room it is HopFlyer's sun; the kit's "booth" variant 1, "djbooth",
+  "dancefloor", "bar" and the `Defs` "dance" pattern carry violet and need a room override.
+- Cream on a sign is `P.paper`, never `P.white`, `P.cream` or #FFFFFF; dark rooms use the night ramp, never blue or
+  purple greys; no pure black or white anywhere. `P.ember`/`P.emberDark` (clubhouse coral) and `P.gold` are materials
+  (brick, brass, light), never a sign, awning or banner colour.
+- At most two colour punches beyond the brand (danfo yellow, keke green, a place colour), each small. A place palette
+  (`hotspotRooms.ts`) belongs to that place's own facades and vehicles, not to the room's welcome sign or every awning.
+  Natural materials (grass, water, wood, asphalt, sky, foliage) stay natural and calm.
+
+**Signature objects, every room.**
+- `RouteLine`, four stops: in an event room from the way in to the main thing (finale there); in a hotspot room past the
+  four venue doors, or from Stop 1 to the bus.
+- `HopBus` wherever there is a road, a kerb or a gate (event-outdoor and every hotspot): swap a parked vehicle's art
+  (the id stays) or add a prop.
+- One bounce wordmark that always shows (`BrandSign` with `wordmark`, or `HoppazWordmark`), never plain upright "HOPPAZ"
+  text. Ears on.
+- `HopFlyer` instead of `Flyer` in event rooms.
+- Texture from Lagos: one `PaperScraps` patch, one `Stamp`, one `Scrawl` at most. Real street copy (POST NO BILL, a danfo
+  slogan) is welcome. In hotspots, Hoppaz lives on street-vendor umbrellas and kiosk awnings (orange and cream), the
+  Lagos way, not on the venues.
+
+**Type and voice.** `FONT.display` (Poppins 900) for signs, `FONT.mono` (DM Mono caps) for captions; text sits on a plate
+(road paint and stamps excepted). Hoppaz surfaces print `BRAND_LINES` only; venue facades print the venue name only. No
+invented taglines, no "experience", no emoji, no em dashes; "360Playlist" one word, "Hoppaz", the mascot "Paz". Lagos
+street, not Lagos luxe. No people (the engine draws the avatars), no logos, no real photos.
+
+**Budget.** HopBus about 22 nodes, RouteLine 15 to 30, HopFlyer 25, BrandSign 7 to 28, PaperScraps 20, Stamp 6.
 
 ## Working on a room
 

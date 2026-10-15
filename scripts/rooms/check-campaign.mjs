@@ -159,6 +159,8 @@ check("Event and hotspot rooms are not crew templates: the MANAGE picker never l
     assert.equal(templateFor(room.key).key, "clubhouse", `a crew row pointing at ${room.key} must open the clubhouse`);
   }
   assert.equal(new Set(PLACE_ROOMS.map((r) => r.key)).size, PLACE_ROOMS.length, "place room keys must be unique");
+  for (const room of PLACE_ROOMS) assert.equal(placeRoom(room.key)?.key, room.key);
+  assert.equal(placeRoom("clubhouse"), null, "placeRoom never answers with the clubhouse");
 });
 check("The five event templates are registered, in the registry and in the art switch", () => {
   assert.deepEqual([...EVENT_ROOMS.map((r) => r.key)].sort(), [...EVENT_KEYS].sort());
