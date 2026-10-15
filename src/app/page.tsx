@@ -29,11 +29,11 @@ import { useEvents, useHop } from "@/lib/useEvents";
 import { useCheckin } from "@/lib/useCheckin";
 import { useGameDashboard } from "@/lib/game";
 import { haversineKm, hasVenue } from "@/lib/geo";
-import type { EventRow, HopStop } from "@/lib/types";
+import type { HopStop } from "@/lib/types";
+import { nearFirst, topThisWeek, useTopNear } from "@/lib/nearEvents";
 import { busPosition } from "@/lib/busPosition";
 import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
-import { NEXT_COUNT, nextEvents } from "@/lib/filters";
 import { closeHotspots, useHotspotNav } from "@/lib/hotspots/open";
 import YouMarker from "@/components/map/YouMarker";
 
@@ -59,8 +59,6 @@ let firstDayChosen = false;
 
 const IS_DEV = process.env.NODE_ENV !== "production";
 
-/** With a location, events this close (km) go to the front of NEXT 20. */
-const NEAR_KM = 12;
 
 export default function MapPage() {
   const { fix, radiusKm, dateFilter, setDateFilter, types, setTypes, look } = useHoppaz();
@@ -99,16 +97,12 @@ export default function MapPage() {
   const typed = useMemo(() => allEvents.filter((e) => hasVenue(e) && matchesType(e, shownTypes)), [allEvents, shownTypes]);
   const counts = useMemo(() => countByDay(typed), [typed]);
   // NEXT 20: the next events from now, whatever night they fall on, so the map never opens empty.
-  // With a location (the first run asks for one), the ones close by come first, topped up with the rest: Ola's rule for the
-  // deck on the Events page (NEAR_KM in src/app/discover/page.tsx, upstream 1c1ebe0), here for any location.
-  const next = useMemo(() => {
-    if (!fix) return nextEvents(typed, NEXT_COUNT, now);
-    const far = (e: EventRow) => !(e.distance_m <= NEAR_KM * 1000);
-    const near = nextEvents(typed.filter((e) => !far(e)), NEXT_COUNT, now).list;
-    const taken = new Set(near.map((e) => e.id));
-    const rest = nextEvents(typed.filter((e) => !taken.has(e.id)), NEXT_COUNT - near.length, now).list;
-    return { list: [...near, ...rest] };
-  }, [typed, now, fix]);
+  // With a location (the first run asks for one), the ones close by come first, topped up with the rest (src/lib/nearEvents.ts).
+  const located = !!fix;
+  const next = useMemo(() => nearFirst(typed, located, now), [typed, located, now]);
+  // The first run's second layer shows this week's best near you.
+  const setTopNear = useTopNear((s) => s.set);
+  useEffect(() => setTopNear(located ? topThisWeek(typed, now) : []), [typed, located, now, setTopNear]);
   // Otherwise everything on the map (pins, heat, the scrubber) works off the one chosen day.
   const dayEvents = useMemo(() => typed.filter((e) => nightOf(Date.parse(e.starts_at)) === dayKey), [typed, dayKey]);
   const events = mode === "next" ? next.list : dayEvents;
@@ -269,6 +263,12 @@ export default function MapPage() {
     closeHotspots();
     setSelected(id);
   }, []);
+  // A flyer on the first run's events layer opens that event.
+  useEffect(() => {
+    const on = (e: Event) => pickEvent((e as CustomEvent<{ id: string }>).detail.id);
+    window.addEventListener("hz-open-event", on);
+    return () => window.removeEventListener("hz-open-event", on);
+  }, [pickEvent]);
 
   /* ---------------------------------------- the side card's left and right -- */
   const navRef = useRef<((fromId: string, dir: -1 | 1) => string | null) | null>(null);

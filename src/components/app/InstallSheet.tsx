@@ -125,7 +125,9 @@ export default function InstallSheet() {
       const show = () => {
         if (isStandalone() || QUIET_PATHS.some((re) => re.test(pathRef.current))) return;
         const nav = document.querySelector('nav[aria-label="Main"]');
-        setBottom(nav ? Math.round(nav.getBoundingClientRect().height) : 0);
+        // A bar along the bottom of a phone is lifted over; the rail down the side of a wide screen is not in the way.
+        const r = nav?.getBoundingClientRect();
+        setBottom(r && r.width >= window.innerWidth * 0.5 ? Math.round(r.height) : 0);
         setMode(next);
         setOpen(true);
         // The sign-up nudge doesn't use up the later chances.

@@ -48,7 +48,10 @@ end; avoid the waitlist tab in IMG_1951.
 > has been looked at and left still (or after a while), the map moves to the closest hotspot, your avatar runs there, the pin
 > bobs and its room (`/room/<slug>`) opens, and Paz says to chat with someone in your area. Then they are free. Every layer
 > closes, and closing ends it. The Hopper maker and the four-step tour below were dropped from the first run. Test hosts:
-> `/?welcome` starts it again.
+> `/?welcome` starts it again. Same day, after review: the saved step is `hz-first-v2`; accounts and link arrivals skip it; the
+> location card shares Ola's `hoppaz.locationAsk` key; the events layer shows up to four "top this week near you" flyers;
+> your mini avatar on the map opens the avatar editor and comes back; from 1024 px up the nav is a 72 px rail on the left and
+> the cards sit beside it, bottom left.
 
 Jae chose this direction on 14 Oct: his flow, plus hooks that keep the whole city in view.
 

@@ -92,9 +92,12 @@ export default function RootLayout({
         <SoundLane />
         <MusicHost />
         <PushAlert />
-        <div className="fixed inset-0 flex flex-col">
-          <OfflineLine />
-          <main className="relative flex-1 min-h-0">{children}</main>
+        {/* A column with the tab bar under it; from 1024 px up a row, with the tabs as a rail on the left (BottomNav). */}
+        <div className="fixed inset-0 flex flex-col lg:flex-row">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <OfflineLine />
+            <main className="relative flex-1 min-h-0">{children}</main>
+          </div>
           <BottomNav />
         </div>
         <GameTimePing />

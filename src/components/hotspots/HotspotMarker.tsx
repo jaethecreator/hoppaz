@@ -66,7 +66,7 @@ function HotspotMarker({
             ))}
           </span>
         )}
-        {mine && <span aria-hidden className={s.yours}>YOURS</span>}
+        {mine && <span aria-hidden className={s.yours}>HOME BASE</span>}
         <span aria-hidden className={s.name}>{h.name}</span>
       </span>
     </MapMarker>

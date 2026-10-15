@@ -1598,3 +1598,15 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------ wide screens -- */
+/* How far up from the screen's bottom the floating things sit (toasts, the first run): over the tab bar on a phone, nearly at
+   the edge on a wide screen, where the tabs are a rail down the left side. */
+:root {
+  --hz-nav-bottom: 5.25rem;
+}
+@media (min-width: 1024px) {
+  :root {
+    --hz-nav-bottom: 1.25rem;
+  }
+}

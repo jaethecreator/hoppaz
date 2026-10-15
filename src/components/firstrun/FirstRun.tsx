@@ -5,11 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { MapPin, X } from "lucide-react";
 import AreaPicker from "@/components/AreaPicker";
 import Mascot from "@/components/Mascot";
-import { FIRST_RUN_ENABLED, startingStep, useFirstRun } from "@/lib/firstRun";
+import { FIRST_RUN_ENABLED, rememberLocationAsk, startingStep, useFirstRun } from "@/lib/firstRun";
 import { insideLagos, nearestArea } from "@/lib/geo";
 import { useHotspots } from "@/lib/hotspots/useHotspots";
+import { useTopNear } from "@/lib/nearEvents";
 import { useHoppaz, useToast } from "@/lib/store";
 import { isTestHost } from "@/lib/testHost";
+import { useSession } from "@/lib/useSession";
 import PazSide from "./PazSide";
 
 /** The beat before a layer comes, so the page (and the camera) land first. */
@@ -27,17 +29,23 @@ const isDeepLink = () => {
   return q.has("e") || q.has("hotspot") || q.has("date");
 };
 
+/** Where the bottom layers sit: above the page's own bottom controls on a phone, at the corner of a wide screen. */
+const BOTTOM = "calc(var(--hz-nav-bottom, 5.25rem) + var(--hz-toast-lift, 0px) + env(safe-area-inset-bottom, 0px))";
+
 /**
  * The first run (src/lib/firstRun.ts): layers over the app as it was, one at a time. It is mounted once in the layout and
- * shows on the map (location, events, the pull to the hotspot) and in a hotspot room (Paz says hello).
+ * shows on the map (location, events, the pull to the hotspot) and in a hotspot room (Paz says hello). It is for someone
+ * new: an account, or a link to one thing, never meets it.
  */
 export default function FirstRun() {
   const pathname = usePathname();
   const router = useRouter();
   const { step, ready, hydrate, go, finish } = useFirstRun();
+  const { hasAccount, state: session } = useSession();
   const fix = useHoppaz((s) => s.fix);
   const setFix = useHoppaz((s) => s.setFix);
   const say = useToast((s) => s.say);
+  const topNear = useTopNear((s) => s.list);
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   /** The third layer is under way: the map is moving, the avatar is running, the room is about to open. */
@@ -48,23 +56,31 @@ export default function FirstRun() {
   const [mapUp, setMapUp] = useState(false);
   /** The beat before the layer comes. */
   const [late, setLate] = useState(false);
+  /** A test host asked for the first run again: an account does not stop it. */
+  const forced = useRef(false);
 
   useEffect(() => hydrate(), [hydrate]);
 
-  // Start: nothing saved yet. (On test hosts /?welcome starts it again, with no location, so the first card is there.)
+  // Start, once the session has settled (an account never meets it). On test hosts /?welcome starts it again, with no
+  // location, so the first card is there.
   useEffect(() => {
-    if (!FIRST_RUN_ENABLED || !ready) return;
+    if (!FIRST_RUN_ENABLED || !ready || session === "loading") return;
     const q = new URLSearchParams(window.location.search);
     if (isTestHost() && q.has("welcome")) {
       const url = new URL(window.location.href);
       url.searchParams.delete("welcome");
       window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+      forced.current = true;
       setFix(null);
       go("location");
       return;
     }
+    if (hasAccount && !forced.current) {
+      if (step !== "done") finish();
+      return;
+    }
     if (step === null && !isDeepLink()) go(startingStep());
-  }, [ready, step, go, setFix]);
+  }, [ready, session, hasAccount, step, go, finish, setFix]);
 
   // The location came in (from the card, the crosshair, anywhere): the map zooms to you, and the second layer follows.
   useEffect(() => {
@@ -114,6 +130,7 @@ export default function FirstRun() {
       (pos) => {
         const { latitude: lat, longitude: lng } = pos.coords;
         setBusy(false);
+        rememberLocationAsk("yes");
         const near = nearestArea(lat, lng);
         if (insideLagos(lat, lng)) {
           setFix({ lat, lng, source: "gps", area: near.name });
@@ -132,6 +149,11 @@ export default function FirstRun() {
       { enableHighAccuracy: false, timeout: 10_000, maximumAge: 5 * 60_000 }
     );
   }, [setFix, say]);
+
+  const notNow = () => {
+    rememberLocationAsk("no");
+    go("events");
+  };
 
   /* ------------------------------------------------- 2. the events layer, then the idle watch -- */
   useEffect(() => {
@@ -187,6 +209,12 @@ export default function FirstRun() {
     router.push(`/me/avatar?next=${encodeURIComponent(pathname)}`);
   };
 
+  /** A flyer on the events layer: open that event on the map. */
+  const openEvent = (id: string) => {
+    window.dispatchEvent(new CustomEvent("hz-open-event", { detail: { id } }));
+    finish();
+  };
+
   /* ---------------------------------------------------------------------------- render -- */
   const picker = picking ? <Picker onClose={() => setPicking(false)} /> : null;
   if (!layer || !late || (covered && !running)) return picker;
@@ -198,26 +226,26 @@ export default function FirstRun() {
           role="dialog"
           aria-label="Set your location"
           data-firstrun
-          className="fixed inset-x-0 z-[42] mx-auto w-[min(calc(100vw-24px),440px)] animate-rise rounded-[12px] border border-line bg-ink-2 px-4 pb-4 pt-3.5 shadow-sheet"
-          style={{ bottom: "calc(5.25rem + var(--hz-toast-lift, 0px) + env(safe-area-inset-bottom, 0px))" }}
+          className="fixed inset-x-0 z-[42] mx-auto w-[min(calc(100vw-24px),440px)] animate-rise rounded-[12px] border border-line bg-ink-2 px-4 pb-3 pt-3.5 shadow-sheet lg:inset-x-auto lg:left-[88px] lg:mx-0 lg:w-[380px]"
+          style={{ bottom: BOTTOM }}
         >
-          <button type="button" onClick={finish} aria-label="Close" className="absolute right-1 top-1 grid h-11 w-11 place-items-center">
+          <button type="button" onClick={notNow} aria-label="Close" className="absolute right-1 top-1 grid h-11 w-11 place-items-center">
             <span className="grid h-7 w-7 place-items-center rounded-full bg-line text-cream">
               <X size={16} strokeWidth={2.4} aria-hidden />
             </span>
           </button>
-          <div className="flex items-center gap-3.5 pr-9">
-            <Mascot state="point" size={64} className="rig-on-raised flex-none" />
-            <h2 className="min-w-0 font-display text-[19px] font-black leading-[1.15]">Set your location to see the best events near you.</h2>
+          <div className="flex items-center gap-3 pr-9">
+            <Mascot state="point" size={56} className="rig-on-raised flex-none" />
+            <h2 className="min-w-0 font-display text-[18px] font-black leading-[1.2]">Set your location to see the best events near you.</h2>
           </div>
-          <button type="button" onClick={locate} disabled={busy} className="btn mt-3.5 w-full">
+          <button type="button" onClick={locate} disabled={busy} className="btn mt-3 w-full">
             <MapPin size={18} aria-hidden /> {busy ? "Finding you…" : "Use my location"}
           </button>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setPicking(true)} className="btn btn-ghost">
+          <div className="mt-1 flex items-center justify-center gap-5">
+            <button type="button" onClick={() => setPicking(true)} className="min-h-[44px] px-1 font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-dim">
               Pick my area
             </button>
-            <button type="button" onClick={() => go("events")} className="btn btn-ghost">
+            <button type="button" onClick={notNow} className="min-h-[44px] px-1 font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-dim">
               Not now
             </button>
           </div>
@@ -234,6 +262,22 @@ export default function FirstRun() {
           {fix
             ? "These are the best events near you. Zoom in to see them, or pick any day with the calendar."
             : "This is what's on in Lagos. Zoom in to see it, or pick any day with the calendar."}
+          {fix && topNear.length > 0 && (
+            <span className="mt-2.5 flex gap-2" aria-label="Top this week near you">
+              {topNear.slice(0, 4).map((e) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => openEvent(e.id)}
+                  aria-label={e.title}
+                  className="relative h-[68px] w-[52px] flex-none overflow-hidden rounded-[8px] border border-line bg-ink-3"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- remote flyers of unknown size, shown small */}
+                  <img src={e.flyer_url ?? ""} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" onError={(ev) => (ev.currentTarget.style.display = "none")} />
+                </button>
+              ))}
+            </span>
+          )}
         </PazSide>
         {picker}
       </>
@@ -299,4 +343,3 @@ function Picker({ onClose }: { onClose: () => void }) {
     </div>
   );
 }
-

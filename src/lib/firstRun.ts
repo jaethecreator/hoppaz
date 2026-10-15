@@ -11,13 +11,35 @@ import { create } from "zustand";
  *   home      the third layer, brought in when the map has been looked at and then left still (or after a while): the
  *             map moves to the closest hotspot, your avatar runs there, the pin bobs, and its room opens.
  *   arrived   in the room, Paz says to chat with someone in your area. Then they are free.
- * Every layer can be closed, and closing ends the first run for good. FIRST_RUN_ENABLED is the kill switch.
+ * Every layer can be closed, and closing ends the first run for good. FIRST_RUN_ENABLED is the kill switch. It is for
+ * someone new: anyone with an account, and anyone who arrives on a link to one thing, never gets it.
  */
 export const FIRST_RUN_ENABLED = true;
 
 export type FirstRunStep = "location" | "events" | "home" | "arrived" | "done";
 const STEPS: ReadonlyArray<FirstRunStep> = ["location", "events", "home", "arrived", "done"];
-const KEY = "hz-firstrun-v1";
+const KEY = "hz-first-v2";
+
+/**
+ * Ola's location ask on the Events page (src/components/today/LocationAsk.tsx, upstream 1c1ebe0) remembers its answer in
+ * this key. The first run's location card reads and writes the same one, so a Hopper who answered either is not asked
+ * again by the other.
+ */
+const ASK_KEY = "hoppaz.locationAsk";
+export const locationAsked = (): boolean => {
+  try {
+    return !!localStorage.getItem(ASK_KEY);
+  } catch {
+    return false;
+  }
+};
+export const rememberLocationAsk = (a: "yes" | "no") => {
+  try {
+    localStorage.setItem(ASK_KEY, a);
+  } catch {
+    /* private window: it asks again next visit, no harm */
+  }
+};
 
 /** Private mode cannot save, so the step is also kept for this visit. */
 let remembered: FirstRunStep | null = null;
@@ -43,7 +65,8 @@ function save(step: FirstRunStep) {
 
 /**
  * Where a Hopper with nothing saved starts. Someone who went through the old Paz tour on this phone (its flags stayed in the
- * saved settings) is left alone; someone who has set a location already starts at the events layer.
+ * saved settings) is left alone; someone who has set a location already, or answered the location ask, starts at the events
+ * layer.
  */
 export function startingStep(): FirstRunStep {
   try {
@@ -53,7 +76,7 @@ export function startingStep(): FirstRunStep {
   } catch {
     /* unreadable settings: start from the top */
   }
-  return "location";
+  return locationAsked() ? "events" : "location";
 }
 
 type FirstRunState = {
