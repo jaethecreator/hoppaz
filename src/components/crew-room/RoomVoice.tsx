@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Headphones, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
-import type { CampaignLayout } from "@/lib/campaign/layout";
+import { FaceDisc } from "@/components/Avatar";
+import { stageZoneId, type CampaignLayout } from "@/lib/campaign/layout";
 import { useFeatured } from "@/lib/crew-room/featured";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
+import { STAGE_FLAG, useStagePoll, useStageStore } from "@/lib/crew-room/stage";
 import { VoiceSession, voiceDataNoteSeen, voiceServerEnabled, type VoiceView } from "@/lib/crew-room/voice";
 import { useSession } from "@/lib/useSession";
 import css from "./Places.module.css";
@@ -23,7 +25,11 @@ import css from "./Places.module.css";
  * Headphones, then Mic, then MicOff),
  * a one second label for each change, a "<NAME> IS LIVE" chip with a mute toggle while the crew owner is live, and the
  * owner's GO LIVE / END LIVE pill on the stage (roomStore action id "go-live", priority 60). The mic starts off every
- * time. The speaking rings are the world's: this sets roomStore.speaking, and the music ducks (music.duckVoice).
+ * time. With NEXT_PUBLIC_ROOM_STAGE_VOICE=1 (stage voice, design 14.4) the owner-only GO LIVE is replaced: staff (owner and
+ * admins) on the stage get SPEAK TO ALL (action id "stage-voice", priority 60), everyone else joins listen-only by
+ * themselves when the stage goes live and sees one LIVE ON STAGE pill (the speakers' faces, the first name, the head
+ * count, a mute toggle, and TAP TO LISTEN while the browser holds the audio back). Leaving the stage ends the
+ * broadcast. The speaking rings are the world's: this sets roomStore.speaking, and the music ducks (music.duckVoice).
  * The audio logic is in src/lib/crew-room/voice.ts.
  */
 export type RoomVoiceProps = { crewId: string; layout: CampaignLayout };
@@ -40,6 +46,27 @@ export default function RoomVoice({ crewId, layout }: RoomVoiceProps) {
   return enabled ? <Voice crewId={crewId} layout={layout} /> : null;
 }
 
+const AUTO_RETRY_MS = 20_000;
+const EMPTY_STAGE_MS = 30_000;
+const LEAVE_GRACE_MS = 1500;
+const KEEP_ALIVE_MS = 20_000;
+const DECLINED_KEY = "hz:stage-declined";
+/** I left voice myself this visit: the stage must not pull me back in. */
+function declined(): boolean {
+  try {
+    return !!sessionStorage.getItem(DECLINED_KEY);
+  } catch {
+    return false;
+  }
+}
+const decline = () => {
+  try {
+    sessionStorage.setItem(DECLINED_KEY, "1");
+  } catch {
+    /* private window: the stage may pull me back in, which is fine */
+  }
+};
+
 const HINT_KEY = "hz:voice-hint";
 /** "PEOPLE NEAR YOU CAN HEAR YOU", once per visit, the first time the mic goes on. */
 function hintDue(): boolean {
@@ -55,6 +82,10 @@ function hintDue(): boolean {
 function Voice({ crewId, layout }: RoomVoiceProps) {
   const { userId } = useSession();
   const { isOwner } = useFeatured(crewId);
+  const { profile } = useSession();
+  useStagePoll(crewId, STAGE_FLAG);
+  const stage = useStageStore((s) => s.stage);
+  const isStaff = useStageStore((s) => s.isStaff);
   const host = useRef<HTMLDivElement>(null);
   const session = useRef<VoiceSession | null>(null);
   const [view, setView] = useState<VoiceView | null>(null);
@@ -63,6 +94,11 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
   const peers = useRoomStore((s) => s.peers);
   const zone = useRoomStore((s) => s.zone);
   const phase = view?.phase ?? "off";
+  const stageZone = stageZoneId(layout);
+  const onStageZone = !!stageZone && zone === stageZone;
+  const inStageList = !!userId && stage.includes(userId);
+  const [retry, setRetry] = useState(0);
+  const lastAuto = useRef(0);
 
   const ensure = useCallback((): VoiceSession | null => {
     if (session.current) return session.current;
@@ -101,9 +137,10 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
     return () => clearTimeout(t);
   }, [view?.noticeId, view?.notice]);
 
-  // The owner's pill on the stage; END LIVE stays until pressed, even off the stage.
+  // The owner's pill on the stage; END LIVE stays until pressed, even off the stage. (Flag off only: stage voice has its own.)
   const live = !!view?.iAmLive;
   useEffect(() => {
+    if (STAGE_FLAG) return;
     const store = useRoomStore.getState();
     if (!isOwner || !me || (zone !== "stage" && !live)) {
       store.clearAction("go-live");
@@ -122,6 +159,78 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
   }, [isOwner, me, zone, live, ensure]);
   useEffect(() => () => useRoomStore.getState().clearAction("go-live"), []);
 
+  // ---- Stage voice (flag). The database's stage list goes to the session; the session never trusts the browser's word.
+  useEffect(() => {
+    session.current?.setStage(stage);
+  }, [stage, phase]);
+
+  // The stage goes live: join by myself, listen-only. Not if I left voice myself this visit; at most one try every 20 s.
+  useEffect(() => {
+    if (!STAGE_FLAG || !userId || stage.length === 0 || phase !== "off" || declined()) return;
+    const wait = lastAuto.current + AUTO_RETRY_MS - Date.now();
+    if (wait > 0) {
+      const t = setTimeout(() => setRetry((n) => n + 1), wait);
+      return () => clearTimeout(t);
+    }
+    lastAuto.current = Date.now();
+    void ensure()?.joinListen();
+  }, [stage.length, phase, userId, ensure, retry]);
+
+  // An automatic listener who never touched the mic goes 30 s after the stage empties, to save their data.
+  const auto = !!view?.auto;
+  useEffect(() => {
+    if (!STAGE_FLAG || stage.length > 0 || !auto || phase === "off") return;
+    const t = setTimeout(() => session.current?.leave(), EMPTY_STAGE_MS);
+    return () => clearTimeout(t);
+  }, [stage.length, auto, phase]);
+
+  // Browsers hold audio back until a tap. Walking is tapping, so the first touch anywhere in the room lets it play.
+  const canPlay = view?.canPlay ?? true;
+  useEffect(() => {
+    if (!STAGE_FLAG || phase === "off" || phase === "joining" || canPlay) return;
+    const unlock = () => session.current?.unlockAudio();
+    window.addEventListener("pointerdown", unlock);
+    return () => window.removeEventListener("pointerdown", unlock);
+  }, [phase, canPlay]);
+
+  // Staff on the stage: SPEAK TO ALL. Their mic is never opened without this tap.
+  useEffect(() => {
+    if (!STAGE_FLAG) return;
+    const store = useRoomStore.getState();
+    if (!isStaff || !me || !onStageZone || live) {
+      store.clearAction("stage-voice");
+      return;
+    }
+    store.setAction({
+      id: "stage-voice",
+      label: "SPEAK TO ALL",
+      priority: 60,
+      onPress: () => {
+        const s = ensure();
+        if (s) void s.speakToAll();
+      },
+    });
+  }, [isStaff, me, onStageZone, live, ensure]);
+  useEffect(() => () => useRoomStore.getState().clearAction("stage-voice"), []);
+
+  // A staff member whose mic is already on and whom the database puts on the stage starts talking to the room by itself.
+  useEffect(() => {
+    if (!STAGE_FLAG || !isStaff || !inStageList || live || phase !== "mic") return;
+    void session.current?.stageCall(true);
+  }, [isStaff, inStageList, live, phase]);
+
+  // Leaving the stage ends the broadcast (1.5 s of grace so walking along the edge does not flicker). While on it, the
+  // server is told every 20 s, which also lets it say no if the database no longer has me there.
+  useEffect(() => {
+    if (!STAGE_FLAG || !live) return;
+    if (!onStageZone) {
+      const t = setTimeout(() => void session.current?.stageCall(false), LEAVE_GRACE_MS);
+      return () => clearTimeout(t);
+    }
+    const t = setInterval(() => void session.current?.stageCall(true), KEEP_ALIVE_MS);
+    return () => clearInterval(t);
+  }, [live, onStageZone]);
+
   const press = () => {
     const s = ensure();
     if (!s) return;
@@ -134,6 +243,7 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
     } else if (phase === "joining") {
       return;
     } else if (!view?.canPublish) {
+      decline();
       s.leave(); // a watcher only listens: pressing again stops
     } else {
       void s.setMic(phase !== "mic");
@@ -163,7 +273,35 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
           {label}
         </p>
       )}
-      {view?.liveBy && (
+      {STAGE_FLAG && view?.liveBy && (
+        <div className="pointer-events-auto absolute left-2 right-[60px] top-2 flex min-h-[44px] items-center gap-2 rounded-hz border border-line bg-ink-2/90 pl-3" role="status" data-voice-stage>
+          <span className="h-2 w-2 flex-none rounded-full bg-fireant" aria-hidden />
+          <span className="flex flex-none -space-x-2">
+            {(view.iAmLive && userId ? [userId, ...view.stageBy] : view.stageBy).slice(0, 3).map((id) => {
+              const p = id === userId ? { name: "You", look: profile?.avatar } : peers.find((q) => q.id === id);
+              return <FaceDisc key={id} look={p?.look} initial={p?.name} size={28} />;
+            })}
+          </span>
+          <span className="min-w-0 flex-1 font-mono text-[10px] font-medium uppercase leading-[13px] tracking-[0.08em] text-cream">
+            <span className="block">LIVE ON STAGE</span>
+            <span className="block truncate text-dim">
+              {view.iAmLive ? "YOU" : view.liveName} · {view.listening} LISTENING
+            </span>
+          </span>
+          {!canPlay ? (
+            <button type="button" className="min-h-[44px] flex-none px-3 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-keke" onClick={() => session.current?.unlockAudio()}>
+              TAP TO LISTEN
+            </button>
+          ) : (
+            !view.iAmLive && (
+              <button type="button" className="grid h-11 w-11 flex-none place-items-center text-cream" aria-label={view.liveMuted ? "Hear the stage" : "Mute the stage"} aria-pressed={view.liveMuted} onClick={() => session.current?.muteLive(!view.liveMuted)}>
+                {view.liveMuted ? <VolumeX size={18} aria-hidden /> : <Volume2 size={18} aria-hidden />}
+              </button>
+            )
+          )}
+        </div>
+      )}
+      {!STAGE_FLAG && view?.liveBy && (
         <div className="pointer-events-auto absolute left-2 right-[60px] top-2 flex min-h-[44px] items-center gap-2 rounded-hz border border-line bg-ink-2/90 pl-3" role="status" data-voice-live>
           <span className="h-2 w-2 flex-none rounded-full bg-fireant" aria-hidden />
           <span className="min-w-0 flex-1 truncate font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-cream">

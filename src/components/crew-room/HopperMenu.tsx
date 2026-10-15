@@ -1,16 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Footprints, Hand, MessageCircle, Pointer, User } from "lucide-react";
+import { Footprints, Hand, MessageCircle, Pointer, ShieldCheck, User } from "lucide-react";
 import { FaceDisc } from "@/components/Avatar";
 import ChatFace from "@/components/chat/ChatFace";
 import Sheet from "@/components/Sheet";
 import { blockPerson, reportThing } from "@/lib/chat";
 import { canWalkScene, type CampaignLayout } from "@/lib/campaign/layout";
 import { useGoOut } from "@/lib/crew-room/rails";
+import { STAGE_FLAG, readStage } from "@/lib/crew-room/stage";
 import { useRoomStore, type RoomPeerPoint } from "@/lib/crew-room/roomStore";
 import { COOLDOWN_MS, VIBES, sayHi, sayResult, sendVibe, useVibes, vibeBlocked, type VibeId } from "@/lib/crew-room/vibes";
-import { POKE_GAP_MS, messageCrew, pokeCrew, useSocial } from "@/lib/social";
+import { POKE_GAP_MS, isMissing, messageCrew, pokeCrew, useSocial } from "@/lib/social";
 import { getSupabase } from "@/lib/supabase/client";
 import { useToast } from "@/lib/store";
 import { useSessionStore } from "@/lib/useSession";
@@ -354,6 +355,35 @@ function ProfileSheet({ crewId, peer, onClose, openDm }: { crewId: string; peer:
   const [busy, setBusy] = useState(false);
   const waved = useVibes((s) => !!s.waved[peer.id]);
   const isCrew = useSocial((s) => !!s.crewIds[peer.id]);
+  // Stage voice (flag): the crew's owner can make this person an admin, who may then speak to the whole room from the stage.
+  const [asOwner, setAsOwner] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (!STAGE_FLAG) return;
+    let live = true;
+    void readStage(crewId).then((r) => {
+      if (!live || !r) return;
+      setAsOwner(r.isOwner);
+      setIsAdmin(r.admins.includes(peer.id));
+    });
+    return () => {
+      live = false;
+    };
+  }, [crewId, peer.id]);
+  const setRole = async () => {
+    const sb = getSupabase();
+    if (!sb) return;
+    setBusy(true);
+    const next = isAdmin ? "member" : "admin";
+    const { error } = await sb.rpc("crew_set_role", { p_crew: crewId, p_user: peer.id, p_role: next });
+    setBusy(false);
+    if (error) {
+      say(isMissing(error) ? "NOT AVAILABLE YET" : "COULDN'T CHANGE THAT. TRY AGAIN.", "error");
+      return;
+    }
+    setIsAdmin(next === "admin");
+    say(next === "admin" ? `${peer.name} is an admin.` : `${peer.name} is a member again.`, "ok");
+  };
 
   // Block and report work on an opaque room key; fetch the crew mate's once.
   useEffect(() => {
@@ -423,6 +453,11 @@ function ProfileSheet({ crewId, peer, onClose, openDm }: { crewId: string; peer:
               ) : (
                 <button type="button" className="btn w-full" onClick={hi} disabled={busy || waved}>
                   <Hand size={15} aria-hidden /> {waved ? "WAVED" : "SAY HI"}
+                </button>
+              )}
+              {STAGE_FLAG && asOwner && (
+                <button type="button" className="btn btn-ghost w-full" onClick={setRole} disabled={busy}>
+                  <ShieldCheck size={15} aria-hidden /> {isAdmin ? "REMOVE ADMIN" : "MAKE ADMIN"}
                 </button>
               )}
             </div>

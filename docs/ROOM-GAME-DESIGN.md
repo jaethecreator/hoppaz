@@ -337,7 +337,7 @@ clearAction(id: string): void
 | Event | next to the fountain | `Ticket` | SEE THE DAVE NIGHT | opens the fountain sheet (11.3) |
 | Exit | next to the door | `DoorOpen` | EXIT TO MAP | goes to `/` (asks first while a Game Time is live) |
 | Search | next to a Game Time object | `Search` | SEARCH | one search (13.4) |
-| Go live | owner, on the stage | `Mic` | GO LIVE (END LIVE while live) | starts the stage voice (14.4) |
+| Go live | owner, on the stage | `Mic` | GO LIVE (END LIVE while live) | starts the stage voice (14.4). With stage voice on: staff on the stage, SPEAK TO ALL |
 
 The event label is `SEE THE <HEADLINE> NIGHT`, where HEADLINE is the text before the first ":" of `eventTitle(event)` in caps, so "LEAD · DAVE: The Boy Who Played the Harp" gives DAVE. If it is longer than 14 characters or has no colon the label is "SEE THE EVENT".
 
@@ -679,7 +679,29 @@ A 1 s label shows on each change: "VOICE ON", "MIC ON", "MIC OFF". **The mic sta
 - A speaking ring under the talker: 2 px `keke` ellipse, a little wider than the avatar, scaled 1.0 to 1.25 by volume in three steps (`--v`), plus a 10 px `Mic` dot beside their name tag. At most 8 rings, nearest first. Mine shows too.
 - When I turn my mic on, a faint dashed circle of 6 tiles around me shows for 1.5 s, and once per session the hint "PEOPLE NEAR YOU CAN HEAR YOU".
 
-### 14.4 GO LIVE: the owner's spotlight
+### 14.4 Staff on the stage talk to the whole room
+
+Two modes behind two flags. **Off (default):** the owner-only GO LIVE below. **On** (`NEXT_PUBLIC_ROOM_STAGE_VOICE=1`, with the voice flag of 14 and the `LIVEKIT_*` env): staff on the stage speak to everyone, like a general voice channel. The owner is staff, and so is every **admin**, a role the owner gives with MAKE ADMIN in a member's profile sheet (`crew_set_role`, `supabase/crew_stage_voice.sql`).
+
+**The rule.** The database decides, never the phone. A staff member is "on the stage" when their walker has a live heartbeat and the server-checked tile is inside the layout's stage zone (`stage`; `booth` and `deck` in event rooms). At most three speak at once: the owner first, then admins by join date. A fourth sees STAGE FULL.
+
+**Who talks.**
+- Staff on the stage with the mic already on start by themselves.
+- Staff with the mic off get the **SPEAK TO ALL** pill (priority 60). One tap joins voice, asks the server for the stage, then opens the mic (the browser asks the first time). A mic never opens without that tap.
+- Leaving the stage ends it after 1.5 s. The mic stays on for the people near them; in a stage-only room the server takes the right to publish away.
+
+**Who hears.**
+- When the stage goes live every crew member in the room, walker or watcher, joins listen-only by themselves. A phone that left voice itself this visit stays out. 30 s after the stage empties, an automatic listener who never pressed the mic hangs up.
+- Browsers hold audio back until a tap. The first touch anywhere in the room unlocks it; while it is still held the pill reads **TAP TO LISTEN**.
+- One pill replaces the live chip: the speakers' faces (up to three), `LIVE ON STAGE`, the first name and `N LISTENING`, and a 44 px mute toggle. The stage lights come on and the music ducks.
+- Mixed (default): stage voices at full volume wherever I stand; the people near me capped at half while the stage is live; at most 8 voices, stage first. Stage-only (`ROOM_VOICE_STAGE_ONLY=1`, for a concert night): only the stage is heard, and only staff on the stage may publish at all.
+- Blocked people are left out of the stage list for the person who blocked them.
+
+**Enforcement.** (1) Each phone subscribes to a stage voice only if the database's list (`crew_room_stage`, polled every 2 s) and the voice room's `stage` attribute both name them. (2) The attribute and the publish right are set only by the server (`POST /api/crew/rooms/voice/stage`, after it re-asks the database), which also clears any attribute the database no longer backs. Nobody can set their own attributes any more. A phone that cheats changes what that one phone hears.
+
+**Where.** Crew rooms (the 360 Stage) now. Event rooms later (`stageZoneId`). Never hotspot rooms (strangers behind an 18+ gate, no voice). The Private Circle is Ola's separate product and is left alone.
+
+#### The owner-only GO LIVE (flag off)
 
 The crew owner, standing inside the 360 Stage zone, gets the **GO LIVE** pill (priority 60, `Mic`). Pressing it turns their mic on and:
 

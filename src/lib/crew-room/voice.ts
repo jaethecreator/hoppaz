@@ -7,6 +7,8 @@ import type { Tile } from "@/lib/campaign/geometry";
 import { music } from "@/lib/sound/music";
 import { getSupabase } from "@/lib/supabase/client";
 import { useRoomStore } from "./roomStore";
+import { STAGE_FLAG } from "./stageRights";
+import { stageMix } from "./stageMix";
 
 /**
  * Area voice for the crew room, on Ola's LiveKit pattern (components/queer/AudioRoom.tsx). DARK by default: nothing
@@ -22,7 +24,15 @@ import { useRoomStore } from "./roomStore";
  * MAX_HEARD at once, nearest first). The microphone starts OFF every time and joining never turns it on.
  *
  * Area privacy is as honest as the client: LiveKit does not know the room's areas (the route's comment says so).
+ *
+ * STAGE VOICE (NEXT_PUBLIC_ROOM_STAGE_VOICE=1, docs/ROOM-GAME-DESIGN.md 14.4) replaces the owner's "live" attribute: staff
+ * (owner and admins) standing on the stage talk to the whole room. The database says who is on the stage (stage.ts,
+ * setStage), the server sets their "stage" attribute (voice/stage/route.ts), and this phone subscribes to a stage voice
+ * only when BOTH agree, at full volume wherever it stands; the people near it are capped at half while the stage is live
+ * (stageMix.ts). Listeners join by themselves, listen-only, when the stage goes live. With the flag off none of this runs.
  */
+
+type StageMode = "mixed" | "stage";
 
 export const VOICE_FLAG = process.env.NEXT_PUBLIC_ROOM_VOICE === "1";
 
@@ -95,12 +105,18 @@ export type VoiceView = {
   /** The server let me publish a microphone: I am a walker. A watcher listens and cannot be heard. */
   canPublish: boolean;
   reconnecting: boolean;
-  /** The crew owner who is live to the whole room right now (their user id), or null. */
+  /** The staff member who is live to the whole room right now (their user id), or null. With stage voice: the first stage speaker. */
   liveBy: string | null;
   liveName: string;
   /** Others connected to the voice room. */
   listening: number;
   iAmLive: boolean;
+  /** Stage voice: the other staff speaking to the whole room (the database and the server agree), in stage order. */
+  stageBy: string[];
+  /** The browser lets audio play. False until a tap after an automatic join: RoomVoice then offers TAP TO LISTEN. */
+  canPlay: boolean;
+  /** Joined by itself because the stage went live, and the Hopper has not pressed the mic since. */
+  auto: boolean;
   /** I silenced the live owner on this phone. */
   liveMuted: boolean;
   /** A one-line label for a moment ("VOICE ON", "MIC BLOCKED. ..."), or "". RoomVoice shows it for a second or two. */
@@ -108,7 +124,7 @@ export type VoiceView = {
   noticeId: number;
 };
 
-const IDLE: VoiceView = { phase: "off", canPublish: false, reconnecting: false, liveBy: null, liveName: "", listening: 0, iAmLive: false, liveMuted: false, notice: "", noticeId: 0 };
+const IDLE: VoiceView = { phase: "off", canPublish: false, reconnecting: false, liveBy: null, liveName: "", listening: 0, iAmLive: false, stageBy: [], canPlay: true, auto: false, liveMuted: false, notice: "", noticeId: 0 };
 
 /** Does this phone's server speak voice? Asked once. False for any error, so nothing about voice shows. */
 let enabledAsk: Promise<boolean> | null = null;
@@ -139,6 +155,11 @@ export class VoiceSession {
   private view: VoiceView = IDLE;
   private readonly watchers = new Set<(v: VoiceView) => void>();
   private owners: string[] = [];
+  private mode: StageMode = "mixed";
+  /** The database's stage list (setStage). A stage voice is heard only if it is in here AND carries the server's attribute. */
+  private stageIds: string[] = [];
+  private stageHeard: string[] = [];
+  private stageBusy: Promise<{ ok: boolean; full: boolean }> | null = null;
   private heard = new Map<string, number>();
   private applyTimer: ReturnType<typeof setTimeout> | null = null;
   private joining: Promise<void> | null = null;
@@ -170,28 +191,46 @@ export class VoiceSession {
 
   /** Join as a listener. Loads LiveKit now (never before), asks the server for a token, connects with every mic off. */
   join(): Promise<void> {
-    if (this.room) return Promise.resolve();
-    this.joining ??= this.connect().finally(() => {
+    if (this.room) {
+      if (this.view.auto) this.set({ auto: false }); // a tap on an automatic join keeps the connection
+      return Promise.resolve();
+    }
+    this.joining ??= this.connect(false).finally(() => {
       this.joining = null;
     });
     return this.joining;
   }
 
-  private async connect() {
+  /** Stage voice: join by myself, listen-only, because the stage went live. No label, no mic, no prompt. */
+  joinListen(): Promise<void> {
+    if (!STAGE_FLAG || this.room) return Promise.resolve();
+    this.joining ??= this.connect(true).finally(() => {
+      this.joining = null;
+    });
+    return this.joining;
+  }
+
+  private async bearer(): Promise<string> {
+    const sb = getSupabase();
+    const { data } = (await sb?.auth.getSession()) ?? { data: { session: null } };
+    const bearer = data.session?.access_token;
+    if (!bearer) throw new VoiceError("Sign in to use voice.", 401);
+    return bearer;
+  }
+
+  private async connect(auto: boolean) {
     this.set({ phase: "joining" });
     try {
-      const sb = getSupabase();
-      const { data } = (await sb?.auth.getSession()) ?? { data: { session: null } };
-      const bearer = data.session?.access_token;
-      if (!bearer) throw new VoiceError("Sign in to use voice.", 401);
+      const bearer = await this.bearer();
       const res = await fetch("/api/crew/rooms/voice", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearer}` },
         body: JSON.stringify({ crewId: this.crewId }),
       });
-      const body = (await res.json().catch(() => ({}))) as { serverUrl?: string; token?: string; canPublish?: boolean; owners?: string[]; error?: string };
+      const body = (await res.json().catch(() => ({}))) as { serverUrl?: string; token?: string; canPublish?: boolean; owners?: string[]; mode?: string; error?: string };
       if (!res.ok || !body.serverUrl || !body.token) throw new VoiceError(errorLine(res.status, body.error), res.status);
       this.owners = body.owners ?? [];
+      this.mode = body.mode === "stage" ? "stage" : "mixed";
 
       const lk = (this.lk ??= await import("livekit-client"));
       const room = new lk.Room({ webAudioMix: true, dynacast: true, adaptiveStream: false });
@@ -219,6 +258,7 @@ export class VoiceSession {
           this.say("VOICE LOST. TRYING AGAIN.");
         })
         .on(RoomEvent.Reconnected, () => this.set({ reconnecting: false }))
+        .on(RoomEvent.AudioPlaybackStatusChanged, () => this.set({ canPlay: room.canPlaybackAudio }))
         .on(RoomEvent.Disconnected, () => {
           if (this.room === room) this.reset();
         });
@@ -227,16 +267,23 @@ export class VoiceSession {
       await room.startAudio().catch(() => undefined);
       await room.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
       const walker = !!body.canPublish;
-      this.set({ phase: "listening", canPublish: walker, reconnecting: false });
-      this.say(walker ? "VOICE ON" : "LISTEN ONLY");
+      this.set({ phase: "listening", canPublish: walker, reconnecting: false, auto, canPlay: room.canPlaybackAudio });
+      if (!auto) this.say(walker ? "VOICE ON" : "LISTEN ONLY");
       this.roster();
       this.queueApply(0);
     } catch (e) {
       this.room?.disconnect();
       this.room = null;
       this.set({ phase: "off" });
-      this.say(e instanceof VoiceError ? e.message : "Voice isn't working right now.");
+      if (!auto) this.say(e instanceof VoiceError ? e.message : "Voice isn't working right now.");
     }
+  }
+
+  /** A tap on the room unlocks audio that the browser held back after an automatic join. */
+  unlockAudio() {
+    const room = this.room;
+    if (!room) return;
+    void room.startAudio().then(() => this.set({ canPlay: room.canPlaybackAudio }), () => undefined);
   }
 
   /** The microphone: on, or off. Only a walker has one. Returns false when it could not be turned on. */
@@ -245,7 +292,7 @@ export class VoiceSession {
     if (!room || !this.view.canPublish) return false;
     try {
       await room.localParticipant.setMicrophoneEnabled(on);
-      this.set({ phase: on ? "mic" : "muted" });
+      this.set({ phase: on ? "mic" : "muted", ...(on ? { auto: false } : {}) });
       this.say(on ? "MIC ON" : "MIC OFF");
       if (!on && this.view.iAmLive) await this.endLive();
       return true;
@@ -273,9 +320,99 @@ export class VoiceSession {
   }
 
   async endLive(): Promise<void> {
+    if (STAGE_FLAG) {
+      await this.stageCall(false);
+      return;
+    }
     this.set({ iAmLive: false });
     await this.room?.localParticipant.setAttributes({ live: "" }).catch(() => undefined);
     this.roster();
+  }
+
+  /** Stage voice: the database's list of staff on the stage (stage.ts). Re-sorts who is heard. */
+  setStage(ids: readonly string[]) {
+    if (ids.length === this.stageIds.length && ids.every((id, i) => id === this.stageIds[i])) return;
+    this.stageIds = [...ids];
+    this.roster();
+  }
+
+  /**
+   * Stage voice: ask the server to put me on the stage for the whole room (on) or take me off (off). The server checks
+   * that I am staff and that the database has my walker on the stage; the answer is the only thing that sets iAmLive.
+   * Returns { ok, full }: full means three others are already speaking.
+   */
+  stageCall(on: boolean): Promise<{ ok: boolean; full: boolean }> {
+    if (!STAGE_FLAG) return Promise.resolve({ ok: false, full: false });
+    this.stageBusy ??= this.callStage(on).finally(() => {
+      this.stageBusy = null;
+    });
+    return this.stageBusy;
+  }
+
+  private async callStage(on: boolean): Promise<{ ok: boolean; full: boolean }> {
+    const none = { ok: false, full: false };
+    if (!this.room) return none;
+    try {
+      const res = await fetch("/api/crew/rooms/voice/stage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${await this.bearer()}` },
+        body: JSON.stringify({ crewId: this.crewId, on }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; full?: boolean; canPublish?: boolean };
+      if (!res.ok) return none;
+      const ok = body.ok === true;
+      const can = body.canPublish === true;
+      this.set({
+        iAmLive: ok,
+        canPublish: can,
+        // The server took my microphone right away (a stage-only room, off the stage): the button goes back to listening.
+        ...(!can && (this.view.phase === "mic" || this.view.phase === "muted") ? { phase: "listening" as VoicePhase } : {}),
+      });
+      if (on && body.full === true) this.say("STAGE FULL");
+      this.roster();
+      return { ok, full: body.full === true };
+    } catch {
+      return none;
+    }
+  }
+
+  /** Wait until LiveKit has told this phone it may publish (the server grants it a moment after stageCall). */
+  private async waitCanPublish(room: Room, ms = 2500): Promise<boolean> {
+    const lk = this.lk;
+    if (room.localParticipant.permissions?.canPublish) return true;
+    if (!lk) return false;
+    return new Promise((resolve) => {
+      const done = (v: boolean) => {
+        clearTimeout(t);
+        room.off(lk.RoomEvent.ParticipantPermissionsChanged, onChange);
+        resolve(v);
+      };
+      const onChange = () => room.localParticipant.permissions?.canPublish && done(true);
+      const t = setTimeout(() => done(!!room.localParticipant.permissions?.canPublish), ms);
+      room.on(lk.RoomEvent.ParticipantPermissionsChanged, onChange);
+    });
+  }
+
+  /** The SPEAK TO ALL pill: join, ask the server for the stage, then (and only then) the microphone. Never opens a mic by itself. */
+  async speakToAll(): Promise<boolean> {
+    await this.join();
+    const room = this.room;
+    if (!room) return false;
+    let answer = await this.stageCall(true);
+    // My latest step may not have reached the database yet: try again for a moment before giving up.
+    for (let tries = 0; !answer.ok && !answer.full && tries < 3; tries++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      answer = await this.stageCall(true);
+    }
+    if (!answer.ok) {
+      if (!answer.full) this.say("Couldn't start. Try again.");
+      return false;
+    }
+    if (!(await this.waitCanPublish(room)) || (this.view.phase !== "mic" && !(await this.setMic(true)))) {
+      await this.stageCall(false);
+      return false;
+    }
+    return true;
   }
 
   /** Silence (or bring back) the live owner on this phone. */
@@ -303,6 +440,7 @@ export class VoiceSession {
   private reset() {
     this.room = null;
     this.heard = new Map();
+    this.stageHeard = [];
     if (this.applyTimer) clearTimeout(this.applyTimer);
     this.applyTimer = null;
     useRoomStore.getState().setSpeaking([]);
@@ -315,6 +453,16 @@ export class VoiceSession {
   private roster() {
     const room = this.room;
     if (!room) return;
+    if (STAGE_FLAG) {
+      const speaking = this.stageSpeakers(room);
+      const first = speaking[0];
+      const liveBy = first ?? (this.view.iAmLive ? this.userId : null);
+      const liveName = first ? (room.remoteParticipants.get(first)?.name || "Staff") : this.view.iAmLive ? "You" : "";
+      this.set({ liveBy, liveName, stageBy: speaking, listening: room.remoteParticipants.size });
+      useLiveStore.getState().setLiveBy(liveBy);
+      this.queueApply();
+      return;
+    }
     let liveBy: string | null = null;
     let liveName = "";
     for (const p of room.remoteParticipants.values()) {
@@ -346,11 +494,39 @@ export class VoiceSession {
     const room = this.room;
     const lk = this.lk;
     if (!room || !lk) return;
+    if (STAGE_FLAG) {
+      this.applyStage(room, lk);
+      return;
+    }
     const { liveBy, liveMuted } = this.view;
     for (const p of room.remoteParticipants.values()) {
       const live = p.identity === liveBy;
       const volume = live ? (liveMuted ? 0 : 1) : (this.heard.get(p.identity) ?? 0);
       const want = live ? !liveMuted : volume > 0;
+      for (const pub of p.audioTrackPublications.values()) {
+        if (pub.isSubscribed !== want) pub.setSubscribed(want);
+      }
+      if (want) p.setVolume(volume, lk.Track.Source.Microphone);
+    }
+    this.speakers();
+  }
+
+  /** Stage voice: the other staff who are on the stage by the database's word AND carry the server's "stage" attribute. */
+  private stageSpeakers(room: Room): string[] {
+    const out: string[] = [];
+    for (const id of this.stageIds) {
+      if (id !== this.userId && room.remoteParticipants.get(id)?.attributes?.stage === "1") out.push(id);
+    }
+    return out;
+  }
+
+  /** The stage leads (stageMix.ts): stage voices at full volume, the people near me capped, nobody by distance in a stage-only room. */
+  private applyStage(room: Room, lk: typeof import("livekit-client")) {
+    this.stageHeard = this.stageSpeakers(room);
+    const mix = stageMix({ stage: this.stageHeard, heard: this.heard, me: this.userId, mode: this.mode, stageMuted: this.view.liveMuted });
+    for (const p of room.remoteParticipants.values()) {
+      const volume = mix.get(p.identity) ?? 0;
+      const want = volume > 0;
       for (const pub of p.audioTrackPublications.values()) {
         if (pub.isSubscribed !== want) pub.setSubscribed(want);
       }
@@ -370,8 +546,9 @@ export class VoiceSession {
         ids.push(s.identity);
         continue;
       }
-      if (this.heard.has(s.identity) || s.identity === this.view.liveBy) {
-        if (this.view.liveMuted && s.identity === this.view.liveBy) continue;
+      const staged = this.stageHeard.includes(s.identity);
+      if ((this.mode === "stage" && STAGE_FLAG ? staged : this.heard.has(s.identity) || staged) || s.identity === this.view.liveBy) {
+        if (this.view.liveMuted && (s.identity === this.view.liveBy || staged)) continue;
         ids.push(s.identity);
         heardTalking = true;
       }

@@ -89,6 +89,22 @@ export const sceneBlocks = (layout: CampaignLayout): Block[] => [...layout.walls
 export function privateAreaAt(layout: CampaignLayout, tile: Tile): PrivateArea | null {
   return canWalkScene(layout, tile) ? layout.privateAreas.find((area) => tile.x >= area.x && tile.x < area.x + area.w && tile.y >= area.y && tile.y < area.y + area.h) ?? null : null;
 }
+/** Zone ids that are a room's stage: the clubhouse and the outdoor, tech and theatre rooms say "stage", the indoor room "booth", the pool "deck". */
+export const STAGE_ZONE_IDS = ["stage", "booth", "deck"] as const;
+/** The layout's stage zone, or null. The crew voice reads this, and supabase/crew_stage_voice.sql reads the same ids. */
+export function stageZoneOf(layout: Pick<CampaignLayout, "zones">): CampaignZone | null {
+  for (const id of STAGE_ZONE_IDS) {
+    const zone = layout.zones.find((z) => z.id === id);
+    if (zone) return zone;
+  }
+  return null;
+}
+export const stageZoneId = (layout: Pick<CampaignLayout, "zones">): string | null => stageZoneOf(layout)?.id ?? null;
+/** True when a tile is inside the stage zone (half open, like the zone card: x from zone.x up to but not including zone.x + zone.w). */
+export function onStageTile(layout: Pick<CampaignLayout, "zones">, tile: Tile): boolean {
+  const z = layout.zones.filter((zone) => (STAGE_ZONE_IDS as readonly string[]).includes(zone.id));
+  return z.some((zone) => tile.x >= zone.x && tile.x < zone.x + zone.w && tile.y >= zone.y && tile.y < zone.y + zone.h);
+}
 /** Keep arrivals inside the selected boundary while leaving room for people already there. */
 export function areaArrival(layout: CampaignLayout, area: PrivateArea, occupied: Tile[], from: Tile): Tile {
   if (privateAreaAt(layout,from)?.id===area.id) return from;
