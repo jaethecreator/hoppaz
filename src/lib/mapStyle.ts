@@ -296,8 +296,7 @@ export async function loadBrandStyle(theme: Theme, signal?: AbortSignal): Promis
 /**
  * The 3D city: the basemap's buildings extruded in flat neutral concrete (the
  * Campus Twin neighbour tones), no shading gradient, never orange. They grow out
- * of the ground the first time they are in view (riseCity), the way buildings
- * grow in the intro. Heights are exaggerated because most of Lagos has no height
+ * of the ground the first time they are in view (riseCity). Heights are exaggerated because most of Lagos has no height
  * data and comes in at the OpenMapTiles default. Pass grown when the city has
  * already risen (a day/night swap rebuilds it at full height). Returns the layer
  * id, or null when the basemap has no building layer (e.g. the fallback style).
@@ -333,8 +332,8 @@ export function addCityLayer(m: MLMap, beforeId?: string, theme: Theme = "night"
 }
 
 /**
- * The city sprouts out of the ground the first time it is in view, the way
- * buildings grow in the intro. Overshoots a touch, then settles.
+ * The city sprouts out of the ground the first time it is in view.
+ * Overshoots a touch, then settles.
  */
 export function riseCity(m: MLMap, ms = 1100) {
   const t0 = performance.now();

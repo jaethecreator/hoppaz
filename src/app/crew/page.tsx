@@ -20,7 +20,6 @@ import { useEvents } from "@/lib/useEvents";
 import { useTheme } from "@/lib/useTheme";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import CrewPanel from "./CrewPanel";
-import { introEvent } from "@/lib/intro";
 
 function CrewPagePage() {
   const { userId, profile, state } = useSession();
@@ -319,12 +318,8 @@ function Face({ p }: { p: Pick<Profile, "display_name" | "avatar"> }) {
 
 /** Needs an account: anonymous Hoppers get the sign-up here instead. */
 export default function CrewPage() {
-  // Paz's tour: here, even behind the sign-up wall, so the next step still shows.
-  useEffect(() => {
-    introEvent("crew_viewed");
-  }, []);
   return (
-    <RequireAccount preview title="Crew up." caption="Make an account to start a crew, plan moves together and keep your group chats.">
+    <RequireAccount title="Crew up." caption="Make an account to start a crew, plan moves together and keep your group chats.">
       <CrewPagePage />
     </RequireAccount>
   );

@@ -44,7 +44,6 @@ export default function Avatar({
       anchor="bottom"
       className={clsx("hz-avatar", playing && "hz-avatar-play", running && "hz-avatar-run")}
       label={playing ? "Your avatar" : "Your avatar. Tap to play."}
-      dataIntro="avatar"
       onClick={onTap}
       style={{ zIndex: 90_000_000 }}
       ref={ref}
