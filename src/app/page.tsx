@@ -404,10 +404,11 @@ export default function MapPage() {
       )}
 
       {/* ----------------------------------------------------------- bottom -- */}
+      {/* The + (post a flyer) sits on the right: the hotspots and the desktop rail are on the left (Jae, 15 Oct). */}
       {mounted && !event && (
         <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3.5 pb-2.5">
           <div className="mx-auto flex max-w-[560px] items-end gap-2">
-            <Link href="/drop" aria-label="Post a flyer" title="Post a flyer" className="btn pointer-events-auto grid h-11 w-11 flex-none place-items-center p-0">
+            <Link href="/drop" aria-label="Post a flyer" title="Post a flyer" className="btn pointer-events-auto order-last ml-auto grid h-11 w-11 flex-none place-items-center p-0">
               <Plus size={16} strokeWidth={3} aria-hidden />
             </Link>
             {mode !== "next" && slot && (

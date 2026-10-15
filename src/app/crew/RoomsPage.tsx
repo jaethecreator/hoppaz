@@ -297,14 +297,14 @@ export default function RoomsPage() {
     </div>
     </div>
 
-    {/* The map's own + (same place, same size, same orange), here to join or start a room. */}
+    {/* The map's own + (same place on the right, same size, same orange), here to join or start a room. */}
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3.5 pb-2.5">
       <div className="mx-auto flex max-w-[560px] items-end gap-2">
         <button
           type="button"
           aria-label="Join or start a room"
           title="Join or start a room"
-          className="btn pointer-events-auto grid h-11 w-11 flex-none place-items-center p-0"
+          className="btn pointer-events-auto ml-auto grid h-11 w-11 flex-none place-items-center p-0"
           onClick={() => setMenu("choose")}
         >
           <Plus size={16} strokeWidth={3} aria-hidden />
