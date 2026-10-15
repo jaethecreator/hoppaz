@@ -573,14 +573,24 @@ end $$;
 --   dms    my chats, newest first: the my_dms columns, plus other_id (crew friends only), unread, crew
 --   unread messages waiting, in all
 --   on_map my own SHOW ME ON THE MAP switch (false until I turn it on)
+--   mentions  unseen tags of me in hotspot chats, last 24 hours: id, alias (who tagged), place, slug, excerpt, at
 -- Names: a crew friend or a room wave shows the name the room showed (display name, then handle). Anyone else keeps the
 -- old rule: the handle until both have revealed.
 create or replace function public.crew_friend_inbox() returns jsonb
 language plpgsql stable security definer set search_path = public as $$
-declare me uuid := auth.uid(); v_waves jsonb; v_crew jsonb; v_dms jsonb; v_unread int;
+declare me uuid := auth.uid(); v_waves jsonb; v_crew jsonb; v_dms jsonb; v_unread int; v_mentions jsonb := '[]'::jsonb;
 begin
   if me is null then
-    return jsonb_build_object('waves', '[]'::jsonb, 'crew', '[]'::jsonb, 'dms', '[]'::jsonb, 'unread', 0);
+    return jsonb_build_object('waves', '[]'::jsonb, 'crew', '[]'::jsonb, 'dms', '[]'::jsonb, 'unread', 0, 'mentions', '[]'::jsonb);
+  end if;
+
+  -- Tags in hotspot chats (hotspot_mentions.sql): the unseen ones from the last day. Nothing when that file has not run.
+  if to_regclass('public.hotspot_mentions') is not null then
+    select coalesce(jsonb_agg(jsonb_build_object('id', m.id, 'alias', m.from_alias, 'place', m.place, 'slug', m.slug,
+                                                 'excerpt', m.excerpt, 'at', m.created_at) order by m.created_at desc), '[]'::jsonb)
+      into v_mentions
+      from (select * from hotspot_mentions where to_user = me and seen_at is null and created_at > now() - interval '1 day'
+             order by created_at desc limit 20) m;
   end if;
 
   select coalesce(jsonb_agg(t.x order by t.at desc), '[]'::jsonb) into v_waves from (
@@ -666,7 +676,7 @@ begin
      order by coalesce(l.created_at, x.created_at) desc
      limit 100) t;
 
-  return jsonb_build_object('waves', v_waves, 'crew', v_crew, 'dms', v_dms, 'unread', v_unread,
+  return jsonb_build_object('waves', v_waves, 'crew', v_crew, 'dms', v_dms, 'unread', v_unread, 'mentions', v_mentions,
                             'on_map', coalesce((select m.on_map from crew_map_share m where m.user_id = me), false));
 end $$;
 

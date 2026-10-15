@@ -25,6 +25,8 @@ export type CrewFace = { id: string; name: string; look: unknown; dm: string | n
 /** A wave waiting for me. `alias`: made at a hotspot head, so `name` is their alias and `where` reads "at <place>" (no handle, no user id). */
 export type WaveIn = { id: string; from: string | null; name: string; look: unknown; where: string | null; room: boolean; alias?: boolean; at: string };
 export type ChatRow = DmThread & { other_id: string | null; unread: number; crew: boolean };
+/** Someone tagged me in a hotspot chat (supabase/hotspot_mentions.sql): their alias, the place, the room's slug, a short excerpt. */
+export type Mention = { id: string; alias: string; place: string; slug: string; excerpt: string; at: string };
 
 type SocialState = {
   /** The crew_friend_* calls are on the server: true / false once known, null until the first answer. */
@@ -34,6 +36,8 @@ type SocialState = {
   crew: CrewFace[];
   dms: ChatRow[];
   unread: number;
+  /** Tags of me in hotspot chats that I have not seen (last 24 hours). They count on the Chat tab until seen. */
+  mentions: Mention[];
   /** Who is in my crew (both ways), by user id. */
   crewIds: Record<string, CrewFace>;
   /** SHOW ME ON THE MAP: my own switch, off until I turn it on. Nothing draws friends on the map yet; this is what it must honour. */
@@ -42,7 +46,7 @@ type SocialState = {
   pokedAt: Record<string, number>;
 };
 
-const EMPTY: SocialState = { supported: null, loaded: false, waves: [], crew: [], dms: [], unread: 0, crewIds: {}, onMap: false, pokedAt: {} };
+const EMPTY: SocialState = { supported: null, loaded: false, waves: [], crew: [], dms: [], unread: 0, mentions: [], crewIds: {}, onMap: false, pokedAt: {} };
 
 export const useSocial = create<SocialState>(() => EMPTY);
 
@@ -65,7 +69,7 @@ export const POKE_GAP_MS = 60_000;
 
 /* -------------------------------------------------------------------- read -- */
 
-export type InboxDiff = { newWaves: WaveIn[]; newMessages: ChatRow[] };
+export type InboxDiff = { newWaves: WaveIn[]; newMessages: ChatRow[]; newMentions: Mention[] };
 
 /**
  * Who hears about what is new since the last read (SocialPing: the toasts). One listener list, so that two reads running at
@@ -77,16 +81,23 @@ export function onInboxDiff(fn: (diff: InboxDiff) => void): () => void {
   return () => listeners.delete(fn);
 }
 
-type InboxJson = { waves?: WaveIn[]; crew?: CrewFace[]; dms?: ChatRow[]; unread?: number; on_map?: boolean };
+type InboxJson = { waves?: WaveIn[]; crew?: CrewFace[]; dms?: ChatRow[]; unread?: number; on_map?: boolean; mentions?: Mention[] };
 
-function apply(next: { waves: WaveIn[]; crew: CrewFace[]; dms: ChatRow[]; unread: number; onMap?: boolean }, supported: boolean): InboxDiff {
+const NONE: InboxDiff = { newWaves: [], newMessages: [], newMentions: [] };
+
+function apply(
+  next: { waves: WaveIn[]; crew: CrewFace[]; dms: ChatRow[]; unread: number; mentions?: Mention[]; onMap?: boolean },
+  supported: boolean
+): InboxDiff {
   const prev = useSocial.getState();
-  const diff: InboxDiff = { newWaves: [], newMessages: [] };
+  const diff: InboxDiff = { newWaves: [], newMessages: [], newMentions: [] };
   if (prev.loaded) {
     const had = new Set(prev.waves.map((w) => w.id));
     diff.newWaves = next.waves.filter((w) => !had.has(w.id));
     const before = new Map(prev.dms.map((d) => [d.id, d.unread]));
     diff.newMessages = next.dms.filter((d) => d.unread > (before.get(d.id) ?? 0));
+    const tagged = new Set(prev.mentions.map((m) => m.id));
+    diff.newMentions = (next.mentions ?? []).filter((m) => !tagged.has(m.id));
   }
   useSocial.setState({
     supported,
@@ -95,6 +106,7 @@ function apply(next: { waves: WaveIn[]; crew: CrewFace[]; dms: ChatRow[]; unread
     crew: next.crew,
     dms: next.dms,
     unread: next.unread,
+    mentions: next.mentions ?? [],
     crewIds: Object.fromEntries(next.crew.map((c) => [c.id, c])),
     onMap: next.onMap ?? false,
   });
@@ -103,16 +115,16 @@ function apply(next: { waves: WaveIn[]; crew: CrewFace[]; dms: ChatRow[]; unread
 
 async function fetchOnce(): Promise<InboxDiff> {
   const sb = getSupabase();
-  if (!sb) return { newWaves: [], newMessages: [] };
+  if (!sb) return NONE;
   const { data, error } = await sb.rpc("crew_friend_inbox");
   if (!error && data) {
     const j = data as InboxJson;
-    return apply({ waves: j.waves ?? [], crew: j.crew ?? [], dms: j.dms ?? [], unread: j.unread ?? 0, onMap: !!j.on_map }, true);
+    return apply({ waves: j.waves ?? [], crew: j.crew ?? [], dms: j.dms ?? [], unread: j.unread ?? 0, mentions: j.mentions ?? [], onMap: !!j.on_map }, true);
   }
-  if (!isMissing(error)) return { newWaves: [], newMessages: [] }; // a bad connection says nothing either way
+  if (!isMissing(error)) return NONE; // a bad connection says nothing either way
   // The old server: the waves and chats it always had, nobody "crew", nothing unread.
   const [w, d] = await Promise.all([sb.rpc("my_waves"), sb.rpc("my_dms")]);
-  if (w.error && d.error) return { newWaves: [], newMessages: [] };
+  if (w.error && d.error) return NONE;
   const waves = ((w.data ?? []) as Wave[]).map((x) => ({
     id: x.id,
     from: null,
@@ -142,7 +154,7 @@ export function loadInbox(): Promise<void> {
     do {
       again = false;
       const d = await fetchOnce();
-      if (d.newWaves.length || d.newMessages.length) listeners.forEach((fn) => fn(d));
+      if (d.newWaves.length || d.newMessages.length || d.newMentions.length) listeners.forEach((fn) => fn(d));
     } while (again);
   })().finally(() => {
     running = null;
@@ -235,6 +247,16 @@ export async function pokeCrew(userId: string): Promise<{ ok: boolean; text: str
   }
   if (r === "slow_down") useSocial.setState((s) => ({ pokedAt: { ...s.pokedAt, [userId]: Date.now() } }));
   return { ok: false, text: POKE_TEXT[r] ?? "COULD NOT POKE" };
+}
+
+/** I have seen these tags (the toast was tapped, the list was, or I walked into that room). Gone from the badge at once. */
+export async function markMentionsSeen(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const gone = new Set(ids);
+  useSocial.setState((s) => ({ mentions: s.mentions.filter((m) => !gone.has(m.id)) }));
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb.rpc("crew_friend_mention_seen", { p_ids: ids });
 }
 
 /** I have read this chat up to now (clears its unread count on the server, then here). */

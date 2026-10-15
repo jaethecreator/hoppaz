@@ -44,7 +44,7 @@ const FULL_SCREEN = [/^\/welcome/, /^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/dro
 export default function BottomNav() {
   const path = usePathname();
   // Unread messages and waves waiting for me: the dot on CHAT (supabase/crew_friends.sql).
-  const waiting = useSocial((s) => s.unread + s.waves.length);
+  const waiting = useSocial((s) => s.unread + s.waves.length + s.mentions.length);
   if (FULL_SCREEN.some((re) => re.test(path))) return null;
   const parent = PARENT.find(([p]) => path === p || path.startsWith(`${p}/`))?.[1];
   const active = parent ?? path;
