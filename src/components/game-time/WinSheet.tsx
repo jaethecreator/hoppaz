@@ -1,25 +1,46 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Check, ChevronRight, Copy, Ticket, X } from "lucide-react";
+import { Check, Copy, Ticket, X } from "lucide-react";
 import { deviceTier } from "@/lib/deviceTier";
 import { closeWin } from "@/lib/game-time/controller";
 import { useGameTime, type GtWin } from "@/lib/game-time/store";
 import { useToast } from "@/lib/store";
-import { copyText } from "./copyText";
 import css from "./GameTime.module.css";
 
 /**
  * The win, full screen over the room (design 13.5): a ticket with the code, COPY, confetti. The sound, the buzz and the burst on the
  * object were already played by the controller when the sheet rose. The code is saved to Me under "Your tickets" by the
- * database, so closing this loses nothing; the banner opens it again, and "Saved in Me, Your tickets" is a button that
- * closes the sheet and walks to /me#tickets (Me scrolls to the card and flashes it).
+ * database, so closing this loses nothing; the banner opens it again.
  */
 
 const COLOURS = ["#5B2EFF", "#D8B468", "#F5EBDD", "#FF4D00", "#9D81FF"];
 
 const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Copies text. The clipboard API where the browser has it, else a hidden field and the old command. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    /* fall through to the old way (an http page, a webview) */
+  }
+  try {
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px";
+    document.body.appendChild(field);
+    field.select();
+    field.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(field);
+    return ok;
+  } catch {
+    return false;
+  }
+}
 
 function Confetti({ count }: { count: number }) {
   const pieces = useMemo(
@@ -49,7 +70,6 @@ function Confetti({ count }: { count: number }) {
 
 function Card({ win }: { win: GtWin }) {
   const say = useToast((s) => s.say);
-  const router = useRouter();
   const done = useRef<HTMLButtonElement>(null);
   const [copied, setCopied] = useState(false);
   const brand = useGameTime((s) => s.game?.brand);
@@ -75,12 +95,6 @@ function Card({ win }: { win: GtWin }) {
   const copy = async () => {
     if (await copyText(win.code)) setCopied(true);
     else say("Couldn't copy. Press and hold the code.", "error");
-  };
-
-  // The sheet is store state, not a route: clear it first so it is not still up when the room unmounts or Me opens.
-  const openTickets = () => {
-    closeWin();
-    router.push("/me#tickets");
   };
 
   return (
@@ -115,9 +129,7 @@ function Card({ win }: { win: GtWin }) {
             {copied ? <Check size={18} aria-hidden /> : <Copy size={18} aria-hidden />}
             {copied ? "COPIED" : "COPY CODE"}
           </button>
-          <button type="button" className={css.winSaved} onClick={openTickets} data-gt-open-tickets>
-            Saved in Me, Your tickets <ChevronRight size={14} aria-hidden />
-          </button>
+          <p className={css.winSaved}>Saved in Me, Your tickets.</p>
           <button ref={done} type="button" className="btn btn-ghost w-full" onClick={closeWin} data-gt-done>
             DONE
           </button>
