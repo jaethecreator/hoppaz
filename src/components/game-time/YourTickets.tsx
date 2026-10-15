@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy, Ticket } from "lucide-react";
+import { Check, Copy, Share2, Ticket } from "lucide-react";
 import { lagosWhen } from "@/lib/game-time/clock";
 import { useTickets } from "@/lib/game-time/hooks";
 import { useToast } from "@/lib/store";
+import type { GtTicket } from "@/lib/game-time/types";
+import TicketStorySheet from "./TicketStorySheet";
 
 /**
  * "Your tickets" on Me: every code this Hopper has won in a Game Time, newest first, each with COPY. A win in the room saves
@@ -15,6 +17,8 @@ export default function YourTickets({ enabled = true }: { enabled?: boolean }) {
   const { tickets, loaded } = useTickets(enabled);
   const say = useToast((s) => s.say);
   const [copied, setCopied] = useState<string | null>(null);
+  // SHARE: the ticket whose story picture is open. The picture never carries the code (see ticketStory.ts).
+  const [sharing, setSharing] = useState<GtTicket | null>(null);
   useEffect(() => {
     if (!copied) return;
     const t = setTimeout(() => setCopied(null), 1800);
@@ -48,13 +52,26 @@ export default function YourTickets({ enabled = true }: { enabled?: boolean }) {
                 {t.code}
               </p>
             </div>
-            <button type="button" onClick={() => void copy(t.id, t.code)} aria-label={`Copy code ${t.code}`} className="btn btn-ghost flex-none px-3 text-[12px]">
-              {copied === t.id ? <Check size={16} aria-hidden /> : <Copy size={16} aria-hidden />}
-              {copied === t.id ? "COPIED" : "COPY"}
-            </button>
+            <div className="flex flex-none flex-col gap-1.5">
+              <button type="button" onClick={() => void copy(t.id, t.code)} aria-label={`Copy code ${t.code}`} className="btn btn-ghost px-3 text-[12px]">
+                {copied === t.id ? <Check size={16} aria-hidden /> : <Copy size={16} aria-hidden />}
+                {copied === t.id ? "COPIED" : "COPY"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSharing(t)}
+                aria-label={`Share ${t.title} to your story`}
+                className="btn btn-ghost px-3 text-[12px]"
+                data-ticket-share
+              >
+                <Share2 size={16} aria-hidden />
+                SHARE
+              </button>
+            </div>
           </li>
         ))}
       </ul>
+      {sharing && <TicketStorySheet title={sharing.title} brand={sharing.brand} crewId={sharing.crew_id} onClose={() => setSharing(null)} />}
     </section>
   );
 }

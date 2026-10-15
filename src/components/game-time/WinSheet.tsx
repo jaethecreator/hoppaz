@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, Ticket, X } from "lucide-react";
+import { Check, Copy, Share2, Ticket, X } from "lucide-react";
 import { deviceTier } from "@/lib/deviceTier";
 import { closeWin } from "@/lib/game-time/controller";
 import { useGameTime, type GtWin } from "@/lib/game-time/store";
 import { useToast } from "@/lib/store";
+import TicketStorySheet from "./TicketStorySheet";
 import css from "./GameTime.module.css";
 
 /**
@@ -73,6 +74,9 @@ function Card({ win }: { win: GtWin }) {
   const done = useRef<HTMLButtonElement>(null);
   const [copied, setCopied] = useState(false);
   const brand = useGameTime((s) => s.game?.brand);
+  const crewId = useGameTime((s) => s.game?.crew_id ?? s.crewId);
+  // SHARE TO STORY: the picture for the story sheet. It never carries the code (see ticketStory.ts).
+  const [sharing, setSharing] = useState(false);
   // Confetti plays once, a bit under five seconds, then the page is still.
   const [rain, setRain] = useState(win.fresh && !reduced());
   useEffect(() => {
@@ -129,12 +133,17 @@ function Card({ win }: { win: GtWin }) {
             {copied ? <Check size={18} aria-hidden /> : <Copy size={18} aria-hidden />}
             {copied ? "COPIED" : "COPY CODE"}
           </button>
+          <button type="button" className="btn w-full" onClick={() => setSharing(true)} data-gt-share>
+            <Share2 size={18} aria-hidden />
+            SHARE TO STORY
+          </button>
           <p className={css.winSaved}>Saved in Me, Your tickets.</p>
           <button ref={done} type="button" className="btn btn-ghost w-full" onClick={closeWin} data-gt-done>
             DONE
           </button>
         </div>
       </div>
+      {sharing && <TicketStorySheet title={win.title || "Game Time"} brand={brand || "360Playlist"} crewId={crewId} onClose={() => setSharing(false)} />}
     </div>
   );
 }

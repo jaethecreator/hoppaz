@@ -38,8 +38,8 @@ export type StoryInput = {
 
 export type StoryResult = { blob: Blob; usedFlyer: boolean };
 
-const DISPLAY = "Poppins, 'Arial Black', system-ui, sans-serif";
-const MONO = "'DM Mono', ui-monospace, Menlo, monospace";
+export const DISPLAY = "Poppins, 'Arial Black', system-ui, sans-serif";
+export const MONO = "'DM Mono', ui-monospace, Menlo, monospace";
 
 /** Draw the story and hand back the PNG. */
 export async function renderStory(input: StoryInput): Promise<StoryResult> {
@@ -64,7 +64,7 @@ export async function renderStory(input: StoryInput): Promise<StoryResult> {
   }
 }
 
-function loadImage(src: string, cors: boolean): Promise<HTMLImageElement | null> {
+export function loadImage(src: string, cors: boolean): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const im = new Image();
     if (cors) im.crossOrigin = "anonymous";
@@ -74,7 +74,7 @@ function loadImage(src: string, cors: boolean): Promise<HTMLImageElement | null>
   });
 }
 
-function toBlob(cv: HTMLCanvasElement): Promise<Blob> {
+export function toBlob(cv: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     try {
       cv.toBlob((b) => (b ? resolve(b) : reject(new Error("The story could not be saved as a picture."))), "image/png");
@@ -86,7 +86,7 @@ function toBlob(cv: HTMLCanvasElement): Promise<Blob> {
 
 /* -------------------------------------------------------------- drawing -- */
 
-type Ctx = CanvasRenderingContext2D;
+export type Ctx = CanvasRenderingContext2D;
 
 async function draw(
   { event, going, palette, box, link, now }: StoryInput,
@@ -393,7 +393,7 @@ function drawBlock(x: Ctx, event: EventRow, cw: number, ch: number, s: number, m
 
 /* -------------------------------------------------------------- helpers -- */
 
-function roundRect(x: Ctx, a: number, b: number, w: number, h: number, r: number) {
+export function roundRect(x: Ctx, a: number, b: number, w: number, h: number, r: number) {
   x.beginPath();
   x.moveTo(a + r, b);
   x.arcTo(a + w, b, a + w, b + h, r);
@@ -404,17 +404,17 @@ function roundRect(x: Ctx, a: number, b: number, w: number, h: number, r: number
 }
 
 /** letterSpacing is not in every browser yet; without it the text is just a touch tighter. */
-function setSpacing(x: Ctx, px: number) {
+export function setSpacing(x: Ctx, px: number) {
   if ("letterSpacing" in x) (x as Ctx & { letterSpacing: string }).letterSpacing = `${px}px`;
 }
 
-function setFont(x: Ctx, weight: number, family: string, px: number, spacing: number) {
+export function setFont(x: Ctx, weight: number, family: string, px: number, spacing: number) {
   x.font = `${weight} ${px}px ${family}`;
   setSpacing(x, spacing);
 }
 
 /** Set the font so `text` fits `max` wide: from `from` px down to no less than `min`. Returns the size used. */
-function fitText(x: Ctx, text: string, weight: number, family: string, from: number, min: number, spacing: number, max: number) {
+export function fitText(x: Ctx, text: string, weight: number, family: string, from: number, min: number, spacing: number, max: number) {
   let px = from;
   setFont(x, weight, family, px, spacing);
   while (px > min && x.measureText(text).width > max) {
@@ -424,7 +424,7 @@ function fitText(x: Ctx, text: string, weight: number, family: string, from: num
   return px;
 }
 
-function wrap(x: Ctx, text: string, maxW: number) {
+export function wrap(x: Ctx, text: string, maxW: number) {
   const out: string[] = [];
   let line = "";
   for (const word of text.split(/\s+/)) {
