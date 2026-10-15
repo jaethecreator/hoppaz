@@ -16,7 +16,7 @@ import { deviceTier } from "@/lib/deviceTier";
 import { haptics } from "@/lib/haptics";
 import { sfx } from "@/lib/sound/sfx";
 import AvatarSprite from "./AvatarSprite";
-import ClubhouseArt from "./ClubhouseArt";
+import RoomArt, { type RoomArtContent } from "./roomArt";
 import { RoomCamera, type CamMode } from "./roomCamera";
 import { prioritise, spritesPending, spritesReady } from "./spriteCache";
 import { Motion } from "./walkMotion";
@@ -120,9 +120,11 @@ export default function CampaignWorld({
   brand,
   social,
   crewId,
+  placeId,
   room,
   userId,
   zoneLines,
+  roomContent,
   onPhase,
 }: {
   layout: CampaignLayout;
@@ -130,10 +132,17 @@ export default function CampaignWorld({
   brand: string;
   social?: SocialWorld;
   crewId?: string;
+  /**
+   * An event or hotspot room's key (`event-pool`, `hotspot-yaba`): the room is not a crew's, so there is no Game Time,
+   * fountain sticker, vibes or bubbles, but the exit door, the zone cards and the room store are wired, as for a crew.
+   */
+  placeId?: string;
   room?: CrewRoomConnection;
   userId?: string;
   /** What a zone's card says when the owner has not filled that zone in, by zone id. */
   zoneLines?: Partial<Record<string, string>>;
+  /** An event room's flyer, line-up and title for its walls (roomArt.tsx). The clubhouse ignores it. */
+  roomContent?: RoomArtContent;
   /** The open sequence: "hold" (the whole room), "zoom" (zooming to me), "done". */
   onPhase?: (phase: OpenPhase) => void;
 }) {
@@ -152,6 +161,8 @@ export default function CampaignWorld({
   const [nudge, setNudge] = useState(0);
   const [bump, setBump] = useState<{ x: number; y: number; k: number } | null>(null);
   const [say, setSay] = useState("");
+  /** What the room store and the open-sequence memory are keyed by: the crew's id, or the place's key. */
+  const storeId = crewId ?? placeId;
   const uid = useId().replace(/:/g, "");
   const scene = sceneSize(layout);
   const tile = layout.grid.tile;
@@ -255,7 +266,7 @@ export default function CampaignWorld({
     });
     zoomInRef.current = (ms: number) => {
       try {
-        sessionStorage.setItem(`hz:room-opened:${crewId ?? "x"}`, "1");
+        sessionStorage.setItem(`hz:room-opened:${storeId ?? "x"}`, "1");
       } catch {
         /* storage blocked */
       }
@@ -274,7 +285,7 @@ export default function CampaignWorld({
       camRef.current = null;
       if (holdTimer.current) clearTimeout(holdTimer.current);
     };
-  }, [scene.width, scene.height, tile, crewId, setPhase, skipOpen, motion]);
+  }, [scene.width, scene.height, tile, storeId, setPhase, skipOpen, motion]);
 
   // The open sequence: the whole room for a moment, then a zoom to me at the entrance. A full room only looks on.
   useEffect(() => {
@@ -294,7 +305,7 @@ export default function CampaignWorld({
     }
     let seen = false;
     try {
-      seen = sessionStorage.getItem(`hz:room-opened:${crewId ?? "x"}`) === "1";
+      seen = sessionStorage.getItem(`hz:room-opened:${storeId ?? "x"}`) === "1";
     } catch {
       /* storage blocked: the long hold every time */
     }
@@ -313,7 +324,7 @@ export default function CampaignWorld({
     return () => {
       if (holdTimer.current) clearTimeout(holdTimer.current);
     };
-  }, [watching, crewId, setPhase, scene.width, scene.height, tile]);
+  }, [watching, storeId, setPhase, scene.width, scene.height, tile]);
 
   // ---- Walking -------------------------------------------------------------------------------------------------
   // The server put me somewhere (I came in, or it and this phone disagreed about where I stand): stand there and stop. A
@@ -410,19 +421,19 @@ export default function CampaignWorld({
   // The room store lets the screen chrome (outside this scaled world) see my tile and walk me: Game Time's banner and
   // win sheet, the Hopper menu's WALK TO. `walkTo` is the same call a tap on the floor makes.
   useEffect(() => {
-    if (!crewId) return;
+    if (!storeId) return;
     const store = useRoomStore.getState();
     store.setTile(tile);
     store.setWalkTo(walkToTile);
     return () => useRoomStore.getState().reset();
-  }, [crewId, tile, walkToTile]);
+  }, [storeId, tile, walkToTile]);
   useEffect(() => {
-    if (crewId) useRoomStore.getState().setMe(watching ? null : player);
-  }, [crewId, player, watching]);
+    if (storeId) useRoomStore.getState().setMe(watching ? null : player);
+  }, [storeId, player, watching]);
   useEffect(() => {
-    if (!crewId) return;
+    if (!storeId) return;
     useRoomStore.getState().setPeers(peers.map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, look: p.look, key: (p as RoomPeer & { key?: string }).key })));
-  }, [crewId, peers]);
+  }, [storeId, peers]);
 
   // The zone or conversation area I stand in (an area wins), for the pop-ups, the pills and the chat tabs.
   const hereArea = useMemo(() => privateAreaAt(layout, player), [layout, player]);
@@ -430,8 +441,8 @@ export default function CampaignWorld({
   const zoneId = watching ? null : (hereArea?.id ?? hereZone);
   // The store's zone stays null through the whole-room moment, so no card pops over a camera that is still far away.
   useEffect(() => {
-    if (crewId) useRoomStore.getState().setZone(opened ? zoneId : null);
-  }, [crewId, zoneId, opened]);
+    if (storeId) useRoomStore.getState().setZone(opened ? zoneId : null);
+  }, [storeId, zoneId, opened]);
   useEffect(() => {
     if (!zoneId) return;
     const place = hereArea ? hereArea.name : (layout.zones.find((z) => z.id === zoneId)?.name ?? "");
@@ -783,24 +794,24 @@ export default function CampaignWorld({
   // The scene art is about 650 nodes and never changes while I walk. Held as one element, React skips it on every step
   // (it was 20 percent of the main thread on a 4x throttle when it was re-created 12 times a second).
   const hasSocial = !!social;
-  const art = useMemo(() => <ClubhouseArt layout={layout} uid={uid} brand={brand} />, [layout, uid, brand]);
+  const art = useMemo(() => <RoomArt layout={layout} uid={uid} brand={brand} content={roomContent} />, [layout, uid, brand, roomContent]);
   const props = useMemo(
     () =>
-      hasSocial && crewId ? (
+      hasSocial && storeId ? (
         <>
-          <FountainSticker crewId={crewId} layout={layout} />
-          <ExitDoor crewId={crewId} layout={layout} />
+          {crewId && <FountainSticker crewId={crewId} layout={layout} />}
+          <ExitDoor crewId={storeId} layout={layout} />
         </>
       ) : null,
-    [hasSocial, crewId, layout],
+    [hasSocial, crewId, storeId, layout],
   );
-  const cards = useMemo(() => (hasSocial && crewId ? <PopUps crewId={crewId} layout={layout} lines={zoneLines} /> : null), [hasSocial, crewId, layout, zoneLines]);
+  const cards = useMemo(() => (hasSocial && storeId ? <PopUps crewId={storeId} layout={layout} lines={zoneLines} /> : null), [hasSocial, storeId, layout, zoneLines]);
   const vibes = useMemo(() => (hasSocial && crewId ? <VibeLayer crewId={crewId} layout={layout} /> : null), [hasSocial, crewId, layout]);
   const bubbles = useMemo(() => (hasSocial && crewId && room && userId ? <Bubbles crewId={crewId} layout={layout} room={room} userId={userId} /> : null), [hasSocial, crewId, room, userId, layout]);
 
   return (
     <div className={css.worldShell}>
-      <div className={css.viewport} ref={viewportRef} role="group" aria-label={`${brand} clubhouse. Tap the floor to walk. Arrow keys walk on a keyboard.`} tabIndex={0} data-lod={lod}>
+      <div className={css.viewport} ref={viewportRef} role="group" aria-label={`${brand} ${placeId ? "room" : "clubhouse"}. Tap the floor to walk. Arrow keys walk on a keyboard.`} tabIndex={0} data-lod={lod}>
         <div className={css.world} ref={worldRef} style={{ width: scene.width, height: scene.height }}>
           <div className={css.art} aria-hidden>
             {art}
