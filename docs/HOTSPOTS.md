@@ -576,6 +576,10 @@ Each is his body plus a branch that starts `like 'hotspot:%'`; nothing changes f
 
 ## 14. The room screen and the admin section (built 10 Oct 2026)
 
+> 15 Oct 2026: each hotspot also gets a walkable room drawn for its real place (`hotspot-<slug>`, on the crew-room engine),
+> opened at `/room/<slug>`. The room screen below is the crossroads fallback while a hotspot has no room of its own. See
+> [ROOM-TEMPLATES.md](ROOM-TEMPLATES.md).
+
 The app half of steps 3, 4 and 6 that is not the map: the room Hoppers stand in, the 18+ sheet, the daily reward moment, the staff section and the privacy line. Play's own screens (the tray row and the pointer) are in `src/components/play/hotspots/`; the marker, sheet, list and room are in `src/components/hotspots/`, and `src/lib/hotspots/` holds the data.
 
 ### Files

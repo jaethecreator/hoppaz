@@ -2,6 +2,10 @@
 
 A crew owns a walk-in room at `/crew/<crew id>/room`, built from the 360Playlist clubhouse template (more rooms later, see "Room templates"). The first one is the 360Playlist brand crew; the same template serves every crew, brand, hotspot and event room after it. Updated 14 October 2026 on `jae/consolidate`. Local database only so far: nothing has been deployed and no production database has been changed.
 
+> Event rooms (theatre, pool party, outdoor party, indoor party, tech event) and one room per hotspot are built on this
+> engine as "place rooms", not as crew templates: see [ROOM-TEMPLATES.md](ROOM-TEMPLATES.md). The crew picker still lists
+> the clubhouse only.
+
 ## Ways in
 
 | Where | What it does |
