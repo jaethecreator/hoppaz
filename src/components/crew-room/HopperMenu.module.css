@@ -1,0 +1,235 @@
+/* The Hopper menu and the room's hint chip (design 8.1 and 5.5). Screen px, inside the click-through chrome layer: only
+   the menu, the chip and the profile sheet take taps. Tokens only; they flip with the day theme on their own. */
+.layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.menu {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: min(280px, calc(100% - 16px));
+  visibility: hidden;
+  pointer-events: auto;
+  will-change: transform;
+  z-index: 5;
+}
+
+.face {
+  position: relative;
+  padding: 8px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  background: rgb(var(--raised) / 0.96);
+  box-shadow: 0 -14px 40px rgb(var(--shadow) / 0.45), 0 3px 0 rgb(var(--shadow) / 0.25);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin-bottom: 4px;
+}
+
+.name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 16px;
+  color: rgb(var(--text));
+}
+
+.where {
+  flex: none;
+  max-width: 45%;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 12px;
+  letter-spacing: 0.08em;
+  text-align: right;
+  color: rgb(var(--dim));
+}
+
+.label {
+  height: 14px;
+  margin-bottom: 4px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--dim));
+}
+.label[data-note] {
+  color: rgb(var(--danfo));
+}
+
+.stickers {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.chip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 10px;
+  touch-action: manipulation;
+  transition: transform 0.08s ease-out, opacity 0.12s;
+}
+.chip:active {
+  transform: scale(0.92);
+}
+.chip[data-cool] {
+  opacity: 0.55;
+}
+
+/* The countdown ring: a thin cream line drawing round the chip once, for the length of the cooldown. */
+.ring {
+  position: absolute;
+  inset: 0;
+  width: 44px;
+  height: 44px;
+  pointer-events: none;
+}
+.ring rect {
+  fill: none;
+  stroke: rgb(var(--text));
+  stroke-width: 2;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: sweep linear both;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+.actions:has(> :nth-child(2):last-child) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.act {
+  min-height: 44px;
+  padding: 0 6px;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+/* The tail points at the person and slides along the edge when the menu is clamped. */
+.tail {
+  position: absolute;
+  left: var(--tx, 50%);
+  bottom: -5px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  background: rgb(var(--raised));
+  border-right: 1px solid rgb(var(--hairline));
+  border-bottom: 1px solid rgb(var(--hairline));
+  transform: rotate(45deg);
+}
+.menu[data-flip="1"] .tail {
+  bottom: auto;
+  top: -5px;
+  transform: rotate(225deg);
+}
+
+/* ---------------------------------------------------------------- hint chip -- */
+.hintRow {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--room-bottom, 12px) + 56px);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  background: rgb(var(--raised) / 0.96);
+  box-shadow: 0 3px 0 rgb(var(--shadow) / 0.25);
+  pointer-events: auto;
+}
+
+.hintText {
+  min-width: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--text));
+}
+
+.hintAction {
+  flex: none;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: #ff4d00;
+  box-shadow: 0 3px 0 #b83600;
+  color: #0e0b0a;
+  font-family: var(--font-poppins), system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.hintAction:active {
+  transform: translateY(3px);
+  box-shadow: none;
+}
+
+/* ------------------------------------------------------------ profile sheet -- */
+.sheetHost {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  z-index: 9;
+}
+
+@keyframes sweep {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip {
+    transition: none;
+  }
+  .ring rect {
+    animation: none;
+  }
+}

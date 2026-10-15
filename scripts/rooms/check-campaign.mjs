@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import vm from "node:vm";
-import ts from "typescript";
+import { loadCampaign } from "./load-campaign.mjs";
 
-const file = "src/lib/campaign/layout.ts";
-const source = fs.readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
-const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-const context = { exports: {}, URL };
-vm.runInNewContext(js, context, { filename: file });
-const { CLUBHOUSE: layout, clubhouseWidth, sceneSize, sceneBlocks, canWalkScene, scenePath, privateAreaAt, validCampaignUrl, EMPTY_CAMPAIGN } = context.exports;
+const { CLUBHOUSE: layout, clubhouseWidth, sceneSize, sceneBlocks, canWalkScene, scenePath, privateAreaAt, validCampaignUrl, EMPTY_CAMPAIGN,
+  ROOM_TEMPLATES, ROOM_WIDTHS, TEMPLATE_KEYS, roomTemplate, templateFor } = loadCampaign();
 let passed = 0;
 function check(label, run) { run(); passed++; console.log(`PASS ${label}`); }
 function connected(from, to) {
@@ -62,7 +57,7 @@ check("Roomy preset preserves reachable sections and furniture size", () => {
   }
 });
 check("Defaults contain no invented artists, music or awards", () => {
-  assert.equal(EMPTY_CAMPAIGN.brand, "360 Playlist");
+  assert.equal(EMPTY_CAMPAIGN.brand, "360Playlist");
   assert.equal(EMPTY_CAMPAIGN.musicUrl, ""); assert.equal(EMPTY_CAMPAIGN.audioUrl, "");
   assert.equal(EMPTY_CAMPAIGN.artistTitle, ""); assert.equal(EMPTY_CAMPAIGN.awards.length, 0);
 });
@@ -101,4 +96,50 @@ check("Prop ids stay stable in both widths, and the map table by the door is rea
     assert.ok(scenePath(room, room.spawn, room.zones.find((z) => z.id === "courtyard").stop), "the table must not block the way in");
   }
 });
+// ---- Templates: every one the registry ships must be a room a crew can meet in. ----
+check("The registry is data a picker can draw, and the clubhouse is in it", () => {
+  assert.ok(ROOM_TEMPLATES.length >= 1);
+  assert.deepEqual(TEMPLATE_KEYS, ROOM_TEMPLATES.map((t) => t.key));
+  assert.equal(new Set(TEMPLATE_KEYS).size, TEMPLATE_KEYS.length, "template keys must be unique");
+  assert.ok(TEMPLATE_KEYS.includes("clubhouse"));
+  for (const t of ROOM_TEMPLATES) {
+    assert.match(t.key, /^[a-z][a-z0-9-]{1,30}$/);
+    assert.ok(t.name.length >= 3 && t.name.length <= 30, `${t.key} needs a short name`);
+    assert.ok(t.description.length >= 20 && t.description.length <= 140, `${t.key} needs a one line description`);
+    assert.ok(!/ \u2014 |\u2014|360 Playlist/.test(`${t.name} ${t.description}`), `${t.key} copy has an em dash or "360 Playlist"`);
+    assert.ok(t.thumbnail.startsWith("/") && /\.(jpg|png|webp)$/.test(t.thumbnail), `${t.key} thumbnail must be a /public path`);
+    assert.ok(fs.existsSync(new URL(`../../public${t.thumbnail}`, import.meta.url)), `${t.key} thumbnail file is missing: public${t.thumbnail}`);
+  }
+});
+check("An unknown or missing template opens the clubhouse", () => {
+  for (const key of [undefined, null, "", "nope", "Clubhouse "]) {
+    assert.equal(templateFor(key).key, "clubhouse");
+    assert.equal(roomTemplate(key).id, layout.id);
+  }
+  assert.equal(roomTemplate("clubhouse", 36).grid.width, 36);
+  assert.equal(roomTemplate("clubhouse", 99).grid.width, 30);
+});
+for (const t of ROOM_TEMPLATES) {
+  check(`Template ${t.key}: both widths have stable unique ids, valid walls, a reachable spawn, the door and the fountain`, () => {
+    for (const width of ROOM_WIDTHS) {
+      const room = t.layout(width);
+      assert.equal(room.grid.width, width);
+      assert.ok(canWalkScene(room, room.spawn), `${t.key} spawn must be walkable at ${width}`);
+      assert.equal(new Set(room.props.map((p) => p.id)).size, room.props.length, `${t.key} prop ids must be unique`);
+      assert.equal(new Set(room.zones.map((z) => z.id)).size, room.zones.length);
+      assert.equal(new Set(room.privateAreas.map((a) => a.id)).size, room.privateAreas.length);
+      for (const item of [...room.zones, ...room.props, ...room.walls, ...room.privateAreas]) {
+        assert.ok(item.x >= 0 && item.y >= 0 && item.w > 0 && item.h > 0 && item.x + item.w <= room.grid.width && item.y + item.h <= room.grid.height, `${t.key} geometry out of bounds`);
+      }
+      for (const zone of room.zones) assert.ok(scenePath(room, room.spawn, zone.stop), `${t.key} ${zone.id} unreachable at ${width}`);
+      for (const area of room.privateAreas) assert.ok(scenePath(room, room.spawn, area.stop), `${t.key} ${area.id} unreachable at ${width}`);
+      const door = room.props.find((p) => p.id === "entry-map-table");
+      assert.ok(door, `${t.key} needs the entry-map-table door prop`);
+      assert.ok(scenePath(room, room.spawn, { x: door.x, y: door.y + 1 }), `${t.key} door must be reachable from the spawn`);
+      const fountain = room.props.find((p) => p.id === "courtyard-fountain");
+      assert.ok(fountain, `${t.key} needs the courtyard-fountain prop`);
+      assert.equal(fountain.kind, "fountain");
+    }
+  });
+}
 console.log(`${passed} campaign checks passed.`);

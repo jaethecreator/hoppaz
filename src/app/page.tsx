@@ -10,6 +10,7 @@ import EventCard from "@/components/EventCard";
 import HopSheet from "@/components/HopSheet";
 import TitleSequence from "@/components/TitleSequence";
 import FilterCard from "@/components/FilterCard";
+import DayPick from "@/components/pick/DayPick";
 import TopChrome from "@/components/map-chrome/TopChrome";
 import TimeScrubber from "@/components/map-chrome/TimeScrubber";
 import { EmptyDay, ErrorLine } from "@/components/map-chrome/MapNotice";
@@ -97,9 +98,8 @@ export default function MapPage() {
   const dayKey = mounted && dateFilter.kind === "night" ? dateFilter.date : todayKey();
   const todayStr = nightOf(now);
   const today = dayKey === todayStr;
-  const dayFilter: DateFilter = useMemo(() => ({ kind: "night", date: dayKey }), [dayKey]);
 
-  // Rail counts: everything loaded that has a real place, narrowed by type only (not by distance).
+  // Calendar counts: everything loaded that has a real place, narrowed by type only (not by distance).
   // Leads with no venue yet stay off the map; Today still lists them.
   const typed = useMemo(() => allEvents.filter((e) => hasVenue(e) && matchesType(e, shownTypes)), [allEvents, shownTypes]);
   const counts = useMemo(() => countByDay(typed), [typed]);
@@ -117,6 +117,11 @@ export default function MapPage() {
     },
     [setDateFilter]
   );
+  /** Back to the next twenty events: from the chip's x, the list card or the calendar. */
+  const pickNext = useCallback(() => {
+    setMode("next");
+    setSelected(null);
+  }, []);
 
   // Never leave the map on a day that is over: past days and any leftover "any day" snap to today.
   useEffect(() => {
@@ -148,7 +153,7 @@ export default function MapPage() {
     }
   }, []);
 
-  // Once events are in, put the rail on that event's day so its pin is on the map.
+  // Once events are in, put the map on that event's day so its pin is on it.
   useEffect(() => {
     const id = deepLink.current;
     if (!id || !ready) return;
@@ -396,21 +401,22 @@ export default function MapPage() {
       {/* -------------------------------------------------------------- top -- */}
       {mounted && !playing && (
         <TopChrome
-          key={todayStr} /* a new day (6am) rebuilds the 14-day rail */
+          key={todayStr} /* a new day (6am) rebuilds the bar */
           hudRef={topRef}
-          day={mode === "next" ? { kind: "any" } : dayFilter}
-          lead={{
-            label: "NEXT",
-            sub: String(next.list.length || NEXT_COUNT),
-            aria: `Next ${next.list.length} events`,
-            on: mode === "next",
-            onClick: () => {
-              setMode("next");
-              setSelected(null);
-            },
-          }}
-          onDay={pickDay}
-          counts={counts}
+          pick={
+            <DayPick
+              mode={mode}
+              date={dayKey}
+              events={events}
+              counts={counts}
+              now={now}
+              anchorRef={topRef}
+              onNext={pickNext}
+              onDay={(date) => pickDay({ kind: "night", date })}
+              // What a tap on its pin does: select it, and the map flies there and opens its card.
+              onPickEvent={(e) => setSelected(e.id)}
+            />
+          }
           types={shownTypes}
           onRemoveType={(t) => setTypes(types.filter((x) => x !== t))}
           onClearTypes={() => setTypes([])}

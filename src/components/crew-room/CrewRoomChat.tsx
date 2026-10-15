@@ -1,266 +1,521 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
-import { ArrowUpRight, MessageCircle, X } from "lucide-react";
-import Bubble, { chatTime } from "@/components/chat/Bubble";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Clock, CornerUpLeft, Flame, Footprints, Heart, Info, Laugh, PartyPopper, SendHorizontal, X } from "lucide-react";
 import ChatFace from "@/components/chat/ChatFace";
-import { clubhouseWidth, privateAreaAt, type PrivateArea } from "@/lib/campaign/layout";
+import { chatTime } from "@/components/chat/Bubble";
+import { buildRows } from "@/lib/crew-room/chatFeed";
+import { useChatNames } from "@/lib/crew-room/chatNames";
+import { useChatSender, useOutbox, useOutboxCleanup } from "@/lib/crew-room/chatOutbox";
+import { REACTION_KINDS, type ReactionKind, type useReactions } from "@/lib/crew-room/chatReactions";
 import { draftKey, useRoomDrafts, type Draft } from "@/lib/crew-room/drafts";
+import { useRoomStore } from "@/lib/crew-room/roomStore";
 import type { CrewRoomConnection } from "@/lib/crew-room/types";
-import css from "./CrewRoom.module.css";
+import { roomTips, welcomeLine } from "./ChatWelcome";
+import css from "./CrewRoomChat.module.css";
 
 const NO_DRAFT: Draft = { text: "", circle: null };
+const REACT_ICON: Record<ReactionKind, typeof Heart> = { heart: Heart, fire: Flame, laugh: Laugh, party: PartyPopper };
+const REACT_LABEL: Record<ReactionKind, string> = { heart: "Love it", fire: "Fire", laugh: "Funny", party: "Party" };
+/** Within this many px of the bottom counts as "at the bottom": new messages keep the list pinned. */
+const NEAR_BOTTOM = 80;
 
-/**
- * General and Area chat for one crew room. General reaches the whole crew, from anywhere in the room (and from the
- * door, for someone watching a full room). Area chat is the conversation of the marked area you stand in.
- *
- * Each conversation keeps its own unsent draft in the drafts store (lib/crew-room/drafts.ts), keyed by crew and area,
- * so it outlives this component: an expired session, a rejoin or a second tab never loses it. Leaving an area never
- * turns its draft into a General message, and a draft from an area's earlier session needs an explicit tap before it
- * goes to the new one.
- */
-export default function CrewRoomChat({
-  crewId,
-  room,
-  userId,
-  open,
-  onClose,
-  mode,
-  onMode,
-  onVisit,
-}: {
+/** What the sheet lends the list so a pull on it can move the sheet (pull to close, pull up to open). */
+export type PullHandlers = {
+  /** A drag started at this y. Returns false when the sheet cannot be dragged (docked). */
+  begin: (y: number) => boolean;
+  move: (y: number) => void;
+  end: () => void;
+};
+
+export type CrewRoomChatProps = {
   crewId: string;
   room: CrewRoomConnection;
   userId: string;
-  open: boolean;
-  onClose: () => void;
-  mode: "general" | "nearby";
-  onMode: (mode: "general" | "nearby") => void;
-  onVisit: (area: PrivateArea) => void;
-}) {
+  /** Which conversation: General, or the area I am standing in. */
+  tab: "general" | "area";
+  area: { id: string; name: string } | null;
+  /** The area session I am in now (a circle id), or null. */
+  circle: string | null;
+  /** The sheet is open and this conversation is the one on show. */
+  active: boolean;
+  reactions: ReturnType<typeof useReactions>;
+  pull: PullHandlers;
+  brand: string;
+  onAtBottom: (atBottom: boolean) => void;
+  /** The input took focus (the sheet lifts from peek to half). */
+  onInputFocus: () => void;
+  /** I asked to walk to someone from a message (the sheet drops to peek so the walk shows). */
+  onWalked: () => void;
+};
+
+/**
+ * One conversation inside the chat sheet: the messages (flat lines, newest at the bottom), the bar that opens when
+ * you tap a message (react, reply, walk to), and the composer. The input always works: a message goes into the
+ * outbox at once and the outbox keeps trying while the room reconnects. Unsent words live in the drafts store
+ * (lib/crew-room/drafts.ts) so a rejoin or an expired session never loses them.
+ */
+export default function CrewRoomChat({ crewId, room, userId, tab, area, circle, active, reactions, pull, brand, onAtBottom, onInputFocus, onWalked }: CrewRoomChatProps) {
   const drafts = useRoomDrafts((s) => s.drafts);
   const setDraft = useRoomDrafts((s) => s.set);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
-  const feed = useRef<HTMLDivElement>(null);
+  const sender = useChatSender(room, crewId);
+  const outAll = useOutbox((s) => s.items);
+  const walkTo = useRoomStore((s) => s.walkTo);
+  const peersLive = useRoomStore((s) => s.peers);
+  const list = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const stick = useRef(true);
   const anchor = useRef<{ height: number; top: number } | null>(null);
-  const layout = clubhouseWidth(room.snapshot?.room.width ?? 30);
-  const circle = room.snapshot?.self?.circle_id ?? null;
-  const area = layout.privateAreas.find((a) => a.id === room.world?.areaId) ?? null;
-  const members = room.snapshot?.peers.filter((p) => circle && p.circle_id === circle) ?? [];
-  const others = members.filter((p) => p.id !== userId);
-  const generalKey = draftKey(crewId, null);
-  const general = drafts[generalKey] ?? NO_DRAFT;
-  const draft = area ? drafts[draftKey(crewId, area.id)] ?? { text: "", circle } : NO_DRAFT;
-  const thread = mode === "general" ? room.threads.general : circle ? room.threads[circle] : undefined;
-  const messages = thread?.items ?? [];
-  const text = mode === "general" ? general.text : draft.text;
-  const changed = mode === "nearby" && !!draft.text && draft.circle !== circle;
-  const unavailable = !room.connected || (mode === "nearby" && (!area || !circle || changed));
-  const firstId = messages[0]?.id;
-  const lastId = messages[messages.length - 1]?.id;
+  const [picked, setPicked] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<{ name: string } | null>(null);
+  const [fresh, setFresh] = useState(0);
 
-  // A new message scrolls to the bottom; an older page keeps the reader where they were.
+  const general = tab === "general";
+  const key = general ? "general" : circle;
+  const thread = key ? room.threads[key] : undefined;
+  const messages = useMemo(() => thread?.items ?? [], [thread]);
+  const outs = useMemo(() => outAll.filter((o) => o.crew === crewId && o.thread === (key ?? "general")), [outAll, crewId, key]);
+  const peers = room.snapshot?.peers;
+  const myLook = lookOf(room, userId);
+  const nameOf = useChatNames(messages, peers ?? [], userId);
+  useOutboxCleanup(key ?? "general", messages, userId);
+  const rows = useMemo(() => buildRows(messages, outs, userId), [messages, outs, userId]);
+  const lastKey = rows[rows.length - 1]?.key;
+  const firstKey = rows[0]?.key;
+
+  const generalKey = draftKey(crewId, null);
+  const areaKey = area ? draftKey(crewId, area.id) : null;
+  const text = general ? (drafts[generalKey] ?? NO_DRAFT).text : areaKey ? (drafts[areaKey]?.text ?? "") : "";
+  const areaDraft = areaKey ? (drafts[areaKey] ?? { text: "", circle }) : NO_DRAFT;
+  // A draft started in an earlier session of this area needs one tap before it goes to the new one.
+  const changed = !general && !!areaDraft.text && areaDraft.circle !== circle;
+  const writeDraft = (value: string) => {
+    if (general) setDraft(generalKey, { text: value, circle: null });
+    else if (areaKey) setDraft(areaKey, { text: value, circle: areaDraft.text ? areaDraft.circle : circle });
+  };
+
+  // ---------------------------------------------------------------- scrolling --
+  const toBottom = useCallback(() => {
+    const el = list.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
+
+  // An older page keeps the reader where they were; anything else new at the bottom keeps the list pinned.
   useLayoutEffect(() => {
-    const el = feed.current;
-    if (!el || !anchor.current) return;
-    el.scrollTop = el.scrollHeight - anchor.current.height + anchor.current.top;
-    anchor.current = null;
-  }, [firstId]);
+    const el = list.current;
+    if (el && anchor.current) {
+      el.scrollTop = el.scrollHeight - anchor.current.height + anchor.current.top;
+      anchor.current = null;
+    }
+  }, [firstKey]);
   useLayoutEffect(() => {
-    if (open && feed.current) feed.current.scrollTop = feed.current.scrollHeight;
-  }, [open, lastId, mode, circle]);
+    if (!active) return;
+    if (stick.current) toBottom();
+  }, [active, lastKey, toBottom]);
+  // The first time this conversation is on show: straight to the newest line.
+  useLayoutEffect(() => {
+    if (active) {
+      stick.current = true;
+      toBottom();
+      setFresh(0);
+      onAtBottom(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, key]);
+  // The sheet's height or the keyboard changes the box: stay on the newest line if that is where I was.
+  useEffect(() => {
+    const el = list.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(() => {
+      if (stick.current) toBottom();
+    });
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [toBottom]);
+  // New lines while I am reading older ones: count them.
+  const seenLast = useRef(lastKey);
+  useEffect(() => {
+    if (lastKey === seenLast.current) return;
+    seenLast.current = lastKey;
+    const last = rows[rows.length - 1];
+    if (!stick.current && last && !(last.kind === "out" || (last.kind === "msg" && last.own))) setFresh((n) => n + 1);
+  }, [lastKey, rows]);
+
+  const onScroll = () => {
+    const el = list.current;
+    if (!el) return;
+    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM;
+    if (bottom !== stick.current) {
+      stick.current = bottom;
+      onAtBottom(bottom);
+    }
+    if (bottom) setFresh(0);
+    if (picked) setPicked(null);
+  };
+
+  // A pull on the list moves the sheet: down from the top of the list closes it, up from the bottom opens it more.
+  useEffect(() => {
+    const el = list.current;
+    if (!el) return;
+    let y0 = 0;
+    let armed = false;
+    let dragging = false;
+    const start = (e: TouchEvent) => {
+      y0 = e.touches[0].clientY;
+      armed = true;
+      dragging = false;
+    };
+    const move = (e: TouchEvent) => {
+      if (!armed) return;
+      const y = e.touches[0].clientY;
+      if (!dragging) {
+        const dy = y - y0;
+        const atTop = el.scrollTop <= 1;
+        const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight <= 1;
+        if ((dy > 8 && atTop) || (dy < -8 && atEnd)) {
+          if (!pull.begin(y0)) {
+            armed = false;
+            return;
+          }
+          dragging = true;
+        } else return;
+      }
+      if (e.cancelable) e.preventDefault();
+      pull.move(y);
+    };
+    const end = () => {
+      if (dragging) pull.end();
+      dragging = false;
+      armed = false;
+    };
+    el.addEventListener("touchstart", start, { passive: true });
+    el.addEventListener("touchmove", move, { passive: false });
+    el.addEventListener("touchend", end);
+    el.addEventListener("touchcancel", end);
+    return () => {
+      el.removeEventListener("touchstart", start);
+      el.removeEventListener("touchmove", move);
+      el.removeEventListener("touchend", end);
+      el.removeEventListener("touchcancel", end);
+    };
+  }, [pull]);
 
   const earlier = () => {
-    const key = mode === "general" ? "general" : circle;
-    if (!key || !feed.current) return;
-    anchor.current = { height: feed.current.scrollHeight, top: feed.current.scrollTop };
+    if (!key || !list.current) return;
+    anchor.current = { height: list.current.scrollHeight, top: list.current.scrollTop };
     room.loadEarlier(key);
   };
 
-  const submit = async (event: React.FormEvent) => {
+  // --------------------------------------------------------------- sending ----
+  const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (sending || unavailable || !text.trim()) return;
-    setSending(true);
-    setError("");
-    // The draft that was sent is cleared, whatever the screen shows by the time the answer comes back.
-    const key = mode === "general" ? generalKey : area ? draftKey(crewId, area.id) : null;
-    try {
-      const problem = await room.send(mode, text.trim(), mode === "nearby" ? draft.circle : null);
-      if (problem) setError(problem);
-      else if (key) setDraft(key, { text: "", circle: mode === "general" ? null : circle });
-    } catch {
-      setError("Could not send. Your message is still here; try again.");
-    } finally {
-      setSending(false);
+    const body = text.trim();
+    if (!body || changed) {
+      input.current?.focus();
+      return;
+    }
+    const scope = general ? "general" : "nearby";
+    const to = general ? null : (areaDraft.circle ?? circle);
+    if (!general && !to) return;
+    sender.send(scope, body, to);
+    writeDraft("");
+    setReplyTo(null);
+    stick.current = true;
+    setFresh(0);
+    requestAnimationFrame(toBottom);
+    // Keep the keyboard up so talking flows.
+    input.current?.focus();
+  };
+
+  // ---------------------------------------------------- tap a message: the bar --
+  const peerOf = (authorId: string) => peersLive.find((p) => p.id === authorId);
+  const reply = (name: string) => {
+    const mention = `@${name.split(/\s+/)[0]} `;
+    setReplyTo({ name });
+    setPicked(null);
+    if (!text.startsWith(mention)) writeDraft(mention + text);
+    requestAnimationFrame(() => input.current?.focus());
+  };
+  const walk = (authorId: string) => {
+    const peer = peerOf(authorId);
+    setPicked(null);
+    if (peer && walkTo) {
+      walkTo(peer.x, peer.y);
+      onWalked();
     }
   };
-
-  const pick = (next: "general" | "nearby") => {
-    onMode(next);
-    setError("");
+  const react = (messageId: string, kind: ReactionKind) => {
+    void reactions.toggle(messageId, kind);
   };
 
-  const type = (value: string) => {
-    if (mode === "general") setDraft(generalKey, { text: value, circle: null });
-    // The session a draft was started in stays with it until it is sent or emptied.
-    else if (area) setDraft(draftKey(crewId, area.id), { text: value, circle: draft.text ? draft.circle : circle });
-  };
+  const placeholder = general ? "Say something to everyone" : `Say something in ${area?.name.toUpperCase() ?? "this area"}`;
+  const emptyText = general ? `Welcome to ${brand}'s community center. Say hi.` : "Only people in here get this chat.";
 
   return (
-    <section
-      hidden={!open}
-      className={css.chat}
-      aria-label="Crew conversation"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          onClose();
-        }
-      }}
-    >
-      <header className={css.chatHead}>
-        <MessageCircle size={18} className="text-orange" aria-hidden />
-        <div>
-          <h2 className="font-display font-black">Crew chat</h2>
-          <p className="font-mono text-[10px] text-dim">{room.snapshot?.peers.length ?? 0} in the room</p>
-        </div>
-        <button type="button" onClick={onClose} aria-label="Close crew chat" className={css.close}>
-          <X size={19} aria-hidden />
-        </button>
-      </header>
-      <div className={css.modes} role="group" aria-label="Conversation audience">
-        <button type="button" aria-pressed={mode === "general"} onClick={() => pick("general")}>
-          General
-        </button>
-        <button type="button" aria-pressed={mode === "nearby"} onClick={() => pick("nearby")}>
-          Area chat {area && <span>{members.length}</span>}
-        </button>
-      </div>
-      <div className={css.audience} role="status">
-        {mode === "general" ? (
-          room.watching ? "You're watching from the door. Everyone in this crew can read and reply here." : "Everyone in this crew can read and reply."
-        ) : area ? (
-          <>
-            <strong>{area.name}</strong>
-            <span>
-              {others.length
-                ? `With ${others.slice(0, 3).map((p) => p.name).join(", ")}${others.length > 3 ? ` and ${others.length - 3} others` : ""}.`
-                : "You're the first here."}{" "}
-              Only people inside this boundary receive new messages.
-            </span>
-          </>
-        ) : room.watching ? (
-          "Area chats are for people walking in the room. You'll walk in when a spot opens; your drafts stay here."
-        ) : (
-          "Walk into a marked area to join its conversation. Your area drafts stay there."
-        )}
-      </div>
-      <div
-        className={css.feed}
-        ref={feed}
-        role="log"
-        aria-label={mode === "general" ? "General crew messages" : "Private area messages"}
-        aria-live="polite"
-        aria-relevant="additions"
-      >
-        {mode === "nearby" && !area ? (
-          <div className={css.areaList}>
-            {layout.privateAreas.map((item) => {
-              const count = room.snapshot?.peers.filter((p) => privateAreaAt(layout, p)?.id === item.id).length ?? 0;
-              const saved = !!drafts[draftKey(crewId, item.id)]?.text;
+    <div className={css.panel}>
+      <div className={css.listWrap}>
+        <div
+          className={css.list}
+          ref={list}
+          onScroll={onScroll}
+          role="log"
+          aria-label={general ? "General messages" : "Area messages"}
+          aria-live="polite"
+          aria-relevant="additions"
+        >
+          {general && <HowItWorks brand={brand} />}
+          {thread?.more && thread.loaded && messages.length > 0 && (
+            <button type="button" className={css.more} onClick={earlier} disabled={thread.loading}>
+              {thread.loading ? "Loading" : "Earlier messages"}
+            </button>
+          )}
+          {!thread?.loaded && !rows.length && <Skeleton />}
+          {thread?.loaded && !rows.length && <p className={css.empty}>{emptyText}</p>}
+          {rows.map((row) => {
+            if (row.kind === "day") {
               return (
-                <button
-                  type="button"
-                  key={item.id}
-                  disabled={room.watching}
-                  onClick={() => {
-                    setError("");
-                    onVisit(item);
+                <div key={row.key} className={css.day}>
+                  {row.label}
+                </div>
+              );
+            }
+            if (row.kind === "out") {
+              const { out } = row;
+              const failed = out.status === "failed";
+              return (
+                <div
+                  key={row.key}
+                  className={`${css.row} ${css.own} ${row.grouped ? css.grouped : ""} ${failed ? css.failed : css.sending}`}
+                  role={failed ? "button" : undefined}
+                  tabIndex={failed ? 0 : undefined}
+                  onClick={failed ? () => sender.retry(out.id) : undefined}
+                  onKeyDown={failed ? (e) => (e.key === "Enter" || e.key === " ") && sender.retry(out.id) : undefined}
+                >
+                  {row.grouped ? <span className={css.faceGap} /> : <span className={css.face}><ChatFace look={myLook} size={28} /></span>}
+                  <div className={css.text}>
+                    {!row.grouped && (
+                      <div className={css.meta}>
+                        <span className={css.name}>You</span>
+                        <span className={css.time}>{failed ? null : <Clock size={12} aria-hidden />}{chatTime(new Date(out.at).toISOString())}</span>
+                      </div>
+                    )}
+                    <p className={css.msg}>{out.body}</p>
+                    {failed && <span className={css.retry}>Tap to retry</span>}
+                  </div>
+                </div>
+              );
+            }
+            const m = row.message;
+            const reacts = reactions.by.get(m.id);
+            const open = picked === m.id;
+            const inRoom = !row.own && !!peerOf(m.author_id);
+            const name = nameOf(m);
+            return (
+              <Fragment key={row.key}>
+                <div
+                  className={`${css.row} ${row.own ? css.own : ""} ${row.grouped ? css.grouped : ""} ${open ? css.picked : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={open}
+                  onClick={() => setPicked(open ? null : m.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setPicked(open ? null : m.id);
+                    }
                   }}
                 >
-                  <span>
-                    <strong>{item.name}</strong>
-                    <small>
-                      {count ? `${count} inside` : "Be the first"}
-                      {saved ? " · Draft saved" : ""}
-                    </small>
-                  </span>
-                  <ArrowUpRight size={16} aria-hidden />
-                </button>
-              );
-            })}
-            <p className="hint">These areas are open to crew members. Walk in to join; walk out to leave.</p>
-          </div>
-        ) : (
-          <>
-            {thread?.more && thread.loaded && messages.length > 0 && (
-              <button type="button" className={css.more} onClick={earlier} disabled={thread.loading}>
-                {thread.loading ? "Loading…" : "Earlier messages"}
-              </button>
-            )}
-            {messages.length ? (
-              messages.map((message) => (
-                <div key={message.id} className={`${css.message} ${message.author_id === userId ? css.own : ""}`}>
-                  <ChatFace look={message.author_look} size={28} />
-                  <Bubble
-                    body={message.body}
-                    author={message.author_id === userId ? "You" : message.author_name}
-                    own={message.author_id === userId}
-                    time={chatTime(message.created_at)}
-                  />
+                  {row.grouped ? (
+                    <span className={css.faceGap} />
+                  ) : (
+                    <span className={css.face}>
+                      <ChatFace look={m.author_look} size={28} />
+                    </span>
+                  )}
+                  <div className={css.text}>
+                    {(!row.grouped || open) && (
+                      <div className={css.meta}>
+                        {!row.grouped && <span className={css.name}>{name}</span>}
+                        <span className={css.time}>{chatTime(m.created_at)}</span>
+                      </div>
+                    )}
+                    <p className={css.msg}>{m.body}</p>
+                    {!!reacts?.length && (
+                      <div className={css.reacts}>
+                        {reacts.map((r) => {
+                          const Icon = REACT_ICON[r.kind];
+                          return (
+                            <button
+                              key={r.kind}
+                              type="button"
+                              className={css.react}
+                              aria-pressed={r.mine}
+                              aria-label={`${REACT_LABEL[r.kind]}, ${r.count}${r.mine ? ", you reacted" : ""}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                react(m.id, r.kind);
+                              }}
+                            >
+                              <Icon size={12} aria-hidden />
+                              {r.count}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {open && (
+                      <div className={css.bar} role="group" aria-label="Message actions" onClick={(e) => e.stopPropagation()}>
+                        {reactions.available &&
+                          REACTION_KINDS.map((kind) => {
+                            const Icon = REACT_ICON[kind];
+                            const mine = !!reacts?.find((r) => r.kind === kind)?.mine;
+                            return (
+                              <button key={kind} type="button" className={css.barBtn} aria-pressed={mine} aria-label={REACT_LABEL[kind]} onClick={() => {
+                                  react(m.id, kind);
+                                  setPicked(null);
+                                }}>
+                                <Icon size={20} aria-hidden />
+                              </button>
+                            );
+                          })}
+                        {reactions.available && <span className={css.barSep} aria-hidden />}
+                        {!row.own && (
+                          <button type="button" className={css.barBtn} onClick={() => reply(name)}>
+                            <CornerUpLeft size={16} aria-hidden />
+                            Reply
+                          </button>
+                        )}
+                        {inRoom && !room.watching && (
+                          <button type="button" className={css.barBtn} onClick={() => walk(m.author_id)}>
+                            <Footprints size={16} aria-hidden />
+                            Walk to
+                          </button>
+                        )}
+                        {row.own && !reactions.available && (
+                          <button type="button" className={css.barBtn} onClick={() => setPicked(null)}>
+                            Close
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              ))
-            ) : (
-              <p className="hint">
-                {!thread?.loaded
-                  ? "Loading the conversation…"
-                  : mode === "general"
-                    ? "Your crew's conversation starts here."
-                    : "This area's conversation starts here. Move around inside it; the conversation stays together."}
-              </p>
-            )}
-          </>
+              </Fragment>
+            );
+          })}
+        </div>
+        {fresh > 0 && (
+          <button
+            type="button"
+            className={css.newChip}
+            onClick={() => {
+              stick.current = true;
+              setFresh(0);
+              toBottom();
+              onAtBottom(true);
+            }}
+          >
+            {fresh > 9 ? "9+" : fresh} new
+          </button>
         )}
       </div>
       <form className={css.composer} onSubmit={submit}>
         {changed && area && (
-          <div className={css.draftNotice}>
-            <p>A new conversation started here. Your draft is kept.</p>
-            <button type="button" onClick={() => setDraft(draftKey(crewId, area.id), { ...draft, circle })}>
-              Use this draft in this conversation
+          <p className={css.notice}>
+            <span>New chat started here. Your draft is kept.</span>
+            <button type="button" onClick={() => areaKey && setDraft(areaKey, { ...areaDraft, circle })}>
+              Use it here
             </button>
-          </div>
-        )}
-        {error && (
-          <p role="alert" className={css.error}>
-            {error}
           </p>
         )}
         {!room.connected && (
-          <p className="hint" role="status">
+          <p className={css.notice} role="status">
             Reconnecting. Your draft is kept.
           </p>
         )}
+        {replyTo && (
+          <div className={css.replying}>
+            <span>Replying to {replyTo.name}</span>
+            <button type="button" aria-label="Cancel reply" onClick={() => setReplyTo(null)}>
+              <X size={16} aria-hidden />
+            </button>
+          </div>
+        )}
         <div className={css.inputRow}>
-          <label className="sr-only" htmlFor="crew-room-message">
-            {mode === "general" ? "Message your crew" : "Message this area"}
+          <label className="sr-only" htmlFor={`crew-room-message-${tab}`}>
+            {general ? "Message everyone" : "Message this area"}
           </label>
           <input
-            id="crew-room-message"
+            ref={input}
+            id={`crew-room-message-${tab}`}
+            className={css.input}
             value={text}
-            disabled={sending || (mode === "nearby" && !area)}
             maxLength={400}
             autoComplete="off"
-            placeholder={mode === "general" ? "Message your crew" : area ? `Message ${area.name}` : "Choose an area above"}
-            onChange={(event) => type(event.target.value)}
+            autoCorrect="on"
+            enterKeyHint="send"
+            placeholder={placeholder}
+            onFocus={onInputFocus}
+            onChange={(event) => writeDraft(event.target.value)}
           />
-          <button type="submit" disabled={sending || unavailable || !text.trim()}>
-            {sending ? "Sending…" : "Send"}
+          <button
+            type="submit"
+            className={`btn ${css.send}`}
+            aria-label="Send"
+            disabled={!text.trim() || changed}
+            // Pressing send must not take focus from the input, or the keyboard drops after every message.
+            onPointerDown={(e) => e.preventDefault()}
+          >
+            <SendHorizontal size={18} aria-hidden />
           </button>
         </div>
       </form>
-    </section>
+    </div>
+  );
+}
+
+/** My own look, from the people list (the outbox has no look of its own). */
+function lookOf(room: CrewRoomConnection, userId: string) {
+  return room.snapshot?.peers.find((p) => p.id === userId)?.look ?? room.threads.general?.items.find((m) => m.author_id === userId)?.author_look ?? null;
+}
+
+/** The first-visit welcome, kept as a row at the very top of General: collapsed, one tap to read it again. */
+function HowItWorks({ brand }: { brand: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={css.how}>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <Info size={14} aria-hidden />
+        <span>How this works</span>
+        <ChevronDown size={16} aria-hidden className={open ? css.flip : undefined} />
+      </button>
+      {open && (
+        <div>
+          <p>{welcomeLine(brand)}</p>
+          <ol>
+            {roomTips.map((tip) => (
+              <li key={tip}>{tip}</li>
+            ))}
+            <li>Chat shows up over people&apos;s heads. Pull the sheet down to get back to the room.</li>
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Skeleton() {
+  return (
+    <div aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className={`${css.skeleton} animate-pulse2`}>
+          <i />
+          <div style={{ flex: 1 }}>
+            <b style={{ width: `${30 + i * 8}%` }} />
+            <b style={{ width: `${70 - i * 12}%` }} />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

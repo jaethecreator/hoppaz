@@ -121,7 +121,7 @@ export function scenePath(layout: CampaignLayout, from: Tile, to: Tile): Tile[] 
 export type AwardEntry = { title: string; year: string; detail: string; sourceUrl?: string };
 /** eventKeywords: comma separated words that find the crew's events by title or venue (the crew name when empty). Optional: rooms saved before it have none. */
 export type CampaignContent = { brand: string; strapline: string; musicTitle: string; musicUrl: string; audioUrl: string; artistTitle: string; artistNote: string; eventKeywords?: string; awards: AwardEntry[] };
-export const EMPTY_CAMPAIGN: CampaignContent = { brand: "360 Playlist", strapline: "A space for music, discovery & good company.", musicTitle: "", musicUrl: "", audioUrl: "", artistTitle: "", artistNote: "", eventKeywords: "", awards: [] };
+export const EMPTY_CAMPAIGN: CampaignContent = { brand: "360Playlist", strapline: "A space for music, discovery & good company.", musicTitle: "", musicUrl: "", audioUrl: "", artistTitle: "", artistNote: "", eventKeywords: "", awards: [] };
 /** Public outbound content only accepts web links; direct audio is configured in the campaign manifest. */
 export function validCampaignUrl(value: string): string | null {
   try { const url = new URL(value); return url.protocol === "https:" || url.protocol === "http:" ? url.href : null; } catch { return null; }

@@ -9,8 +9,8 @@ against how Hoppaz works today.
 
 - Tabs: MAP, EVENTS (was TODAY), CREW, CHAT, ME. Events is a swipe deck: right is WE OUTSIDE (you're going),
   left is pass. I'M GOING and WE OUTSIDE both mean going.
-- The map has one orange calendar button (NEXT 20, TODAY, a day). The day chip rail and the "NEXT 20 / Tap your
-  avatar to play" card are gone.
+- The map has a NEXT 20 chip (it reads TODAY or a day once one is picked) and an orange calendar button beside it.
+  The day chip rail and the "NEXT 20 / Tap your avatar to play" card are gone.
 - Play (tap your avatar for a game view) is being removed. Nothing outside Play should tell people to tap their
   avatar, enter Play or send their avatar. Boxes will live inside hotspot rooms; until then, say less.
 - An event room is for everyone going (WE OUTSIDE) and everyone checked in. Checking in at the venue still earns

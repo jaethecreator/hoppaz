@@ -6,22 +6,23 @@ import { useRouter } from "next/navigation";
 import { DoorOpen, Users } from "lucide-react";
 import LoadingStub from "@/components/app/LoadingStub";
 import Mascot from "@/components/Mascot";
-import VerifiedBadge from "@/components/VerifiedBadge";
+import HubHeader from "@/components/crew-room/HubHeader";
+import Featured from "@/components/crew-room/CrewHubFeatured";
+import RoomNow from "@/components/crew-room/CrewHubNow";
 import { requireAccount } from "@/lib/accountGate";
 import { useCrewCard } from "@/lib/crew-room/hub";
 import { getSupabase } from "@/lib/supabase/client";
 import { useSession } from "@/lib/useSession";
-import { FaceDisc } from "@/components/Avatar";
 
 /**
- * /crew/join/<code>: a crew's invite link. Shows the crew (name, verified tick, members, who is in its room now) and
- * one JOIN button. Signed in, that tap joins and walks into the room. A guest gets the usual sign-up sheet: the email
+ * /crew/join/<code>: a crew's invite link, inside the app with its bottom nav. Shows the crew the way its hub does (its
+ * pictures, name, verified tick, round logo, members, who is in its room now) and one JOIN button. Signed in, that tap joins and walks into the room. A guest gets the usual sign-up sheet: the email
  * form finishes the join straight after, and Google comes back to this page marked ?go=1, which finishes it here.
  */
 export default function JoinCrew({ code }: { code: string }) {
   const router = useRouter();
   const { card, state } = useCrewCard({ code });
-  const { hasAccount } = useSession();
+  const { hasAccount, state: session } = useSession();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const finishing = useRef(false);
@@ -90,59 +91,47 @@ export default function JoinCrew({ code }: { code: string }) {
   }
 
   return (
-    <div className="h-full overflow-y-auto px-4 pb-8">
-      <header className="pad-top flex items-center gap-3 pb-4">
-        <Mascot state="oya" size={84} className="flex-none" />
-        <div className="min-w-0">
-          <p className="seclabel">You&apos;re invited</p>
-          <div className="mt-1 flex min-w-0 items-center gap-2">
-            <h1 className="min-w-0 truncate font-display text-[30px] font-black leading-[1.05]">{card.brand}</h1>
-            {card.verified && <VerifiedBadge size={22} />}
+    <div className="h-full overflow-y-auto pb-8" data-hub-scroll>
+      <div className="mx-auto w-full max-w-[760px]">
+        <HubHeader
+          images={card.header_images}
+          title={card.brand}
+          verified={card.verified}
+          logoUrl={card.logo_url}
+          kicker="YOU'RE INVITED"
+          back="/crew"
+          meta={
+            <p className="mt-1.5 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.06em] text-dim" data-members={card.members}>
+              <Users size={12} aria-hidden /> {card.members} {card.members === 1 ? "member" : "members"}
+            </p>
+          }
+        />
+
+        <div className="px-4">
+          <div className="mt-4">
+            <RoomNow card={card} none="The room is quiet right now" quiet="A walk-in room with music, General chat and corners to talk in." />
           </div>
-          <p className="mt-1.5 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.06em] text-dim">
-            <Users size={12} aria-hidden /> {card.members} {card.members === 1 ? "member" : "members"}
-          </p>
+
+          {card.is_member ? (
+            <Link href={`/crew/${card.id}/room`} className="btn mt-3 w-full text-[15px]" data-enter-room>
+              <DoorOpen size={18} aria-hidden /> YOU&apos;RE IN. ENTER THE ROOM
+            </Link>
+          ) : (
+            <button type="button" className="btn mt-3 w-full text-[15px]" disabled={busy || session === "loading"} onClick={onJoin} data-join>
+              <DoorOpen size={18} aria-hidden /> {busy ? "JOINING…" : "JOIN THE CREW"}
+            </button>
+          )}
+          {problem && (
+            <p role="alert" className="mt-3 font-body text-[14px] font-medium text-fireant">
+              {problem}
+            </p>
+          )}
+          {!hasAccount && !card.is_member && (
+            <p className="hint mt-3 text-center">Free. Make an account in 20 seconds and you land straight in the room.</p>
+          )}
+          <Featured card={card} />
         </div>
-      </header>
-
-      <div className="card mb-4 flex items-center gap-3 py-3" data-room-now={card.in_room}>
-        {card.heads.length > 0 && (
-          <span className="flex flex-none">
-            {card.heads.slice(0, 5).map((h, i) => (
-              <FaceDisc key={h.id} look={h.look} initial={h.name} size={32} className={i ? "-ml-2.5 ring-2 ring-ink-2" : "ring-2 ring-ink-2"} />
-            ))}
-          </span>
-        )}
-        <span className="min-w-0 flex-1">
-          <b className="flex items-center gap-1.5 font-display text-[16px] font-semibold">
-            {card.in_room > 0 && <span aria-hidden className="h-2 w-2 flex-none animate-pulse2 rounded-full bg-keke" />}
-            {card.in_room > 0 ? `${card.in_room} in the room now` : "The room is quiet right now"}
-          </b>
-          <span className="hint block">
-            {card.in_room > 0
-              ? card.heads.slice(0, 3).map((h) => h.name).join(", ")
-              : "A walk-in room with music, General chat and corners to talk in."}
-          </span>
-        </span>
       </div>
-
-      {card.is_member ? (
-        <Link href={`/crew/${card.id}/room`} className="btn w-full text-[15px]">
-          <DoorOpen size={18} aria-hidden /> YOU&apos;RE IN. ENTER THE ROOM
-        </Link>
-      ) : (
-        <button type="button" className="btn w-full text-[15px]" disabled={busy} onClick={onJoin}>
-          <DoorOpen size={18} aria-hidden /> {busy ? "JOINING…" : "JOIN THE CREW"}
-        </button>
-      )}
-      {problem && (
-        <p role="alert" className="mt-3 font-body text-[14px] font-medium text-fireant">
-          {problem}
-        </p>
-      )}
-      {!hasAccount && !card.is_member && (
-        <p className="hint mt-3 text-center">Free. Make an account in 20 seconds and you land straight in the room.</p>
-      )}
     </div>
   );
 }

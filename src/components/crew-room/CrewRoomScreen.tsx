@@ -1,20 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { MessageCircle, X } from "lucide-react";
+import { ChevronLeft, X } from "lucide-react";
 import RequireAccount from "@/components/app/RequireAccount";
 import CampaignExperience from "@/components/campaign/CampaignExperience";
 import VerifiedBadge from "@/components/VerifiedBadge";
-import { clubhouseWidth, validCampaignUrl, type PrivateArea } from "@/lib/campaign/layout";
-import type { Tile } from "@/lib/campaign/geometry";
+import { validCampaignUrl } from "@/lib/campaign/layout";
 import type { CrewRoomConnection } from "@/lib/crew-room/types";
 import { useCrewEvents } from "@/lib/crew-room/hub";
 import { useCrewRoom } from "@/lib/crew-room/useCrewRoom";
+import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { useRoomTrack } from "@/lib/sound/roomTrack";
 import { getSupabase } from "@/lib/supabase/client";
 import { useSession } from "@/lib/useSession";
-import CrewRoomChat from "./CrewRoomChat";
+import campaign from "@/components/campaign/Campaign.module.css";
 import css from "./CrewRoom.module.css";
 
 /**
@@ -89,10 +89,21 @@ function RoomGate({ crewId, room }: { crewId: string; room: CrewRoomConnection }
   };
 
   if (room.status === "loading") {
+    // The room's own frame while it opens: the app's header, a dark lawn and two words, so nothing jumps when the world lands.
     return (
-      <div className={css.gate}>
-        <h1>Opening your crew room…</h1>
-        <p role="status">Finding your crew and its conversation.</p>
+      <div className={campaign.experience}>
+        <header className={campaign.header}>
+          <Link href={`/crew/${crewId}`} className={campaign.back} aria-label="Back to the crew">
+            <ChevronLeft size={26} strokeWidth={2.2} aria-hidden />
+          </Link>
+        </header>
+        <div className={campaign.stage}>
+          <div className={campaign.viewport}>
+            <p className={campaign.walkingIn} role="status">
+              Walking in
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -179,29 +190,24 @@ function RoomGate({ crewId, room }: { crewId: string; room: CrewRoomConnection }
 }
 
 export function CrewRoomView({ crewId, userId, room }: { crewId: string; userId: string; room: CrewRoomConnection }) {
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatMode, setChatMode] = useState<"general" | "nearby">("general");
-  const [destination, setDestination] = useState<Tile | null>(null);
-  const destinationHandled = useCallback(() => setDestination(null), []);
-  const visitArea = useCallback((area: PrivateArea) => {
-    setDestination(area.stop);
-    setChatMode("nearby");
-  }, []);
-  const chatTrigger = useRef<HTMLButtonElement>(null);
-  const closeChat = useCallback(() => {
-    setChatOpen(false);
-    chatTrigger.current?.focus();
-  }, []);
   const snapshot = room.snapshot!;
   const world = room.world!;
   // The Stage's next event: the crew's own (by its event words, or its name), not just any big night.
   const { events, matched } = useCrewEvents(snapshot.room.content.eventKeywords?.trim() || snapshot.crew.name, 1);
-  // From the crew page's chat preview (?chat=1): open on General.
+  // A line said once ("You had this room open somewhere else") goes by itself after a few seconds.
+  const notice = room.notice;
+  const dismissNotice = room.dismissNotice;
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).has("chat")) setChatOpen(true);
+    if (!notice) return;
+    const t = setTimeout(dismissNotice, 6000);
+    return () => clearTimeout(t);
+  }, [notice, dismissNotice]);
+  // From the crew page's chat preview (?chat=1): open the chat sheet once the room is up.
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("chat")) return;
+    const t = setTimeout(() => useRoomStore.getState().setSheet("half"), 400);
+    return () => clearTimeout(t);
   }, []);
-  const area = clubhouseWidth(snapshot.room.width).privateAreas.find((a) => a.id === world.areaId);
-  const here = snapshot.peers.length;
 
   return (
     <CampaignExperience
@@ -214,16 +220,10 @@ export function CrewRoomView({ crewId, userId, room }: { crewId: string; userId:
         editable: snapshot.crew.is_owner,
         connected: room.connected,
         nextEvent: matched ? (events[0] ?? null) : null,
-        world: {
-          ...world,
-          destination,
-          onDestinationHandled: destinationHandled,
-          onConversation: () => {
-            setChatMode(room.watching ? "general" : "nearby");
-            setChatOpen(true);
-          },
-        },
-        caption: room.watching ? `Crew room · Full · ${here} walking` : `Crew room · ${here} here`,
+        room,
+        userId,
+        world,
+        here: snapshot.peers.length,
         notice: room.notice ? (
           <p className={css.notice} role="status">
             <span>{room.notice}</span>
@@ -232,34 +232,6 @@ export function CrewRoomView({ crewId, userId, room }: { crewId: string; userId:
             </button>
           </p>
         ) : null,
-        chatOpen,
-        chatButton: (
-          <button
-            ref={chatTrigger}
-            type="button"
-            onClick={() => {
-              setChatMode(area ? "nearby" : "general");
-              setChatOpen((value) => !value);
-            }}
-            aria-label="Open crew chat"
-            aria-expanded={chatOpen}
-          >
-            <MessageCircle size={17} aria-hidden />
-            <span>Chat</span>
-          </button>
-        ),
-        chat: (
-          <CrewRoomChat
-            crewId={crewId}
-            room={room}
-            userId={userId}
-            open={chatOpen}
-            onClose={closeChat}
-            mode={chatMode}
-            onMode={setChatMode}
-            onVisit={visitArea}
-          />
-        ),
         onSave: (content, width) => room.save(width, content),
       }}
     />

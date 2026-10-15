@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Share2, X } from "lucide-react";
-import DayRail from "@/components/DayRail";
+import DayPick from "@/components/pick/DayPick";
 import EventCard from "@/components/EventCard";
 import { SIDE_PANEL, sidePanelWidth } from "@/components/event/side";
 import SwipeStack, { type StackApi, type SwipeDir } from "@/components/today/SwipeStack";
@@ -61,8 +61,8 @@ const NO_TYPES: string[] = [];
  * the next as you drag (a phone that can buzz gives a tiny tap on each swipe;
  * the speaker button in the header is the app's one mute). SHARE TO STORY
  * makes a 9:16 picture of the top card; ?demo=1 swipes by itself, for
- * filming. Pick the night on the same rail the Map uses (or NEXT, the next
- * twenty). Tap the top card and it opens into the breakdown: the event
+ * filming. It opens on NEXT 20 every time; the chip and the orange calendar in the header (the same
+ * ones the Map has) pick one night instead. Tap the top card and it opens into the breakdown: the event
  * card as a sheet on a phone, docked on the right on a wide screen. A slow
  * strip of tags underneath scrolls what is coming up and jumps the deck to
  * whichever one you tap.
@@ -78,7 +78,7 @@ export default function TodayPage() {
   const { width, wide } = useViewport();
 
   /** Which night the deck shows: one chosen day, or the next twenty events whatever night they fall on. */
-  const [mode, setMode] = useState<"day" | "next">("day");
+  const [mode, setMode] = useState<"day" | "next">("next");
   /**
    * The swipe pile for one deck (a night, or NEXT), by event id so a list that shifts under it keeps its place:
    * `order` is the pile as you left it. Another night starts its own pile.
@@ -135,9 +135,8 @@ export default function TodayPage() {
   const shownTypes = mounted ? types : NO_TYPES;
   const today = nightOf(now);
   const dayKey = mounted && dateFilter.kind === "night" ? dateFilter.date : today;
-  const dayFilter: DateFilter = useMemo(() => ({ kind: "night", date: dayKey }), [dayKey]);
 
-  // Rail counts: everything loaded, narrowed by type only (the same numbers the Map's rail shows).
+  // Calendar counts: everything loaded, narrowed by type only (the same dots the Map's calendar shows).
   const typed = useMemo(() => allEvents.filter((e) => matchesType(e, shownTypes)), [allEvents, shownTypes]);
   const counts = useMemo(() => countByDay(typed), [typed]);
   // The next events from now, whatever night: the deck's NEXT view and the strip under it.
@@ -231,6 +230,12 @@ export default function TodayPage() {
     },
     [setDateFilter]
   );
+
+  /** Back to the next twenty events: from the chip's x, the list card or the calendar. */
+  const pickNext = useCallback(() => {
+    setMode("next");
+    setOpen(false);
+  }, []);
 
   /** A tag in the strip: put that event on top of the pile, on its own night if it is not on this deck. */
   const jump = (e: EventRow) => {
@@ -398,7 +403,20 @@ export default function TodayPage() {
     return hop.stops.some((s) => haversineKm(s.lat, s.lng, event.lat, event.lng) < 0.2);
   }, [event, hop]);
 
-  // Docked on the right, the card sits under the rail and the deck slides left to stay in view beside it.
+  /** A row in the NEXT 20 card: that event on top of the deck, opened like a tap on its card. One that is over is not in the pile, so it opens on its own. */
+  const headerRef = useRef<HTMLElement>(null);
+  const openFromList = (e: EventRow) => {
+    if (hasEnded(e, now)) {
+      setPicked(e);
+    } else {
+      jump(e);
+      setPicked(null);
+      setOpen(true);
+    }
+    introEvent("event_opened");
+  };
+
+  // Docked on the right, the card sits under the header and the deck slides left to stay in view beside it.
   const root = useRef<HTMLDivElement>(null);
   const deckBox = useRef<HTMLDivElement>(null);
   const [sideTop, setSideTop] = useState(140);
@@ -437,35 +455,33 @@ export default function TodayPage() {
         {/* Paz's tour sets --intro-reserve while its card is up on this screen, so the deck stops above the card. */}
         <div className="flex min-h-full flex-col pb-[var(--intro-reserve,0px)]">
           {/* -------------------------------------------------------- header -- */}
-          <header className="pad-top flex-none px-4 pb-3">
-            <div className="flex items-baseline gap-2.5">
-              <h1 className="truncate font-display text-[34px] font-black leading-none tracking-[-0.01em]">Events</h1>
+          <header ref={headerRef} className="pad-top flex-none px-4 pb-3">
+            <div className="flex items-center gap-1">
+              <h1 className="mr-auto min-w-0 truncate font-display text-[34px] font-black leading-none tracking-[-0.01em]">Events</h1>
               {mounted && (
-                <DayRail
+                <DayPick
                   key={today}
-                  compact
-                  className="self-center"
-                  value={mode === "next" ? { kind: "any" } : dayFilter}
-                  onChange={pickDay}
+                  mode={mode}
+                  date={dayKey}
+                  events={deckEvents}
                   counts={counts}
-                  lead={{
-                    label: "NEXT",
-                    sub: String(next.list.length || NEXT_COUNT),
-                    aria: `Next ${next.list.length} events`,
-                    on: mode === "next",
-                    onClick: () => {
-                      setMode("next");
-                      setOpen(false);
-                    },
-                  }}
+                  now={now}
+                  anchorRef={headerRef}
+                  onNext={pickNext}
+                  onDay={(date) => pickDay({ kind: "night", date })}
+                  onPickEvent={openFromList}
                 />
               )}
+              {!loading && !noLiveEvents && !empty && <SoundToggle className="-mr-2" />}
+            </div>
+            <div className="mt-2.5 flex items-start gap-2.5">
+              <p className="min-h-[22px] min-w-0 flex-1 font-body text-[15px] font-medium leading-snug text-cream">{line}</p>
               {mounted && (
                 <button
                   type="button"
                   onClick={() => setListOpen(true)}
                   aria-label={`We outside: ${liked.length} event${liked.length === 1 ? "" : "s"} you swiped right on`}
-                  className="ml-auto inline-flex h-[34px] flex-none items-center gap-1.5 self-center rounded-full border border-line bg-ink-2/70 px-3 font-mono text-[9.5px] font-medium uppercase tracking-[0.12em] text-cream transition-transform active:scale-[0.94]"
+                  className="inline-flex h-[34px] flex-none items-center gap-1.5 rounded-full border border-line bg-ink-2/70 px-3 font-mono text-[9.5px] font-medium uppercase tracking-[0.12em] text-cream transition-transform active:scale-[0.94]"
                 >
                   We outside
                   <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-orange px-1 text-[10px] font-medium tabular-nums text-brand-ink">
@@ -473,9 +489,7 @@ export default function TodayPage() {
                   </span>
                 </button>
               )}
-              {!loading && !noLiveEvents && !empty && <SoundToggle className="-mr-2 self-center" />}
             </div>
-            <p className="mt-2.5 min-h-[22px] font-body text-[15px] font-medium leading-snug text-cream">{line}</p>
           </header>
 
 

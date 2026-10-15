@@ -29,8 +29,11 @@ const PARENT: Array<[string, string]> = [
   ["/account", "/me"],
 ];
 
-/** Full-screen tasks hide the tab bar, the way a chat hides WhatsApp's tabs. A crew room has its own way back. */
-const FULL_SCREEN = [/^\/crew\/[^/]+\/room$/, /^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/];
+/**
+ * Full-screen tasks hide the tab bar, the way a chat hides WhatsApp's tabs. A crew room (/crew/<id>/room) is NOT one:
+ * the room is a place inside the app, so the tabs stay under it with CREW lit (the path starts with /crew).
+ */
+const FULL_SCREEN = [/^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/];
 
 export default function BottomNav() {
   const path = usePathname();
