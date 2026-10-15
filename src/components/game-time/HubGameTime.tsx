@@ -1,14 +1,18 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, DoorOpen, Ticket } from "lucide-react";
+import { ArrowDown, Check, Copy, DoorOpen, Ticket } from "lucide-react";
 import { clockText, lagosWhen, useServerNow } from "@/lib/game-time/clock";
 import { useHubGame } from "@/lib/game-time/hooks";
 import type { GtOverReason } from "@/lib/game-time/types";
+import { useToast } from "@/lib/store";
+import { copyText } from "./copyText";
 
 /**
  * The crew hub's Game Time card (design 13.1): GAME TIME and the countdown before it opens, LIVE NOW while it runs, and
  * the end state for half an hour after. Nothing at all when the crew has no Game Time to show. One mount line in CrewHub.
+ * A member who has won sees their ticket right on the card ("Your ticket: <code>", COPY) and a link to all of them in Me.
  */
 
 const OVER_WORD: Record<GtOverReason, string> = { all_found: "ALL FOUND", time_up: "TIME UP", closed: "CLOSED" };
@@ -75,9 +79,54 @@ export default function HubGameTime({ crewId, isMember }: { crewId: string; isMe
           This one is for members who joined before it opened. Join for the next one.
         </p>
       ))}
-      {me.won && (
-        <p className="mt-2 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-violet">You got a ticket. It is in Me, Your tickets.</p>
-      )}
+      {me.won && <MyTicket code={me.code} />}
     </section>
+  );
+}
+
+/**
+ * "Your ticket: CODE", COPY, and the way to Me. The code is this game's; a win in another game of the same campaign leaves
+ * it null (one win per campaign), and then only the link shows.
+ */
+function MyTicket({ code }: { code: string | null }) {
+  const say = useToast((s) => s.say);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1800);
+    return () => clearTimeout(t);
+  }, [copied]);
+  const copy = async () => {
+    if (!code) return;
+    if (await copyText(code)) setCopied(true);
+    else say("Couldn't copy. Press and hold the code.", "error");
+  };
+
+  return (
+    <div className="mt-3 border-t border-line pt-3" data-gt-hub-ticket>
+      {code ? (
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-violet">Your ticket</p>
+            <p className="mt-0.5 select-all break-all font-mono text-[17px] font-medium tracking-[0.08em]" data-gt-hub-code>
+              {code}
+            </p>
+          </div>
+          <button type="button" onClick={() => void copy()} aria-label={`Copy code ${code}`} className="btn btn-ghost flex-none px-3 text-[12px]">
+            {copied ? <Check size={16} aria-hidden /> : <Copy size={16} aria-hidden />}
+            {copied ? "COPIED" : "COPY"}
+          </button>
+        </div>
+      ) : (
+        <p className="font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-violet">You got a ticket</p>
+      )}
+      <Link
+        href="/me#tickets"
+        className="mt-2 inline-flex min-h-[44px] items-center font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-cream underline underline-offset-4"
+        data-gt-hub-tickets-link
+      >
+        {code ? "All your tickets in Me" : "See it in Me, Your tickets"}
+      </Link>
+    </div>
   );
 }

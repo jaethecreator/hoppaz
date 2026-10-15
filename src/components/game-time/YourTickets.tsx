@@ -1,43 +1,91 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Ticket } from "lucide-react";
 import { lagosWhen } from "@/lib/game-time/clock";
-import { useTickets } from "@/lib/game-time/hooks";
+import type { GtTicket } from "@/lib/game-time/types";
 import { useToast } from "@/lib/store";
+import { copyText } from "./copyText";
+
+/** The anchor: /me#tickets. The win sheet and the crew page's Game Time card link here. */
+export const TICKETS_ANCHOR = "tickets";
 
 /**
- * "Your tickets" on Me: every code this Hopper has won in a Game Time, newest first, each with COPY. A win in the room saves
- * its code here at once (the database keeps it, my_game_time_wins), so a dropped connection or a closed sheet loses nothing.
- * Draws nothing until there is a ticket. One mount line in Me.
+ * "Your tickets" at the very top of Me: every code this Hopper has won in a Game Time, newest first, each with COPY. A win in
+ * the room saves its code here at once (the database keeps it, my_game_time_wins), so a dropped connection or a closed sheet
+ * loses nothing. Draws nothing until there is a ticket. Me reads the tickets (useTickets) and hands them in, because it
+ * needs to know whether this block is there to space the header under it.
+ *
+ * Arriving by /me#tickets (the win sheet, the crew page) scrolls here once the tickets have loaded and flashes the border.
+ * The scroll cannot be left to the browser or the router: the block does not exist until the database has answered.
  */
-export default function YourTickets({ enabled = true }: { enabled?: boolean }) {
-  const { tickets, loaded } = useTickets(enabled);
+export default function YourTickets({ tickets, top = false }: { tickets: GtTicket[]; top?: boolean }) {
   const say = useToast((s) => s.say);
+  const root = useRef<HTMLElement>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [flash, setFlash] = useState(false);
+  const has = tickets.length > 0;
+
   useEffect(() => {
     if (!copied) return;
     const t = setTimeout(() => setCopied(null), 1800);
     return () => clearTimeout(t);
   }, [copied]);
 
-  if (!loaded || tickets.length === 0) return null;
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(false), 2200);
+    return () => clearTimeout(t);
+  }, [flash]);
+
+  useEffect(() => {
+    if (!has) return;
+    const arrive = () => {
+      if (window.location.hash !== `#${TICKETS_ANCHOR}`) return;
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      root.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+      setFlash(true);
+      // Spent: take the hash off so the same link works again next time (the same way #earn is handled on this page).
+      try {
+        window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
+      } catch {
+        /* the scroll already happened */
+      }
+    };
+    arrive();
+    // A client-side visit to /me#tickets can land a tick before the address bar updates.
+    const t = setTimeout(arrive, 60);
+    window.addEventListener("hashchange", arrive);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("hashchange", arrive);
+    };
+  }, [has]);
+
+  if (!has) return null;
 
   const copy = async (id: string, code: string) => {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(id);
-    } catch {
-      say("Couldn't copy. Press and hold the code.", "error");
-    }
+    if (await copyText(code)) setCopied(id);
+    else say("Couldn't copy. Press and hold the code.", "error");
   };
 
   return (
-    <section aria-label="Your tickets" className="mt-7" data-your-tickets>
-      <p className="seclabel mb-2.5">YOUR TICKETS</p>
+    <section
+      ref={root}
+      id={TICKETS_ANCHOR}
+      aria-label="Your tickets"
+      className={top ? "pad-top" : "mt-7"}
+      data-your-tickets
+    >
+      <p className="seclabel mb-2.5">
+        YOUR TICKETS{tickets.length > 1 ? ` · ${tickets.length}` : ""}
+      </p>
       <ul className="grid grid-cols-[minmax(0,1fr)] gap-2">
         {tickets.map((t) => (
-          <li key={t.id} className="stub flex min-w-0 items-center gap-3 px-4 py-3">
+          <li
+            key={t.id}
+            className={`stub flex min-w-0 items-center gap-3 px-4 py-3 transition-colors duration-500 ${flash ? "!border-violet" : ""}`}
+          >
             <Ticket size={20} aria-hidden className="flex-none text-violet" />
             <div className="min-w-0 flex-1">
               <p className="line-clamp-2 font-display text-[14px] font-black leading-tight">

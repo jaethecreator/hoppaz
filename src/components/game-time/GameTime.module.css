@@ -833,13 +833,26 @@ button.banner:focus-visible {
   user-select: all;
   -webkit-user-select: all;
 }
+/* "Saved in Me, Your tickets": a button that walks to /me#tickets. Text-sized, but a 44px tap target. */
 .winSaved {
-  margin: 0;
-  color: rgb(var(--dim));
-  font: 500 10px/14px var(--font-mono);
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  margin: -8px 0;
+  padding: 0 8px;
+  color: rgb(var(--text) / 0.85);
+  font: 500 11px/14px var(--font-mono);
   letter-spacing: 0.08em;
   text-align: center;
+  text-decoration: underline;
+  text-underline-offset: 4px;
   text-transform: uppercase;
+  -webkit-tap-highlight-color: transparent;
+}
+.winSaved:active {
+  color: rgb(var(--text));
 }
 .confetti {
   position: absolute;

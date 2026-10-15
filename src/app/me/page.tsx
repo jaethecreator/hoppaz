@@ -30,6 +30,7 @@ import { useHoppaz, useToast } from "@/lib/store";
 import { BADGES, levelFor, statusFor } from "@/lib/brand";
 import { useGameDashboard, useGameDrops } from "@/lib/game";
 import { useDailyBox } from "@/lib/useDailyBox";
+import { useTickets } from "@/lib/game-time/hooks";
 import { GENDERS, useNextAsk } from "@/lib/account";
 import type { Profile } from "@/lib/types";
 import { introEvent } from "@/lib/intro";
@@ -54,6 +55,9 @@ function MePagePage() {
   const { stats, makeReport, busy: reportBusy, ready: statsReady, reload: reloadStats } = useGameDashboard(userId, { lite: true });
   const daily = useDailyBox(userId, { demo: DEMO });
   const { drops, ready: dropsReady } = useGameDrops(undefined, { staffOnly: true });
+  // Game Time tickets: read here (not inside the block) because a ticket goes at the very top and the header spaces itself under it.
+  const { tickets } = useTickets(!DEMO && !!userId);
+  const hasTickets = tickets.length > 0;
   const { fix, look, setSeenTitle } = useHoppaz();
   const say = useToast((s) => s.say);
   const router = useRouter();
@@ -296,8 +300,10 @@ function MePagePage() {
 
   return (
     <div className="h-full overflow-y-auto px-4 pb-8">
+      <YourTickets tickets={tickets} top />
+
       {month.card && (
-        <div className="pad-top">
+        <div className={hasTickets ? "pt-5" : "pad-top"}>
           <MonthCard card={month.card} busy={reportBusy} onOpen={() => void makeCard(true)} onDismiss={month.dismiss} />
         </div>
       )}
@@ -310,7 +316,7 @@ function MePagePage() {
         status={status}
         mascot={waving ? "wave" : mood}
         stampLevel={!!stamp.level}
-        belowCard={!!month.card}
+        belowCard={!!month.card || hasTickets}
       />
 
       <NumberTiles
@@ -332,8 +338,6 @@ function MePagePage() {
           onOpen={() => setRevealing(true)}
         />
       )}
-
-      <YourTickets enabled={!DEMO && !!userId} />
 
       <ShelfStrip userId={userId} offline={state === "offline"} />
 
