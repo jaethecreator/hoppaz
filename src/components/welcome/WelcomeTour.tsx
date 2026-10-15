@@ -19,15 +19,15 @@ type TourStep = {
 const STEPS: ReadonlyArray<TourStep> = [
   {
     targets: ["hotspots"],
-    title: "The map",
-    line: "Events and your people, live. Signs are events. The crosshairs are hotspots: open rooms you can walk into.",
+    title: "Hotspots",
+    line: "Open rooms all over Lagos. Tap one, see who's in.",
   },
   { targets: ["events"], title: "Events", line: "Swipe right if we outside." },
   {
     targets: ["home", "hotspots"],
     title: "Your home base",
     line: "This is your turf. Bring your people.",
-    fallbackLine: "Set your location and your home base shows up here. This is your turf. Bring your people.",
+    fallbackLine: "Set your location and your home base shows up here. Bring your people.",
   },
   { targets: [], title: "Stuck? Ask Paz.", line: "Ask about anything, any time." },
 ];
