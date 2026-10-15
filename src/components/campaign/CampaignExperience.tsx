@@ -23,7 +23,7 @@ import CampaignSettings from "./CampaignSettings";
 import CampaignWorld, { type OpenPhase } from "./CampaignWorld";
 import ZoneSheet, { type ZoneSheetKind } from "./ZoneSheet";
 import { roomName } from "./brand";
-import { useZoneCards, welcomeOnce } from "./useZoneCards";
+import { firstVisit, useZoneCards } from "./useZoneCards";
 import css from "./Campaign.module.css";
 
 /** The crew's next event, for the Stage (lib/crew-room/crewEvents.ts). */
@@ -144,8 +144,6 @@ function LogoBadge({ crewId, name, pulse }: { crewId: string; name: string; puls
   );
 }
 
-const reducedMotion = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
 export default function CampaignExperience({ crew }: { crew: CrewCampaign }) {
   const look = useHoppaz((state) => state.look);
   const { profile } = useSession();
@@ -157,6 +155,15 @@ export default function CampaignExperience({ crew }: { crew: CrewCampaign }) {
   const watching = crew.world.watching;
   const goOut = useGoOut();
   const hasAction = useRoomStore((s) => !!s.action);
+  // A zone the owner has not filled in says so on its card (design section 19).
+  const hasMusic = !!validCampaignUrl(content.musicUrl);
+  const hasAwards = content.awards.length > 0;
+  const zoneLines = useMemo(() => {
+    const lines: Record<string, string> = {};
+    if (!hasMusic) lines.studio = "Next session loading. Pull up a seat.";
+    if (!hasAwards) lines.awards = "Shelves are empty for now. Awards land soon.";
+    return lines;
+  }, [hasMusic, hasAwards]);
 
   const [phase, setPhase] = useState<OpenPhase | "init">("init");
   const [sheetKind, setSheetKind] = useState<ZoneSheetKind | null>(null);
@@ -170,40 +177,27 @@ export default function CampaignExperience({ crew }: { crew: CrewCampaign }) {
     const list = timers.current;
     return () => list.forEach(clearTimeout);
   }, []);
-
-  // The open sequence is over: the logo pulses once, and on a first visit a welcome card pops over my head (8 s), followed
-  // by one coach mark at the logo. Every later visit is silent.
-  const opened = useCallback(
-    (next: OpenPhase) => {
-      setPhase(next);
-      if (next !== "done") return;
-      const later = (fn: () => void, ms: number) => timers.current.push(setTimeout(fn, ms));
-      setPulse(true);
-      later(() => setPulse(false), 700);
-      const welcome = welcomeOnce(crew.id, content.brand, reducedMotion());
-      if (!welcome) return;
-      later(() => {
-        useRoomStore.getState().pushPopup({ id: "welcome", title: welcome.title, body: welcome.body, ttlMs: 8000 });
-      }, 200);
-      later(() => setCoach(true), 8400);
-      later(() => setCoach(false), 11400);
-    },
-    [crew.id, content.brand],
-  );
-
-  // The welcome card goes when I tap someone or open the chat, and three seconds after I start walking.
+  // In the room feedback is in the world; a toast is only for a failure. Lift it clear of the CHAT button and the action pill.
   useEffect(() => {
-    let walkTimer: ReturnType<typeof setTimeout> | undefined;
-    const unsubscribe = useRoomStore.subscribe((s, prev) => {
-      if ((s.tappedPeer && !prev.tappedPeer) || (s.sheet !== "closed" && prev.sheet === "closed")) useRoomStore.getState().dismissPopup("welcome");
-      if (s.me && prev.me && (s.me.x !== prev.me.x || s.me.y !== prev.me.y) && s.popups.some((p) => p.id === "welcome") && !walkTimer) {
-        walkTimer = setTimeout(() => useRoomStore.getState().dismissPopup("welcome"), 3000);
-      }
-    });
-    return () => {
-      unsubscribe();
-      if (walkTimer) clearTimeout(walkTimer);
-    };
+    const root = document.documentElement;
+    root.style.setProperty("--hz-toast-lift", "64px");
+    return () => void root.style.removeProperty("--hz-toast-lift");
+  }, []);
+
+  // The open sequence is over: the logo pulses once. On a first visit the welcome card (ChatWelcome, inside the chat sheet's
+  // layer) is up for about 8 s, and one coach mark at the logo follows it. Every later visit is silent.
+  const newHere = useRef<boolean | null>(null);
+  if (newHere.current === null) newHere.current = firstVisit(crew.id);
+  const opened = useCallback((next: OpenPhase) => {
+    setPhase(next);
+    if (next !== "done") return;
+    const later = (fn: () => void, ms: number) => timers.current.push(setTimeout(fn, ms));
+    setPulse(true);
+    later(() => setPulse(false), 700);
+    if (!newHere.current) return;
+    newHere.current = false;
+    later(() => setCoach(true), 8400);
+    later(() => setCoach(false), 11400);
   }, []);
 
   useZoneCards({ layout, content, nextEvent: crew.nextEvent ?? null, ready: phase === "done", openSheet: setSheetKind });
@@ -267,6 +261,7 @@ export default function CampaignExperience({ crew }: { crew: CrewCampaign }) {
           social={crew.world}
           room={crew.room}
           userId={crew.userId}
+          zoneLines={zoneLines}
           onPhase={opened}
         />
         <p className={`${css.hint} ${hint ? "" : css.hintOut}`} aria-hidden>

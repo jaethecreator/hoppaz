@@ -24,7 +24,12 @@ import css from "./PopUps.module.css";
  *
  * Reads useRoomStore zone, sheet, popups, me, peers, tile; writes dismissPopup. Copy is the design's section 19.
  */
-export type PopUpsProps = { crewId: string; layout: CampaignLayout };
+export type PopUpsProps = {
+  crewId: string;
+  layout: CampaignLayout;
+  /** A zone's line when the owner has not filled it in ("Next session loading. Pull up a seat."), by zone id. Optional. */
+  lines?: Partial<Record<string, string>>;
+};
 
 const ZONE_LINE: Record<string, string> = {
   studio: "Headphones on. First listen, before anybody.",
@@ -42,8 +47,10 @@ const GAP = 12;
 
 type Card = { id: string; title: string; body?: string; tile?: { x: number; y: number }; ttlMs: number; lock?: boolean; zone?: boolean };
 
-export default function PopUps({ layout }: PopUpsProps) {
+export default function PopUps({ layout, lines }: PopUpsProps) {
   const root = useRef<HTMLDivElement>(null);
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
   const zone = useRoomStore((s) => s.zone);
   const popups = useRoomStore((s) => s.popups);
   const dismissPopup = useRoomStore((s) => s.dismissPopup);
@@ -77,7 +84,7 @@ export default function PopUps({ layout }: PopUpsProps) {
           zone: true,
         });
       } else if (room) {
-        setZoneCard({ id: `zone:${zone}`, title: room.name, body: ZONE_LINE[room.id] ?? room.subtitle, ttlMs: ZONE_MS, zone: true });
+        setZoneCard({ id: `zone:${zone}`, title: room.name, body: linesRef.current?.[room.id] ?? ZONE_LINE[room.id] ?? room.subtitle, ttlMs: ZONE_MS, zone: true });
       }
     }, SHOW_AFTER_MS);
     return () => clearTimeout(timer);

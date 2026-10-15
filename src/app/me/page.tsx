@@ -12,6 +12,7 @@ import MeHeader from "@/components/me/MeHeader";
 import MonthCard, { useMonthCard } from "@/components/me/MonthCard";
 import NumberTiles, { type TileKey } from "@/components/me/NumberTiles";
 import TodaysBox from "@/components/me/TodaysBox";
+import YourTickets from "@/components/game-time/YourTickets";
 import ShelfStrip from "@/components/me/ShelfStrip";
 import BadgeShelf, { shelfBadges } from "@/components/me/BadgeShelf";
 import WaysToEarn from "@/components/me/WaysToEarn";
@@ -331,6 +332,8 @@ function MePagePage() {
           onOpen={() => setRevealing(true)}
         />
       )}
+
+      <YourTickets enabled={!DEMO && !!userId} />
 
       <ShelfStrip userId={userId} offline={state === "offline"} />
 

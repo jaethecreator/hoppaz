@@ -118,6 +118,10 @@ begin
   perform pg_temp.ok(r = 'already', 'a second wave is already');
   perform pg_temp.actor(b); r := public.crew_room_wave(crew, a); perform pg_temp.admin();
   perform pg_temp.ok(r like 'matched:%', 'waving back opens the DM (matched:<dm id>)');
+  select id into w from public.crew_room_vibes where from_user = b and to_user = a and sticker = 'wave';
+  perform pg_temp.ok(w is not null and pg_temp.seen(a, w), 'the one who waved first is told live that it came back');
+  perform pg_temp.actor(a); r := public.crew_room_wave(crew, b); perform pg_temp.admin();
+  perform pg_temp.ok(r like 'matched:%', 'once it is mutual, a second SAY HI from the first waver is matched too, not already');
   perform pg_temp.actor(a); r := public.crew_room_wave(crew, e); perform pg_temp.admin();
   perform pg_temp.ok(r = 'gone', 'a wave at someone who is not in the room is gone');
   perform pg_temp.actor(a); r := public.crew_room_wave(crew, d); perform pg_temp.admin();

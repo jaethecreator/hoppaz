@@ -10,6 +10,7 @@ import InstallSheet from "@/components/app/InstallSheet"
 import MusicHost from "@/components/app/MusicHost"
 import OfflineLine from "@/components/app/OfflineLine"
 import PushAlert from "@/components/app/PushAlert"
+import GameTimePing from "@/components/game-time/GameTimePing"
 import SignupSheet from "@/components/app/SignupSheet"
 import SoundLane from "@/components/app/SoundLane"
 import IntroHost from "@/components/intro/IntroHost"
@@ -97,6 +98,7 @@ export default function RootLayout({
           <main className="relative flex-1 min-h-0">{children}</main>
           <BottomNav />
         </div>
+        <GameTimePing />
         <Toaster />
         <SignupSheet />
         <InstallSheet />

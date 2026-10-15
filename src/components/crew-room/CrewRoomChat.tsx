@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Clock, CornerUpLeft, Flame, Footprints, Heart, Info, Laugh, PartyPopper, SendHorizontal, X } from "lucide-react";
 import ChatFace from "@/components/chat/ChatFace";
 import { chatTime } from "@/components/chat/Bubble";
@@ -15,6 +15,12 @@ import { roomTips, welcomeLine } from "./ChatWelcome";
 import css from "./CrewRoomChat.module.css";
 
 const NO_DRAFT: Draft = { text: "", circle: null };
+/** Nothing to draw while the sheet is closed: the list stays mounted for its state and drafts, but its rows do not render. */
+const NO_ROWS: ReturnType<typeof buildRows> = [];
+/** A face is 70 nodes of SVG. The room updates about every 1.5 s, so a face is redrawn only when its look really changes. */
+const Face = memo(function Face({ look }: { look: unknown }) {
+  return <ChatFace look={look} size={28} />;
+});
 const REACT_ICON: Record<ReactionKind, typeof Heart> = { heart: Heart, fire: Flame, laugh: Laugh, party: PartyPopper };
 const REACT_LABEL: Record<ReactionKind, string> = { heart: "Love it", fire: "Fire", laugh: "Funny", party: "Party" };
 /** Within this many px of the bottom counts as "at the bottom": new messages keep the list pinned. */
@@ -80,6 +86,8 @@ export default function CrewRoomChat({ crewId, room, userId, tab, area, circle, 
   const nameOf = useChatNames(messages, peers ?? [], userId);
   useOutboxCleanup(key ?? "general", messages, userId);
   const rows = useMemo(() => buildRows(messages, outs, userId), [messages, outs, userId]);
+  // A closed sheet draws no rows. With 60 people the room updates all the time, and this list was most of the main thread.
+  const shownRows = active ? rows : NO_ROWS;
   const lastKey = rows[rows.length - 1]?.key;
   const firstKey = rows[0]?.key;
 
@@ -271,7 +279,7 @@ export default function CrewRoomChat({ crewId, room, userId, tab, area, circle, 
           )}
           {!thread?.loaded && !rows.length && <Skeleton />}
           {thread?.loaded && !rows.length && <p className={css.empty}>{emptyText}</p>}
-          {rows.map((row) => {
+          {shownRows.map((row) => {
             if (row.kind === "day") {
               return (
                 <div key={row.key} className={css.day}>
@@ -291,7 +299,7 @@ export default function CrewRoomChat({ crewId, room, userId, tab, area, circle, 
                   onClick={failed ? () => sender.retry(out.id) : undefined}
                   onKeyDown={failed ? (e) => (e.key === "Enter" || e.key === " ") && sender.retry(out.id) : undefined}
                 >
-                  {row.grouped ? <span className={css.faceGap} /> : <span className={css.face}><ChatFace look={myLook} size={28} /></span>}
+                  {row.grouped ? <span className={css.faceGap} /> : <span className={css.face}><Face look={myLook} /></span>}
                   <div className={css.text}>
                     {!row.grouped && (
                       <div className={css.meta}>
@@ -329,7 +337,7 @@ export default function CrewRoomChat({ crewId, room, userId, tab, area, circle, 
                     <span className={css.faceGap} />
                   ) : (
                     <span className={css.face}>
-                      <ChatFace look={m.author_look} size={28} />
+                      <Face look={m.author_look} />
                     </span>
                   )}
                   <div className={css.text}>

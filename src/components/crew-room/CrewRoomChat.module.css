@@ -24,8 +24,8 @@
   -webkit-overflow-scrolling: touch;
   padding: 6px 0 4px;
   /* the oldest visible line fades out under the header */
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
 }
 .day {
   padding: 8px 12px 4px;

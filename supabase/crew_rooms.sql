@@ -346,7 +346,7 @@ language sql stable security definer set search_path = public as $$
                                'capacity', r.capacity, 'featured_event_id', r.featured_event_id, 'featured_ribbon', r.featured_ribbon),
     'peers', coalesce((
       select jsonb_agg(jsonb_build_object(
-               'id', p.user_id, 'name', coalesce(pr.display_name, 'A crew member'), 'look', pr.avatar,
+               'id', p.user_id, 'name', coalesce(nullif(btrim(pr.display_name), ''), pr.handle, 'A crew member'), 'look', pr.avatar,
                'x', p.x, 'y', p.y, 'circle_id', p.circle_id, 'last_seen', p.last_seen) order by p.user_id)
         from crew_room_presence p
         join profiles pr on pr.id = p.user_id
@@ -534,7 +534,7 @@ begin
   end if;
   select * into who from profiles where id = auth.uid();
   insert into crew_room_messages (crew_id, author_id, request_id, scope, circle_id, body, author_name, author_look)
-  values (p_crew, auth.uid(), p_request, p_scope, circle, text_body, coalesce(who.display_name, 'A crew member'), who.avatar)
+  values (p_crew, auth.uid(), p_request, p_scope, circle, text_body, coalesce(nullif(btrim(who.display_name), ''), who.handle, 'A crew member'), who.avatar)
   on conflict (crew_id, author_id, request_id) do nothing
   returning id into message_id;
   if message_id is null then
@@ -757,7 +757,7 @@ begin
                    and (auth.uid() is null or not public.is_blocked(auth.uid(), p.user_id))),
     'heads', coalesce((
       select jsonb_agg(h) from (
-        select jsonb_build_object('id', p.user_id, 'name', coalesce(pr.display_name, 'A crew member'), 'look', pr.avatar) as h
+        select jsonb_build_object('id', p.user_id, 'name', coalesce(nullif(btrim(pr.display_name), ''), pr.handle, 'A crew member'), 'look', pr.avatar) as h
           from crew_room_presence p join profiles pr on pr.id = p.user_id
          where p.crew_id = c.id and p.last_seen > t - _crew_room_ttl()
            and (auth.uid() is null or not public.is_blocked(auth.uid(), p.user_id))

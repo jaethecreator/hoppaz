@@ -1,0 +1,758 @@
+/*
+ * Game Time in the room (docs/ROOM-GAME-DESIGN.md section 13). Two halves:
+ *
+ *   WORLD  (scene px, inside the scaled world): the shimmer on the objects that can hide a box, the search animation, the
+ *          hint chip that sits on the object, the burst of a win and the puff of someone else's find. Anything that must
+ *          read at one size on screen is counter-scaled with --cam-inv, like the room's other labels.
+ *   CHROME (screen px, over the room): the banner, the feed lines, the opening countdown, the win sheet and its confetti.
+ *
+ * Colours are the app's tokens, except the art colours (the star, the burst), which are fixed because the room is art.
+ */
+
+/* ------------------------------------------------------------------ world */
+
+.spot {
+  position: absolute;
+  z-index: 1;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.spotBody {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 0;
+  height: 0;
+  transform: scale(var(--cam-inv, 1));
+  transform-origin: 0 0;
+}
+.star {
+  display: block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  background: radial-gradient(circle at 50% 50%, #ffc400 0 20%, #f5ebdd 24%);
+  clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
+  opacity: 0.7;
+}
+/* A tap on a star walks me next to its object: a 44 px target at one size on screen. */
+.hit {
+  position: absolute;
+  left: -22px;
+  top: -22px;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.hit:focus-visible {
+  outline: 2px solid #ff4d00;
+}
+.dot .star {
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  clip-path: circle(50%);
+  background: #f5ebdd;
+}
+.twinkle .star {
+  animation: twinkle 2.4s ease-in-out var(--d, 0s) infinite;
+}
+.near .star {
+  opacity: 1;
+  transform: scale(1.35);
+  filter: drop-shadow(0 0 4px rgb(255 196 0 / 0.85));
+}
+.near.twinkle .star {
+  animation: twinkleNear 1.6s ease-in-out var(--d, 0s) infinite;
+}
+.ring {
+  display: block;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border: 2px solid #ffc400;
+  border-radius: 50%;
+  background: rgb(255 196 0 / 0.16);
+  box-shadow: 0 0 8px rgb(255 196 0 / 0.7);
+}
+.popStar .star {
+  animation: goPop 0.9s ease-out both;
+}
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(0.85);
+  }
+  14% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  29% {
+    opacity: 0.5;
+    transform: scale(0.85);
+  }
+}
+@keyframes twinkleNear {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(1.2);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.5);
+  }
+}
+@keyframes goPop {
+  0% {
+    opacity: 1;
+    transform: scale(0.6);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(3);
+  }
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+}
+
+/* The search: a dashed frame around the object that shakes 2 px, a gleam that sweeps it, and dust that lifts. */
+.rummage {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 2px dashed rgb(245 235 221 / 0.92);
+  border-radius: 3px;
+  background: rgb(245 235 221 / 0.08);
+  pointer-events: none;
+  animation: shake 0.12s linear infinite alternate;
+}
+.rummage::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -45%;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.7), transparent);
+  animation: sweep 0.95s ease-in-out 2 both;
+}
+.dustRow {
+  position: absolute;
+  z-index: 2;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.dustBody {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform: scale(var(--cam-inv, 1));
+  transform-origin: 0 0;
+}
+.dust {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #f5ebdd;
+  opacity: 0;
+  animation: dust 0.7s ease-out var(--d, 0s) 3 both;
+}
+@keyframes shake {
+  from {
+    transform: translate(-1px, 0);
+  }
+  to {
+    transform: translate(1px, 0);
+  }
+}
+@keyframes sweep {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(380%);
+  }
+}
+@keyframes dust {
+  0% {
+    opacity: 0;
+    transform: translate(var(--x, 0), 0) scale(0.6);
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--x, 0), -16px) scale(1.2);
+  }
+}
+
+/* The hint chip sits on the object: 28 px high, one size on screen at every zoom. */
+.chipAnchor {
+  position: absolute;
+  z-index: 5;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.chipBody {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  translate: calc(var(--shift, 0px) * var(--cam-inv, 1)) 0;
+  transform: translate(-50%, 0) scale(var(--cam-inv, 1));
+  transform-origin: 50% 100%;
+}
+.chipBelow .chipBody {
+  bottom: auto;
+  top: 0;
+  transform-origin: 50% 0;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 2px solid var(--tone, rgb(var(--dim)));
+  border-radius: 4px;
+  background: rgb(var(--ground) / 0.94);
+  color: rgb(var(--text));
+  box-shadow: 0 2px 0 rgb(0 0 0 / 0.35);
+  font: 500 11px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  animation: chipIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.chip svg {
+  flex: none;
+  color: var(--tone, rgb(var(--dim)));
+}
+.tCold {
+  --tone: rgb(var(--lagoon));
+}
+.tWarm {
+  --tone: rgb(var(--danfo));
+}
+.tHot {
+  --tone: rgb(var(--fireant));
+}
+.tWarn {
+  --tone: rgb(var(--fireant));
+}
+.tInfo {
+  --tone: rgb(var(--dim));
+}
+@keyframes chipIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.92);
+  }
+}
+
+/* Bursts: a win (14 squares out of the object) and someone else's find (a ring and a few specks). */
+.burst {
+  position: absolute;
+  z-index: 6;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.burstBody {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform: scale(var(--cam-inv, 1));
+  transform-origin: 0 0;
+}
+.bit {
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  background: var(--c, #f5ebdd);
+  animation: bit 0.9s cubic-bezier(0.1, 0.8, 0.2, 1) both;
+}
+.poofRing {
+  position: absolute;
+  left: -20px;
+  top: -20px;
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  border: 3px solid #5b2eff;
+  border-radius: 50%;
+  animation: poofRing 0.8s ease-out both;
+}
+.speck {
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+  background: var(--c, #f5ebdd);
+  animation: bit 0.7s cubic-bezier(0.1, 0.8, 0.2, 1) both;
+}
+@keyframes bit {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) rotate(var(--rot, 120deg)) scale(0.6);
+  }
+}
+@keyframes poofRing {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.25);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+
+/* ----------------------------------------------------------------- chrome */
+
+.top {
+  position: absolute;
+  left: max(8px, env(safe-area-inset-left));
+  right: calc(60px + var(--room-dock, 0px));
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 360px;
+  pointer-events: none;
+}
+.top[data-below] {
+  top: 66px;
+}
+.banner {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 8px;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  padding: 7px 10px 8px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  background: rgb(var(--raised) / 0.92);
+  color: rgb(var(--text));
+  text-align: left;
+  pointer-events: none;
+  font-family: inherit;
+}
+button.banner {
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+button.banner:focus-visible {
+  outline: 2px solid #ff4d00;
+  outline-offset: 2px;
+}
+.banner[data-soon] {
+  border-color: rgb(var(--danfo));
+}
+.banner[data-muted] .title {
+  color: rgb(var(--dim));
+}
+.label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: rgb(var(--dim));
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.dotLive {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(var(--keke));
+  animation: dotPulse 1.6s ease-in-out infinite;
+}
+.dotSoon {
+  background: rgb(var(--danfo));
+}
+.dotOff {
+  background: rgb(var(--dim));
+  animation: none;
+}
+@keyframes dotPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.title {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  margin-top: 1px;
+  font: 900 13px/15px var(--font-poppins);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.count {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: grid;
+  justify-items: end;
+  align-self: center;
+  font: 900 22px/22px var(--font-poppins);
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.countSmall {
+  font-size: 15px;
+  line-height: 18px;
+}
+.countKicker {
+  color: rgb(var(--dim));
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.08em;
+}
+.warn {
+  color: rgb(var(--danfo));
+}
+.hurry {
+  color: rgb(var(--fireant));
+  animation: hurry 1s steps(2, jump-none) infinite;
+}
+@keyframes hurry {
+  50% {
+    opacity: 0.55;
+  }
+}
+.pips {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 5px;
+}
+.pip {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: rgb(var(--text));
+}
+.pipOff {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgb(var(--hairline));
+}
+.pipText {
+  margin-left: 6px;
+  color: rgb(var(--dim));
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.feedChip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 4px;
+  background: rgb(var(--raised) / 0.92);
+  color: rgb(var(--text));
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  animation: chipIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+/* The last ten seconds before it opens: the room dims, big numbers stamp, then GO. */
+.hype {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: rgb(0 0 0 / 0.2);
+  pointer-events: none;
+}
+.hypeLabel {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgb(var(--ground) / 0.85);
+  color: rgb(var(--text));
+  font: 500 11px/13px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.hypeNum {
+  color: #f5ebdd;
+  font: 900 96px/1 var(--font-poppins);
+  font-feature-settings: "tnum";
+  text-shadow: 0 4px 0 rgb(0 0 0 / 0.45);
+  animation: stampIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.hypeRed {
+  color: rgb(var(--fireant));
+}
+.hypeGo {
+  color: rgb(var(--keke));
+  font-size: 104px;
+}
+@keyframes stampIn {
+  0% {
+    opacity: 0;
+    transform: scale(1.35) rotate(-3deg);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(-1deg);
+  }
+}
+
+/* The win: a full sheet over the room (the header and the tab bar stay), with the code, COPY and confetti. */
+.win {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 20px 20px max(20px, env(safe-area-inset-bottom));
+  background: rgb(var(--ground) / 0.92);
+  pointer-events: auto;
+  overscroll-behavior: contain;
+  animation: winIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes winIn {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+.winClose {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  color: rgb(var(--dim));
+}
+.winBody {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: 360px;
+  margin: auto;
+  gap: 14px;
+}
+.winPill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--violet));
+  border-radius: 13px;
+  color: rgb(var(--violet));
+  font: 500 11px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.winHead,
+.winActions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+.winTitle {
+  margin: 0;
+  font: 900 34px/36px var(--font-poppins);
+}
+.winLine {
+  margin: -6px 0 0;
+  color: rgb(var(--text) / 0.8);
+  font: 400 15px/21px var(--font-body);
+}
+.codeCard {
+  position: relative;
+  padding: 14px 16px 16px;
+  border: 1px solid rgb(var(--violet) / 0.7);
+  border-radius: 6px;
+  background: rgb(var(--raised));
+}
+.codeKicker {
+  display: block;
+  color: rgb(var(--dim));
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.code {
+  display: block;
+  margin-top: 6px;
+  color: rgb(var(--text));
+  font: 500 26px/32px var(--font-mono);
+  letter-spacing: 0.1em;
+  overflow-wrap: anywhere;
+  user-select: all;
+  -webkit-user-select: all;
+}
+.winSaved {
+  margin: 0;
+  color: rgb(var(--dim));
+  font: 500 10px/14px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.confetti {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.piece {
+  position: absolute;
+  top: -14px;
+  left: var(--x);
+  width: var(--s);
+  height: calc(var(--s) * 0.6);
+  background: var(--c);
+  opacity: 0;
+  animation: confettiFall var(--dur) cubic-bezier(0.25, 0.6, 0.35, 1) var(--delay) both;
+}
+@keyframes confettiFall {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--drift), 640px, 0) rotate(var(--spin));
+  }
+}
+
+/* A phone on its side: the heading on the left, the code and the buttons on the right, so nothing needs a scroll. */
+@media (max-height: 470px) and (min-width: 640px) {
+  .winBody {
+    flex-direction: row;
+    align-items: center;
+    max-width: 720px;
+    gap: 32px;
+  }
+  .winHead,
+  .winActions {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .winLine {
+    margin: 0;
+  }
+}
+@media (max-height: 470px) {
+  .win {
+    padding-top: 12px;
+  }
+  .winBody {
+    gap: 10px;
+  }
+  .winTitle {
+    font-size: 26px;
+    line-height: 28px;
+  }
+  .code {
+    font-size: 22px;
+    line-height: 26px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .twinkle .star,
+  .near.twinkle .star,
+  .popStar .star,
+  .rummage,
+  .rummage::after,
+  .dust,
+  .dotLive,
+  .hurry,
+  .chip,
+  .feedChip,
+  .win,
+  .piece {
+    animation: none;
+  }
+  .twinkle .star {
+    opacity: 0.6;
+  }
+  .piece {
+    display: none;
+  }
+  .hypeNum {
+    animation: none;
+  }
+}
