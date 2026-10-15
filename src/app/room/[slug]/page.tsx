@@ -101,6 +101,8 @@ function LiveRoom({ slug, room, data }: { slug: string; room: NonNullable<Return
   );
 
   const heads = rs?.heads;
+  // The people you can @tag: the others in the room (the heads never include you).
+  const mentionables = useMemo(() => (heads ?? []).map((h) => ({ key: h.key, alias: h.alias })), [heads]);
   const at = useMemo(() => new Date().toISOString(), []);
   const peers = useMemo(() => (phase.t === "in" && heads ? placeHeads(room.layout, heads, at) : []), [phase.t, heads, room.layout, at]);
   const social: SocialWorld = useMemo(
@@ -116,7 +118,7 @@ function LiveRoom({ slug, room, data }: { slug: string; room: NonNullable<Return
 
   const chatPanel =
     phase.t === "in" && entered && slow ? (
-      <ChatPanel msgs={chat.msgs} live={chat.live} send={chat.send} youKey={entered.key} slow={slow} rules={entered.rules} onPick={setPerson} onRejoin={() => void recover()} typing={typing} />
+      <ChatPanel msgs={chat.msgs} live={chat.live} send={chat.send} youKey={entered.key} slow={slow} rules={entered.rules} onPick={setPerson} onRejoin={() => void recover()} typing={typing} mentionables={mentionables} myAlias={alias} />
     ) : (
       <div className="px-4 pt-3">
         {phase.t === "account" ? (

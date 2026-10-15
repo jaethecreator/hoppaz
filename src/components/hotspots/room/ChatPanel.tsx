@@ -5,6 +5,7 @@ import { ArrowDown } from "lucide-react";
 import Composer from "@/components/chat/Composer";
 import { RoomMessage } from "@/components/chat/RoomView";
 import { useLinger } from "@/components/chat/useLinger";
+import type { Mentionable } from "@/lib/mentions";
 import { getSupabase } from "@/lib/supabase/client";
 import type { Message } from "@/lib/types";
 import type { Rules, Slow } from "./api";
@@ -16,6 +17,9 @@ import type { HeadPerson } from "./HeadCard";
  * hotspot is text only) and the same Realtime feed. What is new is the plain state line above the box: the
  * rules, then slow mode, then a countdown or the reason a post was refused. The server decides every refusal;
  * the countdown only stops a second tap from making one.
+ *
+ * @tags (crew-waves: Composer, lib/mentions, supabase/hotspot_mentions.sql): `mentionables` are the other people in the
+ * room by key and alias, so typing "@" lists them; `myAlias` draws a tag of you in orange.
  */
 export default function ChatPanel({
   msgs,
@@ -27,6 +31,8 @@ export default function ChatPanel({
   onPick,
   onRejoin,
   typing = false,
+  mentionables,
+  myAlias,
 }: {
   msgs: Message[];
   live: boolean;
@@ -39,6 +45,10 @@ export default function ChatPanel({
   onRejoin: () => void;
   /** The phone's keyboard is up: every spare line goes to the messages, so the pinned rules step aside. */
   typing?: boolean;
+  /** The other people in the room, for @tags: { key, alias } for each head, not you. */
+  mentionables?: Mentionable[];
+  /** Your alias in this room. */
+  myAlias?: string | null;
 }) {
   const reconnecting = useLinger(!live && !!getSupabase(), 3000);
   const list = useRef<HTMLDivElement>(null);
@@ -121,6 +131,7 @@ export default function ChatPanel({
                 key={m.id}
                 m={m}
                 own={!!m.author_key && m.author_key === youKey}
+                myAlias={myAlias}
                 onPick={(p) => onPick({ key: p.key, alias: p.name, look: p.look, messageId: p.messageId, excerpt: p.excerpt })}
               />
             ))
@@ -150,6 +161,7 @@ export default function ChatPanel({
         placeholder="Say something"
         maxLength={rules.max_len}
         onSend={(body) => onSend(body)}
+        mentionables={mentionables}
       />
     </div>
   );

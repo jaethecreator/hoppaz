@@ -91,6 +91,8 @@ export default function HotspotRoom({ slug, name, onLeave }: { slug: string; nam
             onPick={setPerson}
             onRejoin={() => void recover()}
             typing={typing}
+            mentionables={room?.heads.map((h) => ({ key: h.key, alias: h.alias }))}
+            myAlias={entered.alias}
           />
         </>
       ) : (
