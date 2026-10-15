@@ -10,8 +10,7 @@ import { POKE_GAP_MS, messageCrew, pokeCrew, useSocial } from "@/lib/social";
 import { useToast } from "@/lib/store";
 
 /**
- * A crew friend, tapped on the Chat tab (the row of faces) or the Crew tab (Your crew): their face and name, MESSAGE and
- * POKE. Both are the same calls the room card uses (src/lib/social.ts), so the answers read the same everywhere.
+ * A crew friend, tapped in the CREW list on the Chat tab: their face and name, MESSAGE and POKE. Both are the same calls the room card uses (src/lib/social.ts), so the answers read the same everywhere.
  */
 export type CrewPerson = { id: string; name: string; look: unknown };
 
