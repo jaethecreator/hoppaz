@@ -383,7 +383,7 @@ Read this before Friday 16 Oct. About 60 people, mostly on phones on Lagos mobil
    past the cap only watches. The desk warns when members outnumber the cap. Size the database compute up for the night.
 4. The day before, rehearse with as many real phones as you can on the real project. Use the REHEARSAL tick (its own win
    limit, no push). A rehearsal on the real crew does not use up anybody's real win.
-5. Tell people on WhatsApp: sign up, confirm your email, join the crew before the drop, be in the room at the time.
+5. Tell people on WhatsApp: tap the invite link, tap JOIN THE CREW, make the account (there is no email step on the normal path), and be in the room by 19:55.
 
 **Making the drop**
 

@@ -498,7 +498,8 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
   const [codes, setCodes] = useState("");
   const [more, setMore] = useState(false);
   const [campaign, setCampaign] = useState("");
-  const [members, setMembers] = useState("30");
+  // Starts at 0 (any member can hunt), Jae's call for the 360Playlist night. Staff raise it to keep late joiners out.
+  const [members, setMembers] = useState("0");
   const [rehearsal, setRehearsal] = useState(false);
   const [rehearsalKey, setRehearsalKey] = useState("");
   // START NOW asks twice: the first press changes the button, the second opens the hunt.
