@@ -87,11 +87,11 @@ export default function MoveChatPage() {
       {state === "loading" ? (
         <p className="hint">Opening the chat…</p>
       ) : state === "missing" ? (
-        <p className="hint">This move isn&apos;t in any of your crews. Join the crew with its invite code first.</p>
+        <p className="hint">This move isn&apos;t in any of your roomz. Join the room with its invite link first.</p>
       ) : mine !== "going" ? (
         <div className="card">
           <p className="font-display text-sm font-black">This chat is for everyone who&apos;s in</p>
-          <p className="hint mt-1">Say I&apos;M IN to the move and you&apos;re in the chat with the rest of the crew who are coming.</p>
+          <p className="hint mt-1">Say I&apos;M IN to the move and you&apos;re in the chat with everyone else who&apos;s coming.</p>
           <button className="btn mt-3 w-full" disabled={busy} onClick={() => void imIn()}>
             {busy ? "SAVING…" : "I'M IN"}
           </button>
@@ -104,7 +104,7 @@ export default function MoveChatPage() {
           hasAccount={hasAccount}
           note="EVERYONE WHO'S IN"
           empty="You're in. Sort out where you're meeting."
-          noPeople="Nobody else is in yet. Nudge the crew."
+          noPeople="Nobody else is in yet."
           placeholder="Message everyone who's in"
         />
       )}

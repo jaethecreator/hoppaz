@@ -27,7 +27,7 @@ export default function CrewRoomScreen({ crewId }: { crewId: string }) {
   return (
     <RequireAccount
       title="Your crew has a place."
-      caption="Make an account to walk into this crew room, meet your people and join the conversation. You come straight back here."
+      caption="Make an account to walk into this room, meet your people and join the conversation. You come straight back here."
     >
       <ConnectedRoom crewId={crewId} />
     </RequireAccount>
@@ -99,7 +99,7 @@ function RoomGate({ crewId, room }: { crewId: string; room: CrewRoomConnection }
     return (
       <div className={campaign.experience}>
         <header className={campaign.header}>
-          <Link href={`/crew/${crewId}`} className={campaign.back} aria-label="Back to the crew">
+          <Link href={`/crew/${crewId}`} className={campaign.back} aria-label="Back to the room">
             <ChevronLeft size={26} strokeWidth={2.2} aria-hidden />
           </Link>
         </header>
@@ -123,7 +123,7 @@ function RoomGate({ crewId, room }: { crewId: string; room: CrewRoomConnection }
           <button type="button" className={css.primary} onClick={room.retry}>
             Use the room here
           </button>
-          <Link href="/crew">Back to your crews</Link>
+          <Link href="/crew">Back to ROOMZ</Link>
         </nav>
       </div>
     );
@@ -134,12 +134,12 @@ function RoomGate({ crewId, room }: { crewId: string; room: CrewRoomConnection }
     return (
       <div className={css.gate}>
         <h1 className={css.gateTitle}>
-          <span>{crew?.name ?? "A crew room"}</span>
+          <span>{crew?.name ?? "A room"}</span>
           {crew?.verified && <VerifiedBadge size={22} />}
         </h1>
         <p>
           {crew === undefined
-            ? "Checking the crew…"
+            ? "Checking the room…"
             : open
               ? "Join this crew to walk into its room, chat with everyone in it and be there when things happen."
               : "This crew is private. Ask someone in it for the invite code."}
@@ -149,7 +149,7 @@ function RoomGate({ crewId, room }: { crewId: string; room: CrewRoomConnection }
             <button type="button" className={css.primary} disabled={joining} onClick={() => void join(crewId)}>
               {joining ? "Joining…" : "Join and walk in"}
             </button>
-            <Link href="/crew">Back to your crews</Link>
+            <Link href="/crew">Back to ROOMZ</Link>
           </nav>
         ) : (
           crew !== undefined && (
@@ -174,7 +174,7 @@ function RoomGate({ crewId, room }: { crewId: string; room: CrewRoomConnection }
         )}
         {!open && crew !== undefined && (
           <nav>
-            <Link href="/crew">Back to your crews</Link>
+            <Link href="/crew">Back to ROOMZ</Link>
           </nav>
         )}
       </div>
@@ -189,7 +189,7 @@ function RoomGate({ crewId, room }: { crewId: string; room: CrewRoomConnection }
         <button type="button" onClick={room.retry}>
           Try again
         </button>
-        <Link href="/crew">Back to your crews</Link>
+        <Link href="/crew">Back to ROOMZ</Link>
       </nav>
     </div>
   );

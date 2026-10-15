@@ -42,6 +42,7 @@ export default function CrewSheet({ person, onClose }: { person: CrewPerson; onC
     <>
       <div className="absolute inset-0 z-[39] bg-ink/60" onClick={onClose} aria-hidden />
       <Sheet open onClose={onClose} label={person.name}>
+        <div className="mx-auto w-full max-w-[480px]">
         <div className="flex items-center gap-3 pr-10">
           <ChatFace look={person.look} size={48} />
           <p className="min-w-0 flex-1 truncate font-display text-base font-black leading-tight">{person.name}</p>
@@ -53,6 +54,7 @@ export default function CrewSheet({ person, onClose }: { person: CrewPerson; onC
           <button type="button" className="btn btn-ghost" onClick={poke} disabled={busy || poked}>
             <Pointer size={15} aria-hidden /> {poked ? "POKED" : "POKE"}
           </button>
+        </div>
         </div>
       </Sheet>
     </>

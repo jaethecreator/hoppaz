@@ -32,22 +32,22 @@ export default function CrewHub({ crewId }: { crewId: string }) {
   if (state === "loading" && !card) {
     return (
       <div className="h-full px-4 pt-16">
-        <LoadingStub label="Loading the crew" lines={2} />
+        <LoadingStub label="Loading the room" lines={2} />
       </div>
     );
   }
   if (!card) {
     return (
       <div className="h-full overflow-y-auto px-4 pb-6">
-        <PageHeader title="Crew" back="/crew" />
+        <PageHeader title="Room" back="/crew" />
         <p className="font-display text-[19px] font-black leading-tight">
-          {state === "offline" ? "This crew could not load." : "This crew is private."}
+          {state === "offline" ? "This room could not load." : "This room is private."}
         </p>
         <p className="hint mt-1.5">
           {state === "offline" ? "Check your connection and try again." : "Ask someone in it for their invite link."}
         </p>
         <Link href="/crew" className="btn btn-ghost mt-4">
-          YOUR CREWS
+          YOUR ROOMZ
         </Link>
       </div>
     );
@@ -77,7 +77,7 @@ function Hub({ card, onChange }: { card: CrewCard; onChange: () => void }) {
     const { data } = await sb.rpc("join_crew", { p_invite: card.id });
     setBusy(false);
     if (!data) return say("Couldn't join. Try again.", "error");
-    say("You're in the crew.", "ok");
+    say("You're in the room.", "ok");
     router.push(room);
   };
 
@@ -157,7 +157,7 @@ function Hub({ card, onChange }: { card: CrewCard; onChange: () => void }) {
 /** The last few General messages. A tap opens the room with the chat open. */
 function RecentChat({ card }: { card: CrewCard }) {
   return (
-    <Link href={`/crew/${card.id}/room?chat=1`} className="card mt-4 block" aria-label="Open the crew chat in the room">
+    <Link href={`/crew/${card.id}/room?chat=1`} className="card mt-4 block" aria-label="Open the room chat">
       <div className="flex items-center justify-between gap-2">
         <p className="seclabel">General chat</p>
         <span className="flex items-center gap-1 font-mono text-[10px] font-medium tracking-[0.12em] text-orange">
@@ -231,7 +231,7 @@ function Explore({ card }: { card: CrewCard }) {
       href: `/crew/${c.id}`,
       key: `c-${c.id}`,
       logo: { url: c.logo_url, name: c.name },
-      kicker: `${c.verified ? "BRAND CREW" : "OPEN CREW"} · ${c.members} ${c.members === 1 ? "MEMBER" : "MEMBERS"}`,
+      kicker: `${c.verified ? "BRAND ROOM" : "OPEN ROOM"} · ${c.members} ${c.members === 1 ? "MEMBER" : "MEMBERS"}`,
       title: c.name,
     })),
   ];

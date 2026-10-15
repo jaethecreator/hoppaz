@@ -39,7 +39,7 @@ function People() {
   const supported = useSocial((s) => s.supported);
   const onMap = useSocial((s) => s.onMap);
 
-  return <div className="flex h-full flex-col overflow-hidden px-4">
+  return <div className="mx-auto flex h-full w-full max-w-[560px] flex-col overflow-hidden px-4">
     <PageHeader title="Chat" caption="Say hi on your terms" className="flex-none" />
     <div role="tablist" aria-label="Chat" className="mb-3 flex flex-none gap-6 border-b border-line">
       <Tab on={view === "chats"} onClick={() => setView("chats")}>CHATS{unread > 0 ? ` · ${unread}` : ""}</Tab>
@@ -78,7 +78,7 @@ function EventRoom({ id }: { id: string }) {
   const title = hop ? "The Hop" : events.find((e) => e.id === id)?.title ?? mine?.title ?? "Event room";
   const member = !!mine;
 
-  return <div className="flex h-full flex-col overflow-hidden px-4">
+  return <div className="mx-auto flex h-full w-full max-w-[560px] flex-col overflow-hidden px-4">
     <PageHeader title={title} caption={mine ? `CLOSES ${closes(mine.closesAt)}` : undefined} back="/crew" className="flex-none" />
     <RoomView
       key={id}

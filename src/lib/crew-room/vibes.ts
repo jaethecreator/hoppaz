@@ -171,7 +171,7 @@ const REFUSED: Record<string, string> = {
   gone: "THEY LEFT THE ROOM",
   not_in_room: "WALK IN FIRST, THEN VIBE",
   self: "THAT'S YOU",
-  not_in_crew: "JOIN THE CREW FIRST",
+  not_in_crew: "JOIN THE ROOM FIRST",
   need_account: "MAKE AN ACCOUNT TO VIBE",
 };
 

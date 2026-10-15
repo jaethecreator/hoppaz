@@ -31,6 +31,7 @@
 --              crew_friend_read(dm)              I have read this chat up to now
 --              crew_friend_inbox()               waves waiting, crew faces, chats with unread counts, in one read
 --              crew_friend_map(on)               SHOW ME ON THE MAP: my own switch, off until I turn it on
+--              crew_friend_staff(crew)           the room's owner and admins, for the panel the owner's logo opens
 --
 -- WHAT IS NOT CHANGED, ON PURPOSE
 --   * Event rooms, group chats, move chats and the Hop keep send_wave / respond_wave / add_to_crew as they are: a
@@ -185,7 +186,8 @@ end $do$;
 --   sent       the request is out (the one who waves back becomes crew)
 --   crew:<dm>  you are crew now (they had waved first, or you already were): the chat to open
 --   already    you waved, or they waved and it was passed
---   gone       a first wave needs them in the room right now (the tap lands on their shoulder)
+--   gone       (no longer answered: a first wave to someone who is not in the room waits for them in their inbox, and the
+--              tap on the shoulder is sent only if they are in the room right now)
 --   not_met    one of you is not in this crew
 create or replace function public.crew_friend_wave(p_crew uuid, p_peer uuid) returns text
 language plpgsql security definer set search_path = public as $$
@@ -235,17 +237,17 @@ begin
     return 'already';
   end if;
 
-  -- A first wave: they must be in the room now.
-  if not exists (select 1 from crew_room_presence where crew_id = p_crew and user_id = p_peer and last_seen > fresh) then
-    return 'gone';
-  end if;
+  -- A first wave. They need not be in the room: it waits in their inbox (and the owner's logo can ask the owner who is away).
+  -- The tap on the shoulder, live, goes only to someone who is in the room right now.
   select count(*) into n from waves where from_user = me and created_at > now() - interval '1 day';
   if n >= 30 then return 'slow_down'; end if;
   insert into waves (from_user, to_user, event_id, from_alias, to_alias)
   values (me, p_peer, null,
           (select coalesce(handle, 'A Hopper') from profiles where id = me),
           (select coalesce(handle, 'A Hopper') from profiles where id = p_peer));
-  insert into crew_room_vibes (crew_id, from_user, to_user, sticker) values (p_crew, me, p_peer, 'wave');
+  if exists (select 1 from crew_room_presence where crew_id = p_crew and user_id = p_peer and last_seen > fresh) then
+    insert into crew_room_vibes (crew_id, from_user, to_user, sticker) values (p_crew, me, p_peer, 'wave');
+  end if;
   return 'sent';
 end $$;
 
@@ -344,6 +346,28 @@ begin
   return coalesce(p_on, false);
 end $$;
 
+-- ---------------------------------------------------------- owner and admins ---
+-- The people who run a room, for the panel the owner's logo opens: id, name (as the room shows it), look, role, since
+-- (when they joined), me (it is me), crew (they are my crew, so MESSAGE; otherwise SAY HI). Members of the room only.
+-- Roles today are owner and member; any other role that is ever added shows here as it is. Someone I have blocked, or who
+-- blocked me, is left out.
+create or replace function public.crew_friend_staff(p_crew uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  if me is null or not exists (select 1 from crew_members where crew_id = p_crew and user_id = me) then
+    return '[]'::jsonb;
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', m.user_id, 'name', public._cf_name(m.user_id), 'look', p.avatar, 'role', m.role,
+             'since', m.joined_at, 'me', m.user_id = me, 'crew', public._cf_mutual(me, m.user_id))
+           order by (m.role = 'owner') desc, m.joined_at)
+      from crew_members m
+      join profiles p on p.id = m.user_id
+     where m.crew_id = p_crew and m.role <> 'member' and not public.is_blocked(me, m.user_id)), '[]'::jsonb);
+end $$;
+
 -- ------------------------------------------------------------- the Chat tab ---
 -- One read for the whole tab, and for the badge and the "who messaged me" toast:
 --   waves  waiting for me: id, from (their user id, room waves only), name, look, where (the crew, or the event), room, at
@@ -438,10 +462,10 @@ end $$;
 -- ------------------------------------------------------------------ grants ---
 revoke all on function public.crew_friend_wave(uuid, uuid), public.crew_friend_respond(uuid, boolean),
   public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_read(uuid),
-  public.crew_friend_inbox(), public.crew_friend_map(boolean) from public, anon;
+  public.crew_friend_inbox(), public.crew_friend_map(boolean), public.crew_friend_staff(uuid) from public, anon;
 grant execute on function public.crew_friend_wave(uuid, uuid), public.crew_friend_respond(uuid, boolean),
   public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_read(uuid),
-  public.crew_friend_inbox(), public.crew_friend_map(boolean) to authenticated;
+  public.crew_friend_inbox(), public.crew_friend_map(boolean), public.crew_friend_staff(uuid) to authenticated;
 
 -- ------------------------------------------------------------ OPTIONAL, LATER ---
 -- Once the new app is live for everyone, close the old way into a room chat, so a chat from a crew room can only come

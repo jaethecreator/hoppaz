@@ -61,7 +61,7 @@ export default function RoomCard({
           <span className={live ? "pill pill-lagoon flex-none" : "pill flex-none"}>{live ? "GAME TIME LIVE" : `GAME TIME ${clockShort(game.opens_at)}`}</span>
         )}
       </div>
-      <Link href={`/crew/${group.id}/room`} className="btn mt-3 w-full text-[14px]">
+      <Link href={`/crew/${group.id}/room`} className="btn mt-3 w-full text-[14px] lg:w-auto lg:px-10">
         <DoorOpen size={18} aria-hidden /> ENTER ROOM
       </Link>
       <button

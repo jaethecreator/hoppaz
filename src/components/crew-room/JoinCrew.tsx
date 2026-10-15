@@ -44,7 +44,7 @@ export default function JoinCrew({ code }: { code: string }) {
           : error?.message.includes("need_account")
             ? "Make an account first, then tap JOIN."
             : out?.reason === "invalid_code"
-              ? "This invite link no longer works. Ask the crew for a new one."
+              ? "This invite link no longer works. Ask whoever sent it for a new one."
               : "Couldn't join. Try again."
       );
       return;
@@ -80,11 +80,11 @@ export default function JoinCrew({ code }: { code: string }) {
           <Mascot state="oya" size={84} className="flex-none" />
           <div className="min-w-0">
             <h1 className="font-display text-[28px] font-black leading-[1.05]">This invite has expired.</h1>
-            <p className="hint mt-1.5">The crew made a new link. Ask them to send it again.</p>
+            <p className="hint mt-1.5">The room has a new link. Ask for it again.</p>
           </div>
         </header>
         <Link href="/crew" className="btn btn-ghost w-full">
-          SEE CREWS
+          SEE ROOMZ
         </Link>
       </div>
     );
@@ -118,7 +118,7 @@ export default function JoinCrew({ code }: { code: string }) {
             </Link>
           ) : (
             <button type="button" className="btn mt-3 w-full text-[15px]" disabled={busy || session === "loading"} onClick={onJoin} data-join>
-              <DoorOpen size={18} aria-hidden /> {busy ? "JOINING…" : "JOIN THE CREW"}
+              <DoorOpen size={18} aria-hidden /> {busy ? "JOINING…" : "JOIN THE ROOM"}
             </button>
           )}
           {problem && (

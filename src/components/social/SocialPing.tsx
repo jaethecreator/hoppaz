@@ -10,7 +10,6 @@ import { WAVE_HINT_MS, crewText, useVibes } from "@/lib/crew-room/vibes";
 import { loadInbox, onInboxDiff, resetSocial, useSocial, type InboxDiff } from "@/lib/social";
 import { sfx } from "@/lib/sound/sfx";
 import { getSupabase } from "@/lib/supabase/client";
-import { usePlayMode } from "@/lib/usePlayMode";
 import { useSession } from "@/lib/useSession";
 
 /**
@@ -41,12 +40,11 @@ export default function SocialPing() {
   const path = usePathname() ?? "";
   const goOut = useGoOut();
   const { userId, hasAccount } = useSession();
-  const playing = usePlayMode((s) => s.active);
   const [toast, setToast] = useState<Toast | null>(null);
   const quietNow = useRef(false);
   const pathNow = useRef(path);
   pathNow.current = path;
-  quietNow.current = playing || QUIET.some((re) => re.test(path));
+  quietNow.current = QUIET.some((re) => re.test(path));
 
   // A different Hopper (log in, log out) starts from nothing.
   const lastUser = useRef<string | null>(null);
