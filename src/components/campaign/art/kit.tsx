@@ -36,6 +36,9 @@ export const P = {
   // Lagos street.
   danfo: "#F2B705", danfoDark: "#B58500", keke: "#2FA84F", kekeDark: "#1F7A38", lagoon: "#3E8FB8", lagoonLight: "#8CCBE0", lagoonDark: "#2A6685",
   asphalt: "#3A3D44", asphaltLight: "#4A4E57", concrete: "#C9C3B3", concreteDark: "#A39D8C", red: "#C94A3E", white: "#F2EEE3",
+  // Brand kit (15 Oct 2026): brand cream by name (same as paper: use it, never `white` or `cream`, on a Hoppaz surface),
+  // and the app's night ramp from globals.css, for the walls and floors of a dark room instead of a blue or purple grey.
+  brandCream: "#F5EBDD", nightRaised: "#171210", nightCard: "#221A17", nightLine: "#2E2320", nightDim: "#9C9087",
 } as const;
 
 export const FONT = { display: "var(--font-poppins),sans-serif", mono: "var(--font-mono),monospace" } as const;
@@ -429,4 +432,419 @@ export function Frame({ layout, ground = "#2E3431" }: { layout: CampaignLayout; 
   const w = layout.grid.width * layout.grid.tile;
   const h = layout.grid.height * layout.grid.tile;
   return <rect width={w} height={h} fill={ground} />;
+}
+
+/* =====================================================================================================================
+ * THE HOPPAZ BRAND KIT (15 Oct 2026). Append-only: nothing above this block changed.
+ *
+ * The brand's own objects, in the same pixel look as everything above: crispEdges, flat fills, 2 px ink outlines, light
+ * from the top left, a hard shadow to the lower right, no gradients. The rules they serve are the "Look" section of
+ * docs/ROOM-TEMPLATES.md: orange is the loudest designed colour in a room, one violet shape per room (HopFlyer's sun is
+ * it in an event room), brand cream (P.paper / P.brandCream) and night on every Hoppaz surface, Poppins 900 for signs and
+ * DM Mono caps for captions, brand lines only (BRAND_LINES). Each component is drawn at (x, y) in the caller's space, or
+ * in a prop's own box where it says so.
+ * ===================================================================================================================== */
+
+/** The five Hoppaz colours, and nothing else on a Hoppaz surface. Night 60 / orange 25 / cream 10 / violet 5 (one shape). Ember is shadows and pressed lips only. */
+export const BRAND = { orange: "#FF4D00", night: "#0E0B0A", cream: "#F5EBDD", violet: "#5B2EFF", ember: "#B83600" } as const;
+
+/** The lines a room may print on a Hoppaz surface: the conductor's voice. A time (`leaves`, `board`) only where the room is a Hop. */
+export const BRAND_LINES = {
+  hop: "HOP OR STAY",
+  wait: "THE BUS NEVER WAITS",
+  friends: "COME ALONE. LEAVE WITH FRIENDS.",
+  fifth: "THE BUS IS THE FIFTH PARTY",
+  leaves: "BUS LEAVES AT 7. HOP OR STAY.",
+  board: "BOARD 6PM",
+} as const;
+
+/**
+ * Wordmark letter slots in cap heights (H O P P A Z): each glyph's ink width in Poppins Black (cap height 708 of 1000)
+ * plus an even 0.07 h gap, wide enough that the opposite tilts never touch. WM_DX centres P's ink (its side bearings differ).
+ */
+const WM_SLOTS = [0.995, 1.1, 0.888, 0.888, 1.162, 0.819];
+const WM_DX = [0, 0, -0.021, -0.021, 0, 0];
+/** The wordmark's width at cap height `h` (about 5.85 h). The ears rise 0.8 h above the letters: leave that much headroom. */
+export const wordmarkWidth = (h: number) => WM_SLOTS.reduce((a, b) => a + b, 0) * h;
+
+/**
+ * The two block ears out of the A, as on public/brand/wordmark-*.png (left upright, right folded over), on a grid of
+ * 0.07 h pixels: [column, row, width, height] rects for the outline, the gap inside it and the inner ear (even-odd fill).
+ */
+const EARS = [
+  { x: -0.4, out: [[1, 0, 4, 1], [0, 1, 6, 12]], cut: [[1, 2, 4, 11], [2, 4, 2, 9]] },
+  { x: 0.06, out: [[1, 0, 7, 1], [0, 1, 9, 1], [0, 2, 10, 3], [0, 5, 6, 8], [7, 5, 3, 3]], cut: [[1, 2, 4, 11], [2, 5, 2, 8]] },
+];
+/** The ears as one path about the A's top centre (cx, top). Below a 22 px cap height they are solid blocks (the gap would not read). */
+const earPath = (cx: number, top: number, h: number) => {
+  const u = 0.07 * h;
+  const solid = h < 22;
+  return EARS.map((e) => [...e.out, ...(solid ? [] : e.cut)].map(([c, r, w, hh]) => `M${(cx + e.x * h + c * u).toFixed(2)} ${(top - 0.8 * h + r * u).toFixed(2)}h${(w * u).toFixed(2)}v${(hh * u).toFixed(2)}h${(-w * u).toFixed(2)}Z`).join("")).join("");
+};
+
+/**
+ * HOPPAZ with the bounce: Poppins 900 caps, odd letters -4deg and even +4deg about 50% 60% of each letter, one flat
+ * baseline, even slots (no overlaps, no vertical nudging), and the bunny ears rising out of the A in blocks. Never a face.
+ * Pairs: cream on orange (primary), night on cream, orange on night. About 22 nodes with a shadow.
+ *   x, y     top-left of the letters (the cap top); anchor "middle" makes x the centre
+ *   h        cap height in px (default 14); the mark is wordmarkWidth(h) wide and the ears rise 0.8 h above y
+ *   fill     letter colour (default cream)
+ *   keyline  optional colour of a thin outline round letters and ears: the separation device on a busy ground
+ *   shadow   optional colour of a hard copy to the lower right (ember on orange, night on cream)
+ *   ears     default true
+ */
+export function HoppazWordmark({ x, y, h = 14, fill = P.paper, keyline, shadow, ears = true, anchor = "start" }: { x: number; y: number; h?: number; fill?: string; keyline?: string; shadow?: string; ears?: boolean; anchor?: "start" | "middle" }) {
+  const left = anchor === "middle" ? x - wordmarkWidth(h) / 2 : x;
+  const base = y + h;
+  const pivot = base - 0.353 * h;
+  const k = keyline ? Math.max(1.5, h * 0.08) : 0;
+  const centres = WM_SLOTS.map((s, i) => left + (WM_SLOTS.slice(0, i).reduce((a, b) => a + b, 0) + s / 2) * h);
+  const ear = ears ? earPath(centres[4], y, h) : "";
+  const copy = (color: string, line: string | undefined, dx: number, dy: number) => (
+    <g transform={dx || dy ? `translate(${dx} ${dy})` : undefined}>
+      {"HOPPAZ".split("").map((ch, i) => (
+        <text key={i} x={centres[i] + WM_DX[i] * h} y={base} transform={`rotate(${i % 2 ? 4 : -4} ${centres[i]} ${pivot})`} textAnchor="middle" fill={color} fontFamily={FONT.display} fontWeight={900} fontSize={h / 0.708} stroke={line} strokeWidth={line ? k * 2 : undefined} strokeLinejoin="miter" paintOrder="stroke">{ch}</text>
+      ))}
+      {ear && <path d={ear} transform={`rotate(-4 ${centres[4]} ${pivot})`} fill={color} fillRule="evenodd" stroke={line} strokeWidth={line ? k * 2 : undefined} paintOrder="stroke" />}
+    </g>
+  );
+  return (
+    <g>
+      {shadow && copy(shadow, keyline ? shadow : undefined, h * 0.07, h * 0.09)}
+      {copy(fill, keyline, 0, 0)}
+    </g>
+  );
+}
+
+/**
+ * The Hoppaz bus, parked: the brand's hero object. Drawn like the rooms' danfos (side on, the body rising above its box)
+ * but orange, with cream windows, a night band carrying the route motif (three stops and the finale), an ember skirt on
+ * the shadow side and a HOP board on the roof. A solid prop: give it a box of its own. About 22 nodes.
+ *   w, h    the prop box in px. dir "h": w 96 to 192 (4 or 5 tiles reads best), h 32 (in a 64 box it parks on the lower
+ *           tile). dir "v": w 48 to 64, h 96 to 160
+ *   dir     "h" side on (default), or "v" seen from above with the nose to the camera
+ *   flip    "h": faces left instead of right. "v": nose away (the rear to the camera)
+ *   slogan  optional, dir "h" with w >= 160: a BRAND_LINES line in mono caps on the band instead of the route dots
+ */
+export function HopBus({ w, h, dir = "h", flip = false, slogan }: { w: number; h: number; dir?: "h" | "v"; flip?: boolean; slogan?: string }) {
+  if (dir === "v") return <HopBusTop w={w} h={h} rear={flip} />;
+  const oy = Math.max(0, h - 32);
+  const front = w - 4;
+  const n = Math.max(2, Math.floor((w - 48) / 20));
+  const windows = Array.from({ length: n }, (_, i) => `M${10 + i * 20} -8h16v13h-16Z`).join("");
+  const wheel = (cx: number, r: number) => `M${cx - r} 25a${r} ${r} 0 1 0 ${r * 2} 0a${r} ${r} 0 1 0 ${-r * 2} 0Z`;
+  const band = Boolean(slogan) && w >= 160;
+  const mx = (x: number) => (flip ? w - x : x);
+  const words = (slogan ?? "").toUpperCase().slice(0, Math.floor((w - 50) / 4.1));
+  return (
+    <g transform={oy ? `translate(0 ${oy})` : undefined}>
+      <rect x="8" y="20" width={w - 6} height="12" fill={P.shadow} opacity=".3" />
+      <g transform={flip ? `translate(${w} 0) scale(-1 1)` : undefined}>
+        <path d={`M${front - 38} -15v-3M${front - 16} -15v-3`} stroke={P.ink} strokeWidth="2" />
+        <rect x="2" y="-16" width={w - 6} height="40" fill={P.orange} stroke={P.ink} strokeWidth="2" />
+        <rect x="3" y="-15" width={w - 8} height="4" fill={P.paper} opacity=".35" />
+        <path d={windows} fill={P.paper} stroke={P.ink} strokeWidth="1.5" />
+        <rect x={front - 34} y="-9" width="11" height="29" fill={P.night} stroke={P.ink} strokeWidth="1.5" />
+        <path d={`M${front - 32} -7h7v9h-7ZM${front - 32} 5h7v9h-7Z`} fill={P.nightLine} />
+        <path d={`M${front - 20} -10h14l4 6v12h-18Z`} fill={P.paper} stroke={P.ink} strokeWidth="1.5" />
+        <rect x="3" y="8" width={front - 38} height="8" fill={P.night} />
+        {!band && <path d={`M12 11.5H${front - 46}`} stroke={P.paper} strokeWidth="1.5" strokeDasharray="4 3" />}
+        {!band && <path d={[0, 1, 2].map((i) => `M${Math.round(12 + ((front - 62) * i) / 3)} 10h3v3h-3Z`).join("")} fill={P.paper} />}
+        {!band && <rect x={front - 50} y="9" width="6" height="6" fill={P.orange} stroke={P.paper} strokeWidth="1" />}
+        <rect x="3" y="17" width={w - 8} height="6" fill={P.brandEmber} />
+        <path d={wheel(24, 7) + wheel(front - 24, 7)} fill={P.ink} />
+        <path d={wheel(24, 2.5) + wheel(front - 24, 2.5)} fill={P.paper} />
+        <rect x={front - 3} y="10" width="3" height="5" fill={P.paper} />
+        <rect x="2" y="9" width="3" height="6" fill={P.brandEmber} stroke={P.ink} strokeWidth="1" />
+        <rect x={front - 42} y="-28" width="30" height="12" fill={P.night} stroke={P.ink} strokeWidth="2" />
+      </g>
+      <text x={mx(front - 27)} y="-19" textAnchor="middle" fill={P.orange} fontFamily={FONT.display} fontWeight={900} fontSize="8" letterSpacing=".8">HOP</text>
+      {band && <text x={flip ? 42 : 7} y="14.5" fill={P.paper} fontFamily={FONT.mono} fontSize="6" letterSpacing=".5">{words}</text>}
+    </g>
+  );
+}
+
+/** HopBus seen from above (dir "v"): the long orange roof with the route painted down it, the front (or rear) face to the camera. */
+function HopBusTop({ w, h, rear }: { w: number; h: number; rear: boolean }) {
+  const bw = w - 14;
+  const mid = 6 + bw / 2;
+  const roofEnd = h - 26;
+  const dots = [14, 28, 42].filter((y) => y < roofEnd - 24).map((y) => `M${mid - 1.5} ${y}h3v3h-3Z`).join("");
+  return (
+    <g>
+      <rect x="11" y="8" width={w - 12} height={h - 8} fill={P.shadow} opacity=".3" />
+      <path d={`M3 12h4v12h-4ZM${w - 9} 12h4v12h-4ZM3 ${roofEnd - 8}h4v12h-4ZM${w - 9} ${roofEnd - 8}h4v12h-4Z`} fill={P.ink} />
+      <rect x="6" y="2" width={bw} height={roofEnd - 2} fill={P.orange} stroke={P.ink} strokeWidth="2" />
+      <rect x="8" y="4" width="3" height={roofEnd - 6} fill={P.paper} opacity=".35" />
+      <path d={`M12 10h3v${roofEnd - 18}h-3ZM${w - 16} 10h3v${roofEnd - 18}h-3Z`} fill={P.paper} />
+      <rect x={mid - 6} y="8" width="12" height={roofEnd - 14} fill={P.night} />
+      <path d={`M${mid} 12V${roofEnd - 16}`} stroke={P.paper} strokeWidth="1.5" strokeDasharray="4 3" />
+      {dots && <path d={dots} fill={P.paper} />}
+      <rect x={mid - 4} y={roofEnd - 17} width="8" height="8" fill={P.orange} stroke={P.paper} strokeWidth="1" />
+      <rect x="6" y={roofEnd} width={bw} height="20" fill={P.brandEmber} stroke={P.ink} strokeWidth="2" />
+      <rect x="9" y={roofEnd + 3} width={bw - 6} height="7" fill={rear ? P.night : P.paper} stroke={P.ink} strokeWidth="1" />
+      <rect x={mid - 11} y={roofEnd + 11} width="22" height="8" fill={P.night} />
+      <text x={mid} y={roofEnd + 17.5} textAnchor="middle" fill={P.orange} fontFamily={FONT.display} fontWeight={900} fontSize="6.5" letterSpacing=".6">HOP</text>
+      <path d={`M8 ${roofEnd + 12}h3v4h-3ZM${w - 11} ${roofEnd + 12}h3v4h-3Z`} fill={rear ? P.orange : P.paper} />
+      <rect x="6" y={h - 7} width={bw} height="3" fill={P.ink} />
+    </g>
+  );
+}
+
+/**
+ * The route motif, the brand's signature: four stops on one line, ending at the finale. A floor decoration: lay it on the
+ * pavement before <Props> so props stand on it, from the way in towards the room's main thing. About 30 nodes with labels.
+ *   points   in scene px, in order. [x, y] is a stop (a numbered disc); [x, y, 0] is a bend the line turns at, with no disc.
+ *            Usually four stops
+ *   start    number of the first stop (default 1), for a room that shows part of the route (Stop 1 only, say)
+ *   finale   default true: the last stop is the finale, a bigger disc with a cream ring
+ *   elbow    default false; true runs each leg across then down, so the line stays orthogonal (pixel style)
+ *   labels   optional DM Mono caps tag under each stop, short ("BOARD", "FINALE")
+ *   color    default orange; cream on an orange ground is the only other choice
+ */
+export function RouteLine({ points, start = 1, finale = true, elbow = false, labels, color = P.orange }: { points: ([number, number] | [number, number, 0])[]; start?: number; finale?: boolean; elbow?: boolean; labels?: string[]; color?: string }) {
+  const stops = points.filter((p) => p.length === 2) as [number, number][];
+  const last = stops.length - 1;
+  const d = points.map(([x, y], i) => (i === 0 ? `M${x} ${y}` : elbow ? `H${x}V${y}` : `L${x} ${y}`)).join("");
+  const mark = color === P.paper ? P.night : P.paper;
+  return (
+    <g>
+      {points.length > 1 && <path d={d} fill="none" stroke={P.ink} strokeWidth="7" strokeDasharray="12 6" />}
+      {points.length > 1 && <path d={d} fill="none" stroke={color} strokeWidth="4" strokeDasharray="12 6" />}
+      {stops.map(([x, y], i) => {
+        const big = finale && i === last;
+        const r = big ? 13 : 9;
+        const size = big ? 13 : 10;
+        const label = labels?.[i]?.toUpperCase();
+        return (
+          <g key={i}>
+            <circle cx={x + 3} cy={y + 4} r={r} fill={P.shadow} opacity=".3" />
+            <circle cx={x} cy={y} r={r} fill={color} stroke={P.ink} strokeWidth="2" />
+            {big && <circle cx={x} cy={y} r={r - 4} fill="none" stroke={mark} strokeWidth="2" />}
+            <text x={x} y={y + size * 0.36} textAnchor="middle" fill={mark} fontFamily={FONT.display} fontWeight={900} fontSize={size}>{start + i}</text>
+            {label && <rect x={x - label.length * 2.1 - 4} y={y + r + 3} width={label.length * 4.2 + 8} height="9" fill={P.night} stroke={P.ink} strokeWidth="1" />}
+            {label && <text x={x} y={y + r + 9.8} textAnchor="middle" fill={P.paper} fontFamily={FONT.mono} fontSize="5.5" letterSpacing=".6">{label}</text>}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/**
+ * A rough rubber stamp (ROUGH CUT): a worn double border round Poppins 900 caps, a few degrees off square, the ink a
+ * little thin. On walls, floors, a ticket desk, a bus door. Six nodes.
+ *   x, y     centre
+ *   text     a BRAND_LINES line (short)
+ *   sub      optional DM Mono caps line under it (a date, "LAGOS", "STOP 4")
+ *   shape    "box" (default) or "circle" (circle for 8 characters or fewer)
+ *   color    the ink: orange on night or concrete, night or ember on cream (default orange)
+ *   size     cap size of the main line in px (default 9)
+ *   rotate   degrees, -10 to 10 (default -6)
+ */
+export function Stamp({ x, y, text, sub, shape = "box", color = P.orange, size = 9, rotate = -6 }: { x: number; y: number; text: string; sub?: string; shape?: "box" | "circle"; color?: string; size?: number; rotate?: number }) {
+  const t = text.toUpperCase();
+  const s = sub?.toUpperCase();
+  const tw = t.length * size * 0.74;
+  const sw = s ? s.length * size * 0.42 : 0;
+  const worn = "17 2 6 1.5 25 3 4 1";
+  const main = <text y={s ? -size * 0.12 : size * 0.36} textAnchor="middle" fill={color} fontFamily={FONT.display} fontWeight={900} fontSize={size} letterSpacing=".6">{t}</text>;
+  const small = s && <text y={size * 0.95} textAnchor="middle" fill={color} fontFamily={FONT.mono} fontSize={size * 0.6} letterSpacing="1">{s}</text>;
+  if (shape === "circle") {
+    const r = Math.max(tw, sw) / 2 + 8;
+    return (
+      <g transform={`translate(${x} ${y}) rotate(${rotate})`} opacity=".88">
+        <circle r={r} fill="none" stroke={color} strokeWidth="2.5" strokeDasharray={worn} />
+        <circle r={r - 4} fill="none" stroke={color} strokeWidth="1" />
+        {main}
+        {small}
+      </g>
+    );
+  }
+  const bw = Math.max(tw, sw) + 16;
+  const bh = size * (s ? 2.9 : 1.9);
+  return (
+    <g transform={`translate(${x} ${y}) rotate(${rotate})`} opacity=".88">
+      <rect x={-bw / 2} y={-bh / 2} width={bw} height={bh} fill="none" stroke={color} strokeWidth="2.5" strokeDasharray={worn} />
+      <rect x={-bw / 2 + 3.5} y={-bh / 2 + 3.5} width={bw - 7} height={bh - 7} fill="none" stroke={color} strokeWidth="1" />
+      {main}
+      {small}
+    </g>
+  );
+}
+
+/**
+ * Hoppaz signage in the three-colour ratio: a flat face with a cream keyline (night on a cream face), a hard ember lip
+ * under it like the app's lip button, Poppins 900 caps or the bounce wordmark, and an optional strip with a DM Mono caps
+ * line. For anything Hoppaz says in a room: the welcome wall, a billboard, a bus stop plate. 7 to 28 nodes.
+ *   x, y, w, h   the plate (the lip hangs 3 px below h)
+ *   text         the main line, sized to fit (ignored when `wordmark`)
+ *   sub          optional strip line (a BRAND_LINES line, a place name)
+ *   tone         "night" (default: night face, orange type, orange strip), "orange" (cream type, night strip),
+ *                "cream" (night type, night keyline, orange strip)
+ *   wordmark     true draws HoppazWordmark instead of `text` (give it h >= 30 for the ears)
+ */
+export function BrandSign({ x, y, w, h, text, sub, tone = "night", wordmark = false }: { x: number; y: number; w: number; h: number; text?: string; sub?: string; tone?: "night" | "orange" | "cream"; wordmark?: boolean }) {
+  const face = tone === "orange" ? P.orange : tone === "cream" ? P.paper : P.night;
+  const ink = tone === "night" ? P.orange : tone === "orange" ? P.paper : P.night;
+  const key = tone === "cream" ? P.night : P.paper;
+  const strip = tone === "orange" ? P.night : P.orange;
+  const stripInk = tone === "orange" ? P.paper : P.night;
+  const sh = sub ? Math.max(8, Math.round(h * 0.26)) : 0;
+  const body = h - sh;
+  const t = (text ?? "").toUpperCase();
+  const s = (sub ?? "").toUpperCase();
+  const size = Math.max(5, Math.min(body * 0.5, (w - 14) / Math.max(1, t.length * 0.72)));
+  const subSize = Math.max(4, Math.min(sh * 0.6, (w - 16 - s.length * 0.8) / Math.max(1, s.length * 0.62)));
+  const wmH = Math.min(body * 0.42, (w - 16) / 5.9);
+  return (
+    <g>
+      <rect x={x + 4} y={y + 6} width={w} height={h} fill={P.shadow} opacity=".3" />
+      <rect x={x} y={y + 3} width={w} height={h} fill={P.brandEmber} stroke={P.ink} strokeWidth="2" />
+      <rect x={x} y={y} width={w} height={h} fill={face} stroke={P.ink} strokeWidth="2" />
+      {sub && <rect x={x + 1} y={y + body - 1} width={w - 2} height={sh} fill={strip} />}
+      <rect x={x + 3.5} y={y + 3.5} width={w - 7} height={h - 7} fill="none" stroke={key} strokeWidth="1.5" />
+      {wordmark ? (
+        <HoppazWordmark x={x + w / 2} y={y + (body - 1.76 * wmH) / 2 + 0.76 * wmH} h={wmH} fill={ink} anchor="middle" />
+      ) : (
+        <text x={x + w / 2} y={y + body / 2 + size * 0.36} textAnchor="middle" fill={ink} fontFamily={FONT.display} fontWeight={900} fontSize={size} letterSpacing=".6">{t}</text>
+      )}
+      {sub && <text x={x + w / 2} y={y + body - 1 + sh / 2 + subSize * 0.36} textAnchor="middle" fill={stripInk} fontFamily={FONT.mono} fontWeight={500} fontSize={subSize} letterSpacing=".8">{s}</text>}
+    </g>
+  );
+}
+
+/** A paper scrap's outline at (0, 0), w by h, with stepped (pixel) tears along the top and the bottom. */
+const torn = (w: number, h: number, step = 6) => {
+  const n = Math.max(1, Math.floor(w / step));
+  const s = (w / n).toFixed(1);
+  let d = "M0 2";
+  for (let i = 0; i < n; i++) d += `h${s}V${i % 2 ? 2 : 0}`;
+  d += `V${h - 2}`;
+  for (let i = 0; i < n; i++) d += `h-${s}V${i % 2 ? h - 2 : h}`;
+  return `${d}Z`;
+};
+
+/**
+ * The event flyer in the ROUGH CUT recipe, the drop-in for `Flyer` (same props, plus `id`): night frame, cream keyline,
+ * orange ground, the violet disc as the sun (the room's one violet shape), the route running into the sun (three stops and
+ * the finale), the bounce wordmark top left, the title in Poppins 900 cream on a torn night plate, the line in DM Mono
+ * caps. With a `url` it shows the image inside the same frame and keyline. About 25 nodes.
+ *   id   optional suffix for the clip id when a room hangs two
+ */
+export function HopFlyer({ x, y, w, h, url, title, line, uid, id }: { x: number; y: number; w: number; h: number; url?: string | null; title: string; line?: string; uid: string; id?: string }) {
+  const clip = `${uid}-hopflyer${id ? `-${id}` : ""}`;
+  const ix = x + 4;
+  const iy = y + 4;
+  const iw = w - 8;
+  const ih = h - 8;
+  const sun = { x: ix + iw * 0.7, y: iy + ih * 0.3, r: iw * 0.2 };
+  const stops = [[0.12, 0.54], [0.3, 0.46], [0.47, 0.5]].map(([a, b]): [number, number] => [ix + iw * a, iy + ih * b]);
+  const t = title.toUpperCase().slice(0, 18);
+  const size = Math.max(6, Math.min(iw * 0.16, (iw - 10) / Math.max(4, t.length * 0.66)));
+  const wm = Math.max(4.5, iw * 0.085);
+  return (
+    <g>
+      <rect x={x + 4} y={y + 5} width={w} height={h} fill={P.shadow} opacity=".3" />
+      <rect x={x} y={y} width={w} height={h} fill={P.night} stroke={P.ink} strokeWidth="2" />
+      <clipPath id={clip}><rect x={ix} y={iy} width={iw} height={ih} /></clipPath>
+      {url ? (
+        <image href={url} x={ix} y={iy} width={iw} height={ih} preserveAspectRatio="xMidYMid slice" clipPath={`url(#${clip})`} />
+      ) : (
+        <g clipPath={`url(#${clip})`}>
+          <rect x={ix} y={iy} width={iw} height={ih} fill={P.orange} />
+          <circle cx={sun.x} cy={sun.y} r={sun.r} fill={P.violet} />
+          <path d={`M${stops.map(([a, b]) => `${a} ${b}`).join("L")}L${sun.x - sun.r * 0.7} ${sun.y + sun.r * 0.7}`} fill="none" stroke={P.paper} strokeWidth="1.5" strokeDasharray="3 2" />
+          <path d={stops.map(([a, b]) => `M${a - 1.5} ${b - 1.5}h3v3h-3Z`).join("")} fill={P.paper} />
+          <path d={torn(iw, ih * 0.42)} transform={`translate(${ix} ${iy + ih * 0.6})`} fill={P.night} />
+          <HoppazWordmark x={ix + 4} y={iy + 3 + wm * 0.8} h={wm} fill={P.paper} />
+          <text x={ix + 5} y={iy + ih * 0.8} fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize={size}>{t}</text>
+          {line && <text x={ix + 5} y={iy + ih * 0.91} fill={P.paper} fontFamily={FONT.mono} fontSize={Math.max(4, iw * 0.07)} letterSpacing=".6">{line.toUpperCase().slice(0, 24)}</text>}
+        </g>
+      )}
+      <rect x={x + 6} y={y + 6} width={w - 12} height={h - 12} fill="none" stroke={P.paper} strokeWidth="1.5" />
+    </g>
+  );
+}
+
+/**
+ * Paper scraps pasted on a wall (ROUGH CUT texture from Lagos itself): a newsprint scrap, an orange poster with a brand
+ * line, a night ticket stub, tape. Torn pixel edges, each scrap a few degrees off square with a hard shadow. Use one or two
+ * per room, on a wall or a hoarding, never over a venue name. About 20 nodes.
+ *   x, y, w, h   the patch of wall it covers (works from about 64 by 48)
+ *   text         the orange poster's line (default "HOP OR STAY"): BRAND_LINES only
+ *   seed         0 or 1: mirrors the tilt so two patches in a room differ
+ */
+export function PaperScraps({ x, y, w, h, text = BRAND_LINES.hop, seed = 0 }: { x: number; y: number; w: number; h: number; text?: string; seed?: number }) {
+  const f = seed % 2 ? -1 : 1;
+  const news = { x: w * 0.02, y: h * 0.08, w: w * 0.56, h: h * 0.84, r: -4 * f };
+  const poster = { x: w * 0.4, y: 0, w: w * 0.56, h: h * 0.64, r: 5 * f };
+  const stub = { x: w * 0.2, y: h * 0.64, w: w * 0.42, h: h * 0.3, r: 2 * f };
+  const t = text.toUpperCase();
+  const size = Math.max(5, Math.min(poster.h * 0.3, (poster.w - 8) / Math.max(1, t.length * 0.7)));
+  const rows = Array.from({ length: Math.max(1, Math.floor((news.h - 20) / 4)) }, (_, i) => `M4 ${16 + i * 4}h${news.w / 2 - 6}M${news.w / 2 + 2} ${16 + i * 4}h${news.w / 2 - 6}`).join("");
+  const scrap = (s: { x: number; y: number; w: number; h: number; r: number }, fill: string, inner: ReactNode) => (
+    <g transform={`translate(${s.x} ${s.y}) rotate(${s.r} ${s.w / 2} ${s.h / 2})`}>
+      <path d={torn(s.w, s.h)} transform="translate(3 4)" fill={P.shadow} opacity=".3" />
+      <path d={torn(s.w, s.h)} fill={fill} stroke={P.ink} strokeWidth="1.5" />
+      {inner}
+      <rect x={s.w / 2 - 7} y="-3" width="14" height="6" fill={P.paper} opacity=".7" />
+    </g>
+  );
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      {scrap(news, P.paper, <><rect x="4" y="6" width={news.w - 8} height="5" fill={P.night} /><path d={rows} stroke={P.night} strokeWidth="1" opacity=".3" /></>)}
+      {scrap(poster, P.orange, <text x={poster.w / 2} y={poster.h / 2 + size * 0.36} textAnchor="middle" fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize={size}>{t}</text>)}
+      {scrap(stub, P.night, <><path d={`M${stub.w * 0.7} 3V${stub.h - 3}`} stroke={P.paper} strokeWidth="1" strokeDasharray="2 2" /><path d={`M5 6h${stub.w * 0.5}M5 10h${stub.w * 0.35}M${stub.w * 0.76} 6h${stub.w * 0.16}`} stroke={P.paper} strokeWidth="2" /></>)}
+    </g>
+  );
+}
+
+/** The one marker scrawl a room may have: one word, lower case, Poppins 900 skewed and tilted, a stepped marker underline. (x, y) is the left of the baseline. */
+export function Scrawl({ x, y, text, size = 14, color = P.paper, rotate = -8 }: { x: number; y: number; text: string; size?: number; color?: string; rotate?: number }) {
+  const word = text.trim().split(/\s+/)[0].toLowerCase();
+  const w = word.length * size * 0.62;
+  return (
+    <g transform={`translate(${x} ${y}) rotate(${rotate}) skewX(-12)`}>
+      <text x="0" y="0" fill={color} fontFamily={FONT.display} fontWeight={900} fontSize={size}>{word}</text>
+      <path d={`M-2 ${size * 0.3}h${w * 0.4}v2h${w * 0.35}v-2h${w * 0.3}`} fill="none" stroke={color} strokeWidth="2.5" />
+    </g>
+  );
+}
+
+/**
+ * Where the bus parks: a bay painted on asphalt or concrete, a dashed orange outline and the word in cream road paint.
+ * A floor decoration (draw it before <Props>); put the HopBus prop inside it. Three nodes.
+ *   x, y, w, h   the bay in scene px
+ *   text         default "HOP"
+ */
+export function HopBay({ x, y, w, h, text = "HOP" }: { x: number; y: number; w: number; h: number; text?: string }) {
+  const size = Math.min(h * 0.5, (w - 8) / Math.max(1, text.length * 0.8));
+  return (
+    <g>
+      <rect x={x + 2} y={y + 2} width={w - 4} height={h - 4} fill="none" stroke={P.orange} strokeWidth="3" strokeDasharray="10 6" />
+      <rect x={x + 6} y={y + 6} width={w - 12} height={h - 12} fill={P.orange} opacity=".12" />
+      <text x={x + w / 2} y={y + h / 2 + size * 0.36} textAnchor="middle" fill={P.paper} opacity=".8" fontFamily={FONT.display} fontWeight={900} fontSize={size} letterSpacing="3">{text.toUpperCase()}</text>
+    </g>
+  );
+}
+
+/**
+ * Brand textures as patterns, by name: url(#${uid}-${name}). Pass only what the room uses (alongside the kit's Defs).
+ *   "ht"         night halftone, 2 px dots: a hard shadow with texture, or to darken a cutout
+ *   "ht-cream"   cream halftone: light on orange or night
+ *   "newsprint"  cream paper with a headline bar and grey type: walls, scraps, the papers on a news stand
+ *   "grain"      sparse night speckle: lay it over a flat brand ground
+ */
+export function BrandDefs({ uid, names }: { uid: string; names: string[] }) {
+  const want = new Set(names);
+  const pat = (id: string, w: number, h: number, node: ReactNode) => (want.has(id) ? <pattern key={id} id={`${uid}-${id}`} width={w} height={h} patternUnits="userSpaceOnUse">{node}</pattern> : null);
+  return (
+    <defs>
+      {pat("ht", 6, 6, <path d="M0 0h2v2H0ZM3 3h2v2H3Z" fill={P.night} />)}
+      {pat("ht-cream", 6, 6, <path d="M0 0h2v2H0ZM3 3h2v2H3Z" fill={P.paper} />)}
+      {pat("newsprint", 48, 32, <><rect width="48" height="32" fill={P.paper} /><rect x="3" y="3" width="26" height="4" fill={P.night} opacity=".8" /><path d="M3 11h20M26 11h19M3 15h20M26 15h17M3 19h18M26 19h19M3 23h20M26 23h15M3 27h16M26 27h19" stroke={P.night} strokeWidth="1" opacity=".3" /></>)}
+      {pat("grain", 16, 16, <path d="M2 3h1v1H2ZM9 1h1v1H9ZM13 7h1v1h-1ZM5 10h1v1H5ZM11 13h1v1h-1ZM1 14h1v1H1Z" fill={P.night} opacity=".35" />)}
+    </defs>
+  );
 }
