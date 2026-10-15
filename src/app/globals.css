@@ -1081,23 +1081,10 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
  * Ambient animation stops on a low tier (.hz-low) and for people who asked their phone for less motion.
  */
 
-/* Play closes the map: signs, stops, the bus and the zoom buttons fade out of the way. */
-.hz-playing .hz-sign,
-.hz-playing .hz-stop,
-.hz-playing .hz-bus {
-  opacity: 0 !important;
-  pointer-events: none !important;
-  /* After the fade they leave the layout, so a cheap phone is not repositioning 20 hidden markers every frame. */
-  display: none !important;
-  transition: opacity 0.3s, display 0.3s allow-discrete;
-}
 .hz-sign,
 .hz-stop,
 .hz-bus {
   transition: opacity 0.3s;
-}
-.hz-playing .maplibregl-ctrl-top-right {
-  display: none;
 }
 
 /* Your avatar: a 44 px disc on a neutral ring. Out of Play it asks to be tapped (a slow pulse and a PLAY tag); never orange. */

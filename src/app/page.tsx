@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
-import type { Map as MLMap } from "maplibre-gl";
 import AreaPicker from "@/components/AreaPicker";
 import EventCard from "@/components/EventCard";
 import HopSheet from "@/components/HopSheet";
@@ -34,7 +33,6 @@ import { busPosition } from "@/lib/busPosition";
 import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
 import { NEXT_COUNT, nextEvents } from "@/lib/filters";
-import { usePlayMode } from "@/lib/usePlayMode";
 
 // MapLibre touches window on import, so it stays out of the server bundle.
 const NightMap = dynamic(() => import("@/components/map/NightMap"), {
@@ -46,9 +44,6 @@ const NightMap = dynamic(() => import("@/components/map/NightMap"), {
   ),
 });
 
-// Play (the avatar, the crates, the HUD and the open moment) loads in its own chunk, once the map is up.
-const PlayLayer = dynamic(() => import("@/components/play/PlayLayer"), { ssr: false });
-
 // One stable empty list, so memo deps do not change on every render.
 const NO_TYPES: string[] = [];
 const NO_STOPS: HopStop[] = [];
@@ -59,12 +54,9 @@ let firstDayChosen = false;
 const IS_DEV = process.env.NODE_ENV !== "production";
 
 export default function MapPage() {
-  const { fix, radiusKm, dateFilter, setDateFilter, types, setTypes, look } = useHoppaz();
-  const { userId, refresh, profile } = useSession();
-  // Play closes the map around you: the events chrome steps out and the page's own tickers and polls wait.
-  const playing = usePlayMode((s) => s.active);
-  const [map, setMap] = useState<MLMap | null>(null);
-  const { events: allEvents, demo, ready, failed, reload } = useEvents(fix, radiusKm, { paused: playing });
+  const { fix, radiusKm, dateFilter, setDateFilter, types, setTypes } = useHoppaz();
+  const { userId, refresh } = useSession();
+  const { events: allEvents, demo, ready, failed, reload } = useEvents(fix, radiusKm);
   const hop = useHop();
   const { done, checkedAt, busy, checkIn } = useCheckin(userId, refresh);
   // Only the streak is needed here, so ask for the lite read (one call, signed-in Hoppers only).
@@ -126,7 +118,6 @@ export default function MapPage() {
     const onVisible = () => document.visibilityState === "visible" && snap();
     document.addEventListener("visibilitychange", onVisible);
     const tick = setInterval(() => {
-      if (usePlayMode.getState().active) return;
       setNow(Date.now());
       snap();
     }, 30_000);
@@ -240,25 +231,6 @@ export default function MapPage() {
     [counts, dayKey]
   );
 
-  /* ------------------------------------------------------------ the map -- */
-  const onMapReady = useCallback((m: MLMap) => setMap(m), []);
-  const onMapUnavailable = useCallback(() => setMap(null), []);
-
-  /* ------------------------------------------------------------- Play -- */
-  // Opening Play leaves whatever card was open; the camera is Play's from here.
-  useEffect(() => {
-    if (playing) {
-      setSelected(null);
-      setHopOpen(false);
-      setFiltering(false);
-      setPicking(false);
-    }
-  }, [playing]);
-  // Back on the events map: catch the clock up (it did not tick in Play).
-  useEffect(() => {
-    if (!playing) setNow(Date.now());
-  }, [playing]);
-
   /* ---------------------------------------- the side card's left and right -- */
   const navRef = useRef<((fromId: string, dir: -1 | 1) => string | null) | null>(null);
   const step = (dir: -1 | 1) => (selected ? navRef.current?.(selected, dir) ?? null : null);
@@ -279,7 +251,7 @@ export default function MapPage() {
     if (topRef.current) ro.observe(topRef.current);
     if (bottomRef.current) ro.observe(bottomRef.current);
     return () => ro.disconnect();
-  }, [mounted, event, todayStr, playing]);
+  }, [mounted, event, todayStr]);
 
   // The toast sits above the bottom card, not on top of its text (the side card has no bottom card under it).
   useEffect(() => {
@@ -325,29 +297,16 @@ export default function MapPage() {
         hudTop={hud.top}
         hudBottom={hud.bottom}
         swoop={mounted}
-        mode={playing ? "play" : "events"}
-        onMapReady={onMapReady}
-        onMapUnavailable={onMapUnavailable}
         sidePanel={!!event}
         allHot={mode === "next"}
         navRef={navRef}
       />
 
-      {/* Play: your avatar (tap it to play), the crates, the HUD and the open moment. It waits for the map. */}
-      {map && (
-        <PlayLayer
-          map={map}
-          look={profile?.avatar ?? look}
-          fix={fix}
-          streak={streak}
-        />
-      )}
-
       {/* The chrome is all "now" (today's rail, the clock), so it draws on the client only: a page
           prerendered yesterday must not hydrate against today's rail. */}
 
       {/* -------------------------------------------------------------- top -- */}
-      {mounted && !playing && (
+      {mounted && (
         <TopChrome
           key={todayStr} /* a new day (6am) rebuilds the bar */
           hudRef={topRef}
@@ -384,7 +343,7 @@ export default function MapPage() {
         </TopChrome>
       )}
 
-      {showEmpty && !playing && (
+      {showEmpty && (
         <EmptyDay
           filtered={shownTypes.length > 0}
           nextLabel={nextBusy ? dayTag(nextBusy) : null}
@@ -393,7 +352,7 @@ export default function MapPage() {
       )}
 
       {/* ----------------------------------------------------------- bottom -- */}
-      {mounted && !event && !playing && (
+      {mounted && !event && (
         <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3.5 pb-2.5">
           <div className="mx-auto flex max-w-[560px] items-end gap-2">
             <Link href="/drop" aria-label="Post a flyer" title="Post a flyer" className="btn pointer-events-auto grid h-11 w-11 flex-none place-items-center p-0">

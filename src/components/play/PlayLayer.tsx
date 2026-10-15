@@ -31,6 +31,11 @@ import OpenStage, { type ClaimResult, type LandKind, type OpenTargets } from "./
 import HotspotsLayer from "./hotspots/HotspotsLayer";
 import HotspotsRow from "./hotspots/HotspotsRow";
 
+/*
+ * NOT MOUNTED since 15 Oct 2026. The separate Play view was removed from the map page (docs/DECISIONS.md): hotspots now
+ * show on the main map (components/hotspots/MainHotspots). This shell, with the crates, the HUD and the open moment, is
+ * kept as it was so boxes can move into rooms later; nothing imports it.
+ */
 const IS_DEV = process.env.NODE_ENV !== "production";
 
 /** The camera in Play: close enough to see all three welcome boxes on a phone. */
