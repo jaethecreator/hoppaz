@@ -27,7 +27,7 @@ export default function Toaster() {
       aria-live="polite"
       className="pointer-events-none fixed inset-x-0 z-50 flex justify-center px-4"
       // --hz-toast-lift: a page with its own card along the bottom (the map) says how tall it is, so the toast sits above it.
-      style={{ bottom: "calc(5.25rem + var(--hz-toast-lift, 0px) + env(safe-area-inset-bottom, 0px))" }}
+      style={{ bottom: "calc(var(--hz-nav-bottom, 5.25rem) + var(--hz-toast-lift, 0px) + env(safe-area-inset-bottom, 0px))" }}
     >
       <div
         key={toast.id}

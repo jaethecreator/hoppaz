@@ -44,7 +44,8 @@ export default function BottomNav() {
   const active = parent ?? path;
   return (
     <nav
-      className="z-30 flex flex-none border-t border-line bg-ink-2"
+      // A bar along the bottom on a phone; a 72 px rail down the left side from 1024 px up.
+      className="z-30 flex flex-none border-t border-line bg-ink-2 lg:order-first lg:w-[72px] lg:flex-col lg:justify-start lg:gap-1 lg:border-r lg:border-t-0 lg:pt-3"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       aria-label="Main"
     >
@@ -67,7 +68,7 @@ export default function BottomNav() {
               if (!on) sfx.tabTick(i);
             }}
             className={clsx(
-              "flex min-h-[52px] flex-1 flex-col items-center justify-center gap-1 transition-colors",
+              "flex min-h-[52px] flex-1 flex-col items-center justify-center gap-1 transition-colors lg:min-h-[64px] lg:flex-none",
               on ? "text-orange" : "text-dim"
             )}
           >

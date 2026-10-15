@@ -1,23 +1,32 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Map as MLMap } from "maplibre-gl";
 import { FaceDisc } from "@/components/Avatar";
-import { anonLook } from "@/lib/avatar";
+import { randomLook } from "@/lib/avatar";
+import { useHoppaz } from "@/lib/store";
 import { easeInOut, lerp } from "@/components/play/geo";
 import MapMarker, { type MarkerHandle } from "./MapMarker";
 
-/** The stand-in Hopper for someone who has not made one: the same one the hotspot room shows. */
-const STAND_IN = anonLook("Hopper");
-
 /**
  * You, on the events map: your own mini avatar at your location (where the radius ring is), the way the old Play avatar
- * stood on the map, but nothing to tap. It takes no taps at all, so the map under it pans as usual; NightMap's declutter
- * keeps the signs off it (.hz-obstacle). The look is the Hopper's own (profile, or the local copy).
+ * stood on the map, with no Play tag and no pulse. A tap opens the avatar editor and comes back. NightMap's declutter keeps
+ * the signs off it (.hz-obstacle). The look is the Hopper's own: the profile's, then the local copy, then a random Hopper
+ * that is kept on this phone, so the map and the room show the same one.
  */
 export default function YouMarker({ map, fix, look }: { map: MLMap; fix: { lat: number; lng: number } | null; look: unknown }) {
+  const router = useRouter();
+  const setLook = useHoppaz((s) => s.setLook);
   const handle = useRef<MarkerHandle>(null);
   const [running, setRunning] = useState(false);
+  // Nothing made yet: a random Hopper, kept (an account's own look arrives with the profile and wins).
+  const made = useRef(false);
+  useEffect(() => {
+    if (look || made.current) return;
+    made.current = true;
+    setLook(randomLook());
+  }, [look, setLook]);
   const fixRef = useRef(fix);
   fixRef.current = fix;
 
@@ -54,10 +63,20 @@ export default function YouMarker({ map, fix, look }: { map: MLMap; fix: { lat: 
 
   if (!fix) return null;
   return (
-    <MapMarker ref={handle} map={map} lng={fix.lng} lat={fix.lat} anchor="bottom" className={`hz-avatar hz-you hz-obstacle${running ? " hz-avatar-run" : ""}`} style={{ zIndex: 2, pointerEvents: "none" }}>
+    <MapMarker
+      ref={handle}
+      map={map}
+      lng={fix.lng}
+      lat={fix.lat}
+      anchor="bottom"
+      label="Your Hopper. Tap to change it."
+      onClick={() => router.push(`/me/avatar?next=${encodeURIComponent("/")}`)}
+      className={`hz-avatar hz-you hz-obstacle${running ? " hz-avatar-run" : ""}`}
+      style={{ zIndex: 2, pointerEvents: running ? "none" : "auto" }}
+    >
       <span className="hz-avatar-body">
         <span className="hz-avatar-ring">
-          <FaceDisc look={look ?? STAND_IN} size={38} />
+          <FaceDisc look={look ?? undefined} initial="You" size={38} />
         </span>
         <i aria-hidden className="hz-avatar-tip" />
       </span>

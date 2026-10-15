@@ -29,11 +29,11 @@ export default function PazSide({
       role="dialog"
       aria-label="Paz"
       data-firstrun
-      className={`pointer-events-none fixed inset-x-0 z-[42] mx-auto flex w-[min(calc(100vw-24px),440px)] gap-2 ${at === "top" ? "items-start" : "items-end"}`}
+      className={`pointer-events-none fixed inset-x-0 z-[42] mx-auto flex w-[min(calc(100vw-24px),440px)] gap-2 lg:inset-x-auto lg:left-[88px] lg:mx-0 lg:w-[380px] ${at === "top" ? "items-start" : "items-end"}`}
       style={
         at === "top"
           ? { top: "calc(4.4rem + env(safe-area-inset-top, 0px))" }
-          : { bottom: "calc(5.25rem + var(--hz-toast-lift, 0px) + env(safe-area-inset-bottom, 0px))" }
+          : { bottom: "calc(var(--hz-nav-bottom, 5.25rem) + var(--hz-toast-lift, 0px) + env(safe-area-inset-bottom, 0px))" }
       }
     >
       <Mascot state={mascot} size={72} className="hz-side-in rig-on-raised pointer-events-auto flex-none" />
