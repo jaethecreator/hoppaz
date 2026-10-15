@@ -122,6 +122,7 @@ export default function HotspotRoom({ slug, name, onLeave }: { slug: string; nam
       {person && phase.t === "in" && (
         <HeadCard
           person={person}
+          youKey={entered?.key}
           onClose={() => setPerson(null)}
           onBlocked={(key) => {
             chat.hide(key);
