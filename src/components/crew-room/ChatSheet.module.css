@@ -1,7 +1,7 @@
 /*
  * The chat sheet: a translucent layer over the lower part of the room that pulls down to close. Hoppaz tokens only
  * (globals.css): ground / raised / card, hairline, text, dim, keke, fireant. No backdrop-filter: a cheap phone cannot
- * pay for it, and 90 percent already lets the room ghost through while the words stay sharp.
+ * pay for it, and 94 percent already lets the room ghost through while the words stay sharp (90 let the zone words behind it show between the lines).
  */
 .root {
   position: absolute;
@@ -30,7 +30,7 @@
   pointer-events: auto;
   border-top: 1px solid rgb(var(--hairline));
   border-radius: 12px 12px 0 0;
-  background: rgb(var(--ground) / 0.9);
+  background: rgb(var(--ground) / 0.94);
   color: rgb(var(--text));
   box-shadow: 0 -14px 40px rgb(var(--shadow) / 0.55);
   transition:
@@ -60,7 +60,7 @@
   border-left: 1px solid rgb(var(--hairline));
   border-radius: 0;
   box-shadow: -14px 0 40px rgb(var(--shadow) / 0.4);
-  background: rgb(var(--ground) / 0.94);
+  background: rgb(var(--ground) / 0.96);
   padding-right: env(safe-area-inset-right);
 }
 .sheet.docked.entering {

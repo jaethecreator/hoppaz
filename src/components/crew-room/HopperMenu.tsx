@@ -31,7 +31,7 @@ import css from "./HopperMenu.module.css";
  *            Mutual: "YOU'RE CONNECTED" with OPEN DM in the hint chip. Never opens the DM by itself.
  *   WALK TO  walks to a free tile next to them (roomStore walkTo) and sends the camera to follow me.
  *   PROFILE  a sheet: SAY HI, ADD TO CREW, Block, Report, through the person's room key (crew_room_peer_key).
- * Closes on a choice, an outside tap, my own walking, the chat sheet opening, Escape, or 8 s of nothing.
+ * Closes on a choice, an outside tap, my own walking, the chat sheet changing, Escape, or 8 s of nothing.
  *
  * This file also draws the room's one HINT chip (useVibes hint): "WAVED AT ADA", "ADA WAVED AT YOU" + WAVE BACK,
  * "YOU'RE CONNECTED" + OPEN DM, "ADA VIBED YOU", and the refusals. It rides above the bottom row (--room-bottom).
@@ -61,8 +61,14 @@ export default function HopperMenu({ crewId, layout }: HopperMenuProps) {
   useEffect(() => {
     if (tapped && !peer) close();
   }, [tapped, peer, close]);
+  // The chat sheet may already be up (peek or half) when I tap someone above it: the room is still alive over the sheet, so the
+  // menu opens. It ends only when the sheet changes after that (opened, pulled up, closed).
+  const sheetAtTap = useRef(sheet);
   useEffect(() => {
-    if (tapped && sheet !== "closed") close();
+    if (tapped) sheetAtTap.current = useRoomStore.getState().sheet;
+  }, [tapped]);
+  useEffect(() => {
+    if (tapped && sheet !== sheetAtTap.current) close();
   }, [tapped, sheet, close]);
 
   return (

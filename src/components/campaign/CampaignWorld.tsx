@@ -110,6 +110,7 @@ export default function CampaignWorld({
   crewId,
   room,
   userId,
+  zoneLines,
   onPhase,
 }: {
   layout: CampaignLayout;
@@ -119,6 +120,8 @@ export default function CampaignWorld({
   crewId?: string;
   room?: CrewRoomConnection;
   userId?: string;
+  /** What a zone's card says when the owner has not filled that zone in, by zone id. */
+  zoneLines?: Partial<Record<string, string>>;
   /** The open sequence: "hold" (the whole room), "zoom" (zooming to me), "done". */
   onPhase?: (phase: OpenPhase) => void;
 }) {
@@ -452,6 +455,22 @@ export default function CampaignWorld({
     // Buttons, links and anything marked data-hit (a zone tag, the sticker, the door plate) take their own taps.
     const interactive = (target: EventTarget | null) => target instanceof Element && !!target.closest('button, a, input, textarea, select, [role="button"], [data-hit]');
 
+    /** The Hopper under a point in the viewport, if any: a 44 px target around the avatar at whatever zoom. */
+    const peerAt = (x: number, y: number): RoomPeer | null => {
+      const reach = Math.max(14, Math.min(26, 30 * cam.s));
+      let hit: RoomPeer | null = null;
+      let best = reach;
+      for (const p of peersRef.current) {
+        const at = cam.sceneToScreen((p.x + 0.5) * tile, (p.y + 0.5) * tile - 24);
+        const d = Math.hypot(at.x - x, at.y - y);
+        if (d < best) {
+          best = d;
+          hit = p;
+        }
+      }
+      return hit;
+    };
+
     const tap = (cx: number, cy: number) => {
       const { x, y } = rel(cx, cy);
       // Any tap during the whole-room moment shortens it, and is not a walk.
@@ -470,17 +489,7 @@ export default function CampaignWorld({
       lastTap = { t: now, x, y };
       // Another Hopper under the finger: a 44 px target around the avatar at whatever zoom. Close up the menu opens on
       // them; from far away the first tap just flies in.
-      const reach = Math.max(14, Math.min(26, 30 * cam.s));
-      let hit: RoomPeer | null = null;
-      let best = reach;
-      for (const p of peersRef.current) {
-        const at = cam.sceneToScreen((p.x + 0.5) * tile, (p.y + 0.5) * tile - 24);
-        const d = Math.hypot(at.x - x, at.y - y);
-        if (d < best) {
-          best = d;
-          hit = p;
-        }
-      }
+      const hit = peerAt(x, y);
       if (hit) {
         if (cam.s >= NEAR) {
           eatGhostClick();
@@ -507,7 +516,14 @@ export default function CampaignWorld({
     };
 
     const onDown = (e: PointerEvent) => {
-      if (interactive(e.target)) return;
+      if (interactive(e.target)) {
+        // The door plate and the fountain sticker sit under the avatars. A Hopper standing over one is tapped as a Hopper;
+        // the tap then swallows the click that follows, so the plate does not also leave the room.
+        const object = e.target instanceof Element && e.target.closest("[data-room-object]");
+        if (!object || cam.s < NEAR) return;
+        const at = rel(e.clientX, e.clientY);
+        if (!peerAt(at.x, at.y)) return;
+      }
       if (e.pointerType === "mouse" && e.button !== 0) return;
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try {
@@ -651,7 +667,7 @@ export default function CampaignWorld({
       ) : null,
     [hasSocial, crewId, layout],
   );
-  const cards = useMemo(() => (hasSocial && crewId ? <PopUps crewId={crewId} layout={layout} /> : null), [hasSocial, crewId, layout]);
+  const cards = useMemo(() => (hasSocial && crewId ? <PopUps crewId={crewId} layout={layout} lines={zoneLines} /> : null), [hasSocial, crewId, layout, zoneLines]);
   const vibes = useMemo(() => (hasSocial && crewId ? <VibeLayer crewId={crewId} layout={layout} /> : null), [hasSocial, crewId, layout]);
   const bubbles = useMemo(() => (hasSocial && crewId && room && userId ? <Bubbles crewId={crewId} layout={layout} room={room} userId={userId} /> : null), [hasSocial, crewId, room, userId, layout]);
 

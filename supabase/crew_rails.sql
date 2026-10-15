@@ -153,11 +153,19 @@ begin
   if found then
     if back.status = 'pending' then
       update waves set status = 'accepted', responded_at = now() where id = back.id returning * into back;
+      -- The one who waved first hears it come back: a tap on their shoulder from me, live (their room answers with a
+      -- second SAY HI, which now says matched too).
+      insert into crew_room_vibes (crew_id, from_user, to_user, sticker) values (p_crew, me, p_peer, 'wave');
     end if;
     if back.status = 'accepted' then return 'matched:' || public.open_dm(back)::text; end if;
     return 'already';
   end if;
-  if exists (select 1 from waves where from_user = me and to_user = p_peer) then return 'already'; end if;
+  -- My own wave, already answered: the same DM, so either of us gets "connected" from the same tap.
+  select * into back from waves where from_user = me and to_user = p_peer;
+  if found then
+    if back.status = 'accepted' then return 'matched:' || public.open_dm(back)::text; end if;
+    return 'already';
+  end if;
   select count(*) into n from waves where from_user = me and created_at > now() - interval '1 day';
   if n >= 30 then return 'slow_down'; end if;
   insert into waves (from_user, to_user, event_id, from_alias, to_alias)

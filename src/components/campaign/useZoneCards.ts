@@ -6,7 +6,6 @@ import { validCampaignUrl } from "@/lib/campaign/layout";
 import { useGoOut } from "@/lib/crew-room/rails";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import type { ZoneSheetKind } from "./ZoneSheet";
-import { roomName } from "./brand";
 
 /** Dwell before the pill shows (the card itself, PopUps in the world, uses the same half second), and how long it stays. */
 const DWELL = 500;
@@ -78,22 +77,15 @@ export function useZoneCards({
   }, [zone, ready]);
 }
 
-/** The first visit's welcome card: shown once per Hopper per crew, in the world over my head. */
-export function welcomeOnce(crewId: string, brand: string, reduced: boolean): { title: string; body: string } | null {
+/**
+ * True when this Hopper has never been in this crew's room on this device. Read only: the welcome card (ChatWelcome) is the
+ * one that marks the visit as seen, a moment after the room opens, so this is asked once, as the room mounts.
+ */
+export function firstVisit(crewId: string): boolean {
   const key = `hz:room-seen:${crewId}`;
   try {
-    if (localStorage.getItem(key)) return null;
-    localStorage.setItem(key, "1");
+    return !localStorage.getItem(key);
   } catch {
-    try {
-      if (sessionStorage.getItem(key)) return null;
-      sessionStorage.setItem(key, "1");
-    } catch {
-      /* storage blocked: once per load */
-    }
+    return false;
   }
-  return {
-    title: `Welcome to ${roomName(brand)}'s community center`,
-    body: `Tap the floor to walk. Tap anyone to wave or vibe.${reduced ? " Tap the arrows button to see every room." : ""}`,
-  };
 }

@@ -93,12 +93,15 @@ export default function ChatWelcome({ crewId, brand, top }: { crewId: string; br
   }, [shown]);
 
   if (!shown) return null;
+  // With reduced motion the room opens already zoomed to you, so the third tip says where the whole room is.
+  const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const tips = reduced ? [...roomTips, "Tap the arrows button to see every room."] : roomTips;
   return (
     <div className={css.wrap} style={{ top }}>
       <div ref={card} className={`${css.card} ${dim ? css.dim : ""}`} role="status">
         <h2>{welcomeLine(brand)}</h2>
         <ol>
-          {roomTips.map((tip, i) => (
+          {tips.map((tip, i) => (
             <li key={tip}>
               <b>{i + 1}</b>
               {tip}

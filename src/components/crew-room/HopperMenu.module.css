@@ -157,7 +157,7 @@
 .hintRow {
   position: absolute;
   left: 12px;
-  right: 12px;
+  right: calc(12px + var(--room-dock, 0px));
   bottom: calc(var(--room-bottom, 12px) + 56px);
   display: flex;
   justify-content: center;

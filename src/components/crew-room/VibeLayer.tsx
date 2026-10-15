@@ -186,6 +186,12 @@ export default function VibeLayer({ crewId, layout }: VibeLayerProps) {
         if (v.to !== userId) return;
         sfx.wave();
         haptics.buzz("wave");
+        // I waved at them first this visit, so this is their wave coming back: it is mutual now, and the same SAY HI says so
+        // (CONNECTED, with OPEN DM) instead of offering to wave back at someone I already waved at.
+        if (useVibes.getState().waved[v.from]) {
+          void sayHi(crewId, { id: v.from, name: sender?.name ?? "A Hopper", key: sender?.key }).then((r) => sayResult(r, open.current));
+          return;
+        }
         useVibes.getState().say(`${name} WAVED AT YOU`, 6000, {
           label: "WAVE BACK",
           onPress: () => {
