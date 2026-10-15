@@ -12,6 +12,14 @@ import { RULES_LINE, SLOW_GAP, postProblem } from "./copy";
 import type { HeadPerson } from "./HeadCard";
 
 /**
+ * @tags in a hotspot chat (the crew-waves work builds the picker, the server and the ping): the room's heads, yourself
+ * left out, go to Composer as `mentionables`. Composer in this branch has no such prop yet, so this stays off until the
+ * branch that adds it is merged; then flip it to true and nothing else changes.
+ */
+const MENTIONS = false;
+export type Mentionable = { key: string; alias: string };
+
+/**
  * The room's chat, on Ola's pieces: RoomMessage (face and bubble), Composer (without the picture button, a
  * hotspot is text only) and the same Realtime feed. What is new is the plain state line above the box: the
  * rules, then slow mode, then a countdown or the reason a post was refused. The server decides every refusal;
@@ -27,6 +35,7 @@ export default function ChatPanel({
   onPick,
   onRejoin,
   typing = false,
+  mentionables,
 }: {
   msgs: Message[];
   live: boolean;
@@ -39,6 +48,8 @@ export default function ChatPanel({
   onRejoin: () => void;
   /** The phone's keyboard is up: every spare line goes to the messages, so the pinned rules step aside. */
   typing?: boolean;
+  /** The other people in the room, for @tags: { key, alias } for each head, not you. */
+  mentionables?: Mentionable[];
 }) {
   const reconnecting = useLinger(!live && !!getSupabase(), 3000);
   const list = useRef<HTMLDivElement>(null);
@@ -101,6 +112,8 @@ export default function ChatPanel({
       ? `${until.text} ${left}s.`
       : problem ?? (slow.on_now ? `Slow mode until ${slow.to}. One message every ${slow.seconds} seconds.` : null);
   const warn = !!problem;
+  // Spread, not a named prop: Composer here does not know `mentionables` until crew-waves' change is merged.
+  const mention = MENTIONS ? { mentionables: mentionables ?? [] } : {};
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pt-3">
@@ -150,6 +163,7 @@ export default function ChatPanel({
         placeholder="Say something"
         maxLength={rules.max_len}
         onSend={(body) => onSend(body)}
+        {...mention}
       />
     </div>
   );

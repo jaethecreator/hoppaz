@@ -16,10 +16,14 @@ import type { Head } from "@/components/hotspots/room/api";
 import { useHotspotChat } from "@/components/hotspots/room/useHotspotChat";
 import { useHotspotRoom } from "@/components/hotspots/room/useHotspotRoom";
 import { useKeyboardUp } from "@/components/hotspots/room/useKeyboardUp";
-import { anonLook, normalizeLook } from "@/lib/avatar";
+import { lookFor, useRoomLooks } from "@/components/hotspots/room/useRoomLooks";
+import WaveChip from "@/components/hotspots/room/WaveChip";
+import { HOTSPOT_WAVES, useIncomingHotspotWaves } from "@/components/hotspots/room/wave";
+import { anonLook, normalizeLook, type Look } from "@/lib/avatar";
 import { hotspotRoom } from "@/lib/campaign/templates";
 import { canWalkScene, type CampaignLayout } from "@/lib/campaign/layout";
 import type { RoomPeer, SocialWorld } from "@/lib/crew-room/types";
+import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
 import { useHoppaz } from "@/lib/store";
 import { useSession } from "@/lib/useSession";
@@ -29,15 +33,16 @@ const Crossroads = dynamic(() => import("@/components/hotspots/HotspotRoom"), { 
 
 /**
  * What your own avatar looks like in a hotspot room. true: your own Hopper (the body is yours, the name is the alias).
- * false: an alias look like everyone else's. Jae has not ruled yet (15 Oct); this one flag switches it. Other people's
- * bodies are always aliases, and nothing here sends a look anywhere.
+ * Jae ruled it on 15 Oct 2026: people show their REAL Hopper look with their alias NAME, so this stays true, and the
+ * other people's real looks come from the server (useRoomLooks, supabase/hotspot_looks.sql; REAL_LOOKS_IN_ROOM there).
+ * false: an alias look like everyone else's. Nothing here sends a look anywhere.
  */
 const OWN_HOPPER_IN_ROOM = true;
 
 const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 
 /** The people in the room as idle figures at the landmark stops, a stop each by their key, on a free walkable tile near it. */
-function placeHeads(layout: CampaignLayout, heads: Head[], at: string): RoomPeer[] {
+function placeHeads(layout: CampaignLayout, heads: Head[], at: string, looks: Record<string, Look>): RoomPeer[] {
   const stops = layout.zones.map((z) => z.stop);
   if (!stops.length) return [];
   const taken = new Set<string>([`${layout.spawn.x},${layout.spawn.y}`]);
@@ -59,7 +64,7 @@ function placeHeads(layout: CampaignLayout, heads: Head[], at: string): RoomPeer
         }
       }
       taken.add(`${tile.x},${tile.y}`);
-      return { id: h.key, name: h.alias, look: normalizeLook(h.look ?? anonLook(h.alias)), x: tile.x, y: tile.y, circle_id: null, last_seen: at };
+      return { id: h.key, name: h.alias, look: lookFor(looks, h.key, h.alias, h.look), x: tile.x, y: tile.y, circle_id: null, last_seen: at };
     });
 }
 
@@ -90,6 +95,7 @@ function LiveRoom({ slug, room, data }: { slug: string; room: NonNullable<Return
   const typing = useKeyboardUp();
   const [person, setPerson] = useState<HeadPerson | null>(null);
   const [drawer, setDrawer] = useState(false);
+  const [waveSeen, setWaveSeen] = useState<Set<string>>(new Set());
   // The world reads the window (device tier, camera): draw it on the client only.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -101,8 +107,33 @@ function LiveRoom({ slug, room, data }: { slug: string; room: NonNullable<Return
   );
 
   const heads = rs?.heads;
+  const headList = useMemo(() => heads ?? [], [heads]);
   const at = useMemo(() => new Date().toISOString(), []);
-  const peers = useMemo(() => (phase.t === "in" && heads ? placeHeads(room.layout, heads, at) : []), [phase.t, heads, room.layout, at]);
+  // Real looks (names stay aliases): by the key the heads and the chat authors carry, yours added from your own account.
+  const theirLooks = useRoomLooks(slug, phase.t === "in", headList);
+  const youKey = entered?.key ?? null;
+  const looks = useMemo<Record<string, Look>>(() => (OWN_HOPPER_IN_ROOM && youKey ? { ...theirLooks, [youKey]: look } : theirLooks), [theirLooks, youKey, look]);
+  const peers = useMemo(() => (phase.t === "in" && heads ? placeHeads(room.layout, heads, at, looks) : []), [phase.t, heads, room.layout, at, looks]);
+  // The chat's faces: the same looks, put on the messages whose author we have one for.
+  const msgs = useMemo(
+    () => chat.msgs.map((m) => (m.author_key && looks[m.author_key] ? { ...m, author_look: looks[m.author_key] } : m)),
+    [chat.msgs, looks]
+  );
+
+  // A tap on a figure in the room (the world sets it, nobody else reads it here): its card, then clear it.
+  const tapped = useRoomStore((s) => s.tappedPeer);
+  useEffect(() => {
+    if (!tapped) return;
+    const h = headList.find((x) => x.key === tapped);
+    if (h) setPerson({ key: h.key, alias: h.alias, look: looks[h.key] ?? null });
+    useRoomStore.getState().setTappedPeer(null);
+  }, [tapped, headList, looks]);
+
+  // Someone said hi to you from this hotspot (their alias and the place only): WAVE BACK.
+  // The place as the server names a room: "Lekki Phase 1 (Admiralty Way)" is "Lekki Phase 1".
+  const incoming = useIncomingHotspotWaves(headList, data.junction.replace(/\s*\([^)]*\)\s*$/, ""), phase.t === "in");
+  const wave = HOTSPOT_WAVES ? incoming.find((w) => !waveSeen.has(w.id)) ?? null : null;
+  const mentionables = useMemo(() => headList.map((h) => ({ key: h.key, alias: h.alias })), [headList]);
   const social: SocialWorld = useMemo(
     () => ({ peers, circles: [], selfId: "me", circleId: null, areaId: null, watching: false, observedAt: at, reset: { x: room.layout.spawn.x, y: room.layout.spawn.y, revision: 0 }, onStep: () => true }),
     [peers, room.layout, at]
@@ -116,7 +147,18 @@ function LiveRoom({ slug, room, data }: { slug: string; room: NonNullable<Return
 
   const chatPanel =
     phase.t === "in" && entered && slow ? (
-      <ChatPanel msgs={chat.msgs} live={chat.live} send={chat.send} youKey={entered.key} slow={slow} rules={entered.rules} onPick={setPerson} onRejoin={() => void recover()} typing={typing} />
+      <ChatPanel
+        msgs={msgs}
+        live={chat.live}
+        send={chat.send}
+        youKey={entered.key}
+        slow={slow}
+        rules={entered.rules}
+        onPick={setPerson}
+        onRejoin={() => void recover()}
+        typing={typing}
+        mentionables={mentionables}
+      />
     ) : (
       <div className="px-4 pt-3">
         {phase.t === "account" ? (
@@ -177,6 +219,9 @@ function LiveRoom({ slug, room, data }: { slug: string; room: NonNullable<Return
             )}
           </div>
 
+          {/* Someone said hi to you from here. */}
+          {wave && phase.t === "in" && <WaveChip key={wave.id} wave={wave} onClose={() => setWaveSeen((s) => new Set(s).add(wave.id))} />}
+
           {/* A room that is shut: why, over the room. */}
           {phase.t === "closed" && <ClosedCard reason={phase.reason} place={place} onRetry={retry} onBack={() => router.push("/")} />}
         </div>
@@ -192,6 +237,7 @@ function LiveRoom({ slug, room, data }: { slug: string; room: NonNullable<Return
       {person && phase.t === "in" && (
         <HeadCard
           person={person}
+          youKey={entered?.key}
           onClose={() => setPerson(null)}
           onBlocked={(key) => {
             chat.hide(key);

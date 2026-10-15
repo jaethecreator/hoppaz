@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Hand, MessageCircle } from "lucide-react";
 import Sheet from "@/components/Sheet";
 import ChatFace from "@/components/chat/ChatFace";
 import { blockPerson } from "@/lib/chat";
@@ -8,28 +10,48 @@ import { getSupabase } from "@/lib/supabase/client";
 import { useToast } from "@/lib/store";
 import { reportHotspot } from "./api";
 import { REASONS, reportCopy } from "./copy";
+import { HOTSPOT_WAVES, hotspotWave, waveCopy, type HotspotWave } from "./wave";
 
 /** Who the card is about: a head on the stage, or the author of a message (then `messageId` and `excerpt` are set). */
 export type HeadPerson = { key: string; alias: string; look: unknown; messageId?: string; excerpt?: string };
 
 /**
- * What you can do about someone in a hotspot: report them (or the message you tapped) and block them. Wave,
- * Link up and Vibe come with Play mode Phase 5; until then a hotspot has chat, Block and Report only.
- * Block and Report work on the opaque room key, so the browser never learns who it is.
+ * What you can do about someone in a hotspot: say hi (a mutual hi makes you crew and shows each of you the other's real
+ * name: Jae, 15 Oct 2026), report them (or the message you tapped) and block them. Everything works on the opaque room
+ * key, so the browser never learns who it is until they say hi back.
  */
 export default function HeadCard({
   person,
+  youKey,
   onClose,
   onBlocked,
 }: {
   person: HeadPerson;
+  /** Your own key in this room: your own face has no SAY HI. */
+  youKey?: string | null;
   onClose: () => void;
   /** After a block: hide their messages and re-read the room. */
   onBlocked: (key: string) => void;
 }) {
   const say = useToast((s) => s.say);
+  const router = useRouter();
   const [step, setStep] = useState<"actions" | "block" | "report">("actions");
   const [busy, setBusy] = useState(false);
+  const [hi, setHi] = useState<HotspotWave | null>(null);
+  const self = !!youKey && youKey === person.key;
+  const hiCopy = hi ? waveCopy(hi, person.alias) : null;
+
+  const sayHi = async () => {
+    setBusy(true);
+    const r = await hotspotWave(person.key);
+    setBusy(false);
+    setHi(r);
+  };
+  const message = () => {
+    const dm = hi && (hi.status === "matched" || hi.status === "already_crew") ? hi.dm : undefined;
+    onClose();
+    router.push(dm ? `/chat/dm/${dm}` : "/chat");
+  };
 
   const doBlock = async () => {
     setBusy(true);
@@ -57,11 +79,38 @@ export default function HeadCard({
           <ChatFace look={person.look} alias={person.look ? null : person.alias} size={48} />
           <div className="min-w-0 flex-1 pt-0.5">
             <p className="truncate font-display text-base font-black leading-tight">{person.alias}</p>
-            <p className="hint mt-1">An alias. Nobody in a hotspot sees real names.</p>
+            <p className="hint mt-1">
+              {hiCopy?.crew
+                ? "Known by an alias in a hotspot."
+                : HOTSPOT_WAVES && !self
+                  ? "An alias. Say hi: if they say hi back, you are crew and you see each other's names."
+                  : "An alias. Nobody in a hotspot sees real names."}
+            </p>
           </div>
         </div>
 
         {person.excerpt && <p className="mt-3 break-words border-l-2 border-line pl-3 font-body text-[14px] leading-snug text-cream/80">“{person.excerpt}”</p>}
+
+        {step === "actions" && HOTSPOT_WAVES && !self && (
+          <div className="mt-3">
+            {hiCopy?.crew ? (
+              <div className="rounded-hz border border-danfo bg-ink-3 p-3" role="status">
+                <p className="font-display text-[15px] font-black uppercase leading-tight text-danfo">{hiCopy.text}</p>
+                <button type="button" className="btn mt-2.5 w-full" onClick={message}>
+                  <MessageCircle size={15} aria-hidden /> MESSAGE
+                </button>
+              </div>
+            ) : hi ? (
+              <p role="status" className={`font-body text-[14px] leading-snug ${hiCopy?.tone === "warn" ? "text-fireant" : "text-cream"}`}>
+                {hiCopy?.text}
+              </p>
+            ) : (
+              <button type="button" className="btn w-full" onClick={sayHi} disabled={busy}>
+                <Hand size={15} aria-hidden /> {busy ? "SAYING HI" : "SAY HI"}
+              </button>
+            )}
+          </div>
+        )}
 
         {step === "actions" && (
           <div className="mt-3 flex items-center justify-center gap-2">
