@@ -57,7 +57,7 @@ export function chatError(message: string | undefined) {
   if (message.includes("not_in_dm")) return "THIS CHAT IS CLOSED";
   if (message.includes("need_account")) return "MAKE AN ACCOUNT TO CHAT PRIVATELY";
   if (message.includes("bad_image")) return "THAT PICTURE DID NOT SEND";
-  if (message.includes("not_at_event")) return "CHECK IN AT THE EVENT TO JOIN ITS ROOM";
+  if (message.includes("not_at_event")) return "SAY YOU'RE GOING TO THE EVENT TO JOIN ITS ROOM";
   if (message.includes("not_in_group")) return "JOIN THE GROUP CHAT FIRST";
   if (message.includes("not_in_move")) return "SAY I'M IN TO JOIN THIS CHAT";
   if (message.includes("room_closed")) return "THIS ROOM HAS CLOSED";
@@ -152,7 +152,7 @@ export function useRoom(channel: string, userId: string | null) {
 const WAVE_TEXT: Record<string, string> = {
   sent: "WAVE SENT. IF THEY WAVE BACK, YOU CAN CHAT",
   already: "ALREADY WAVED",
-  not_met: "YOU CAN WAVE AT PEOPLE AT THE SAME PARTY OR IN YOUR GROUP CHATS",
+  not_met: "YOU CAN WAVE AT PEOPLE IN YOUR ROOMS AND GROUP CHATS",
   blocked: "YOU BLOCKED THEM",
   slow_down: "THAT'S A LOT OF WAVES TODAY. TRY TOMORROW",
   self: "THAT'S YOU",
@@ -191,9 +191,8 @@ export const roomClosesAt = (e: { starts_at: string; ends_at?: string | null }) 
   Date.parse(e.ends_at ?? new Date(Date.parse(e.starts_at) + 8 * HOUR).toISOString()) + 72 * HOUR;
 
 /**
- * The event rooms this Hopper is in: every event they checked in at, until its
- * room closes. Nobody adds you; checking in is the way in. (Saying you're going
- * is what gets you the group chat invite instead.)
+ * The event rooms this Hopper is in: every event they are going to (WE OUTSIDE) or checked in at,
+ * until its room closes. Saying you're going is the way in; checking in at the venue counts too.
  */
 export function useMyEventRooms(userId: string | null) {
   const [rooms, setRooms] = useState<EventRoom[]>([]);
@@ -203,21 +202,21 @@ export function useMyEventRooms(userId: string | null) {
     let cancelled = false;
     const since = new Date(Date.now() - 6 * 24 * HOUR).toISOString();
     type Row = { event_id: string; events: { title: string; starts_at: string; ends_at: string | null } | null };
-    void sb
-      .from("checkins")
-      .select("event_id, events(title, starts_at, ends_at)")
-      .eq("user_id", userId)
-      .gt("created_at", since)
-      .then(({ data }) => {
-        if (cancelled) return;
-        const now = Date.now();
-        setRooms(
-          ((data ?? []) as unknown as Row[])
-            .flatMap((r) => (r.events ? [{ id: r.event_id, title: r.events.title, closesAt: roomClosesAt(r.events) }] : []))
-            .filter((r) => now < r.closesAt)
-            .sort((x, y) => x.closesAt - y.closesAt)
-        );
-      });
+    const pick = "event_id, events(title, starts_at, ends_at)";
+    void Promise.all([
+      sb.from("checkins").select(pick).eq("user_id", userId).gt("created_at", since),
+      sb.from("swipes").select(pick).eq("user_id", userId).eq("decision", "in"),
+    ]).then(([a, b]) => {
+      if (cancelled) return;
+      const now = Date.now();
+      const seen = new Set<string>();
+      setRooms(
+        ([...((a.data ?? []) as unknown as Row[]), ...((b.data ?? []) as unknown as Row[])])
+          .flatMap((r) => (r.events && !seen.has(r.event_id) && seen.add(r.event_id) ? [{ id: r.event_id, title: r.events.title, closesAt: roomClosesAt(r.events) }] : []))
+          .filter((r) => now < r.closesAt)
+          .sort((x, y) => x.closesAt - y.closesAt)
+      );
+    });
     return () => {
       cancelled = true;
     };

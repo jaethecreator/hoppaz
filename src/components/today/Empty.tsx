@@ -91,7 +91,7 @@ export function LoadFailed({ onRetry }: { onRetry: () => void }) {
     >
       <i aria-hidden className="h-2 w-2 flex-none rounded-full bg-fireant" />
       <span className="min-w-0 flex-1 font-body text-[13px] font-semibold leading-snug">
-        Can&apos;t reach today&apos;s events.
+        Can&apos;t reach the events.
       </span>
       <button
         type="button"

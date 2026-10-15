@@ -53,7 +53,7 @@ function Account() {
           >
             LOG OUT
           </button>
-          <p className="hint mt-2">Logging out leaves this phone browsing as a guest.</p>
+          <p className="hint mt-2">Log back in any time with Google or your email.</p>
         </div>
       ) : (
         <div className="card">

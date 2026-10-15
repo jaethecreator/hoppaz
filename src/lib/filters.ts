@@ -79,34 +79,16 @@ export function describeFilter(f: DateFilter, types: string[], now = Date.now())
   return parts.join(" · ");
 }
 
-/* ---------------------------------------------------------- the day rail -- */
+/* ------------------------------------------------------ the day, NEXT 20 -- */
 /*
- * The design system's night rail, named "day" in the UI because Hoppaz lists
- * day and night events. A day still runs 6am to 6am Lagos time (nightOf), so
- * a 1am party belongs to the day it started the evening of.
+ * The NEXT 20 chip and the calendar (src/components/pick) name a "day" in the UI because Hoppaz lists day and
+ * night events. A day still runs 6am to 6am Lagos time (nightOf), so a 1am party belongs to the day it started
+ * the evening of.
  */
 
 export const todayKey = (now = Date.now()) => nightOf(now);
 
 export const TODAY = (now = Date.now()): DateFilter => ({ kind: "night", date: nightOf(now) });
-
-export type RailDay = { date: string; weekday: string; day: number; month: string; isToday: boolean };
-
-/** The next n days from today, for the rail. */
-export function railDays(n = 14, now = Date.now()): RailDay[] {
-  const today = nightOf(now);
-  return Array.from({ length: n }, (_, i) => {
-    const date = nightOf(now + i * 24 * HOUR);
-    const d = new Date(`${date}T12:00:00Z`);
-    return {
-      date,
-      weekday: date === today ? "TODAY" : d.toLocaleDateString("en-NG", { weekday: "short", timeZone: "UTC" }).toUpperCase(),
-      day: d.getUTCDate(),
-      month: d.toLocaleDateString("en-NG", { month: "short", timeZone: "UTC" }).toUpperCase(),
-      isToday: date === today,
-    };
-  });
-}
 
 /** How many events fall on each day key. */
 export function countByDay(events: Array<{ starts_at: string }>) {
@@ -159,7 +141,7 @@ export function nextEvents(events: EventRow[], n = NEXT_COUNT, now = Date.now())
   return { list, from, to };
 }
 
-/** "FRI 9": a night key as the rail prints it. */
+/** "FRI 9": a night key as the NEXT 20 chip prints it. */
 export function nightTag(key: string) {
   const d = new Date(`${key}T12:00:00Z`);
   return `${d.toLocaleDateString("en-NG", { weekday: "short", timeZone: "UTC" }).toUpperCase()} ${d.getUTCDate()}`;

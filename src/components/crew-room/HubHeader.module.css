@@ -1,0 +1,96 @@
+/* The hub's header (HubHeader.tsx): a picture carousel that swipes, with the name row and the round logo under it. */
+
+.stage {
+  position: relative;
+  height: calc(212px + env(safe-area-inset-top, 0px));
+  overflow: hidden;
+  background: rgb(var(--raised));
+}
+
+/* A short phone: keep ENTER ROOM on the first screen. */
+@media (max-height: 719px) {
+  .stage {
+    height: calc(168px + env(safe-area-inset-top, 0px));
+  }
+}
+
+/* A phone on its side: the picture gives the screen back to the buttons. */
+@media (max-height: 480px) {
+  .stage {
+    height: calc(132px + env(safe-area-inset-top, 0px));
+  }
+}
+
+@media (min-width: 768px) and (min-height: 481px) {
+  .stage {
+    height: 360px;
+    border-radius: 6px;
+  }
+}
+
+.track {
+  display: flex;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.track::-webkit-scrollbar {
+  display: none;
+}
+
+.slide {
+  position: relative;
+  flex: 0 0 100%;
+  height: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.slide img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* The room's own art stands in when there are no pictures. */
+.art img {
+  object-position: center 6%;
+}
+
+/* Darkens the top (the back button sits there) and the foot (the dots sit there), never the middle. */
+.scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgb(14 11 10 / 0.6) 0%, rgb(14 11 10 / 0) 34%, rgb(14 11 10 / 0) 62%, rgb(14 11 10 / 0.55) 100%);
+}
+
+.dot {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(245 235 221 / 0.55);
+  transition: width 0.18s ease, background-color 0.18s ease;
+}
+.dotOn {
+  width: 18px;
+  background: #ff4d00;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track {
+    scroll-behavior: auto;
+  }
+  .dot {
+    transition: none;
+  }
+}

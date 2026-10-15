@@ -299,7 +299,7 @@ export default function SwipeStack({
       kind="in"
       disabled={!top || !!flyer}
       onClick={() => commit("in")}
-      label="We outside. You're interested in going."
+      label="We outside. You're going."
     />
   );
 

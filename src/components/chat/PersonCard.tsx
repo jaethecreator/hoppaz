@@ -124,7 +124,7 @@ export default function PersonCard({
             ) : (
               <div className="rounded-hz border border-line bg-ink-3 p-3">
                 <p className="font-display text-sm font-black">Make a free account to wave or add {person.handle ? `@${person.handle}` : "them"}.</p>
-                <p className="hint mt-0.5">Name, email and a password. Takes a minute.</p>
+                <p className="hint mt-0.5">Google, or name, email and a password. Takes a minute.</p>
                 <Link href={`/account?next=${encodeURIComponent(path)}`} className="btn mt-3 w-full">
                   MAKE AN ACCOUNT
                 </Link>

@@ -71,14 +71,13 @@ function Chat() {
         hasAccount={hasAccount}
         note={room.closesAt ? `CLOSES ${closes(room.closesAt)}` : undefined}
         empty={!room.member
-          ? room.kind === "hop" ? "This is the Hop's room, for riders on the bus." : "This room is for people at the event. Check in when you get there and you're in."
+          ? room.kind === "hop" ? "This is the Hop's room, for riders on the bus." : "This room is for everyone going. Tap WE OUTSIDE on the event and you're in."
           : "You're in. Be the first to break the ice, and keep it friendly."}
-        noPeople={room.kind === "event" && room.member ? "Nobody else checked in yet." : undefined}
+        noPeople={room.kind === "event" && room.member ? "Nobody else in yet. Bring your people." : undefined}
       /> : (
         <div className="card">
           <p className="font-display text-sm font-black">No party room open</p>
-          <p className="hint mt-1">Check in at an event when you get there and you&apos;re in its room with everyone else who&apos;s there. It closes three days after the event.</p>
-          <p className="hint mt-2">Going to something later? Tap I&apos;M GOING on it and its group chat invite lands in Crew.</p>
+          <p className="hint mt-1">Tap WE OUTSIDE on an event and you&apos;re in its room with everyone going, before the night and after. It closes three days after the event.</p>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <Link href="/" className="btn">FIND A PARTY</Link>
             <Link href="/crew" className="btn btn-ghost">GROUP CHATS</Link>

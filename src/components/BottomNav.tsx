@@ -11,7 +11,7 @@ type Tab = { href: string; label: string; Icon: LucideIcon; intro?: string };
 
 const TABS: ReadonlyArray<Tab> = [
   { href: "/", label: "MAP", Icon: Map },
-  { href: "/discover", label: "TODAY", Icon: CalendarDays, intro: "today-tab" },
+  { href: "/discover", label: "EVENTS", Icon: CalendarDays, intro: "today-tab" },
   { href: "/crew", label: "CREW", Icon: Users, intro: "crew-tab" },
   { href: "/chat", label: "CHAT", Icon: MessageSquare },
   { href: "/me", label: "ME", Icon: CircleUserRound, intro: "me-tab" },
@@ -29,7 +29,10 @@ const PARENT: Array<[string, string]> = [
   ["/account", "/me"],
 ];
 
-/** Full-screen tasks hide the tab bar, the way a chat hides WhatsApp's tabs. */
+/**
+ * Full-screen tasks hide the tab bar, the way a chat hides WhatsApp's tabs. A crew room (/crew/<id>/room) is NOT one:
+ * the room is a place inside the app, so the tabs stay under it with CREW lit (the path starts with /crew).
+ */
 const FULL_SCREEN = [/^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/];
 
 export default function BottomNav() {

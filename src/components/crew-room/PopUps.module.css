@@ -1,0 +1,114 @@
+/* In-world cards (design 5.5 and 5.6). World layer: the anchor is placed and counter-scaled from script every frame,
+   so a card is one size on screen at every zoom. Tokens only; they flip with the day theme on their own. */
+.layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: min(264px, calc(100vw - 112px));
+  transform-origin: 0 0;
+  visibility: hidden;
+  will-change: transform;
+}
+
+.life {
+  animation: fade var(--life, 3000ms) linear both;
+}
+
+.face {
+  position: relative;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  background: rgb(var(--raised) / 0.95);
+  box-shadow: 0 -14px 40px rgb(var(--shadow) / 0.35), 0 3px 0 rgb(var(--shadow) / 0.25);
+  pointer-events: auto;
+}
+
+/* The whole card is one 44px-or-taller button: a tap closes it. */
+.hit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  text-align: left;
+  color: rgb(var(--text));
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-poppins), system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 18px;
+}
+
+.body {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  color: rgb(var(--text) / 0.8);
+}
+
+/* A title with no line (a hint at a tap point): a compact chip. */
+.face[data-compact] .hit {
+  min-height: 36px;
+  padding: 6px 10px;
+}
+.face[data-compact] .title {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The tail points at the head, and slides along the edge when the card is clamped. */
+.tail {
+  position: absolute;
+  left: var(--tx, 50%);
+  bottom: -5px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  background: rgb(var(--raised));
+  border-right: 1px solid rgb(var(--hairline));
+  border-bottom: 1px solid rgb(var(--hairline));
+  transform: rotate(45deg);
+}
+.anchor[data-flip="1"] .tail {
+  bottom: auto;
+  top: -5px;
+  transform: rotate(225deg);
+}
+
+@keyframes fade {
+  0% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .life {
+    animation: none;
+  }
+}

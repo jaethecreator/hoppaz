@@ -3,18 +3,17 @@
 import Link from "next/link";
 import clsx from "clsx";
 import { Bus, Crosshair, Flame, SlidersHorizontal, X } from "lucide-react";
-import DayRail from "@/components/DayRail";
 import Wordmark from "@/components/Wordmark";
-import type { DateFilter } from "@/lib/filters";
 
 /**
- * Everything across the top of the map: a compact row (wordmark, streak,
- * "what kind", "where am I"), the day rail, and a slim row of removable pills
- * when a vibe filter is on. Anything the page needs to say (a failed load)
- * is passed as children and sits under the rail.
+ * Everything across the top of the map: one compact row (wordmark, the NEXT 20 chip that names what you are
+ * looking at and the orange calendar beside it, streak, "what kind", "where am I"), and a slim row of removable
+ * pills when a vibe filter is on. The chip and calendar come in as `pick` (DayPick), so the page owns what they
+ * do. Anything the page needs to say (a failed load) is passed as children and sits under the bar.
  *
- * The visible chips are 36px; each button carries 4px of padding so the thing
- * you can tap is 44px.
+ * The visible chips are 36px tall; each button is 44px tall and 40px wide to tap. The row has to hold seven
+ * things on a 360px phone (the bus button shows on Hop days), so every button keeps its size and the wordmark
+ * is the one thing that gives: it scales down with its proportions kept, never squeezed.
  */
 
 const CHIP =
@@ -22,9 +21,7 @@ const CHIP =
 
 export default function TopChrome({
   hudRef,
-  day,
-  onDay,
-  counts,
+  pick,
   types,
   onRemoveType,
   onClearTypes,
@@ -33,15 +30,11 @@ export default function TopChrome({
   onLocate,
   showBus,
   onBus,
-  lead,
   children,
 }: {
-  /** A chip before the days on the rail (the Map's NEXT 20). */
-  lead?: { label: string; sub: string; aria: string; on: boolean; onClick: () => void };
   hudRef?: React.Ref<HTMLDivElement>;
-  day: DateFilter;
-  onDay: (f: DateFilter) => void;
-  counts: Record<string, number>;
+  /** The NEXT 20 chip and the orange calendar button (DayPick). */
+  pick: React.ReactNode;
   types: string[];
   onRemoveType: (t: string) => void;
   onClearTypes: () => void;
@@ -57,21 +50,23 @@ export default function TopChrome({
   const filtered = types.length > 0;
   return (
     <div ref={hudRef} className="pointer-events-none absolute inset-x-0 top-0 z-20">
-      {/* A soft scrim so the wordmark, icons and rail read over any map: map labels must not show through. */}
-      <div aria-hidden className="absolute inset-x-0 top-0 h-[calc(env(safe-area-inset-top,0px)+8rem)] bg-gradient-to-b from-ink/95 via-ink/80 to-transparent" />
+      {/* A soft scrim so the wordmark and icons read over any map: map labels must not show through. */}
+      <div aria-hidden className="absolute inset-x-0 top-0 h-[calc(env(safe-area-inset-top,0px)+5.5rem)] bg-gradient-to-b from-ink/95 via-ink/80 to-transparent" />
 
       <div className="pad-top relative mx-auto max-w-[640px] px-3.5 pb-2">
-        <div className="flex items-center gap-1">
-          <div className="pointer-events-auto mr-auto min-w-0 overflow-hidden py-1">
-            <Wordmark size={15} />
+        <div className="flex items-center">
+          <div className="pointer-events-auto mr-auto min-w-[44px] max-w-[82px] flex-1 py-1 pr-1.5 [&_img]:!h-auto [&_img]:!w-full">
+            <Wordmark size={15} className="w-full" />
           </div>
+
+          {pick}
 
           <Link
             href="/me#earn"
             aria-label={`Daily streak ${streak}. Ways to earn`}
-            className="pointer-events-auto -my-1 flex h-11 items-center px-1"
+            className="pointer-events-auto -my-1 flex h-11 flex-none items-center px-0.5"
           >
-            <span className={clsx(CHIP, "min-w-[56px] grid-flow-col gap-1.5 border-line bg-ink-2/95 px-2.5")}>
+            <span className={clsx(CHIP, "min-w-[52px] grid-flow-col gap-1.5 border-line bg-ink-2/95 px-2")}>
               <Flame size={16} strokeWidth={2.2} className="text-orange" aria-hidden />
               <span className="num text-[15px]">{streak}</span>
             </span>
@@ -80,7 +75,7 @@ export default function TopChrome({
           <button
             onClick={onFilter}
             aria-label={filtered ? `What kind: ${types.join(", ")}` : "What kind"}
-            className="pointer-events-auto -my-1 grid h-11 w-11 place-items-center"
+            className="pointer-events-auto -my-1 grid h-11 w-10 flex-none place-items-center"
           >
             <span
               className={clsx(
@@ -97,7 +92,7 @@ export default function TopChrome({
             <button
               onClick={onBus}
               aria-label="Where is the bus"
-              className="pointer-events-auto -my-1 grid h-11 w-11 place-items-center"
+              className="pointer-events-auto -my-1 grid h-11 w-10 flex-none place-items-center"
             >
               <span className={clsx(CHIP, "w-9 border-line bg-ink-2/95 text-cream")}>
                 <Bus size={16} aria-hidden />
@@ -109,15 +104,13 @@ export default function TopChrome({
             onClick={onLocate}
             data-intro="locate"
             aria-label="Set your location"
-            className="pointer-events-auto -my-1 -mr-1 grid h-11 w-11 place-items-center"
+            className="pointer-events-auto -my-1 -mr-0.5 grid h-11 w-10 flex-none place-items-center"
           >
             <span className={clsx(CHIP, "w-9 border-line bg-ink-2/95 text-cream")}>
               <Crosshair size={16} aria-hidden />
             </span>
           </button>
         </div>
-
-        <DayRail slim value={day} onChange={onDay} counts={counts} lead={lead} className="pointer-events-auto mt-1" />
 
         {filtered && (
           <div className="pointer-events-auto -mx-3.5 mt-px flex items-center gap-1.5 overflow-x-auto px-3.5 py-[7px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

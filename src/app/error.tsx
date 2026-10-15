@@ -28,7 +28,7 @@ export default function Error({
         <h1 className="mt-4 text-balance font-display text-[28px] font-black leading-[1.1]">Something broke on our side.</h1>
         <div className="mt-6 flex flex-col items-center gap-3">
           <Link href="/" className="btn">
-            BACK TO TODAY
+            BACK TO THE MAP
           </Link>
           <button type="button" onClick={() => retry()} className="btn btn-ghost">
             TRY AGAIN

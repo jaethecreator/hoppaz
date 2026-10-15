@@ -1,0 +1,66 @@
+/* The first-visit welcome card. Same look as the zone card: raised face, hairline, 6 px radius, the sheet shadow. */
+.wrap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+  pointer-events: none;
+  z-index: 3;
+}
+.card {
+  width: 300px;
+  max-width: 100%;
+  padding: 12px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  background: rgb(var(--raised) / 0.96);
+  color: rgb(var(--text));
+  box-shadow: 0 10px 30px rgb(var(--shadow) / 0.5);
+  pointer-events: auto;
+  animation: stampIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+  transition: opacity 0.4s ease;
+}
+.card.dim {
+  opacity: 0.45;
+}
+.card h2 {
+  margin: 0 0 8px;
+  font: 900 16px/20px var(--font-poppins), system-ui, sans-serif;
+}
+.card ol {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+.card li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font: 400 14px/20px var(--font-body), system-ui, sans-serif;
+}
+.card li b {
+  flex: none;
+  width: 14px;
+  font: 500 11px/20px var(--font-mono), ui-monospace, monospace;
+  color: #ff6e32;
+}
+@keyframes stampIn {
+  from {
+    opacity: 0;
+    transform: scale(1.12) rotate(-2deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+    transition: none;
+  }
+}

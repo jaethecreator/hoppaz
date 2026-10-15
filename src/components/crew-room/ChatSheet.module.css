@@ -1,0 +1,237 @@
+/*
+ * The chat sheet: a translucent layer over the lower part of the room that pulls down to close. Hoppaz tokens only
+ * (globals.css): ground / raised / card, hairline, text, dim, keke, fireant. No backdrop-filter: a cheap phone cannot
+ * pay for it, and 94 percent already lets the room ghost through while the words stay sharp (90 let the zone words behind it show between the lines).
+ */
+.root {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  overflow: hidden;
+  /* the docked panel follows the app's side safe areas */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* ----------------------------------------------------------------------- the sheet */
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 640px;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: auto;
+  border-top: 1px solid rgb(var(--hairline));
+  border-radius: 12px 12px 0 0;
+  background: rgb(var(--ground) / 0.94);
+  color: rgb(var(--text));
+  box-shadow: 0 -14px 40px rgb(var(--shadow) / 0.55);
+  transition:
+    height 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+    bottom 0.12s linear;
+  /* the sheet itself never scrolls the page */
+  overscroll-behavior: contain;
+}
+.sheet[hidden] {
+  display: none;
+}
+.sheet.dragging {
+  transition: none;
+}
+.sheet.entering {
+  animation: sheetRise 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+/* Landscape phones and desktops: a side panel, full height, no states. */
+.sheet.docked {
+  left: auto;
+  right: 0;
+  top: 0;
+  width: var(--dock, 340px);
+  max-width: none;
+  height: auto !important;
+  border-top: 0;
+  border-left: 1px solid rgb(var(--hairline));
+  border-radius: 0;
+  box-shadow: -14px 0 40px rgb(var(--shadow) / 0.4);
+  background: rgb(var(--ground) / 0.96);
+  padding-right: env(safe-area-inset-right);
+}
+.sheet.docked.entering {
+  animation: panelIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* the grab handle, and the strip under it: the part you drag */
+.grip {
+  position: relative;
+  flex: none;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  background: rgb(var(--raised) / 0.95);
+}
+.handle {
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 0 auto;
+  position: relative;
+  top: 8px;
+  border-radius: 2px;
+  background: rgb(var(--hairline));
+}
+.gripPeek {
+  height: 24px;
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 10px 4px 0 14px;
+}
+.title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+.title h2 {
+  font: 900 15px/18px var(--font-poppins), system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.title span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 500 10.5px/12px var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--dim));
+}
+.title i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(var(--keke));
+}
+/* a 36 px control with a 44 px hit area, the way the app's top chrome does it */
+.ctl {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 6px;
+  background: rgb(var(--card) / 0.9);
+  color: rgb(var(--text));
+  font: 500 11px/12px var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  touch-action: manipulation;
+}
+.ctl::before {
+  content: "";
+  position: absolute;
+  inset: -4px -2px;
+}
+.ctl[aria-pressed="true"] {
+  border-color: #ff4d00;
+  color: #ff6e32;
+}
+.ctlIcon {
+  padding: 0;
+  width: 36px;
+}
+
+/* tabs: only inside an area */
+.tabs {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  padding: 0 12px 6px;
+  background: rgb(var(--raised) / 0.95);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+.tabs .chip {
+  position: relative;
+  flex: none;
+}
+.tabs .chip::before {
+  content: "";
+  position: absolute;
+  inset: -4px -2px;
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff4d00;
+}
+.chip[aria-pressed="true"] .dot {
+  background: #0e0b0a;
+}
+
+.left {
+  flex: none;
+  padding: 4px 14px;
+  background: rgb(var(--raised) / 0.95);
+  font: 500 10.5px/14px var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--dim));
+}
+
+/* the explore tab */
+.explore {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 12px calc(12px + env(safe-area-inset-bottom));
+}
+
+/* ------------------------------------------------------------------------- motion */
+@keyframes sheetRise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes panelIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .sheet.entering,
+  .sheet.docked.entering {
+    transition: none;
+    animation: none;
+  }
+}
