@@ -4,7 +4,7 @@ import type { Ref } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import clsx from "clsx";
 import { FaceDisc } from "@/components/Avatar";
-import MapMarker, { type MarkerHandle } from "./MapMarker";
+import MapMarker, { type MarkerHandle } from "@/components/map/MapMarker";
 
 export type AvatarHandle = MarkerHandle;
 

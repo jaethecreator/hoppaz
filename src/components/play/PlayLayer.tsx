@@ -24,7 +24,7 @@ import { loadDropCards } from "@/lib/cards";
 import Avatar, { type AvatarHandle } from "./Avatar";
 import Crate, { TIER_ART } from "./Crate";
 import Hud, { type HudHandle } from "./Hud";
-import MapMarker from "./MapMarker";
+import MapMarker from "@/components/map/MapMarker";
 import { clamp, circleRing, easeInOut, easeOut, insideLagos, lerp, metresBetween, nudgePoint, reducedMotion } from "./geo";
 import type { TrayLine } from "./Tray";
 import OpenStage, { type ClaimResult, type LandKind, type OpenTargets } from "./open/OpenStage";

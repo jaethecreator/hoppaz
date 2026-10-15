@@ -1,5 +1,5 @@
 // ============================================================================
-// Hoppaz hotspots: headless check of the room screen (src/components/play/hotspots/HotspotRoom.tsx) at
+// Hoppaz hotspots: headless check of the room screen (src/components/hotspots/HotspotRoom.tsx) at
 // 390x844, with two test Hoppers in two isolated browser contexts of ONE Chrome.
 //
 //   node --no-warnings scripts/hotspots/check-room.mjs

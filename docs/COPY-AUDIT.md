@@ -142,7 +142,7 @@ alone would break it. See Product decisions, item 1.
     - Before: "Play paused. Tap your avatar to come back."
     - Wrong: tells people to tap their avatar.
     - After: "Paused. You're back on the map."
-18. `src/components/play/hotspots/room/copy.ts:37` (hotspot open on another screen)
+18. `src/components/hotspots/room/copy.ts:37` (hotspot open on another screen)
     - Before: "Your avatar is in another hotspot, on another screen. One avatar, one place."
     - Wrong: leans on the Play avatar; hotspots are becoming home bases with rooms.
     - After: "You are in another hotspot, on another screen. One place at a time."
