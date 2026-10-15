@@ -445,7 +445,10 @@ export default function CampaignWorld({
     const cam = camRef.current;
     if (!el || !cam) return;
     const pts = new Map<number, { x: number; y: number }>();
-    let down: { id: number; x: number; y: number; t: number; moved: boolean } | null = null;
+    let down: { id: number; x: number; y: number; t: number; moved: boolean; object: boolean } | null = null;
+    /** Pointers that began on a room object (the door plate, the fountain sticker), and whether a pinch used any of them. */
+    const objectPointers = new Set<number>();
+    let objectPinched = false;
     let pinch: { d0: number; s0: number; sx: number; sy: number } | null = null;
     let lastTap = { t: 0, x: 0, y: 0 };
     const rel = (cx: number, cy: number) => {
@@ -516,24 +519,30 @@ export default function CampaignWorld({
     };
 
     const onDown = (e: PointerEvent) => {
+      let onObject = false;
       if (interactive(e.target)) {
-        // The door plate and the fountain sticker sit under the avatars. A Hopper standing over one is tapped as a Hopper;
-        // the tap then swallows the click that follows, so the plate does not also leave the room.
+        // The door plate and the fountain sticker sit under the avatars, and the sticker is big. A Hopper standing over one
+        // is tapped as a Hopper (the tap then swallows the click that follows, so the plate does not also leave the room).
+        // Anything else on one keeps its own tap, but a drag or a pinch that starts on it still moves the camera.
         const object = e.target instanceof Element && e.target.closest("[data-room-object]");
-        if (!object || cam.s < NEAR) return;
+        if (!object) return;
         const at = rel(e.clientX, e.clientY);
-        if (!peerAt(at.x, at.y)) return;
+        if (!(cam.s >= NEAR && peerAt(at.x, at.y))) onObject = true;
       }
       if (e.pointerType === "mouse" && e.button !== 0) return;
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      try {
-        el.setPointerCapture(e.pointerId);
-      } catch {
-        /* a synthetic pointer: no capture, the gesture still works */
+      if (onObject) objectPointers.add(e.pointerId);
+      else {
+        try {
+          el.setPointerCapture(e.pointerId);
+        } catch {
+          /* a synthetic pointer: no capture, the gesture still works */
+        }
       }
-      if (pts.size === 1) down = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), moved: false };
+      if (pts.size === 1) down = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), moved: false, object: onObject };
       else if (pts.size === 2) {
         down = null;
+        if (objectPointers.size) objectPinched = true;
         const [a, b] = [...pts.values()];
         const m = rel((a.x + b.x) / 2, (a.y + b.y) / 2);
         const sc = cam.screenToScene(m.x, m.y);
@@ -564,6 +573,7 @@ export default function CampaignWorld({
     };
     const onUp = (e: PointerEvent) => {
       if (!pts.delete(e.pointerId)) return;
+      const fromObject = objectPointers.delete(e.pointerId);
       if (pinch && pts.size < 2) {
         pinch = null;
         cam.pinchEnd();
@@ -571,11 +581,15 @@ export default function CampaignWorld({
       if (down && down.id === e.pointerId) {
         const d = down;
         down = null;
-        if (!d.moved && performance.now() - d.t < 450) tap(e.clientX, e.clientY);
-      }
+        // A drag that began on an object is a camera move, not a press on it.
+        if (d.moved && d.object) eatGhostClick();
+        else if (!d.moved && !d.object && performance.now() - d.t < 450) tap(e.clientX, e.clientY);
+      } else if (fromObject && objectPinched) eatGhostClick();
+      if (!pts.size) objectPinched = false;
     };
     const onCancel = (e: PointerEvent) => {
       pts.delete(e.pointerId);
+      objectPointers.delete(e.pointerId);
       if (down?.id === e.pointerId) down = null;
       if (pinch && pts.size < 2) {
         pinch = null;
