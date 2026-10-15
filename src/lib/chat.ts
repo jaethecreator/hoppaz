@@ -285,13 +285,14 @@ export function useInbox(userId: string | null) {
   const crew = useSocial((s) => s.crew);
   const dms = useSocial((s) => s.dms);
   const unread = useSocial((s) => s.unread);
+  const mentions = useSocial((s) => s.mentions);
   useEffect(() => {
     if (userId) void loadInbox();
   }, [userId]);
   /** WAVE BACK (accept) or PASS. crew says the answer made them crew. */
   const respond = useCallback((id: string, accept: boolean) => answerWave(id, accept), []);
   const reload = useCallback(() => loadInbox(), []);
-  return { waves, crew, dms, unread, respond, reload };
+  return { waves, crew, dms, unread, mentions, respond, reload };
 }
 
 export function useDm(dmId: string, userId: string | null) {

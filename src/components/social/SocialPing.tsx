@@ -7,7 +7,7 @@ import { haptics } from "@/lib/haptics";
 import { useGoOut } from "@/lib/crew-room/rails";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { WAVE_HINT_MS, crewText, useVibes } from "@/lib/crew-room/vibes";
-import { loadInbox, onInboxDiff, resetSocial, useSocial, type InboxDiff } from "@/lib/social";
+import { loadInbox, markMentionsSeen, onInboxDiff, resetSocial, useSocial, type InboxDiff } from "@/lib/social";
 import { sfx } from "@/lib/sound/sfx";
 import { getSupabase } from "@/lib/supabase/client";
 import { useSession } from "@/lib/useSession";
@@ -22,6 +22,8 @@ import { useSession } from "@/lib/useSession";
  *   a wave arrives                  the same toast ("ADA WAVED AT YOU"), anywhere but a crew room (the room has its own chip,
  *                                   the one with WAVE BACK) and the Chat tab itself.
  *   a poke, or a wave answered      in a crew room the room's hint chip, with their face; anywhere else this toast.
+ *   a tag in a hotspot chat         this toast ("<ALIAS> TAGGED YOU", the place and a line of it); tapping it opens that room.
+ *                                   Tags count on the Chat tab until they are seen (tapped here, in the list, or the room is opened).
  *
  * Quiet where it would be in the way: the full-screen tasks, the staff desk and Play. The badge still counts.
  */
@@ -31,7 +33,7 @@ const ROOM = /^\/crew\/[^/]+\/room(?:\/|$)/;
 const TOAST_MS = 6000;
 const POLL_MS = 30_000;
 
-export type Toast = { id: number; name: string; look: unknown; line: string; sub?: string; href: string };
+export type Toast = { id: number; name: string; look: unknown; line: string; sub?: string; href: string; mention?: string };
 
 const upper = (s: string) => s.toUpperCase();
 const first = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
@@ -52,6 +54,15 @@ export default function SocialPing() {
     if (lastUser.current && lastUser.current !== userId) resetSocial();
     lastUser.current = userId;
   }, [userId]);
+
+  // Walking into the room a tag was made in is seeing it.
+  const inRoom = /^\/room\/([^/]+)/.exec(path)?.[1] ?? null;
+  const tagged = useSocial((s) => s.mentions);
+  useEffect(() => {
+    if (!inRoom) return;
+    const here = tagged.filter((m) => m.slug === inRoom).map((m) => m.id);
+    if (here.length) void markMentionsSeen(here);
+  }, [inRoom, tagged]);
 
   useEffect(() => {
     if (!userId || !hasAccount) return;
@@ -86,6 +97,10 @@ export default function SocialPing() {
       for (const m of diff.newMessages) {
         if (here === `/chat/dm/${m.id}`) continue; // I am reading it
         show({ name: m.other_name, look: m.other_look, line: m.other_name, sub: first(m.last_body) || "New message", href: `/chat/dm/${m.id}` }, "wave");
+      }
+      for (const t of diff.newMentions) {
+        if (here === `/room/${t.slug}`) continue; // I am in that room: the message is in front of me
+        show({ name: t.alias, look: null, line: `${upper(t.alias)} TAGGED YOU`, sub: `${t.place ? `${t.place}: ` : ""}${t.excerpt}`, href: t.slug ? `/room/${t.slug}` : "/", mention: t.id }, "wave");
       }
       if (ROOM.test(here)) return; // the room has its own chip, the one with WAVE BACK
       for (const w of diff.newWaves) {
@@ -145,6 +160,8 @@ export default function SocialPing() {
       .channel(`social:${userId}`)
       // Row level security hands me only the messages of my own chats.
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "dm_messages" }, soon)
+      // A tag of me in a hotspot chat (row level security: only mine; the row has no sender id).
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "hotspot_mentions", filter: `to_user=eq.${userId}` }, soon)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "crew_pings", filter: `to_user=eq.${userId}` }, (p) =>
         void onPing(p.new as { id: string; from_user: string; kind: string; created_at: string })
       )
@@ -170,6 +187,7 @@ export default function SocialPing() {
       toast={toast}
       onOpen={() => {
         setToast(null);
+        if (toast.mention) void markMentionsSeen([toast.mention]);
         goOut(toast.href);
       }}
     />

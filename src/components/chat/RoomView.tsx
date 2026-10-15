@@ -115,11 +115,14 @@ export function RoomMessage({
   m,
   own,
   image,
+  myAlias,
   onPick,
 }: {
   m: Message;
   own: boolean;
   image?: string | null;
+  /** In a hotspot room: my alias there, so a tag of me stands out. Leave it out anywhere else. */
+  myAlias?: string | null;
   onPick: (p: CardPerson) => void;
 }) {
   const who = own ? "You" : m.author_name ?? "A Hopper";
@@ -142,6 +145,7 @@ export function RoomMessage({
         image={image}
         imageAlt={`Picture from ${who}`}
         imageLoading={!!m.image_path && !image}
+        myAlias={myAlias}
       />
     </button>
   );

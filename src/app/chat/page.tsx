@@ -35,18 +35,18 @@ function People() {
   const { userId, hasAccount } = useSession();
   const [view, setView] = useState<"chats" | "crew">("chats");
   const say = useToast((s) => s.say);
-  const { waves, crew, dms, unread, respond } = useInbox(userId);
+  const { waves, crew, dms, unread, mentions, respond } = useInbox(userId);
   const supported = useSocial((s) => s.supported);
   const onMap = useSocial((s) => s.onMap);
 
   return <div className="mx-auto flex h-full w-full max-w-[560px] flex-col overflow-hidden px-4">
     <PageHeader title="Chat" caption="Say hi on your terms" className="flex-none" />
     <div role="tablist" aria-label="Chat" className="mb-3 flex flex-none gap-6 border-b border-line">
-      <Tab on={view === "chats"} onClick={() => setView("chats")}>CHATS{unread > 0 ? ` · ${unread}` : ""}</Tab>
+      <Tab on={view === "chats"} onClick={() => setView("chats")}>CHATS{unread + mentions.length > 0 ? ` · ${unread + mentions.length}` : ""}</Tab>
       <Tab on={view === "crew"} onClick={() => setView("crew")}>CREW{waves.length > 0 ? ` · ${waves.length}` : ""}</Tab>
     </div>
 
-    {view === "chats" ? <ChatList dms={dms} hasAccount={hasAccount} /> : <CrewTab
+    {view === "chats" ? <ChatList dms={dms} mentions={mentions} hasAccount={hasAccount} /> : <CrewTab
       waves={waves}
       crew={crew}
       hasAccount={hasAccount}
