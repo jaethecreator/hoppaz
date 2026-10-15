@@ -126,6 +126,8 @@ const SRC = {
   hop: "hoppaz-hop",
   lots: "hoppaz-lots",
   radius: "hoppaz-radius",
+  /** Where you are: the point the radius ring is drawn around. */
+  you: "hoppaz-you",
 } as const;
 
 /** The little Hop bus: cream body, orange windows. */
@@ -311,6 +313,25 @@ function setupLayers(m: MLMap, theme: Theme, cityGrown: boolean) {
         "circle-opacity": ["interpolate", ["linear"], ["zoom"], STREET_ZOOM - 0.6, 1, STREET_ZOOM, 0],
         "circle-stroke-opacity": ["interpolate", ["linear"], ["zoom"], STREET_ZOOM - 0.6, 1, STREET_ZOOM, 0],
       },
+    });
+  }
+
+  /* ---- you: a small cream dot with a soft halo, where the radius ring is. Part of the map, never tappable. ---- */
+  if (!m.getSource(SRC.you)) m.addSource(SRC.you, { type: "geojson", data: fc([]) });
+  if (!m.getLayer("you-halo")) {
+    m.addLayer({
+      id: "you-halo",
+      type: "circle",
+      source: SRC.you,
+      paint: { "circle-radius": 15, "circle-color": P.text, "circle-opacity": 0.18, "circle-pitch-alignment": "map" },
+    });
+  }
+  if (!m.getLayer("you-dot")) {
+    m.addLayer({
+      id: "you-dot",
+      type: "circle",
+      source: SRC.you,
+      paint: { "circle-radius": 6, "circle-color": P.text, "circle-stroke-color": P.ground, "circle-stroke-width": 2.5 },
     });
   }
 }
@@ -844,6 +865,10 @@ export default function NightMap({
             ]
           : []
       )
+    );
+
+    (m.getSource(SRC.you) as GeoJSONSource).setData(
+      fc(fix ? [{ type: "Feature", geometry: { type: "Point", coordinates: [fix.lng, fix.lat] }, properties: {} }] : [])
     );
 
     // Later: the venue models follow the same events and selection.
