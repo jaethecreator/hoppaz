@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabase } from "@/lib/supabase/client";
+import { useNamedPeers } from "./chatNames";
 import type { CampaignContent } from "@/lib/campaign/layout";
 import type { Tile } from "@/lib/campaign/geometry";
 import type { CrewRoomConnection, PositionReset, RoomMessage, RoomSnapshot, RoomStatus, Thread } from "./types";
@@ -519,8 +520,12 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
   const dismissNotice = useCallback(() => setNotice(""), []);
   const loadEarlier = useCallback((key: string) => void fetchThread(key, "earlier"), [fetchThread]);
 
+  // The server names a Hopper with no display name "A crew member"; fill those in from their handle (chatNames.ts).
+  const namedPeers = useNamedPeers(snapshot?.peers);
+  const shown = useMemo(() => (snapshot && namedPeers && namedPeers !== snapshot.peers ? { ...snapshot, peers: namedPeers } : snapshot), [snapshot, namedPeers]);
+
   return {
-    snapshot,
+    snapshot: shown,
     status,
     reason,
     error,
@@ -534,15 +539,15 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
     send,
     save,
     world:
-      snapshot && userId
+      shown && userId
         ? {
-            peers: snapshot.peers,
-            circles: snapshot.circles,
+            peers: shown.peers,
+            circles: shown.circles,
             selfId: userId,
             circleId,
-            areaId: snapshot.circles.find((c) => c.id === circleId)?.area_id ?? null,
+            areaId: shown.circles.find((c) => c.id === circleId)?.area_id ?? null,
             watching,
-            observedAt: snapshot.observed_at,
+            observedAt: shown.observed_at,
             reset,
             onStep,
           }
