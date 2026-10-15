@@ -8,6 +8,7 @@ import { useReactions } from "@/lib/crew-room/chatReactions";
 import { OPEN_SHEET, useRoomStore, type RoomSheet } from "@/lib/crew-room/roomStore";
 import type { CrewRoomConnection } from "@/lib/crew-room/types";
 import { clockText, useServerNow } from "@/lib/game-time/clock";
+import { hms, ticketsLeft, ticketsText } from "@/lib/game-time/drops";
 import { useGameTime } from "@/lib/game-time/store";
 import ChatWelcome from "./ChatWelcome";
 import CrewRoomChat, { type PullHandlers } from "./CrewRoomChat";
@@ -100,17 +101,48 @@ function useDockWidth() {
 
 /**
  * One pinned line at the top of the sheet about this crew's Game Time, from the same store and server clock the banner
- * uses (no polling of its own): "Next ticket in 2:41:10" while one is coming, "Ticket hunt is live. 3 boxes left" while
- * one is on (a tap closes the sheet to the room), nothing otherwise.
+ * uses (no polling of its own). A series of mystery drops (drops.ts) reads like this:
+ *   "5 tickets left · first drop in 0:42:10"                before the first drop (a live countdown)
+ *   "4 tickets left · next one can drop soon. Check in."    between drops: no countdown, so people keep checking in
+ *   "Ticket live now · find the box"                        while a drop is live (a tap closes the sheet to the room)
+ * and nothing once every ticket is found. A plain game says "Next ticket in 2:41:10" and "Ticket hunt is live. 3 boxes
+ * left". Nothing for someone who already won or cannot hunt.
  */
 function TicketLine({ crewId, onRoom }: { crewId: string; onRoom: () => void }) {
   const game = useGameTime((s) => s.game);
-  const member = useGameTime((s) => s.me.member);
+  const me = useGameTime((s) => s.me);
   const storeCrew = useGameTime((s) => s.crewId);
-  const upcoming = game?.status === "upcoming";
   const now = useServerNow(1000);
-  if (!game || !member || storeCrew !== crewId || !game.room_ok) return null;
-  if (upcoming) {
+  if (!game || !me.member || storeCrew !== crewId || !game.room_ok || me.won || me.blocked) return null;
+  const drop = game.drop;
+  if (drop) {
+    const left = ticketsLeft(game) ?? 0;
+    if (game.status === "live") {
+      return (
+        <button type="button" className={css.ticket} data-gt-chat-line="live" onClick={onRoom}>
+          <i aria-hidden />
+          Ticket live now · find the box
+        </button>
+      );
+    }
+    // Over: the last drop has ended (every ticket is found or gone), or the next one is not scheduled yet.
+    if (left < 1 || (game.status === "over" && drop.i >= drop.n)) return null;
+    if (game.status === "upcoming" && drop.i === 1) {
+      return (
+        <p className={css.ticket} data-gt-chat-line="upcoming">
+          <i aria-hidden />
+          {ticketsText(left)} · first drop in {hms(Date.parse(game.opens_at) - now)}
+        </p>
+      );
+    }
+    return (
+      <p className={css.ticket} data-gt-chat-line="upcoming" data-mystery>
+        <i aria-hidden />
+        {ticketsText(left)} · next one can drop soon. Check in.
+      </p>
+    );
+  }
+  if (game.status === "upcoming") {
     return (
       <p className={css.ticket} data-gt-chat-line="upcoming">
         <i aria-hidden />

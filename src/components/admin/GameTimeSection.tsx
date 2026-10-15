@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Download, RefreshCw } from "lucide-react";
+import { MARK_MAX, dropMark, parseDrop } from "@/lib/game-time/drops";
 import { useToast } from "@/lib/store";
 
 /**
@@ -178,7 +179,8 @@ export default function GameTimeSection({ token, onLock }: { token: string; onLo
           else say((data.message ?? "That did not work.").toUpperCase());
           return null;
         }
-        await load();
+        // The save worked; a reload that fails (a dropped connection) must not make it look as if it had not.
+        await load().catch(() => undefined);
         return data;
       } finally {
         setBusy(false);
@@ -487,6 +489,40 @@ function lagosShort(ms: number): string {
 /** A datetime-local value (Lagos wall time, no zone) as ms; NaN when empty or invalid. */
 const lagosMs = (v: string) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v) ? Date.parse(`${v}:00+01:00`) : NaN);
 const HOUR = 3_600_000;
+const MINUTE = 60_000;
+
+/** A small seeded random number generator (mulberry32): the same seed gives the same mystery times, so the preview holds still. */
+function seeded(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * The opening time of every drop. Drop 1 opens at the first time exactly. With mystery on, drop i (from 2) opens at a random
+ * minute inside its window [first + i * every, first + (i + 1) * every - length], so every drop keeps the same length and
+ * the drops never overlap (a drop opens at least a minute after the one before has closed). With it off the drops are
+ * exactly `every` hours apart.
+ */
+function dropTimes(first: number, every: number, count: number, length: number, mystery: boolean, seed: number): number[] {
+  const rand = seeded(seed);
+  const times: number[] = [];
+  for (let i = 0; i < count; i++) {
+    if (i === 0 || !mystery) {
+      times.push(first + i * every);
+      continue;
+    }
+    const lo = Math.max(first + i * every, times[i - 1] + length + MINUTE);
+    const hi = Math.max(lo, first + (i + 1) * every - length);
+    times.push(lo + Math.floor(rand() * ((hi - lo) / MINUTE + 1)) * MINUTE);
+  }
+  return times;
+}
 
 const codeLines = (text: string) => text.split(/\r?\n/).map((c) => c.trim()).filter(Boolean);
 const countCodes = (text: string) => text.split(/\r?\n/).map((c) => c.trim()).filter(Boolean).length;
@@ -524,6 +560,10 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
   const [closesAt, setClosesAt] = useState("");
   const [running, setRunning] = useState(false);
   const [outcome, setOutcome] = useState("");
+  // Mystery times (on with Repeat): drop 1 at the exact time, every later drop at a random moment in its window.
+  const [mystery, setMystery] = useState(true);
+  const [seed, setSeed] = useState(() => Math.floor(Math.random() * 2 ** 31));
+  const [title, setTitle] = useState("");
 
   // A crew's room has its own objects: start from all of them.
   useEffect(() => {
@@ -544,6 +584,8 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
   const repeating = repeat && when === "later" && !rehearsal;
   const everyN = Math.floor(Number(every));
   const dropsN = Math.floor(Number(drops));
+  const mysteryOn = repeating && mystery;
+  const baseTitle = parseDrop(title.trim()).title;
   const plan = useMemo(() => {
     if (!repeating) return { problem: "", times: [] as number[] };
     if (!(everyN >= 1 && everyN <= 12)) return { problem: "Every: 1 to 12 hours.", times: [] };
@@ -553,12 +595,17 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
     if (!Number.isFinite(o) || !Number.isFinite(c)) return { problem: "Set the first opens and closes time.", times: [] };
     if (c <= o) return { problem: "Closes must be after opens.", times: [] };
     if (c - o >= everyN * HOUR) return { problem: "Each window must be shorter than the gap between drops.", times: [] };
-    return { problem: "", times: Array.from({ length: dropsN }, (_, i) => o + i * everyN * HOUR) };
-  }, [repeating, everyN, dropsN, opensAt, closesAt]);
+    return { problem: "", times: dropTimes(o, everyN * HOUR, dropsN, c - o, mystery, seed) };
+  }, [repeating, everyN, dropsN, opensAt, closesAt, mystery, seed]);
   const codeProblem = repeating && n !== dropsN ? `Repeat needs one code per drop: ${dropsN} drops, ${n} code${n === 1 ? "" : "s"}.` : "";
-  const repeatOk = !repeating || (!plan.problem && !codeProblem && picked.size >= 1);
+  const titleProblem = mysteryOn && baseTitle.length + MARK_MAX > 60 ? `With the drop counter the title can have ${60 - MARK_MAX} characters at most.` : "";
+  const repeatOk = !repeating || (!plan.problem && !codeProblem && !titleProblem && picked.size >= 1);
+  // A warning, not a block: the first opening is already gone, so the server will say no to it.
+  const firstPast = repeating && Number.isFinite(lagosMs(opensAt)) && lagosMs(opensAt) <= Date.now();
   const preview = plan.times.length
-    ? `${plan.times.length} drops: ${(plan.times.length > 8 ? [...plan.times.slice(0, 6).map(lagosShort), "...", lagosShort(plan.times[plan.times.length - 1])] : plan.times.map(lagosShort)).join(", ")}`
+    ? mysteryOn
+      ? `${plan.times.length} drops: ${plan.times.map((t, i) => `${i + 1}. ${lagosShort(t)}`).join(", ")}`
+      : `${plan.times.length} drops: ${(plan.times.length > 8 ? [...plan.times.slice(0, 6).map(lagosShort), "...", lagosShort(plan.times[plan.times.length - 1])] : plan.times.map(lagosShort)).join(", ")}`
     : "";
 
   const submit = async (e: FormEvent<HTMLFormElement>) => {
@@ -609,19 +656,32 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
       try {
         for (let i = 0; i < plan.times.length; i++) {
           const opens = plan.times[i];
-          const r = await act({ ...body, codes_text: lines[i], opens_at: lagosInput(new Date(opens).toISOString()), closes_at: lagosInput(new Date(opens + windowMs).toISOString()) }, (m) => (reason = m));
+          const r = await act(
+            {
+              ...body,
+              // Mystery drops carry their place in the title ("Dave's concert · 2/5"): Hoppers' screens read it, never show it.
+              title: mysteryOn ? `${baseTitle}${dropMark(i + 1, plan.times.length)}` : body.title,
+              codes_text: lines[i],
+              opens_at: lagosInput(new Date(opens).toISOString()),
+              closes_at: lagosInput(new Date(opens + windowMs).toISOString()),
+            },
+            (m) => (reason = m),
+          );
           if (!r) break;
           done++;
         }
+      } catch {
+        // The connection dropped part way: a drop may or may not have been saved, so staff look at the list.
+        reason = "network";
       } finally {
         setRunning(false);
       }
-      if (done === plan.times.length) {
+      if (done === plan.times.length && !reason) {
         setOutcome(`${done} of ${done} scheduled.`);
         say(`${done} DROPS SCHEDULED`, "violet");
         setCodes("");
       } else {
-        setOutcome(`${done} of ${plan.times.length} scheduled. Stopped: ${reason || "that did not work."}`);
+        setOutcome(`${done} of ${plan.times.length} scheduled. Stopped: ${reason || "that did not work."} Check the list.`);
       }
       return;
     }
@@ -648,7 +708,7 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
       </label>
       <label className="label">
         Title
-        <input name="title" required minLength={2} maxLength={60} placeholder="Find the Dave ticket" />
+        <input name="title" required minLength={2} maxLength={60} placeholder="Find the Dave ticket" value={title} onChange={(e) => setTitle(e.target.value)} />
       </label>
 
       <div role="radiogroup" aria-label="When" className="flex gap-2">
@@ -696,9 +756,25 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
                   <input type="number" inputMode="numeric" min={2} max={24} value={drops} onChange={(e) => setDrops(e.target.value)} data-gt-repeat-drops />
                 </label>
               </div>
-              <p className="hint mt-1">One code per line, one per drop. Each drop opens the same time after the last and stays open as long as the first.</p>
-              {(plan.problem || codeProblem) && <p className="hint mt-1 !text-fireant" data-gt-repeat-problem>{plan.problem || codeProblem}</p>}
+              <label className="flex min-h-[44px] items-center gap-2 font-body text-[13px]">
+                <input type="checkbox" role="switch" className="!h-4 !w-4 flex-none" checked={mystery} onChange={(e) => setMystery(e.target.checked)} data-gt-mystery-switch />
+                <span>
+                  <b className="text-cream">MYSTERY TIMES</b>: drops 2 onward open at a random moment
+                </span>
+              </label>
+              <p className="hint mt-1">
+                {mystery
+                  ? "Drop 1 opens at the exact time. Each later drop opens at a random moment in its slot. Titles get a counter (Dave's concert · 2/5). Hoppers never see a countdown after drop 1."
+                  : "One code per line, one per drop. Each drop opens the same time after the last and stays open as long as the first. Hoppers see a countdown for each."}
+              </p>
+              {(plan.problem || codeProblem || titleProblem) && <p className="hint mt-1 !text-fireant" data-gt-repeat-problem>{plan.problem || codeProblem || titleProblem}</p>}
+              {firstPast && <p className="hint mt-1 !text-fireant" data-gt-repeat-past>The first opens time is in the past. Pick a time ahead or the first drop will be refused.</p>}
               {preview && <p className="hint mt-1" data-gt-repeat-preview>{preview}</p>}
+              {mysteryOn && plan.times.length > 0 && (
+                <button type="button" className="btn btn-ghost mt-1 px-3 py-2" onClick={() => setSeed(Math.floor(Math.random() * 2 ** 31))} data-gt-mystery-shuffle>
+                  <RefreshCw size={14} /> SHUFFLE TIMES
+                </button>
+              )}
             </>
           )}
         </div>

@@ -1,4 +1,5 @@
 import { getSupabase } from "@/lib/supabase/client";
+import { parseDrop, withDrop } from "./drops";
 import type { GtAnswer, GtHint, GtListGame, GtReason, GtState, GtTicket } from "./types";
 
 /**
@@ -44,7 +45,8 @@ export async function fetchState(crewId: string): Promise<StateResult> {
     const { data, error } = await sb.rpc("game_time_state", { p_crew: crewId });
     const receivedAt = Date.now();
     if (error) return { ok: false, sentAt, receivedAt };
-    return { ok: true, state: (data as GtState | null) ?? null, sentAt, receivedAt };
+    const state = (data as GtState | null) ?? null;
+    return { ok: true, state: state && state.game ? { ...state, game: withDrop(state.game) } : state, sentAt, receivedAt };
   } catch {
     return { ok: false, sentAt, receivedAt: Date.now() };
   }
@@ -69,7 +71,7 @@ export async function searchObject(crewId: string, object: string): Promise<GtAn
         kind: "win",
         code: a.code,
         gameId: String(a.game_id ?? ""),
-        title: String(a.title ?? ""),
+        title: parseDrop(String(a.title ?? "")).title,
         object: String(a.object ?? object),
         boxesLeft: Number(a.boxes_left) || 0,
         gameOver: a.game_over === true,
@@ -93,7 +95,7 @@ export async function fetchList(): Promise<{ ok: boolean; games: GtListGame[]; s
     const { data, error } = await sb.rpc("game_time_list");
     if (error || !data) return { ok: false, games: [], serverNow: null };
     const d = data as { server_now?: string; games?: GtListGame[] };
-    return { ok: true, games: Array.isArray(d.games) ? d.games : [], serverNow: d.server_now ?? null };
+    return { ok: true, games: Array.isArray(d.games) ? d.games.map(withDrop) : [], serverNow: d.server_now ?? null };
   } catch {
     return { ok: false, games: [], serverNow: null };
   }
@@ -106,7 +108,7 @@ export async function fetchTickets(): Promise<{ ok: boolean; tickets: GtTicket[]
   try {
     const { data, error } = await sb.rpc("my_game_time_wins");
     if (error) return { ok: false, tickets: [] };
-    return { ok: true, tickets: Array.isArray(data) ? (data as GtTicket[]) : [] };
+    return { ok: true, tickets: Array.isArray(data) ? (data as GtTicket[]).map((t) => ({ ...t, title: parseDrop(String(t.title ?? "")).title })) : [] };
   } catch {
     return { ok: false, tickets: [] };
   }

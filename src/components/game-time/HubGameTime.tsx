@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowDown, DoorOpen, Ticket } from "lucide-react";
 import { clockText, lagosWhen, useServerNow } from "@/lib/game-time/clock";
+import { isMystery, ticketsLeft, ticketsText } from "@/lib/game-time/drops";
 import { useHubGame } from "@/lib/game-time/hooks";
 import type { GtOverReason } from "@/lib/game-time/types";
 
@@ -23,7 +24,9 @@ export default function HubGameTime({ crewId, isMember }: { crewId: string; isMe
   const live = game.status === "live";
   const over = game.status === "over";
   const openIn = Date.parse(game.opens_at) - now;
-  const soon = game.status === "upcoming" && openIn <= 10 * 60_000;
+  // Drop 2 onward of a series: no countdown, no exact time, no "starting soon".
+  const mystery = game.status === "upcoming" && isMystery(game);
+  const soon = game.status === "upcoming" && !mystery && openIn <= 10 * 60_000;
   const left = `${game.boxes_left} of ${game.boxes_total} ${game.boxes_total === 1 ? "box" : "boxes"} left`;
 
   return (
@@ -45,10 +48,12 @@ export default function HubGameTime({ crewId, isMember }: { crewId: string; isMe
               ? `${game.boxes_total - game.boxes_left} of ${game.boxes_total} found.`
               : live
                 ? `${left}. First to find one wins a ticket.`
-                : `Opens ${lagosWhen(game.opens_at)}. ${game.boxes_total} ${game.boxes_total === 1 ? "box" : "boxes"} hiding in the room.`}
+                : mystery
+                  ? `${ticketsText(ticketsLeft(game) ?? 0)}. The next one can drop soon. Check in.`
+                  : `Opens ${lagosWhen(game.opens_at)}. ${game.boxes_total} ${game.boxes_total === 1 ? "box" : "boxes"} hiding in the room.`}
           </p>
         </div>
-        {!over && (
+        {!over && !mystery && (
           <p className="flex-none text-right font-display text-[22px] font-black leading-none tabular-nums" aria-label={live ? "Time left" : "Opens in"}>
             {clockText(live ? Date.parse(game.closes_at) - now : openIn)}
           </p>

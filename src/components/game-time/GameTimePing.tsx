@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { DoorOpen, Ticket, X } from "lucide-react";
 import { requireAccount } from "@/lib/accountGate";
 import { clockText, useServerNow } from "@/lib/game-time/clock";
+import { isMystery } from "@/lib/game-time/drops";
 import { dismissPing, pingDismissed, usePingGames } from "@/lib/game-time/hooks";
 import type { GtListGame } from "@/lib/game-time/types";
 import { useToast } from "@/lib/store";
@@ -20,17 +21,20 @@ import { useSession } from "@/lib/useSession";
  * are not pinged: there is nothing for them to win.
  *
  * It stays quiet where it would be in the way: inside the crew's own room and hub (they have their own banner), the
- * full-screen tasks, and the staff desk. A Hopper who has won has nothing left to hunt, so it never shows for them.
+ * full-screen tasks, and the staff desk. A Hopper who has won has nothing left to hunt, so it never shows for them. Drop 2
+ * onward of a mystery series (drops.ts) shows nothing until it is live.
  */
 
 const QUIET = [/^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/, /^\/auth/, /^\/reset/];
 
-function pick(games: GtListGame[], path: string, gone: ReadonlySet<string>): GtListGame | null {
+function pick(games: GtListGame[], path: string, gone: ReadonlySet<string>, now: number): GtListGame | null {
   const open = games.filter(
     (g) =>
       !g.won &&
       g.boxes_left > 0 &&
       !g.blocked &&
+      // Drop 2 onward stays quiet until it is live: a card with a countdown would give the time away.
+      !(isMystery(g) && Date.parse(g.opens_at) - now > 0) &&
       (g.is_member || g.join_in_time) &&
       !pingDismissed(g.id) &&
       !gone.has(g.id) &&
@@ -51,7 +55,7 @@ export default function GameTimePing() {
   const games = usePingGames(!!userId && state === "ready" && !quiet);
   const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
   const now = useServerNow(1000);
-  const game = quiet ? null : pick(games, path, gone);
+  const game = quiet ? null : pick(games, path, gone, now);
   if (!game) return null;
 
   const close = () => {

@@ -208,9 +208,9 @@
   letter-spacing: 0.08em;
   text-align: left;
   text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* "4 tickets left · next one can drop soon. Check in." may need two lines on a small phone */
+  white-space: normal;
+  overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
 button.ticket {

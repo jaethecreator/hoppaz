@@ -9,6 +9,9 @@ export type GtHint = "hot" | "warm" | "cold";
 /** Why a crew member cannot hunt: the email on the account was never confirmed, or they joined the crew too late for this game. */
 export type GtBlocked = "need_confirmed" | "joined_late";
 
+/** Drop `i` of `n` in a series of mystery drops, read off the end of the game's title (drops.ts). */
+export type GtDrop = { i: number; n: number };
+
 export type GtFound = { id: number; at: string; name: string; object: string; boxes_left: number };
 
 export type GtGame = {
@@ -16,7 +19,10 @@ export type GtGame = {
   crew_id: string;
   crew_name: string;
   brand: string;
+  /** Without the " · i/N" marker of a series. */
   title: string;
+  /** Which drop of a series this game is; null for a plain game. */
+  drop?: GtDrop | null;
   status: GtStatus;
   over_reason: GtOverReason | null;
   opens_at: string;
@@ -46,6 +52,7 @@ export type GtListGame = {
   brand: string;
   verified: boolean;
   title: string;
+  drop?: GtDrop | null;
   status: "upcoming" | "live";
   opens_at: string;
   closes_at: string;
