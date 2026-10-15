@@ -37,6 +37,28 @@ const FLY_MS = 300;
 /** Below this card width (px) a card uses its short wording. */
 const NARROW = 244;
 
+/** The nudge that shows a new Hopper the cards move: first after this long, then again after this long without a touch, a few times a visit. */
+const HINT_FIRST_MS = 1600;
+const HINT_AGAIN_MS = 8000;
+const HINT_MAX = 3;
+const HINT_MS = 1500;
+/** Set once this phone has swiped, so the nudge stops for good. */
+const SWIPED_KEY = "hoppaz.swiped";
+const hasSwiped = () => {
+  try {
+    return localStorage.getItem(SWIPED_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const markSwiped = () => {
+  try {
+    localStorage.setItem(SWIPED_KEY, "1");
+  } catch {
+    /* private window: the nudge just keeps its per-visit limit */
+  }
+};
+
 const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const EASE = "cubic-bezier(.2,.8,.2,1)";
 
@@ -60,6 +82,7 @@ export default function SwipeStack({
   lead,
   api,
   keys = true,
+  hint = true,
 }: {
   /** The pile, top first. Only the first three are drawn. */
   ids: string[];
@@ -78,6 +101,8 @@ export default function SwipeStack({
   api?: MutableRefObject<StackApi | null>;
   /** Arrow keys swipe. Off while something sits on top of the deck. */
   keys?: boolean;
+  /** The top card nudges right then left now and then until this phone's first swipe. Off while something sits on top of the deck. */
+  hint?: boolean;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const els = useRef(new Map<string, HTMLDivElement>());
@@ -176,16 +201,82 @@ export default function SwipeStack({
     onPosRef.current?.(Math.min(1, Math.abs(dx) / w));
   };
 
+  /* --------------------------------------------------------------- hint -- */
+  // A new Hopper may not know the cards move: the top card leans to the going side with a faint WE OUTSIDE, then
+  // to the other with a faint NAH, and settles. Web Animations sit over the inline pose and leave it as it was.
+  const hintAnims = useRef<Animation[]>([]);
+  const lastTouch = useRef(0);
+  const hintsPlayed = useRef(0);
+  const stopHint = useCallback(() => {
+    hintAnims.current.forEach((a) => a.cancel());
+    hintAnims.current = [];
+  }, []);
+
+  const playHint = useCallback(() => {
+    const id = topRef.current;
+    const el = id ? els.current.get(id) : null;
+    if (!el || typeof el.animate !== "function") return;
+    stopHint();
+    const lean = (side: number) => `translate3d(${side * 26}px,0,0) rotate(${side * 1.5}deg)`;
+    const still = poseCss(rest(0));
+    const opts: KeyframeAnimationOptions = { duration: HINT_MS, easing: "ease-in-out" };
+    const fade = (at: number) => [
+      { opacity: 0, offset: 0 },
+      { opacity: 0, offset: Math.max(0, at - 0.2) },
+      { opacity: 0.6, offset: at },
+      { opacity: 0, offset: Math.min(1, at + 0.2) },
+      { opacity: 0, offset: 1 },
+    ];
+    const anims = [
+      el.animate(
+        [
+          { transform: still, offset: 0 },
+          { transform: lean(IN_SIDE), offset: 0.25 },
+          { transform: still, offset: 0.5 },
+          { transform: lean(-IN_SIDE), offset: 0.72 },
+          { transform: still, offset: 1 },
+        ],
+        opts
+      ),
+    ];
+    if (stamps.current.in) anims.push(stamps.current.in.animate(fade(0.25), opts));
+    if (stamps.current.pass) anims.push(stamps.current.pass.animate(fade(0.72), opts));
+    hintAnims.current = anims;
+    hintsPlayed.current += 1;
+  }, [stopHint]);
+
+  const hintOn = hint && !!top && !flyer;
+  useEffect(() => {
+    if (!hintOn || reduced() || hasSwiped()) return;
+    let t: ReturnType<typeof setTimeout>;
+    const wait = (ms: number) => {
+      t = setTimeout(() => {
+        if (hintsPlayed.current >= HINT_MAX || hasSwiped()) return;
+        const idle = performance.now() - lastTouch.current;
+        if (drag.current || idle < HINT_AGAIN_MS * 0.5) return wait(HINT_AGAIN_MS);
+        playHint();
+        wait(HINT_AGAIN_MS);
+      }, ms);
+    };
+    wait(hintsPlayed.current ? HINT_AGAIN_MS : HINT_FIRST_MS);
+    return () => {
+      clearTimeout(t);
+      stopHint();
+    };
+  }, [hintOn, playHint, stopHint]);
+
   /** Send the top card off the screen and hand it to the page. */
   const commit = useCallback(
     (dir: SwipeDir, from = { x: 0, y: 0 }) => {
       const id = topRef.current;
       if (!id || flyer) return;
+      stopHint();
+      markSwiped();
       justLeft.current = id;
       setFlyer({ id, dir, x: from.x, y: from.y, n: Date.now(), text: dir === "pass" ? "NAH" : "WE OUTSIDE" });
       onSwipeRef.current(id, dir);
     },
-    [flyer]
+    [flyer, stopHint]
   );
 
   useEffect(() => {
@@ -237,6 +328,8 @@ export default function SwipeStack({
 
   const onDown = (e: React.PointerEvent) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    lastTouch.current = performance.now();
+    stopHint();
     if (!topRef.current || flyer) return;
     drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), live: false, dx: 0, dy: 0, trail: [] };
   };

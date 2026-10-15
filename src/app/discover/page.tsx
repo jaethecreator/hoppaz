@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Share2, X } from "lucide-react";
+import { Share2, Undo2, X } from "lucide-react";
 import DayPick from "@/components/pick/DayPick";
 import EventCard from "@/components/EventCard";
 import { SIDE_PANEL, sidePanelWidth } from "@/components/event/side";
@@ -359,6 +359,17 @@ export default function TodayPage() {
   useEffect(() => {
     filmingRef.current = filming;
   });
+  // A left swipe can be a slip: for a few seconds a GO BACK button puts that card back on top.
+  const [undoId, setUndoId] = useState<string | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearUndo = useCallback(() => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = null;
+    setUndoId(null);
+  }, []);
+  useEffect(() => clearUndo, [clearUndo]);
+  // Another night is another pile: the card to go back to is not on it.
+  useEffect(() => clearUndo(), [deckKey, clearUndo]);
   const onSwipe = useCallback(
     (id: string, dir: SwipeDir) => {
       snapTick();
@@ -368,9 +379,25 @@ export default function TodayPage() {
       logSwipe(id, dir === "in" ? "right" : "left");
       const e = byId.get(id);
       if (dir === "in" && e) void swipeInRef.current(e);
+      if (dir === "in") {
+        clearUndo();
+        return;
+      }
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+      setUndoId(id);
+      undoTimer.current = setTimeout(() => {
+        undoTimer.current = null;
+        setUndoId(null);
+      }, 5000);
     },
-    [move, byId]
+    [move, byId, clearUndo]
   );
+  const goBack = () => {
+    if (!undoId) return;
+    snapTick();
+    move(undoId, "front");
+    clearUndo();
+  };
 
   /* ------------------------------------------------- the WE OUTSIDE list -- */
   const groups = useEventGroups(userId);
@@ -558,12 +585,25 @@ export default function TodayPage() {
                 )}
               </div>
             ) : (
-              <div key={deckKey} className="flex min-h-0 flex-1 animate-fade flex-col">
+              <div key={deckKey} className="relative flex min-h-0 flex-1 animate-fade flex-col">
+                {undoId && byId.has(undoId) && (
+                  <button
+                    key={undoId}
+                    type="button"
+                    onClick={goBack}
+                    aria-label={`Go back to ${eventTitle(byId.get(undoId)!)}`}
+                    className="absolute left-1/2 top-2 z-20 inline-flex h-[38px] -translate-x-1/2 animate-fade items-center gap-[7px] rounded-full border border-line bg-ink-2/90 pl-[11px] pr-[14px] font-mono text-[9.5px] font-medium uppercase tracking-[0.12em] text-cream shadow-lg backdrop-blur transition-transform active:scale-[0.94]"
+                  >
+                    <Undo2 size={15} strokeWidth={2.2} className="text-orange" aria-hidden />
+                    Go back
+                  </button>
+                )}
                 <SwipeStack
                   ids={pileIds}
                   api={stack}
                   onSwipe={onSwipe}
                   onPos={onPos}
+                  hint={!event && !story && !listOpen && !filming}
                   lead={
                     <button
                       type="button"
