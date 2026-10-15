@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { DoorOpen, Ticket } from "lucide-react";
+import { ArrowDown, DoorOpen, Ticket } from "lucide-react";
 import { clockText, lagosWhen, useServerNow } from "@/lib/game-time/clock";
 import { useHubGame } from "@/lib/game-time/hooks";
 import type { GtOverReason } from "@/lib/game-time/types";
@@ -55,12 +55,24 @@ export default function HubGameTime({ crewId, isMember }: { crewId: string; isMe
         )}
       </div>
       {!over && (isMember ? (
-        <Link href={room} className="btn mt-3 w-full text-[14px]" data-gt-hub-enter>
-          <DoorOpen size={18} aria-hidden /> {live && !me.won ? "ENTER ROOM AND HUNT" : "ENTER ROOM"}
-        </Link>
+        <>
+          <Link href={room} className="btn mt-3 w-full text-[14px]" data-gt-hub-enter>
+            <DoorOpen size={18} aria-hidden /> {live && !me.won && !me.blocked ? "ENTER ROOM AND HUNT" : "ENTER ROOM"}
+          </Link>
+          {me.blocked && !me.won && (
+            <p className="hint mt-2" data-gt-hub-blocked>
+              {me.blocked === "need_confirmed" ? "Confirm your email to hunt. Check your inbox. You can still come watch." : "You joined too late to hunt this one. Come watch."}
+            </p>
+          )}
+        </>
+      ) : game.join_in_time ? (
+        // Not a button: the real one, JOIN AND WALK IN, is the next thing on the page.
+        <p className="hint mt-3 flex items-center gap-1.5 text-cream" data-gt-hub-join>
+          <ArrowDown size={14} aria-hidden className="flex-none" /> Join the crew below to hunt.
+        </p>
       ) : (
-        <p className="mt-3 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-cream" data-gt-hub-join>
-          JOIN THE CREW TO HUNT
+        <p className="hint mt-3" data-gt-hub-join>
+          This one is for members who joined before it opened. Join for the next one.
         </p>
       ))}
       {me.won && (

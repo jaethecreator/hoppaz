@@ -46,9 +46,9 @@ create function pg_temp.admin() returns void language plpgsql as $$ begin execut
 create function pg_temp.newuser(guest boolean default false, nm text default 'Tester') returns uuid language plpgsql as $$
 declare u uuid := gen_random_uuid();
 begin
-  insert into auth.users (id, instance_id, aud, role, email, is_anonymous, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+  insert into auth.users (id, instance_id, aud, role, email, email_confirmed_at, is_anonymous, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
   values (u, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-          case when guest then null else 'gt-' || u || '@gametime.invalid' end, guest, '{}', json_build_object('name', nm)::jsonb, now(), now());
+          case when guest then null else 'gt-' || u || '@gametime.invalid' end, case when guest then null else now() end, guest, '{}', json_build_object('name', nm)::jsonb, now(), now());
   update public.profiles set display_name = nm, handle = lower(nm) || '_' || substr(u::text, 1, 6) where id = u;
   return u;
 end $$;
@@ -372,6 +372,75 @@ begin
   perform pg_temp.ok((select searches from public.game_time_players where game_id = gid and user_id = b) = 3, 'counted searches: the three that were answered');
 end $t$;
 
+-- ================================== 3b. who may hunt: a confirmed email, joined in time ===
+do $t$
+declare
+  crew uuid := pg_temp.id('crew'); gid uuid := pg_temp.id('g1'); b uuid := pg_temp.id('b');
+  u uuid := pg_temp.newuser(false, 'Fresh');
+  x1 uuid := pg_temp.newuser(false, 'Early'); x2 uuid := pg_temp.newuser(false, 'Late'); x3 uuid := pg_temp.newuser(false, 'Mailless');
+  boss uuid := pg_temp.newuser(false, 'Boss');
+  crew3 uuid := gen_random_uuid(); g3 uuid; gg public.game_times; r jsonb; s jsonb; l jsonb;
+begin
+  -- an email that was never confirmed cannot hunt, in the search or in the state
+  insert into public.crew_members (crew_id, user_id, role) values (crew, u, 'member');
+  update auth.users set email_confirmed_at = null where id = u;
+  perform pg_temp.place(crew, u, 3, 3);
+  perform pg_temp.refuse(crew, u, 'mixing-desk', 'need_confirmed');
+  s := pg_temp.state(crew, u);
+  perform pg_temp.ok(s->'me'->>'blocked' = 'need_confirmed' and s->'me'->>'can_search' = 'false' and s->'me'->>'member' = 'true',
+    'an unconfirmed email is told to confirm and cannot search');
+  perform pg_temp.actor(u); l := public.game_time_list(); perform pg_temp.admin();
+  perform pg_temp.ok((select x->>'blocked' from jsonb_array_elements(l->'games') x where x->>'id' = gid::text) = 'need_confirmed',
+    'the global ping knows the member is blocked');
+  update auth.users set email_confirmed_at = now() where id = u;
+  perform pg_temp.ok(pg_temp.state(crew, u)->'me'->>'can_search' = 'true' and pg_temp.state(crew, u)->'me' ? 'blocked' and pg_temp.state(crew, u)->'me'->'blocked' = 'null'::jsonb,
+    'once the email is confirmed the same account can search');
+  perform pg_temp.ok((select min_member_minutes from public.game_times where id = gid) = 0 and pg_temp.state(crew, b)->'game'->>'join_in_time' = 'true',
+    'the default asks for no minimum time as a member');
+  perform pg_temp.update_refuses(gid, '{"min_member_minutes": 30}', 'already_open');
+  perform pg_temp.update_refuses(gid, '{"min_member_minutes": 99999}', 'bad_members');
+
+  -- a game that wants members from before it opened
+  insert into public.crews (id, name, created_by, visibility) values (crew3, 'Members only hunt', boss, 'open');
+  insert into public.crew_members (crew_id, user_id, role) values (crew3, boss, 'owner'), (crew3, x1, 'member'), (crew3, x2, 'member'), (crew3, x3, 'member');
+  update public.crew_members set joined_at = clock_timestamp() - interval '3 hours' where crew_id = crew3 and user_id in (boss, x1, x3);
+  update auth.users set email_confirmed_at = null where id = x3;
+  perform public._crew_room_ensure(crew3);
+  perform pg_temp.create_refuses((pg_temp.args(crew3) - 'opens_at' - 'closes_at') || '{"start_now": true, "duration_minutes": 60, "min_member_minutes": -5}', 'bad_members');
+  perform pg_temp.create_refuses((pg_temp.args(crew3) - 'opens_at' - 'closes_at') || '{"start_now": true, "duration_minutes": 60, "min_member_minutes": 20000}', 'bad_members');
+  perform pg_temp.create_refuses((pg_temp.args(crew3) - 'opens_at' - 'closes_at') || '{"start_now": true, "duration_minutes": 60, "min_member_minutes": "soon"}', 'bad_members');
+  perform pg_temp.create_refuses((pg_temp.args(crew3) - 'opens_at' - 'closes_at') || '{"start_now": true, "duration_minutes": 60, "silent": "yes"}', 'bad_args');
+  r := public.admin_game_time_create((pg_temp.args(crew3) - 'opens_at' - 'closes_at') || '{"start_now": true, "duration_minutes": 60, "min_member_minutes": 30, "silent": true, "codes": ["M-1", "M-2"]}');
+  perform pg_temp.ok(r->>'ok' = 'true' and r->'game'->>'min_member_minutes' = '30' and r->'game'->>'status' = 'live', 'staff make a game for members of at least 30 minutes');
+  g3 := (r->'game'->>'id')::uuid;
+  perform pg_temp.ok((select push_sent_at is not null and push_count = 0 from public.game_times where id = g3), 'a silent game is marked as pushed, so no opening push goes out');
+  perform pg_temp.ok(r->'game' ? 'cron_ready' and r->'game' ? 'room_capacity' and (r->'game'->>'room_capacity')::int > 0, 'the staff view tells the room cap and whether the minute tick runs');
+  perform pg_temp.arrange(g3, array['M-1', 'M-2'], array['mixing-desk', 'courtyard-fountain']);
+
+  perform pg_temp.place(crew3, x1, 3, 3);
+  perform pg_temp.place(crew3, x2, 3, 3);
+  perform pg_temp.place(crew3, x3, 3, 3);
+  perform pg_temp.refuse(crew3, x2, 'mixing-desk', 'joined_late');
+  perform pg_temp.refuse(crew3, x3, 'mixing-desk', 'need_confirmed');
+  s := pg_temp.state(crew3, x2);
+  perform pg_temp.ok(s->'me'->>'blocked' = 'joined_late' and s->'me'->>'can_search' = 'false' and s->'game'->>'join_in_time' = 'false',
+    'a Hopper who joined late is told so, and joining now is too late for this game');
+  perform pg_temp.ok(pg_temp.state(crew3, x1)->'me'->>'can_search' = 'true', 'a Hopper who joined 3 hours before can search');
+  perform pg_temp.actor(x2); l := public.game_time_list(); perform pg_temp.admin();
+  perform pg_temp.ok((select x->>'blocked' = 'joined_late' and x->>'join_in_time' = 'false' from jsonb_array_elements(l->'games') x where x->>'id' = g3::text), 'the ping flags the late member');
+  perform pg_temp.ok((pg_temp.go(crew3, x1, 3, 4, 'studio-speaker-l'))->>'result' = 'nothing', 'the early member searches');
+  gg := (select g from public.game_times g where g.id = g3);
+  perform pg_temp.ok(public._gt_blocked(gg, x1) is null and public._gt_blocked(gg, x2) = 'joined_late' and public._gt_blocked(gg, x3) = 'need_confirmed' and public._gt_blocked(gg, null) = 'need_confirmed',
+    'blocked, checked directly');
+  -- the minimum is measured to the opening: someone who joined 40 minutes before was fine for a 30 minute game
+  update public.crew_members set joined_at = clock_timestamp() - interval '45 minutes' where crew_id = crew3 and user_id = x2;
+  perform pg_temp.ok((pg_temp.go(crew3, x2, 3, 4, 'studio-speaker-l'))->>'result' = 'nothing', 'joining 45 minutes before the opening satisfies 30');
+  -- the helpers are closed to Hoppers
+  perform pg_temp.fail_as(x2, format('select public._gt_blocked(null::public.game_times, %L)', x2), 'permission denied');
+  perform pg_temp.fail_as(x2, 'select public._gt_cron_ready()', 'permission denied');
+  perform public.admin_game_time_close(g3);
+end $t$;
+
 -- ============================================================= 4. the hint ===
 do $t$
 declare
@@ -515,6 +584,10 @@ begin
     and rows->0->>'email' like 'gt-%@gametime.invalid' and rows->1->>'code' = 'T-TWO' and rows->0->>'object' = 'mixing-desk' and rows->0->>'crew_name' = 'Test 360 Play List',
     'winners: handle, name, email, code, object, oldest first');
   perform pg_temp.ok(jsonb_array_length((public.admin_game_time_winners(null))->'winners') >= 5, 'all winners, every game');
+  perform pg_temp.ok(rows->0->>'email_confirmed' = 'true' and rows->0 ? 'account_created' and rows->0 ? 'joined_crew' and rows->0 ? 'joined_mins_before_open'
+    and rows->0 ? 'account_mins_before_open' and (rows->0->>'searches')::int >= 1 and (rows->0->>'secs_after_open')::numeric >= 0 and jsonb_typeof(rows->0->'flags') = 'array',
+    'winners also carry account age, confirmed email, when they joined, searches, seconds after the opening and flags');
+  perform pg_temp.ok(rows->0->'flags' ? 'ACCOUNT UNDER 1 HOUR OLD', 'a brand new account is flagged for staff');
 end $t$;
 
 -- ============================================ 7. relocation and a changed room ===
@@ -832,9 +905,9 @@ delete from auth.users where email like 'gtconc-%@gametime.invalid';
 
 -- 52 Hoppers: 01 to 50 are the crowd, 51 searches against itself, 52 is spare. One private crew, one live game with three boxes.
 begin;
-insert into auth.users (id, instance_id, aud, role, email, is_anonymous, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+insert into auth.users (id, instance_id, aud, role, email, email_confirmed_at, is_anonymous, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select gen_random_uuid(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-       'gtconc-' || lpad(i::text, 2, '0') || '@gametime.invalid', false, '{}', json_build_object('name', 'Crowd ' || i)::jsonb, now(), now()
+       'gtconc-' || lpad(i::text, 2, '0') || '@gametime.invalid', now(), false, '{}', json_build_object('name', 'Crowd ' || i)::jsonb, now(), now()
   from generate_series(1, 52) i;
 insert into public.crews (id, name, created_by, visibility)
 select gen_random_uuid(), 'GT CONCURRENCY', id, 'private' from auth.users where email = 'gtconc-01@gametime.invalid';
@@ -896,7 +969,8 @@ $sh$ as script \gset
 \set round1 `sh /tmp/gt_conc.sh mixing-desk`
 select pg_temp.must(:'round1' = 'sessions=50 held=yes wins=1 nothing=49 slow_down=0 all_found=0',
   '50 Hoppers search the same object at the same moment: exactly one wins, 49 find nothing (' || :'round1' || ')');
-select pg_temp.must((select count(*) from public.game_time_wins) = 1 and (select count(*) from public.game_time_boxes where claimed_by is not null) = 1,
+select pg_temp.must((select count(*) from public.game_time_wins w where w.game_id = (select id from public.game_times where title = 'Crowd test')) = 1
+  and (select count(*) from public.game_time_boxes b where b.game_id = (select id from public.game_times where title = 'Crowd test') and b.claimed_by is not null) = 1,
   'the database agrees: one win, one box claimed');
 
 select pg_sleep(3);

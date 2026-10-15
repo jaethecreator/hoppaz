@@ -6,6 +6,8 @@
 export type GtStatus = "upcoming" | "live" | "over";
 export type GtOverReason = "all_found" | "closed" | "time_up";
 export type GtHint = "hot" | "warm" | "cold";
+/** Why a crew member cannot hunt: the email on the account was never confirmed, or they joined the crew too late for this game. */
+export type GtBlocked = "need_confirmed" | "joined_late";
 
 export type GtFound = { id: number; at: string; name: string; object: string; boxes_left: number };
 
@@ -24,13 +26,15 @@ export type GtGame = {
   boxes_left: number;
   search_gap_ms: number;
   room_ok: boolean;
+  /** Joining the crew right now is early enough to hunt this game (false once a members-only minimum has passed). */
+  join_in_time: boolean;
   /** The ids of the props that may hide a box. Only while live, only for a member, and only when room_ok. */
   objects: string[];
   feed_tail: number;
   found: GtFound[];
 };
 
-export type GtMe = { member: boolean; won: boolean; code: string | null; won_at: string | null; can_search: boolean };
+export type GtMe = { member: boolean; won: boolean; code: string | null; won_at: string | null; blocked: GtBlocked | null; can_search: boolean };
 
 export type GtState = { server_now: string; game: GtGame | null; me: GtMe };
 
@@ -48,6 +52,8 @@ export type GtListGame = {
   boxes_total: number;
   boxes_left: number;
   is_member: boolean;
+  blocked: GtBlocked | null;
+  join_in_time: boolean;
   won: boolean;
 };
 
@@ -56,6 +62,8 @@ export type GtTicket = { id: string; game_id: string; crew_id: string; title: st
 /** The refusals of game_time_search (error.message), plus the two this app adds for a dropped connection and a lock wait. */
 export type GtReason =
   | "need_account"
+  | "need_confirmed"
+  | "joined_late"
   | "not_in_crew"
   | "no_game"
   | "not_open_yet"

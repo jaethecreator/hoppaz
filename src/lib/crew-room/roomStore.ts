@@ -12,6 +12,8 @@ import type { Tile } from "@/lib/campaign/geometry";
  * ME AND WALKING
  *   me         my tile right now (steps every 85 ms while walking), or null while watching a full room
  *   walkTo     walk my avatar to a tile: the same call a tap on the floor makes (null until the world is mounted)
+ *   walked     I have taken a step since I came in (set by the world's walk). The exit door waits for it: the pill must
+ *              not greet someone who only arrived next to the door (the entrance fills up and the next arrivals land beside it)
  *   tile       px per tile in world space (layout.grid.tile, 32). Set by the world when it mounts
  *   zone       the area or zone id I am standing in ("stage", "studio", "awards", "courtyard", "records", "campaign"
  *              for the zones; an area id for a conversation area, which wins over the zone), or null
@@ -56,6 +58,7 @@ export type RoomView = "full" | "me";
 type RoomStore = {
   me: Tile | null;
   walkTo: ((x: number, y: number) => void) | null;
+  walked: boolean;
   speaking: string[];
   huntActive: boolean;
   /** The one action pill that shows: the highest priority registered, or null. */
@@ -71,6 +74,7 @@ type RoomStore = {
   view: RoomView;
   setMe: (me: Tile | null) => void;
   setWalkTo: (walkTo: ((x: number, y: number) => void) | null) => void;
+  setWalked: () => void;
   setSpeaking: (ids: string[]) => void;
   setHuntActive: (active: boolean) => void;
   setAction: (action: RoomAction) => void;
@@ -108,6 +112,7 @@ const samePeers = (a: RoomPeerPoint[], b: RoomPeerPoint[]) =>
 const initial = {
   me: null,
   walkTo: null,
+  walked: false,
   speaking: [] as string[],
   huntActive: false,
   action: null,
@@ -126,6 +131,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   ...initial,
   setMe: (me) => set((s) => (s.me?.x === me?.x && s.me?.y === me?.y ? s : { me })),
   setWalkTo: (walkTo) => set({ walkTo }),
+  setWalked: () => set((s) => (s.walked ? s : { walked: true })),
   setSpeaking: (ids) => set((s) => (s.speaking.length === ids.length && s.speaking.every((id, i) => id === ids[i]) ? s : { speaking: ids })),
   setHuntActive: (huntActive) => set({ huntActive }),
   setAction: (action) => {

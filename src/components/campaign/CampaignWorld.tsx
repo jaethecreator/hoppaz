@@ -12,11 +12,14 @@ import type { Tile } from "@/lib/campaign/geometry";
 import { areaArrival, canWalkScene, privateAreaAt, scenePath, sceneSize, type CampaignLayout, type CampaignZone } from "@/lib/campaign/layout";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import type { CrewRoomConnection, RoomPeer, SocialWorld } from "@/lib/crew-room/types";
+import { deviceTier } from "@/lib/deviceTier";
 import { haptics } from "@/lib/haptics";
 import { sfx } from "@/lib/sound/sfx";
 import AvatarSprite from "./AvatarSprite";
 import ClubhouseArt from "./ClubhouseArt";
+import EdgeArrows from "./EdgeArrows";
 import { RoomCamera, type CamMode } from "./roomCamera";
+import { prioritise, spritesPending, spritesReady } from "./spriteCache";
 import css from "./Campaign.module.css";
 
 /** A walker whose last heartbeat is this old (ms) is shown as away: a locked phone or another app. The server keeps them 45 s. */
@@ -33,6 +36,11 @@ const PEER_MS = 300;
 const HOLD_MS = 1500;
 const HOLD_AGAIN_MS = 900;
 const ZOOM_MS = 900;
+/** The zoom waits this long at most (ms) for my avatar and the nearest Hopper to be drawn, so it never zooms onto blobs. */
+const SPRITES_WAIT_MS = 900;
+/** Hoppers drawn at once: every one in a crowd on a normal phone, the nearest 30 on a phone short of memory. */
+const DRAW_MAX = 120;
+const DRAW_MAX_LOW = 30;
 /** Under this scale an avatar is too small to pick. */
 const NEAR = 0.6;
 /** From this scale the area tags show. */
@@ -138,6 +146,7 @@ export default function CampaignWorld({
   const [lod, setLod] = useState(0);
   const [ring, setRing] = useState(0);
   const [nudge, setNudge] = useState(0);
+  const sheet = useRoomStore((s) => s.sheet);
   const [bump, setBump] = useState<{ x: number; y: number; k: number } | null>(null);
   const [say, setSay] = useState("");
   const uid = useId().replace(/:/g, "");
@@ -170,6 +179,8 @@ export default function CampaignWorld({
   const peers = useMemo(() => socialPeers?.filter((peer) => peer.id !== socialSelf) ?? [], [socialPeers, socialSelf]);
   const peersRef = useRef(peers);
   peersRef.current = peers;
+  const lookRef = useRef(look);
+  lookRef.current = look;
   const observedAt = social?.observedAt ?? "";
 
   // ---- The camera ----------------------------------------------------------------------------------------------
@@ -259,7 +270,16 @@ export default function CampaignWorld({
     }
     cam.goFull(0);
     setPhase("hold");
-    holdTimer.current = setTimeout(() => zoomInRef.current(ZOOM_MS), seen ? HOLD_AGAIN_MS : HOLD_MS);
+    holdTimer.current = setTimeout(
+      () => {
+        // Zoom once my avatar and the nearest few are drawn (they are first in the sprite queue), never onto blobs.
+        const near = [...peersRef.current].sort((a, b) => Math.hypot(a.x - current.current.x, a.y - current.current.y) - Math.hypot(b.x - current.current.x, b.y - current.current.y));
+        void spritesReady([lookRef.current, ...near.slice(0, 6).map((p) => p.look)], SPRITES_WAIT_MS).then(() => {
+          if (phase.current === "hold" && camRef.current === cam) zoomInRef.current(ZOOM_MS);
+        });
+      },
+      seen ? HOLD_AGAIN_MS : HOLD_MS,
+    );
     return () => {
       if (holdTimer.current) clearTimeout(holdTimer.current);
     };
@@ -301,6 +321,7 @@ export default function CampaignWorld({
         return true;
       }
       setWalking(true);
+      useRoomStore.getState().setWalked();
       const step = () => {
         const next = path[0];
         if (!next) {
@@ -458,20 +479,29 @@ export default function CampaignWorld({
     // Buttons, links and anything marked data-hit (a zone tag, the sticker, the door plate) take their own taps.
     const interactive = (target: EventTarget | null) => target instanceof Element && !!target.closest('button, a, input, textarea, select, [role="button"], [data-hit]');
 
-    /** The Hopper under a point in the viewport, if any: a 44 px target around the avatar at whatever zoom. */
-    const peerAt = (x: number, y: number): RoomPeer | null => {
+    /**
+     * The Hopper under a point in the viewport, if any: a 44 px target around the avatar at whatever zoom. Avatars stacked
+     * on one spot (the entrance fills up) are told apart by tapping again: `cycle` hands the tap to the next one under the
+     * finger each time, so the one at the bottom of the pile can be picked too.
+     */
+    let lastPick = { id: "", t: 0 };
+    const peerAt = (x: number, y: number, cycle = false): RoomPeer | null => {
       const reach = Math.max(14, Math.min(26, 30 * cam.s));
-      let hit: RoomPeer | null = null;
-      let best = reach;
+      const found: { p: RoomPeer; d: number }[] = [];
       for (const p of peersRef.current) {
         const at = cam.sceneToScreen((p.x + 0.5) * tile, (p.y + 0.5) * tile - 24);
         const d = Math.hypot(at.x - x, at.y - y);
-        if (d < best) {
-          best = d;
-          hit = p;
-        }
+        if (d < reach) found.push({ p, d });
       }
-      return hit;
+      if (!found.length) return null;
+      found.sort((a, b) => a.d - b.d || (a.p.id < b.p.id ? -1 : 1));
+      const pile = found.filter((f) => f.d - found[0].d < 7);
+      if (!cycle || pile.length < 2) return found[0].p;
+      pile.sort((a, b) => (a.p.id < b.p.id ? -1 : 1));
+      const prev = performance.now() - lastPick.t < 6000 ? pile.findIndex((f) => f.p.id === lastPick.id) : -1;
+      const pick = pile[(prev + 1) % pile.length].p;
+      lastPick = { id: pick.id, t: performance.now() };
+      return pick;
     };
 
     const tap = (cx: number, cy: number) => {
@@ -492,7 +522,7 @@ export default function CampaignWorld({
       lastTap = { t: now, x, y };
       // Another Hopper under the finger: a 44 px target around the avatar at whatever zoom. Close up the menu opens on
       // them; from far away the first tap just flies in.
-      const hit = peerAt(x, y);
+      const hit = peerAt(x, y, true);
       if (hit) {
         if (cam.s >= NEAR) {
           eatGhostClick();
@@ -645,16 +675,40 @@ export default function CampaignWorld({
     return { zones, areas };
   }, [layout, peers, player, watching]);
 
-  // Name tags: the nearest dozen within eight tiles of me, only once the avatars are big enough to pick.
+  // A phone short of memory draws the nearest few Hoppers only; the rest are still counted, heard and tappable in the menus.
+  const tier = useMemo(() => deviceTier(), []);
+  const drawn = useMemo(() => {
+    const max = tier === "low" ? DRAW_MAX_LOW : DRAW_MAX;
+    if (peers.length <= max) return peers;
+    const far = (p: RoomPeer) => Math.hypot(p.x - player.x, p.y - player.y);
+    return [...peers].sort((a, b) => far(a) - far(b)).slice(0, max);
+  }, [peers, player, tier]);
+
+  // The sprite queue (spriteCache.ts) draws me first and then the nearest Hopper, and follows me as I walk.
+  useEffect(() => {
+    if (!spritesPending()) return;
+    const far = (p: RoomPeer) => Math.hypot(p.x - player.x, p.y - player.y);
+    prioritise([look, ...[...drawn].sort((a, b) => far(a) - far(b)).map((p) => p.look)]);
+  }, [drawn, player, look]);
+
+  // Name tags: the nearest dozen within eight tiles of me, only once the avatars are big enough to pick. A tag that would
+  // sit on top of a nearer one (or on mine) is left off: a crowd at the door reads as a few names, not one smear.
   const tagged = useMemo(() => {
     if (lod < 1) return new Set<string>();
     const ranked = peers
-      .map((p) => ({ id: p.id, d: Math.hypot(p.x - player.x, p.y - player.y) }))
+      .map((p) => ({ id: p.id, x: p.x, y: p.y, d: Math.hypot(p.x - player.x, p.y - player.y) }))
       .filter((p) => p.d <= 8)
-      .sort((a, b) => a.d - b.d)
-      .slice(0, 12);
-    return new Set(ranked.map((p) => p.id));
-  }, [peers, player, lod]);
+      .sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : 1));
+    const placed: { x: number; y: number }[] = watching ? [] : [{ x: player.x, y: player.y }];
+    const out = new Set<string>();
+    for (const p of ranked) {
+      if (out.size >= 12) break;
+      if (placed.some((q) => Math.abs(q.x - p.x) < 2.4 && Math.abs(q.y - p.y) < 0.8)) continue;
+      placed.push(p);
+      out.add(p.id);
+    }
+    return out;
+  }, [peers, player, lod, watching]);
 
   // Zone tags: all six while the whole room shows; once the avatars are big enough to pick, only the three nearest to me
   // (the zone I stand in is hidden by CSS, its card says it).
@@ -715,7 +769,7 @@ export default function CampaignWorld({
               {props}
             </div>
             <div className={css.walkers}>
-              {peers.map((peer) => {
+              {drawn.map((peer) => {
                 const away = !!social && isAway(peer, observedAt);
                 return <Walker key={peer.id} id={peer.id} x={peer.x} y={peer.y} look={peer.look} name={peer.name} tile={tile} tag={tagged.has(peer.id)} away={away} />;
               })}
@@ -732,7 +786,7 @@ export default function CampaignWorld({
                     data-hit
                     data-zone-tag={zone.id}
                     className={`${css.zoneTag} ${inside ? css.zoneTagHere : ""}`}
-                    style={{ left: (zone.plaque.x + 0.5) * tile, top: (zone.id === "courtyard" ? zone.y : zone.plaque.y) * tile - 6 + (zone.id === "courtyard" ? 10 : 0) }}
+                    style={{ left: (zone.plaque.x + 0.5) * tile, top: (zone.id === "courtyard" ? zone.y : zone.plaque.y) * tile - 6 + (zone.id === "courtyard" ? -12 : 0) }}
                     aria-label={`${zone.name}${n ? `, ${n} here` : ""}. Walk there.`}
                     onClick={() => chooseZone(zone)}
                   >
@@ -771,6 +825,7 @@ export default function CampaignWorld({
             <div className={css.cards}>{cards}</div>
           </div>
         </div>
+        <EdgeArrows layout={layout} camRef={camRef} enabled={opened && lod >= 1 && !watching && sheet !== "full"} onGo={chooseZone} />
         <p className="sr-only" role="status" aria-live="polite">
           {walking ? "Walking" : say}
         </p>

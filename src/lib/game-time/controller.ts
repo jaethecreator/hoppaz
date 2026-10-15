@@ -7,7 +7,7 @@ import { getSupabase } from "@/lib/supabase/client";
 import { fetchState, searchObject, type StateResult } from "./api";
 import { noteServerTime, serverNow } from "./clock";
 import { NO_ME, useGameTime, type GtChip } from "./store";
-import type { GtAnswer, GtFound, GtGame, GtReason } from "./types";
+import type { GtAnswer, GtFound, GtGame, GtMe, GtReason } from "./types";
 
 /**
  * The Game Time controller: keeps the store (store.ts) true to the database for one room.
@@ -55,6 +55,30 @@ type Ctl = {
 
 let current: Ctl | null = null;
 let seq = 0;
+
+/**
+ * Has this device shown the win sheet for this code? A win is claimed on the server before the answer travels back, so on
+ * a bad connection the phone can miss it. A poll that later brings `me.code` opens the sheet once, unless this device
+ * has shown it already (here or on an earlier visit). Keyed by game and code, so a second account on one phone still gets its own.
+ */
+const shown = new Set<string>();
+const sheetKey = (gameId: string, code: string) => `hz-gt-won-${gameId}-${code}`;
+function sheetSeen(gameId: string, code: string): boolean {
+  if (shown.has(sheetKey(gameId, code))) return true;
+  try {
+    return localStorage.getItem(sheetKey(gameId, code)) === "1";
+  } catch {
+    return false;
+  }
+}
+function markSheetSeen(gameId: string, code: string) {
+  shown.add(sheetKey(gameId, code));
+  try {
+    localStorage.setItem(sheetKey(gameId, code), "1");
+  } catch {
+    /* storage blocked: it can open again on the next visit, which only shows the Hopper their own code */
+  }
+}
 
 /** Change the store without holding on to it. */
 const patch = (p: Parameters<ReturnType<typeof useGameTime.getState>["patch"]>[0]) => useGameTime.getState().patch(p);
@@ -210,6 +234,22 @@ export function startGameTime(crewId: string): () => void {
     if (game) handleFound(game);
     ensureChannel(game && game.status !== "over" ? game.id : null);
     kick(game);
+    recoverWin(game, me);
+  };
+
+  /**
+   * The database says this Hopper holds a code from this game, and no sheet has shown it on this device: the answer to
+   * their winning search was lost on the way (Lagos mobile data). Open the sheet now and clear the "NO SIGNAL" chip.
+   */
+  const recoverWin = (game: GtGame | null, me: GtMe) => {
+    if (!game || !me.code || sheetSeen(game.id, me.code)) return;
+    const st = store.getState();
+    // A search still out will bring its own answer; a sheet already up needs nothing.
+    if (st.searching || st.win) return;
+    markSheetSeen(game.id, me.code);
+    patch({ win: { code: me.code, title: game.title, object: "", gameId: game.id, over: game.status === "over", fresh: true }, chip: null, cooling: false });
+    sfx.motif("full");
+    haptics.buzz("burstBig");
   };
 
   async function poll() {
@@ -275,6 +315,8 @@ export function refreshGameTime() {
 
 const REFUSED: Record<GtReason, { text: string; tone: GtChip["tone"]; refresh?: boolean }> = {
   need_account: { text: "SIGN UP TO HUNT", tone: "warn" },
+  need_confirmed: { text: "CONFIRM YOUR EMAIL TO HUNT", tone: "warn", refresh: true },
+  joined_late: { text: "YOU JOINED TOO LATE. WATCH.", tone: "info", refresh: true },
   not_in_crew: { text: "JOIN THE CREW TO HUNT", tone: "warn" },
   no_game: { text: "NOTHING IS ON", tone: "info", refresh: true },
   not_open_yet: { text: "NOT OPEN YET", tone: "info", refresh: true },
@@ -286,8 +328,9 @@ const REFUSED: Record<GtReason, { text: string; tone: GtChip["tone"]; refresh?: 
   not_in_room: { text: "GET CLOSER", tone: "warn" },
   too_far: { text: "GET CLOSER", tone: "warn" },
   slow_down: { text: "SLOW DOWN", tone: "warn" },
-  busy: { text: "BUSY. TRY AGAIN.", tone: "warn" },
-  offline: { text: "NO SIGNAL. TRY AGAIN.", tone: "warn" },
+  // Offline and busy ask the database at once: a search that reached it may have won, and the poll brings the code back.
+  busy: { text: "BUSY. TRY AGAIN.", tone: "warn", refresh: true },
+  offline: { text: "NO SIGNAL. TRY AGAIN.", tone: "warn", refresh: true },
   unknown: { text: "CAN'T SEARCH HERE", tone: "info" },
 };
 
@@ -374,6 +417,7 @@ function reveal(c: Ctl, object: string, a: GtAnswer) {
     const k = ++seq;
     c.localAt = Date.now();
     c.seen.add(a.tail);
+    markSheetSeen(a.gameId, a.code);
     const game = st.game;
     patch({
       burst: { k, object: a.object },
@@ -415,6 +459,7 @@ export function closeWin() {
 export function openTicket() {
   const { me, game, win } = useGameTime.getState();
   if (win || !me.code) return;
+  if (game) markSheetSeen(game.id, me.code);
   useGameTime.getState().patch({ win: { code: me.code, title: game?.title ?? "Game Time", object: "", gameId: game?.id ?? "", over: game?.status === "over", fresh: false } });
 }
 

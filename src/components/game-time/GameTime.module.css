@@ -29,15 +29,37 @@
   transform: scale(var(--cam-inv, 1));
   transform-origin: 0 0;
 }
+/*
+ * The shimmer. On the pixel art a small yellow star disappears, so it is a four-point star 18 px across with a dark
+ * edge and a gold glow, a halo behind it, and (for the ten nearest objects) a soft pulsing outline around the whole object.
+ * Everything here is counter-scaled to one size on screen, except the outline, which follows the object.
+ */
+.halo {
+  position: absolute;
+  left: -22px;
+  top: -22px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(255 196 0 / 0.55) 0, rgb(255 196 0 / 0.18) 48%, transparent 72%);
+  opacity: 0.75;
+}
 .star {
   display: block;
   flex: none;
-  width: 12px;
-  height: 12px;
-  margin: -6px 0 0 -6px;
-  background: radial-gradient(circle at 50% 50%, #ffc400 0 20%, #f5ebdd 24%);
-  clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
-  opacity: 0.7;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  overflow: visible;
+  opacity: 0.92;
+  filter: drop-shadow(0 0 1px rgb(30 18 0 / 0.95)) drop-shadow(0 0 5px rgb(255 196 0 / 0.95));
+}
+.star path {
+  fill: #ffd84d;
+  stroke: #2a1a00;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
 }
 /* A tap on a star walks me next to its object: a 44 px target at one size on screen. */
 .hit {
@@ -59,62 +81,142 @@
 .hit:focus-visible {
   outline: 2px solid #ff4d00;
 }
-.dot .star {
-  width: 6px;
-  height: 6px;
-  margin: -3px 0 0 -3px;
-  clip-path: circle(50%);
-  background: #f5ebdd;
+/* The full view shows a bigger pulsing dot instead of the star: 14 px, gold, ringed dark so it reads on any floor. */
+.pulseDot {
+  display: block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: #ffd84d;
+  box-shadow:
+    0 0 0 2px rgb(30 18 0 / 0.9),
+    0 0 10px 3px rgb(255 196 0 / 0.85);
+  animation: dotBeat 1.6s ease-in-out var(--d, 0s) infinite;
 }
 .twinkle .star {
   animation: twinkle 2.4s ease-in-out var(--d, 0s) infinite;
 }
+.twinkle .halo {
+  animation: haloPulse 2.4s ease-in-out var(--d, 0s) infinite;
+}
 .near .star {
   opacity: 1;
-  transform: scale(1.35);
-  filter: drop-shadow(0 0 4px rgb(255 196 0 / 0.85));
+  transform: scale(1.3);
+}
+.near .halo {
+  opacity: 1;
 }
 .near.twinkle .star {
   animation: twinkleNear 1.6s ease-in-out var(--d, 0s) infinite;
 }
+.near.twinkle .halo {
+  animation: haloNear 1.6s ease-in-out var(--d, 0s) infinite;
+}
 .ring {
   display: block;
   flex: none;
-  width: 18px;
-  height: 18px;
-  margin: -9px 0 0 -9px;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
   border: 2px solid #ffc400;
   border-radius: 50%;
-  background: rgb(255 196 0 / 0.16);
-  box-shadow: 0 0 8px rgb(255 196 0 / 0.7);
+  background: rgb(255 196 0 / 0.22);
+  box-shadow:
+    0 0 0 1px rgb(30 18 0 / 0.7),
+    0 0 10px rgb(255 196 0 / 0.85);
 }
-.popStar .star {
+.popStar .star,
+.popStar .pulseDot {
   animation: goPop 0.9s ease-out both;
+}
+/* The soft outline round the whole object, for the ten nearest. Only its opacity moves. */
+.outline {
+  position: absolute;
+  z-index: 0;
+  box-sizing: border-box;
+  border: calc(2px * var(--cam-inv, 1)) solid rgb(255 208 64 / 0.85);
+  border-radius: 4px;
+  background: rgb(255 196 0 / 0.07);
+  box-shadow:
+    0 0 calc(12px * var(--cam-inv, 1)) rgb(255 196 0 / 0.6),
+    inset 0 0 calc(10px * var(--cam-inv, 1)) rgb(255 196 0 / 0.25);
+  pointer-events: none;
+  opacity: 0.35;
+  animation: outlinePulse 2.4s ease-in-out var(--d, 0s) infinite;
+}
+.outlineIn {
+  opacity: 1;
+  animation: none;
+  border-color: #ffc400;
+}
+@keyframes outlinePulse {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+@keyframes haloPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.1);
+  }
+}
+@keyframes haloNear {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
 }
 @keyframes twinkle {
   0%,
   100% {
-    opacity: 0.5;
-    transform: scale(0.85);
+    opacity: 0.65;
+    transform: scale(0.9);
   }
   14% {
     opacity: 1;
     transform: scale(1.2);
   }
   29% {
-    opacity: 0.5;
-    transform: scale(0.85);
+    opacity: 0.65;
+    transform: scale(0.9);
   }
 }
 @keyframes twinkleNear {
   0%,
   100% {
-    opacity: 0.75;
+    opacity: 0.85;
     transform: scale(1.2);
   }
   50% {
     opacity: 1;
-    transform: scale(1.5);
+    transform: scale(1.55);
+  }
+}
+@keyframes dotBeat {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.3);
   }
 }
 @keyframes goPop {
@@ -127,7 +229,7 @@
     transform: scale(3);
   }
   100% {
-    opacity: 0.55;
+    opacity: 0.7;
     transform: scale(1);
   }
 }
@@ -211,26 +313,14 @@
   }
 }
 
-/* The hint chip sits on the object: 28 px high, one size on screen at every zoom. */
-.chipAnchor {
-  position: absolute;
-  z-index: 5;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-.chipBody {
+/* The hint chip is drawn in the screen layer (HintLayer), 28 px high, over the object. */
+.hintAt {
   position: absolute;
   left: 0;
-  bottom: 0;
-  translate: calc(var(--shift, 0px) * var(--cam-inv, 1)) 0;
-  transform: translate(-50%, 0) scale(var(--cam-inv, 1));
-  transform-origin: 50% 100%;
-}
-.chipBelow .chipBody {
-  bottom: auto;
   top: 0;
-  transform-origin: 50% 0;
+  z-index: 4;
+  pointer-events: none;
+  will-change: transform;
 }
 .chip {
   display: inline-flex;
@@ -512,6 +602,32 @@ button.banner:focus-visible {
   animation: chipIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 
+/* The one instruction, under the banner for the first 20 seconds of a hunt: not a room pop-up, so nothing covers it. */
+.tip {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 100%;
+  padding: 7px 10px 8px;
+  border: 1px solid rgb(var(--danfo));
+  border-radius: 6px;
+  background: rgb(var(--raised) / 0.94);
+  color: rgb(var(--text));
+  font: 500 10px/13px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  animation: chipIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.tip b {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 14px;
+}
+.tip span {
+  color: rgb(var(--dim));
+}
+
 /* The last ten seconds before it opens: the room dims, big numbers stamp, then GO. */
 .hype {
   position: absolute;
@@ -634,12 +750,71 @@ button.banner:focus-visible {
   color: rgb(var(--text) / 0.8);
   font: 400 15px/21px var(--font-body);
 }
-.codeCard {
+/* The ticket: a violet head with the brand and the game, a perforation with a bite out of each edge, and the code below. */
+.ticket {
   position: relative;
-  padding: 14px 16px 16px;
-  border: 1px solid rgb(var(--violet) / 0.7);
-  border-radius: 6px;
+  border: 1px solid rgb(var(--violet));
+  border-radius: 10px;
   background: rgb(var(--raised));
+  box-shadow:
+    0 5px 0 rgb(var(--violet) / 0.4),
+    0 14px 32px rgb(0 0 0 / 0.4);
+  transform: rotate(-1.2deg);
+  animation: ticketIn 0.55s cubic-bezier(0.2, 1.25, 0.3, 1) both;
+}
+.ticketTop {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 13px 16px 14px;
+  border-radius: 9px 9px 0 0;
+  background: rgb(var(--violet));
+  color: #fff;
+}
+.ticketBrand {
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+.ticketTitle {
+  font: 900 19px/23px var(--font-poppins);
+  overflow-wrap: anywhere;
+}
+.ticketCut {
+  position: relative;
+  height: 0;
+  margin: 0 14px;
+  border-top: 2px dashed rgb(var(--violet) / 0.65);
+}
+.ticketCut::before,
+.ticketCut::after {
+  content: "";
+  position: absolute;
+  top: -11px;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgb(var(--violet));
+  border-radius: 50%;
+  background: rgb(var(--ground));
+}
+.ticketCut::before {
+  left: -25px;
+  clip-path: inset(0 0 0 50%);
+}
+.ticketCut::after {
+  right: -25px;
+  clip-path: inset(0 50% 0 0);
+}
+.ticketBottom {
+  padding: 14px 16px 16px;
+}
+@keyframes ticketIn {
+  from {
+    opacity: 0;
+    transform: translateY(26px) rotate(-6deg) scale(0.92);
+  }
 }
 .codeKicker {
   display: block;
@@ -733,8 +908,13 @@ button.banner:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .twinkle .star,
+  .twinkle .halo,
   .near.twinkle .star,
+  .near.twinkle .halo,
+  .pulseDot,
+  .outline,
   .popStar .star,
+  .popStar .pulseDot,
   .rummage,
   .rummage::after,
   .dust,
@@ -742,11 +922,16 @@ button.banner:focus-visible {
   .hurry,
   .chip,
   .feedChip,
+  .tip,
   .win,
+  .ticket,
   .piece {
     animation: none;
   }
   .twinkle .star {
+    opacity: 0.8;
+  }
+  .outline {
     opacity: 0.6;
   }
   .piece {

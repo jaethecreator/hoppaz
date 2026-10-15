@@ -2,17 +2,22 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { DoorOpen, Ticket, X } from "lucide-react";
+import { requireAccount } from "@/lib/accountGate";
 import { clockText, useServerNow } from "@/lib/game-time/clock";
 import { dismissPing, pingDismissed, usePingGames } from "@/lib/game-time/hooks";
 import type { GtListGame } from "@/lib/game-time/types";
+import { useToast } from "@/lib/store";
+import { getSupabase } from "@/lib/supabase/client";
 import { useSession } from "@/lib/useSession";
 
 /**
  * The global ping (docs/GAME-TIME.md section 4, game_time_list): a Game Time is about to open or is live, wherever the
- * Hopper is in the app. One card at the top, dismissible, once per Game Time per device. ENTER ROOM for a member, JOIN THE
- * CREW TO HUNT for anyone else (it opens the crew's hub, where the join button is). Mounted once in layout.tsx.
+ * Hopper is in the app. One card at the top, dismissible, once per Game Time per device. ENTER ROOM for a member, JOIN AND
+ * HUNT for anyone else (one tap: it joins the open crew and walks into the room; a guest is asked to sign up first). Mounted
+ * once in layout.tsx. A member who cannot hunt (email not confirmed, joined too late) and a newcomer who would join too late
+ * are not pinged: there is nothing for them to win.
  *
  * It stays quiet where it would be in the way: inside the crew's own room and hub (they have their own banner), the
  * full-screen tasks, and the staff desk. A Hopper who has won has nothing left to hunt, so it never shows for them.
@@ -21,7 +26,16 @@ import { useSession } from "@/lib/useSession";
 const QUIET = [/^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/, /^\/auth/, /^\/reset/];
 
 function pick(games: GtListGame[], path: string, gone: ReadonlySet<string>): GtListGame | null {
-  const open = games.filter((g) => !g.won && g.boxes_left > 0 && !pingDismissed(g.id) && !gone.has(g.id) && !path.startsWith(`/crew/${g.crew_id}`));
+  const open = games.filter(
+    (g) =>
+      !g.won &&
+      g.boxes_left > 0 &&
+      !g.blocked &&
+      (g.is_member || g.join_in_time) &&
+      !pingDismissed(g.id) &&
+      !gone.has(g.id) &&
+      !path.startsWith(`/crew/${g.crew_id}`),
+  );
   // A live game first, then the one opening soonest.
   open.sort((a, b) => (a.status === b.status ? Date.parse(a.opens_at) - Date.parse(b.opens_at) : a.status === "live" ? -1 : 1));
   return open[0] ?? null;
@@ -29,6 +43,9 @@ function pick(games: GtListGame[], path: string, gone: ReadonlySet<string>): GtL
 
 export default function GameTimePing() {
   const path = usePathname() ?? "";
+  const router = useRouter();
+  const say = useToast((s) => s.say);
+  const [joining, setJoining] = useState(false);
   const { userId, state } = useSession();
   const quiet = QUIET.some((re) => re.test(path));
   const games = usePingGames(!!userId && state === "ready" && !quiet);
@@ -43,7 +60,23 @@ export default function GameTimePing() {
   };
   const live = game.status === "live" || Date.parse(game.opens_at) - now <= 0;
   const left = `${game.boxes_left} ${game.boxes_left === 1 ? "box" : "boxes"}`;
-  const href = game.is_member ? `/crew/${game.crew_id}/room` : `/crew/${game.crew_id}`;
+  const room = `/crew/${game.crew_id}/room`;
+
+  /** A newcomer joins the open crew right here (the same call as the hub's button) and walks in. */
+  const join = async () => {
+    const sb = getSupabase();
+    if (!sb || joining) return;
+    setJoining(true);
+    const { data } = await sb.rpc("join_crew", { p_invite: game.crew_id });
+    setJoining(false);
+    if (!data) {
+      say("Couldn't join. Try again.", "error");
+      return;
+    }
+    close();
+    say("You're in the crew.", "ok");
+    router.push(room);
+  };
 
   return (
     <aside
@@ -70,9 +103,23 @@ export default function GameTimePing() {
           <X size={18} aria-hidden />
         </button>
       </div>
-      <Link href={href} onClick={close} className="btn mt-2.5 w-full text-[14px]" data-gt-ping-cta>
-        <DoorOpen size={18} aria-hidden /> {game.is_member ? "ENTER ROOM" : "JOIN THE CREW TO HUNT"}
-      </Link>
+      {game.is_member ? (
+        <Link href={room} onClick={close} className="btn mt-2.5 w-full text-[14px]" data-gt-ping-cta>
+          <DoorOpen size={18} aria-hidden /> ENTER ROOM
+        </Link>
+      ) : (
+        <button
+          type="button"
+          className="btn mt-2.5 w-full text-[14px]"
+          disabled={joining}
+          data-gt-ping-cta
+          onClick={() => {
+            if (requireAccount("join this crew", () => void join())) void join();
+          }}
+        >
+          <DoorOpen size={18} aria-hidden /> {joining ? "JOINING…" : "JOIN AND HUNT"}
+        </button>
+      )}
     </aside>
   );
 }

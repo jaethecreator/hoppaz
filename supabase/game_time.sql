@@ -35,8 +35,10 @@
 -- Rules:
 --   window        a game is upcoming until opens_at, live until closes_at, all boxes are
 --                 found or staff close it. Two games of one crew never overlap.
---   who           members of the crew with an account. A guest (no email) is refused,
---                 a non-member is refused.
+--   who           members of the crew with an account whose email is CONFIRMED (one person with a handful of
+--                 throwaway accounts must not clear a hunt in seconds). A guest (no email), an unconfirmed
+--                 email and a non-member are refused. A game can also ask for members of at least
+--                 min_member_minutes before it opens (default 0: any member); a Hopper who joined later can watch.
 --   where         the search needs a live walker in the room whose server-side position
 --                 (crew_room_presence) is within one tile of the object (diagonals count).
 --                 A watcher past the room cap has no walker and cannot search.
@@ -107,6 +109,10 @@ create table if not exists public.game_times (
   check (closes_at > opens_at),
   check ((ended_at is null) = (ended_by is null))
 );
+-- Members must have joined the crew at least this many minutes before opens_at (0: any member). Added after the first
+-- version, so it is an alter (safe to run again).
+alter table public.game_times add column if not exists min_member_minutes integer not null default 0
+  check (min_member_minutes between 0 and 10080);
 create index if not exists game_times_crew on public.game_times(crew_id, opens_at desc);
 create index if not exists game_times_unannounced on public.game_times(opens_at)
   where push_sent_at is null and ended_at is null;
@@ -407,9 +413,41 @@ begin
   return moved;
 end $$;
 
+-- Why this crew member cannot hunt this game: null (they can), 'need_confirmed' (the email on the account was never
+-- confirmed) or 'joined_late' (the game wants members from at least min_member_minutes before it opens). Both stop one
+-- person with a handful of accounts from taking every ticket in seconds. Needs the account's email to be confirmed, so
+-- Auth "Confirm email" must be ON in the project (with it off, Supabase stamps every email as confirmed at sign-up).
+create or replace function public._gt_blocked(g public.game_times, p_user uuid) returns text
+language sql stable security definer set search_path = public, auth as $$
+  select case
+    when p_user is null or not exists (select 1 from auth.users u where u.id = p_user and u.email_confirmed_at is not null)
+      then 'need_confirmed'
+    when g.min_member_minutes > 0
+         and not exists (select 1 from crew_members m
+                          where m.crew_id = g.crew_id and m.user_id = p_user
+                            and m.joined_at <= g.opens_at - make_interval(mins => g.min_member_minutes))
+      then 'joined_late'
+  end;
+$$;
+
+-- Is joining the crew right now early enough for this game?
+create or replace function public._gt_join_in_time(g public.game_times) returns boolean
+language sql stable set search_path = public as $$
+  select g.min_member_minutes = 0 or clock_timestamp() <= g.opens_at - make_interval(mins => g.min_member_minutes);
+$$;
+
+-- Is the minute tick scheduled and on? (false when pg_cron is not installed)
+create or replace function public._gt_cron_ready() returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return exists (select 1 from cron.job where jobname = 'hoppaz-game-time-tick' and active);
+exception when others then
+  return false;
+end $$;
+
 -- ------------------------------------------------------------------- push ---
 -- Who hears that a game opened: crew members with a push subscription whose alerts are not Off,
--- who are not walking in the room right now and have not already won this campaign.
+-- who are not walking in the room right now, have not already won this campaign and are allowed to hunt it.
 create or replace function public._gt_open_recipients(p_game uuid) returns setof uuid
 language sql stable security definer set search_path = public as $$
   select distinct m.user_id
@@ -421,7 +459,8 @@ language sql stable security definer set search_path = public as $$
      and exists (select 1 from push_subscriptions s where s.user_id = m.user_id)
      and not exists (select 1 from crew_room_presence p
                       where p.crew_id = g.crew_id and p.user_id = m.user_id and p.last_seen > clock_timestamp() - public._crew_room_ttl())
-     and not exists (select 1 from game_time_wins w where w.campaign_key = g.campaign_key and w.user_id = m.user_id);
+     and not exists (select 1 from game_time_wins w where w.campaign_key = g.campaign_key and w.user_id = m.user_id)
+     and public._gt_blocked(g, m.user_id) is null;
 $$;
 
 -- Is the push path ready (pg_net, and the send route's address and secret from push.sql)?
@@ -525,6 +564,7 @@ declare
   my_code text;
   my_won_at timestamptz;
   room_ok boolean;
+  blocked text;
 begin
   perform public._gt_open_due();
   member := me is not null and exists (select 1 from crew_members where crew_id = p_crew and user_id = me);
@@ -532,10 +572,11 @@ begin
   g := public._gt_current(p_crew);
   if g.id is null then
     return jsonb_build_object('server_now', clock_timestamp(), 'game', null,
-                              'me', jsonb_build_object('member', member, 'won', false, 'code', null, 'won_at', null, 'can_search', false));
+                              'me', jsonb_build_object('member', member, 'won', false, 'code', null, 'won_at', null, 'blocked', null, 'can_search', false));
   end if;
   phase := public._gt_phase(g);
   room_ok := public._gt_room_ok(g);
+  blocked := case when member then public._gt_blocked(g, me) end;
   select count(*), count(*) filter (where claimed_by is null) into total, left_n from game_time_boxes where game_id = g.id;
   won := me is not null and exists (select 1 from game_time_wins w where w.campaign_key = g.campaign_key and w.user_id = me);
   select w.code, w.created_at into my_code, my_won_at from game_time_wins w where w.game_id = g.id and w.user_id = me;
@@ -556,6 +597,7 @@ begin
       'boxes_left', left_n,
       'search_gap_ms', 3000,
       'room_ok', room_ok,
+      'join_in_time', public._gt_join_in_time(g),
       'objects', case when member and phase = 'live' and room_ok
                       then (select coalesce(jsonb_agg(s.object_id order by s.object_id), '[]') from game_time_spots s where s.game_id = g.id)
                       else '[]'::jsonb end,
@@ -569,7 +611,8 @@ begin
       'won', coalesce(won, false),
       'code', my_code,
       'won_at', my_won_at,
-      'can_search', member and phase = 'live' and room_ok and not coalesce(won, false) and public.has_account()));
+      'blocked', blocked,
+      'can_search', member and phase = 'live' and room_ok and not coalesce(won, false) and public.has_account() and blocked is null));
 end $$;
 
 -- Games starting within 6 hours or live now, in crews the caller can see (open crews, and their own),
@@ -591,6 +634,8 @@ begin
                'boxes_total', (select count(*) from game_time_boxes b where b.game_id = g.id),
                'boxes_left', (select count(*) from game_time_boxes b where b.game_id = g.id and b.claimed_by is null),
                'is_member', m.user_id is not null,
+               'blocked', case when m.user_id is not null then public._gt_blocked(g, me) end,
+               'join_in_time', public._gt_join_in_time(g),
                'won', me is not null and exists (select 1 from game_time_wins w where w.campaign_key = g.campaign_key and w.user_id = me)) as j
         from game_times g
         join crews c on c.id = g.crew_id
@@ -615,6 +660,8 @@ $$;
 -- ------------------------------------------------------------- the search ---
 -- One search. Refusals are errors (the message is the reason):
 --   need_account    no session, or a guest without an email
+--   need_confirmed  the email on the account was never confirmed
+--   joined_late     the game wants members from min_member_minutes before it opened, and this Hopper joined later
 --   not_in_crew     not a member of the crew
 --   no_game         the crew has no game to search
 --   not_open_yet    the game has not opened
@@ -647,6 +694,7 @@ declare
   left_n   integer;
   who      text;
   t        timestamptz;
+  blocked  text;
 begin
   if me is null or not public.has_account() then raise exception 'need_account'; end if;
   if not exists (select 1 from crew_members where crew_id = p_crew and user_id = me) then raise exception 'not_in_crew'; end if;
@@ -657,6 +705,8 @@ begin
     raise exception '%', case phase when 'upcoming' then 'not_open_yet' when 'all_found' then 'all_found' else 'game_closed' end;
   end if;
   if exists (select 1 from game_time_wins w where w.campaign_key = g.campaign_key and w.user_id = me) then raise exception 'already_won'; end if;
+  blocked := public._gt_blocked(g, me);
+  if blocked is not null then raise exception '%', blocked; end if;
   if not public._gt_room_ok(g) then raise exception 'room_changed'; end if;
   select * into pres from crew_room_presence p
    where p.crew_id = p_crew and p.user_id = me and p.last_seen > clock_timestamp() - public._crew_room_ttl();
@@ -767,9 +817,12 @@ begin
     'relocate_minutes', g.relocate_minutes,
     'hot_tiles', g.hot_tiles,
     'warm_tiles', g.warm_tiles,
+    'min_member_minutes', g.min_member_minutes,
     'push_sent_at', g.push_sent_at,
     'push_count', g.push_count,
     'push_ready', public._gt_push_ready(),
+    'cron_ready', public._gt_cron_ready(),
+    'room_capacity', (select r.capacity from crew_rooms r where r.crew_id = g.crew_id),
     'boxes_total', (select count(*) from game_time_boxes where game_id = g.id),
     'boxes_left', (select count(*) from game_time_boxes where game_id = g.id and claimed_by is null),
     'searches', coalesce((select sum(searches) from game_time_players where game_id = g.id), 0),
@@ -788,11 +841,13 @@ end $$;
 
 -- Make a game. p_args: {crew_id, title, opens_at | start_now: true, closes_at | duration_minutes, codes:[...],
 -- objects:[id or {id,x,y,w,h}], room_template + room_width (the room the rectangles were taken from; both or
--- neither), relocate_minutes?, campaign_key?, hot_tiles?, warm_tiles?}. A game never opens by accident: say when
+-- neither), relocate_minutes?, campaign_key?, hot_tiles?, warm_tiles?, min_member_minutes? (0 to 10080: members must
+-- have joined at least this long before it opens; default 0), silent? (true: no opening push, for a rehearsal)}.
+-- A game never opens by accident: say when
 -- (opens_at) or say start_now true, which opens it this second and sends the push. duration_minutes (1 to 10080)
 -- counts from the opening. Reasons: bad_args unknown_field bad_crew bad_title bad_times in_past too_long
 -- bad_codes dup_codes bad_objects unknown_objects room_changed not_enough_spots bad_relocate bad_tiles
--- bad_campaign overlaps.
+-- bad_campaign bad_members overlaps.
 create or replace function public.admin_game_time_create(p_args jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -808,13 +863,16 @@ declare
   v_hot   numeric := 5;
   v_warm  numeric := 10;
   v_key   text;
+  v_min   integer := 0;
+  v_quiet boolean := false;
   gid     uuid;
   t       timestamptz := clock_timestamp();
 begin
   if p_args is null or jsonb_typeof(p_args) <> 'object' then raise exception 'gt:bad_args'; end if;
   for k in select jsonb_object_keys(p_args) loop
     if k not in ('crew_id', 'title', 'opens_at', 'closes_at', 'duration_minutes', 'codes', 'objects', 'room_template',
-                 'room_width', 'relocate_minutes', 'campaign_key', 'hot_tiles', 'warm_tiles', 'start_now') then
+                 'room_width', 'relocate_minutes', 'campaign_key', 'hot_tiles', 'warm_tiles', 'start_now',
+                 'min_member_minutes', 'silent') then
       raise exception 'gt:unknown_field';
     end if;
   end loop;
@@ -868,12 +926,23 @@ begin
   if v_warm < v_hot or v_hot > 100 or v_warm > 200 then raise exception 'gt:bad_tiles'; end if;
   v_key := coalesce(nullif(btrim(p_args->>'campaign_key'), ''), 'crew:' || v_crew::text);
   if char_length(v_key) > 80 or v_key ~ '[[:cntrl:]]' then raise exception 'gt:bad_campaign'; end if;
+  if p_args ? 'min_member_minutes' then
+    if coalesce(p_args->>'min_member_minutes', '') !~ '^[0-9]{1,5}$' or (p_args->>'min_member_minutes')::integer > 10080 then raise exception 'gt:bad_members'; end if;
+    v_min := (p_args->>'min_member_minutes')::integer;
+  end if;
+  if p_args ? 'silent' then
+    if jsonb_typeof(p_args->'silent') <> 'boolean' then raise exception 'gt:bad_args'; end if;
+    v_quiet := p_args->'silent' = 'true'::jsonb;
+  end if;
 
   perform pg_advisory_xact_lock(hashtextextended('game-time-crew:' || v_crew::text, 0));
   if public._gt_overlaps(v_crew, v_open, v_close, null) then raise exception 'gt:overlaps'; end if;
 
-  insert into game_times (crew_id, title, opens_at, closes_at, campaign_key, room_template, room_width, relocate_minutes, hot_tiles, warm_tiles)
-  values (v_crew, v_title, v_open, v_close, v_key, v_room->>'template', (v_room->>'width')::integer, v_reloc, v_hot, v_warm)
+  -- silent: the opening push is marked as done before it can go (a rehearsal on a crew with real members).
+  insert into game_times (crew_id, title, opens_at, closes_at, campaign_key, room_template, room_width, relocate_minutes, hot_tiles, warm_tiles,
+                          min_member_minutes, push_sent_at, push_count)
+  values (v_crew, v_title, v_open, v_close, v_key, v_room->>'template', (v_room->>'width')::integer, v_reloc, v_hot, v_warm,
+          v_min, case when v_quiet then t end, case when v_quiet then 0 end)
   returning id into gid;
   insert into game_time_spots (game_id, object_id, x, y, w, h)
   select gid, o.id, o.x, o.y, o.w, o.h from jsonb_to_recordset(v_objs) as o(id text, x integer, y integer, w integer, h integer);
@@ -887,7 +956,7 @@ end $$;
 
 -- Change a game. p_patch may hold: title, opens_at (only before it opens), closes_at (later than now; a game
 -- whose time ran out opens again when it is pushed past now), relocate_minutes, hot_tiles, warm_tiles,
--- campaign_key (until someone has won), objects with room_template and room_width (the rectangles are taken
+-- campaign_key (until someone has won), min_member_minutes (before it opens), objects with room_template and room_width (the rectangles are taken
 -- again from the room as it is now; boxes on a removed object move to a free one), codes (until someone has
 -- won; sending the same codes again changes nothing). A finished game (all found, or closed) cannot be
 -- changed. Extra reasons: not_found ended already_open codes_locked campaign_locked.
@@ -905,6 +974,7 @@ declare
   v_hot   numeric;
   v_warm  numeric;
   v_key   text;
+  v_min   integer;
   v_objs  jsonb;
   v_room  jsonb;
   v_codes text[];
@@ -914,7 +984,7 @@ begin
   if p_patch is null or jsonb_typeof(p_patch) <> 'object' then raise exception 'gt:bad_args'; end if;
   for k in select jsonb_object_keys(p_patch) loop
     if k not in ('title', 'opens_at', 'closes_at', 'codes', 'objects', 'room_template', 'room_width', 'relocate_minutes',
-                 'campaign_key', 'hot_tiles', 'warm_tiles') then
+                 'campaign_key', 'hot_tiles', 'warm_tiles', 'min_member_minutes') then
       raise exception 'gt:unknown_field';
     end if;
   end loop;
@@ -928,7 +998,7 @@ begin
   perform pg_advisory_xact_lock(hashtextextended('game-time-crew:' || g.crew_id::text, 0));
 
   v_title := g.title; v_open := g.opens_at; v_close := g.closes_at;
-  v_reloc := g.relocate_minutes; v_hot := g.hot_tiles; v_warm := g.warm_tiles; v_key := g.campaign_key;
+  v_reloc := g.relocate_minutes; v_hot := g.hot_tiles; v_warm := g.warm_tiles; v_key := g.campaign_key; v_min := g.min_member_minutes;
 
   if p_patch ? 'title' then
     if jsonb_typeof(p_patch->'title') is distinct from 'string' then raise exception 'gt:bad_title'; end if;
@@ -976,6 +1046,13 @@ begin
     if v_key is distinct from g.campaign_key and exists (select 1 from game_time_wins where game_id = g.id) then raise exception 'gt:campaign_locked'; end if;
   end if;
 
+  if p_patch ? 'min_member_minutes' then
+    if coalesce(p_patch->>'min_member_minutes', '') !~ '^[0-9]{1,5}$' or (p_patch->>'min_member_minutes')::integer > 10080 then raise exception 'gt:bad_members'; end if;
+    v_min := (p_patch->>'min_member_minutes')::integer;
+    -- who may hunt is decided before it opens, not changed under the players
+    if v_min is distinct from g.min_member_minutes and phase <> 'upcoming' then raise exception 'gt:already_open'; end if;
+  end if;
+
   v_room := jsonb_build_object('template', g.room_template, 'width', g.room_width);
   if p_patch ? 'objects' then
     v_room := public._gt_room_arg(g.crew_id, p_patch);
@@ -1018,7 +1095,7 @@ begin
   end if;
   update game_times
      set title = v_title, opens_at = v_open, closes_at = v_close, relocate_minutes = v_reloc, hot_tiles = v_hot,
-         warm_tiles = v_warm, campaign_key = v_key, room_template = v_room->>'template',
+         warm_tiles = v_warm, campaign_key = v_key, min_member_minutes = v_min, room_template = v_room->>'template',
          room_width = (v_room->>'width')::integer, updated_at = t
    where id = g.id;
   if v_open is distinct from g.opens_at then
@@ -1097,20 +1174,39 @@ language sql stable security definer set search_path = public as $$
       from (select id, opens_at from game_times order by opens_at desc limit 100) q), '[]'));
 $$;
 
--- The winners, oldest first: the Hopper's handle, name and email, and the code they won. One game, or all.
+-- The winners, oldest first: the Hopper's handle, name and email, the code they won, and the facts staff need to tell a
+-- real winner from one person with a few accounts, before a ticket is redeemed: when the account was made, whether its email is
+-- confirmed, when the Hopper joined the crew, how many searches it took, how many seconds after the opening the box fell,
+-- and plain flags for the usual signs. One game, or all.
 create or replace function public.admin_game_time_winners(p_id uuid default null) returns jsonb
 language sql stable security definer set search_path = public as $$
   select jsonb_build_object('ok', true, 'winners', coalesce((
     select jsonb_agg(jsonb_build_object(
              'game_id', g.id, 'title', g.title, 'crew_name', c.name, 'user_id', w.user_id,
              'handle', pr.handle, 'name', pr.display_name, 'email', u.email,
-             'code', w.code, 'object', b.spot_id, 'won_at', w.created_at) order by w.created_at)
+             'code', w.code, 'object', b.spot_id, 'won_at', w.created_at,
+             'account_created', u.created_at,
+             'email_confirmed', u.email_confirmed_at is not null,
+             'provider', u.raw_app_meta_data->>'provider',
+             'joined_crew', m.joined_at,
+             'joined_mins_before_open', round(extract(epoch from g.opens_at - m.joined_at) / 60),
+             'account_mins_before_open', round(extract(epoch from g.opens_at - u.created_at) / 60),
+             'searches', gp.searches,
+             'secs_after_open', round(extract(epoch from w.created_at - g.opens_at)::numeric, 1),
+             'flags', to_jsonb(array_remove(array[
+                case when m.joined_at is null then 'LEFT THE CREW' end,
+                case when m.joined_at > g.opens_at then 'JOINED AFTER OPENING'
+                     when g.opens_at - m.joined_at < interval '30 minutes' then 'JOINED UNDER 30 MIN BEFORE' end,
+                case when g.opens_at - u.created_at < interval '1 hour' then 'ACCOUNT UNDER 1 HOUR OLD' end,
+                case when u.email_confirmed_at is null then 'EMAIL NOT CONFIRMED' end], null))) order by w.created_at)
       from game_time_wins w
       join game_times g on g.id = w.game_id
       join crews c on c.id = g.crew_id
       left join profiles pr on pr.id = w.user_id
       left join auth.users u on u.id = w.user_id
       left join game_time_boxes b on b.id = w.box_id
+      left join crew_members m on m.crew_id = g.crew_id and m.user_id = w.user_id
+      left join game_time_players gp on gp.game_id = g.id and gp.user_id = w.user_id
      where p_id is null or w.game_id = p_id), '[]'));
 $$;
 

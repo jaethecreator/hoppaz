@@ -1,34 +1,39 @@
 "use client";
 
-import { memo } from "react";
-import { normalizeLook } from "@/lib/avatar";
-import { avatarSvg } from "@/lib/avatarSvg";
+import { memo, useMemo } from "react";
+import { HAIR_COLORS, SKINS, itemById } from "@/lib/avatar";
+import { lookOfKey, useSprite } from "./spriteCache";
+import css from "./Campaign.module.css";
 
 /**
- * One Hopper in the room as ONE image node. A full avatar is about 77 SVG nodes; 60 of them is thousands of nodes that
- * the phone has to style, layout and paint. The look is drawn once to an SVG string (src/lib/avatarSvg.ts), turned into a
- * data URL and cached by look, so every Hopper with the same look shares one decoded image and costs one DOM node.
+ * One Hopper in the room as ONE node. A full avatar is about 77 SVG nodes and 60 of them at once froze a phone, so the room
+ * draws a Hopper in two steps (spriteCache.ts): a flat blob in their own colours straight away, then the real avatar as a
+ * small bitmap once the queue has drawn it, nearest to me first. At the full view a Hopper is 12 px wide, where the blob
+ * and the avatar look alike; by the time the camera is close the near ones are drawn.
  */
-const urls = new Map<string, string>();
-const MAX = 160;
-
-export function spriteUrl(look: unknown): string {
-  const normal = normalizeLook(look);
-  const key = JSON.stringify(normal);
-  let url = urls.get(key);
-  if (!url) {
-    url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(avatarSvg(normal, { uid: "sp" }))}`;
-    if (urls.size >= MAX) urls.delete(urls.keys().next().value as string);
-    urls.set(key, url);
+function AvatarSprite({ look, label, className }: { look: unknown; label?: string; className?: string }) {
+  const { key, url } = useSprite(look);
+  if (url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- a drawn avatar (a bitmap made in the page), not a photo
+      <img src={url} alt={label ?? ""} className={className} width={32} height={58} draggable={false} decoding="async" />
+    );
   }
-  return url;
+  return <AvatarBlob sprite={key} label={label} />;
 }
 
-function AvatarSprite({ look, label, className }: { look: unknown; label?: string; className?: string }) {
-  return (
-    // eslint-disable-next-line @next/next/no-img-element -- a drawn avatar in a data URL, not a photo
-    <img src={spriteUrl(look)} alt={label ?? ""} className={className} width={32} height={58} draggable={false} decoding="async" />
-  );
+/** The placeholder: head, hair, top and trousers in the Hopper's own colours, from CSS custom properties. */
+function AvatarBlob({ sprite, label }: { sprite: string; label?: string }) {
+  const style = useMemo(() => {
+    const look = lookOfKey(sprite);
+    return {
+      "--skin": SKINS[look.skin],
+      "--hair": HAIR_COLORS[look.hairColor].hex,
+      "--top": itemById(look.top)?.color ?? "#555",
+      "--bottom": itemById(look.bottom)?.color ?? "#333",
+    } as React.CSSProperties;
+  }, [sprite]);
+  return <span className={css.blob} style={style} role="img" aria-label={label ?? ""} />;
 }
 
 export default memo(AvatarSprite);

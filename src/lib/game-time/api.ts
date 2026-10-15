@@ -8,6 +8,8 @@ import type { GtAnswer, GtHint, GtListGame, GtReason, GtState, GtTicket } from "
 
 const REASONS: readonly GtReason[] = [
   "need_account",
+  "need_confirmed",
+  "joined_late",
   "not_in_crew",
   "no_game",
   "not_open_yet",

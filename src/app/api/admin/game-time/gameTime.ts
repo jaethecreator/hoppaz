@@ -38,6 +38,7 @@ const REASONS: Record<string, { status: number; message: string }> = {
   bad_relocate: { status: 400, message: "Minutes before a box moves on: 0 to 720 (0 means never)." },
   bad_tiles: { status: 400, message: "Hot and warm are distances in tiles: hot above 0, warm at least as big, up to 100 and 200." },
   bad_campaign: { status: 400, message: "The campaign key is 80 characters or fewer, on one line." },
+  bad_members: { status: 400, message: "Minutes as a member before it opens: a whole number from 0 (any member) to 10080." },
   room_changed: { status: 409, message: "The crew changed its room. Reload and pick the objects again." },
   overlaps: { status: 409, message: "This crew already has a Game Time in that window." },
   not_found: { status: 404, message: "That Game Time does not exist." },
@@ -136,8 +137,8 @@ const tiles = (v: unknown, max: number): number | null => {
   return Number.isFinite(n) && n > 0 && n <= max ? Math.round(n * 10) / 10 : null;
 };
 
-const CREATE_FIELDS = ["action", "crew_id", "title", "opens_at", "closes_at", "duration_minutes", "start_now", "codes", "codes_text", "objects", "relocate_minutes", "campaign_key", "hot_tiles", "warm_tiles"];
-const UPDATE_FIELDS = ["action", "id", "title", "opens_at", "closes_at", "codes", "codes_text", "objects", "relocate_minutes", "campaign_key", "hot_tiles", "warm_tiles"];
+const CREATE_FIELDS = ["action", "crew_id", "title", "opens_at", "closes_at", "duration_minutes", "start_now", "codes", "codes_text", "objects", "relocate_minutes", "campaign_key", "hot_tiles", "warm_tiles", "min_member_minutes", "silent"];
+const UPDATE_FIELDS = ["action", "id", "title", "opens_at", "closes_at", "codes", "codes_text", "objects", "relocate_minutes", "campaign_key", "hot_tiles", "warm_tiles", "min_member_minutes"];
 
 /** The knobs both create and update take. Fills `args`; returns a refusal or null. */
 function knobs(b: Record<string, unknown>, args: Record<string, unknown>): Bad | null {
@@ -166,6 +167,11 @@ function knobs(b: Record<string, unknown>, args: Record<string, unknown>): Bad |
     if (k.length > 80 || /[\u0000-\u001f\u007f]/.test(k)) return bad("bad_campaign");
     args.campaign_key = k; // empty means the crew's own limit
   }
+  if ("min_member_minutes" in b) {
+    const n = whole(b.min_member_minutes, 0, 10080);
+    if (n === null) return bad("bad_members");
+    args.min_member_minutes = n;
+  }
   return null;
 }
 
@@ -173,7 +179,9 @@ function knobs(b: Record<string, unknown>, args: Record<string, unknown>): Bad |
  * What staff send to make a game, turned into the database's arguments.
  *   { action: "create", crew_id, title, codes: [..] | codes_text: "one\nper line",
  *     objects: [ids], start_now: true | opens_at, closes_at | duration_minutes,
- *     relocate_minutes?, campaign_key?, hot_tiles?, warm_tiles? }
+ *     relocate_minutes?, campaign_key?, hot_tiles?, warm_tiles?,
+ *     min_member_minutes? (members must have joined this long before it opens; default 0),
+ *     silent? (true: no opening push, for a rehearsal) }
  * A game never opens by accident: START NOW (start_now true) or an explicit opens_at.
  */
 export function parseCreate(b: Record<string, unknown>, room: RoomInfo): { args: Record<string, unknown> } | Bad {
@@ -184,6 +192,10 @@ export function parseCreate(b: Record<string, unknown>, room: RoomInfo): { args:
   const k = knobs(b, args);
   if (k) return k;
   if ("start_now" in b && typeof b.start_now !== "boolean") return bad("bad_args", "start_now is true or false.");
+  if ("silent" in b) {
+    if (typeof b.silent !== "boolean") return bad("bad_args", "silent is true or false.");
+    args.silent = b.silent;
+  }
   if (b.start_now === true) {
     if (b.opens_at != null && b.opens_at !== "") return bad("bad_times", "START NOW and an opening time cannot both be given.");
     args.start_now = true;
@@ -334,9 +346,24 @@ const cell = (v: unknown) => {
   return `"${s.replace(/"/g, '""')}"`;
 };
 
-/** The winners as CSV: game, crew, handle, name, email, code, object, won_at (oldest first). */
+/**
+ * The winners as CSV, oldest first: who and what they won, then the facts that tell a real winner from one person with a few
+ * accounts (account made, email confirmed, when they joined the crew and how long before the opening, how many searches, how many
+ * seconds after the opening) and the flags. Staff check these before a ticket is redeemed.
+ */
 export function winnersCsv(rows: Record<string, unknown>[]): string {
-  const head = ["game", "crew", "handle", "name", "email", "code", "object", "won_at"];
-  const lines = rows.map((r) => [r.title, r.crew_name, r.handle, r.name, r.email, r.code, r.object, r.won_at].map(cell).join(","));
+  const head = [
+    "game", "crew", "handle", "name", "email", "code", "object", "won_at",
+    "account_created", "email_confirmed", "joined_crew", "mins_joined_before_open", "mins_account_before_open", "searches", "secs_after_open", "flags",
+  ];
+  const lines = rows.map((r) =>
+    [
+      r.title, r.crew_name, r.handle, r.name, r.email, r.code, r.object, r.won_at,
+      r.account_created, r.email_confirmed, r.joined_crew, r.joined_mins_before_open, r.account_mins_before_open, r.searches, r.secs_after_open,
+      Array.isArray(r.flags) ? r.flags.join("; ") : "",
+    ]
+      .map(cell)
+      .join(","),
+  );
   return [head.join(","), ...lines].join("\r\n") + "\r\n";
 }

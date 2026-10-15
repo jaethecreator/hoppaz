@@ -82,11 +82,11 @@ export function ChatButton({ compact }: { compact: boolean }) {
       type="button"
       className={css.chatBtn}
       data-compact={compact || undefined}
-      aria-label={unread ? `Open chat. ${unread} unread` : "Open chat"}
+      aria-label={unread ? `Open chat in this room. ${unread} unread` : "Open chat in this room"}
       onClick={() => useRoomStore.getState().setSheet("half")}
     >
       <MessageCircle size={18} aria-hidden />
-      <span>Chat</span>
+      <span>Room chat</span>
       {unread > 0 && <span className={css.unread}>{unread > 9 ? "9+" : unread}</span>}
     </button>
   );

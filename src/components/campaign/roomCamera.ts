@@ -52,6 +52,8 @@ export class RoomCamera {
   onMode: (mode: CamMode) => void = () => {};
   /** Called when the scale crosses a label threshold. */
   onScale: (s: number) => void = () => {};
+  /** Called after every paint, so a screen-space overlay (the room arrows at the edge) can follow the camera. Keep it cheap. */
+  onPaint: () => void = () => {};
 
   constructor(
     private world: HTMLElement,
@@ -77,6 +79,13 @@ export class RoomCamera {
   }
   get minScale() {
     return this.fullScale;
+  }
+  /** The stage's width and the height the chat sheet leaves free, in screen px. */
+  get viewW() {
+    return this.w;
+  }
+  get viewH() {
+    return this.freeH;
   }
 
   private setMode(mode: CamMode) {
@@ -349,6 +358,7 @@ export class RoomCamera {
       this.layer.style.setProperty("--cam-inv", (1 / this.s).toFixed(4));
       this.onScale(this.s);
     }
+    this.onPaint();
   }
 
   /** Write the current camera at once (first paint, resize). */

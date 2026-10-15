@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { Map, CalendarDays, Users, MessageSquare, CircleUserRound, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
 import { usePlayMode } from "@/lib/usePlayMode";
+import { useLeaveStore } from "@/lib/crew-room/rails";
+import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { sfx } from "@/lib/sound/sfx";
 
 type Tab = { href: string; label: string; Icon: LucideIcon; intro?: string };
@@ -33,6 +35,7 @@ const PARENT: Array<[string, string]> = [
  * Full-screen tasks hide the tab bar, the way a chat hides WhatsApp's tabs. A crew room (/crew/<id>/room) is NOT one:
  * the room is a place inside the app, so the tabs stay under it with CREW lit (the path starts with /crew).
  */
+const ROOM = /^\/crew\/[^/]+\/room(?:\/|$)/;
 const FULL_SCREEN = [/^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/];
 
 export default function BottomNav() {
@@ -57,7 +60,14 @@ export default function BottomNav() {
             data-intro={intro}
             aria-current={on ? "page" : undefined}
             // A very quiet wood tick, one pitch up the scale per tab, only when the lit tab is about to change.
-            onClick={() => {
+            onClick={(e) => {
+              // In a crew room, every tab leaves the room. During a Game Time that asks "Leave the hunt?" first, the way the
+              // door, the pill and the back arrow do (rails.ts useGoOut).
+              if (ROOM.test(path) && useRoomStore.getState().huntActive) {
+                e.preventDefault();
+                useLeaveStore.getState().ask(href);
+                return;
+              }
               if (!on) sfx.tabTick(i);
             }}
             className={clsx(

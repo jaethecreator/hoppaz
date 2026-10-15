@@ -4,10 +4,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, Check, Copy, ImagePlus, RefreshCw, Share2, Trash2, X } from "lucide-react";
 import clsx from "clsx";
 import { CrewLogo } from "@/components/crew-room/HubHeader";
+import { crewImageSrc } from "@/lib/crew-room/images";
 import { ROOM_TEMPLATES } from "@/lib/campaign/templates";
 import { inviteLink, shareInvite, type CrewCard } from "@/lib/crew-room/hub";
 import {
   MAX_HEADERS,
+  OWNER_UPLOADS,
   RIBBON_MAX,
   forgetCrewImage,
   lookError,
@@ -24,7 +26,8 @@ import { getSupabase } from "@/lib/supabase/client";
 
 /**
  * MANAGE CREW: the owner's dashboard, a panel over the hub (the bottom nav stays). Header pictures, the round logo,
- * the featured event and its ribbon, the meeting room template, the invite link. Every change saves the moment it is
+ * the featured event and its ribbon, the meeting room template, the invite link. For launch only the featured event and the
+ * invite link show; the picture upload, the logo and the template picker wait behind OWNER_UPLOADS (lib/crew-room/look.ts). Every change saves the moment it is
  * made and the hub behind it updates; the server checks the owner on each call, so this screen is a convenience, not
  * the lock. Only an owner is ever shown the button that opens it.
  */
@@ -82,10 +85,10 @@ export default function ManageCrew({ card, onClose, onChange }: { card: CrewCard
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4">
         <div className="mx-auto flex max-w-[760px] flex-col gap-4">
-          <Pictures card={card} look={look} setLook={setLook} commit={commitLook} work={work} />
-          <Logo card={card} look={look} commit={commitLook} work={work} />
+          {OWNER_UPLOADS && <Pictures card={card} look={look} setLook={setLook} commit={commitLook} work={work} />}
+          {OWNER_UPLOADS && <Logo card={card} look={look} commit={commitLook} work={work} />}
           <Featured card={card} onChange={onChange} work={work} />
-          <Rooms card={card} onChange={onChange} work={work} />
+          {OWNER_UPLOADS && <Rooms card={card} onChange={onChange} work={work} />}
           <Invite card={card} onChange={onChange} work={work} />
           <button type="button" className="btn btn-ghost w-full" onClick={onClose}>
             DONE
@@ -161,7 +164,7 @@ function Pictures({
     void run("add", async () => {
       let next = images;
       for (const f of picked) {
-        const blob = await toJpeg(f, { max: 1600 });
+        const blob = await toJpeg(f);
         const url = await uploadCrewImage(card.id, blob);
         next = [...next, url];
         try {
@@ -210,7 +213,7 @@ function Pictures({
           {images.map((url, i) => (
             <li key={url} className="flex items-center gap-2 rounded-hz border border-line bg-ink-3 p-2" data-header-row={i}>
               {/* eslint-disable-next-line @next/next/no-img-element -- crew upload */}
-              <img src={url} alt="" width={96} height={60} className="h-[60px] w-[96px] flex-none rounded-[4px] object-cover" />
+              <img src={crewImageSrc(url) ?? ""} alt="" width={96} height={60} className="h-[60px] w-[96px] flex-none rounded-[4px] object-cover" />
               <span className="min-w-0 flex-1 whitespace-nowrap font-mono text-[11px] uppercase tracking-[0.1em] text-dim">
                 {i + 1} / {images.length}
               </span>

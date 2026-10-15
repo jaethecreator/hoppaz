@@ -60,11 +60,16 @@ function useKeyboardLift(root: React.RefObject<HTMLElement | null>) {
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
     window.addEventListener("resize", update);
+    // The stage itself can move under the keyboard (the tab bar hides, the browser's bars slide): read again when it does,
+    // not only when the visual viewport reports.
+    const ro = typeof ResizeObserver === "undefined" || !root.current ? null : new ResizeObserver(update);
+    if (root.current) ro?.observe(root.current);
     update();
     return () => {
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
+      ro?.disconnect();
     };
   }, [root]);
   return lift;

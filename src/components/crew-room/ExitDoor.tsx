@@ -18,7 +18,8 @@ import css from "./Places.module.css";
  * Walking never leaves the room. Only a tap does:
  *   the plate, when I stand against the door   goes to the map
  *   the plate, from anywhere else              walks me to the tile in front of the door; the pill shows there
- *   the pill "EXIT TO MAP" (roomStore action id "exit", priority 10)   goes to the map
+ *   the pill "EXIT TO MAP" (roomStore action id "exit", priority 10)   goes to the map, once I have taken a step
+ *                                              (roomStore walked): never on arrival, even when the entrance is crowded
  *   watching a full room (no avatar)            the plate goes straight to the map
  * The way out is useGoOut() (rails.ts), so a running Game Time asks "Leave the hunt?" first.
  *
@@ -40,9 +41,12 @@ export default function ExitDoor({ crewId, layout }: ExitDoorProps) {
   const block = useMemo(() => (door ? { x: door.x, y: door.y, w: door.w, h: door.h } : null), [door?.x, door?.y, door?.w, door?.h]); // eslint-disable-line react-hooks/exhaustive-deps
   const anchor = useRef<HTMLDivElement>(null);
   const me = useRoomStore((s) => s.me);
+  // The pill waits for my first step. The entrance fills up, and the next arrivals land beside the door: a pill that
+  // greets you with "EXIT TO MAP" the moment you walk in is the wrong hello. The plate itself is always there.
+  const walked = useRoomStore((s) => s.walked);
 
   const leave = useCallback(() => goOut("/"), [goOut]);
-  usePlaceAction({ id: "exit", label: block ? "EXIT TO MAP" : null, priority: 10, block, enter: ENTER, leave: LEAVE, onPress: leave });
+  usePlaceAction({ id: "exit", label: block && walked ? "EXIT TO MAP" : null, priority: 10, block, enter: ENTER, leave: LEAVE, onPress: leave });
 
   // Cancel the camera's scale so the plate stays one size on screen. Written straight to the element: React never
   // re-renders for it, and the check is one bounding box read, every frame while the zoom moves and 5 times a second
@@ -94,7 +98,7 @@ export default function ExitDoor({ crewId, layout }: ExitDoorProps) {
 
   if (!door || !block) return null;
   const tile = layout.grid.tile;
-  const near = !!me && tilesFrom(me, block) <= ENTER;
+  const near = !!me && walked && tilesFrom(me, block) <= ENTER;
 
   const tap = () => {
     const { me: at, walkTo } = useRoomStore.getState();

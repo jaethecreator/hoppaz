@@ -1,10 +1,10 @@
 "use client";
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Flame, Info, Snowflake, Thermometer, TriangleAlert } from "lucide-react";
 import { canWalkScene, scenePath, type CampaignLayout } from "@/lib/campaign/layout";
+import { deviceTier } from "@/lib/deviceTier";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
-import { useGameTime, type GtChip } from "@/lib/game-time/store";
+import { useGameTime } from "@/lib/game-time/store";
 import { nearestSpot, spotRects, tilesFrom, type Rect, type SpotRect } from "@/lib/game-time/proximity";
 import css from "./GameTime.module.css";
 
@@ -12,17 +12,20 @@ import css from "./GameTime.module.css";
  * The Game Time half that lives IN the world (design 13.3, 13.4, 13.5). Mounted inside the scaled world container, so a
  * child at `left: x * tile, top: y * tile` lines up with the art at every zoom. Click-through; nothing here takes a tap.
  *
- *   SHIMMER   every object that may hide a box (game.objects) twinkles: a small star at its top-right corner, brighter when
- *             I am near, a steady ring on the one I would search. "Shimmers" means "can be searched", never "has a box".
- *             Only the ten nearest to me animate; the full view shows dots. A tap on a star walks me next to the object (the
+ *   SHIMMER   every object that may hide a box (game.objects) twinkles: a gold four-point star with a halo at its top-right
+ *             corner, brighter when I am near, a steady ring on the one I would search, and for the ten nearest a soft
+ *             pulsing outline round the whole object. "Shimmers" means "can be searched", never "has a box". Only the ten
+ *             nearest animate; the full view shows bigger pulsing dots. A tap on a star walks me next to the object (the
  *             fountain's sticker covers the tiles beside the fountain, so the floor cannot be tapped there).
  *   SEARCH    a dashed frame that shakes 2 px and a gleam that sweeps the object, with dust lifting, for the 2 seconds.
- *   CHIP      the answer sits on the object: NOTHING HERE, COLD, WARM or HOT, or what went wrong. One size on screen.
+ *   CHIP      the answer (NOTHING HERE, COLD, WARM or HOT, or what went wrong) is drawn by HintLayer in the screen layer,
+ *             so a zone label never covers it.
  *   BURST     my win: squares out of the object. Someone else's find: a ring and a few specks where the box was.
  */
 export type GameTimeWorldProps = { layout: CampaignLayout; me: { x: number; y: number } | null; isWatcher: boolean; walkTo: (x: number, y: number) => void };
 
 const ANIMATED = 10;
+const OUTLINE_LOW = 4;
 const BURST_COLOURS = ["#5B2EFF", "#D8B468", "#F5EBDD", "#5B2EFF", "#D8B468", "#F5EBDD", "#FF4D00"];
 
 const hash = (s: string) => {
@@ -33,13 +36,29 @@ const hash = (s: string) => {
 
 type Level = "far" | "near" | "in";
 
+/** A four-point star, drawn as a path so it can carry a dark edge and a glow (a clip-path would cut both off). */
+const Star = () => (
+  <svg className={css.star} viewBox="0 0 24 24" aria-hidden>
+    <path d="M12 0.5 14.7 9.3 23.5 12 14.7 14.7 12 23.5 9.3 14.7 0.5 12 9.3 9.3Z" />
+  </svg>
+);
+
 const Spot = memo(function Spot({ id, x, y, level, twinkle, dot, pop, onGo }: { id: string; x: number; y: number; level: Level; twinkle: boolean; dot: boolean; pop: boolean; onGo: ((id: string) => void) | null }) {
   const style = { left: x, top: y, "--d": `-${(hash(id) / 1000) * 2.4}s` } as React.CSSProperties;
-  const cls = [css.spot, level === "near" ? css.near : "", twinkle && level !== "in" ? css.twinkle : "", dot ? css.dot : "", pop ? css.popStar : ""].join(" ");
+  const cls = [css.spot, level === "near" ? css.near : "", twinkle && level !== "in" ? css.twinkle : "", pop ? css.popStar : ""].join(" ");
   return (
     <div className={cls} style={style} data-gt-spot={id} data-level={level}>
       <div className={css.spotBody}>
-        {level === "in" ? <i className={css.ring} /> : <i className={css.star} />}
+        {level === "in" ? (
+          <i className={css.ring} />
+        ) : dot ? (
+          <i className={css.pulseDot} />
+        ) : (
+          <>
+            <i className={css.halo} />
+            <Star />
+          </>
+        )}
         {onGo && level !== "in" && (
           <button
             type="button"
@@ -57,46 +76,6 @@ const Spot = memo(function Spot({ id, x, y, level, twinkle, dot, pop, onGo }: { 
     </div>
   );
 });
-
-const TONE_CLASS: Record<GtChip["tone"], string> = { cold: css.tCold, warm: css.tWarm, hot: css.tHot, warn: css.tWarn, info: css.tInfo };
-
-function ChipIcon({ tone }: { tone: GtChip["tone"] }) {
-  const p = { size: 14, strokeWidth: 2.4, "aria-hidden": true } as const;
-  if (tone === "cold") return <Snowflake {...p} />;
-  if (tone === "warm") return <Thermometer {...p} />;
-  if (tone === "hot") return <Flame {...p} />;
-  if (tone === "warn") return <TriangleAlert {...p} />;
-  return <Info {...p} />;
-}
-
-/** The hint on the object. It keeps inside the visible world: shifted sideways at an edge, flipped under the object at the top. */
-function HintChip({ chip, rect, tile }: { chip: GtChip; rect: Rect; tile: number }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState({ shift: 0, below: false });
-  useLayoutEffect(() => {
-    const el = ref.current;
-    const view = el?.closest("[data-lod]");
-    if (!el || !view) return;
-    const v = view.getBoundingClientRect();
-    const r = el.getBoundingClientRect();
-    let shift = 0;
-    if (r.left < v.left + 8) shift = v.left + 8 - r.left;
-    else if (r.right > v.right - 8) shift = v.right - 8 - r.right;
-    setFit({ shift, below: r.top < v.top + 8 });
-  }, [chip.k]);
-  const x = (rect.x + rect.w / 2) * tile;
-  const y = fit.below ? (rect.y + rect.h) * tile + 6 : rect.y * tile - 6;
-  return (
-    <div className={`${css.chipAnchor} ${fit.below ? css.chipBelow : ""}`} style={{ left: x, top: y }}>
-      <div className={css.chipBody} style={{ "--shift": `${fit.shift}px` } as React.CSSProperties}>
-        <div ref={ref} className={`${css.chip} ${TONE_CLASS[chip.tone]}`} role="status" data-gt-chip={chip.tone}>
-          <ChipIcon tone={chip.tone} />
-          {chip.text}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /** Squares fly out of the object: my win. */
 function Burst({ k, rect, tile }: { k: number; rect: Rect; tile: number }) {
@@ -145,12 +124,12 @@ export default function GameTimeWorld({ layout, me, isWatcher, walkTo }: GameTim
   const game = useGameTime((s) => s.game);
   const mine = useGameTime((s) => s.me);
   const searching = useGameTime((s) => s.searching);
-  const chip = useGameTime((s) => s.chip);
   const poofs = useGameTime((s) => s.poofs);
   const burst = useGameTime((s) => s.burst);
   const go = useGameTime((s) => s.go);
   const full = useRoomStore((s) => s.view) === "full";
   const tile = layout.grid.tile;
+  const outlineCount = useMemo(() => (deviceTier() === "low" ? OUTLINE_LOW : ANIMATED), []);
 
   const shimmer = !!game && game.status === "live" && game.room_ok && !isWatcher && mine.member && mine.can_search && !mine.won;
   const objects = game?.objects;
@@ -173,8 +152,10 @@ export default function GameTimeWorld({ layout, me, isWatcher, walkTo }: GameTim
     });
     const order = [...rows].sort((a, b) => a.far - b.far).slice(0, ANIMATED);
     const animated = new Set(order.map((r) => r.s.id));
-    return rows.map((r) => ({ ...r, twinkle: animated.has(r.s.id) }));
-  }, [spots, mx, my]);
+    // The outlines are dearer to draw than the stars: a weak phone gets the four nearest.
+    const outlined = new Set(order.slice(0, outlineCount).map((r) => r.s.id));
+    return rows.map((r) => ({ ...r, twinkle: animated.has(r.s.id), outline: outlined.has(r.s.id) }));
+  }, [spots, mx, my, outlineCount]);
 
   // The room draws the fountain's sticker over this layer; one step up keeps the stars (and their taps) above it.
   const marker = useRef<HTMLElement>(null);
@@ -212,12 +193,23 @@ export default function GameTimeWorld({ layout, me, isWatcher, walkTo }: GameTim
   }, [go]);
 
   const searched = searching ? rectOf(searching.object) : null;
-  const chipRect = chip ? rectOf(chip.object) : null;
   const burstRect = burst ? rectOf(burst.object) : null;
 
   return (
     <>
       <i ref={marker} hidden />
+      {!full &&
+        levels.map(({ s, level, outline }) =>
+          outline || level === "in" ? (
+            <i
+              key={`o-${s.id}`}
+              className={`${css.outline} ${level === "in" ? css.outlineIn : ""}`}
+              style={{ left: s.rect.x * tile, top: s.rect.y * tile, width: s.rect.w * tile, height: s.rect.h * tile, "--d": `-${(hash(s.id) / 1000) * 2.4}s` } as React.CSSProperties}
+              data-gt-outline={s.id}
+              aria-hidden
+            />
+          ) : null,
+        )}
       {levels.map(({ s, level, twinkle }) => (
         <Spot key={s.id} id={s.id} x={(s.rect.x + s.rect.w) * tile - 4} y={s.rect.y * tile + 4} level={level} twinkle={twinkle} dot={full} pop={pop} onGo={here ? goNear : null} />
       ))}
@@ -238,7 +230,6 @@ export default function GameTimeWorld({ layout, me, isWatcher, walkTo }: GameTim
         const r = rectOf(p.object);
         return r ? <Poof key={p.k} k={p.k} rect={r} tile={tile} /> : null;
       })}
-      {chip && chipRect && <HintChip key={chip.k} chip={chip} rect={chipRect} tile={tile} />}
     </>
   );
 }

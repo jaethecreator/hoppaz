@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronRight, Settings2 } from "lucide-react";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import { useFeatured } from "@/lib/crew-room/featured";
+import { crewImageSrc } from "@/lib/crew-room/images";
 import { useExploreStore, useGoOut, useRoomRails, type RailCrew, type RailEvent } from "@/lib/crew-room/rails";
 import { dayLabel } from "@/lib/filters";
 import { eventTitle } from "@/lib/geo";
@@ -153,9 +154,18 @@ function NightRow({ event, onGo }: { event: RailEvent; onGo: () => void }) {
       data-explore-event={event.id}
     >
       <span className="relative block h-[52px] w-10 flex-none overflow-hidden rounded-[4px] bg-ink-3">
-        {event.flyer_url && (
+        {event.flyer_url ? (
           // eslint-disable-next-line @next/next/no-img-element -- an event flyer, uploaded by its organiser
           <img src={event.flyer_url} alt="" width={40} height={52} loading="lazy" decoding="async" className="h-full w-full object-cover" draggable={false} />
+        ) : (
+          // No flyer: a ticket stub with the day, in the app's orange, so the row is never a dark hole.
+          <span className="grid h-full w-full place-items-center bg-orange text-center font-display text-[11px] font-black leading-[1.05] text-brand-ink" aria-hidden>
+            {day.split(" ").slice(0, 2).map((w, i) => (
+              <span key={i} className="block">
+                {w}
+              </span>
+            ))}
+          </span>
         )}
       </span>
       <span className="min-w-0 flex-1">
@@ -171,8 +181,9 @@ function NightRow({ event, onGo }: { event: RailEvent; onGo: () => void }) {
 }
 
 /** A crew's round badge at list size: the logo, or the first letter on the card colour. */
-function Dot({ url, name }: { url: string | null; name: string }) {
+function Dot({ url: stored, name }: { url: string | null; name: string }) {
   const [failed, setFailed] = useState<string | null>(null);
+  const url = crewImageSrc(stored);
   const show = !!url && failed !== url;
   return (
     <span className="grid h-10 w-10 flex-none place-items-center overflow-hidden rounded-full border border-line bg-ink-3">

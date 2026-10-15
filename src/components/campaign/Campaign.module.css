@@ -259,6 +259,37 @@
   width: 100%;
   height: 100%;
 }
+/* The placeholder while a Hopper's avatar is still being drawn (spriteCache.ts): a head and hair, a top and trousers in
+   their own colours, one cheap node with two pseudo elements. 32 by 58 like the avatar, feet on the bottom edge. */
+.blob {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(circle at 50% 26%, var(--skin) 0 6.5px, transparent 7px),
+    radial-gradient(circle at 50% 22%, var(--hair) 0 9px, transparent 9.5px);
+}
+.blob::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 28px;
+  height: 17px;
+  border-radius: 6px 6px 2px 2px;
+  background: var(--top);
+}
+.blob::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 44px;
+  bottom: 2px;
+  border-radius: 1px 1px 3px 3px;
+  background: var(--bottom);
+}
 .walking {
   animation: steps 0.2s ease-in-out infinite alternate;
 }
@@ -351,7 +382,7 @@
 .zoneTag::before {
   content: "";
   position: absolute;
-  inset: -6px;
+  inset: -13px -6px;
 }
 .zoneTag b {
   flex: none;
@@ -411,7 +442,7 @@
 .areaTag::before {
   content: "";
   position: absolute;
-  inset: -16px -6px -8px;
+  inset: -18px -6px -10px;
 }
 .areaTag svg {
   flex: none;
@@ -428,6 +459,58 @@
 .areaTag b {
   color: #B83600;
   font-weight: 500;
+}
+
+/* The other rooms' names at the edge of the screen when the camera is close (EdgeArrows.tsx). Screen space. */
+.edgeArrows {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+.edgeArrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  max-width: 150px;
+  padding: 0 8px 0 6px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 13px;
+  background: rgb(var(--ground) / 0.78);
+  color: rgb(var(--text));
+  font: 500 10px/12px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  will-change: transform;
+}
+.edgeArrow[hidden] {
+  display: none;
+}
+.edgeArrow::before {
+  content: "";
+  position: absolute;
+  inset: -9px -4px;
+}
+.edgeArrow svg {
+  flex: none;
+  color: #ff6e32;
+}
+.edgeArrow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.edgeArrow:active {
+  background: #f5ebdd;
+  color: #0e0b0a;
 }
 
 /* Floor decals */

@@ -13,6 +13,7 @@ import RoomVoice from "@/components/crew-room/RoomVoice";
 import { ChatButton, HudPill } from "@/components/crew-room/Hud";
 import { useChatDock } from "@/lib/crew-room/chatStore";
 import { useFeatured } from "@/lib/crew-room/featured";
+import { crewImageSrc } from "@/lib/crew-room/images";
 import { useExploreStore, useGoOut } from "@/lib/crew-room/rails";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import type { CrewRoomConnection, SocialWorld } from "@/lib/crew-room/types";
@@ -113,7 +114,8 @@ function RoomTitle({ name, verified }: { name: string; verified: boolean }) {
 
 /** The crew's round logo at the right end of the header. It opens Explore: other crews and this week's nights. */
 function LogoBadge({ crewId, name, pulse }: { crewId: string; name: string; pulse: boolean }) {
-  const { logoUrl } = useFeatured(crewId);
+  const { logoUrl: stored } = useFeatured(crewId);
+  const logoUrl = crewImageSrc(stored);
   const [failed, setFailed] = useState<string | null>(null);
   const open = useExploreStore((s) => s.open);
   const show = !!logoUrl && failed !== logoUrl;
