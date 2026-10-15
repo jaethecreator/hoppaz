@@ -362,24 +362,18 @@ export function useGameDashboard(userId: string | null, opts: { lite?: boolean }
 
 export function useGroups(userId: string | null) {
   const [groups, setGroups] = useState<CrewGroup[]>([]);
-  const [openGroups, setOpenGroups] = useState<CrewGroup[]>([]);
   const [busy, setBusy] = useState(false);
   const reload = useCallback(async () => {
     const sb = getSupabase();
     if (!sb || !userId) return;
     // Every column (*), so verified comes along where crew_rooms.sql has added it and nothing breaks where it has not.
-    const [{ data }, { data: open }] = await Promise.all([
-      sb
-        .from("crew_members")
-        .select("crew:crews!inner(*)")
-        .eq("user_id", userId),
-      sb.from("crews").select("*").eq("visibility", "open").limit(50),
-    ]);
+    const { data } = await sb
+      .from("crew_members")
+      .select("crew:crews!inner(*)")
+      .eq("user_id", userId);
     const list = ((data ?? []) as unknown as { crew: CrewGroup }[]).map((x) => x.crew).filter(Boolean);
-    // Verified brand crews first, in both lists.
-    const verifiedFirst = (a: CrewGroup, b: CrewGroup) => Number(!!b.verified) - Number(!!a.verified);
-    list.sort(verifiedFirst);
-    setOpenGroups(((open ?? []) as CrewGroup[]).filter((g) => !list.some((m) => m.id === g.id)).sort(verifiedFirst));
+    // Verified brand crews first. Open rooms are not listed here any more: the Roomz tab searches them by name.
+    list.sort((a, b) => Number(!!b.verified) - Number(!!a.verified));
     if (list.length) {
       const { data: m } = await sb
         .from("crew_moves")
@@ -460,5 +454,5 @@ export function useGroups(userId: string | null) {
     },
     [userId, reload]
   );
-  return { groups, openGroups, busy, create, join, plan, rsvp, reload };
+  return { groups, busy, create, join, plan, rsvp, reload };
 }

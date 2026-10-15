@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import RequireAccount from "@/components/app/RequireAccount";
 import Link from "next/link";
-import { ChevronRight, MessageSquare, Plus } from "lucide-react";
+import { ChevronRight, MessageSquare, Plus, Search } from "lucide-react";
 import { useEventGroups, useMyEventRooms } from "@/lib/chat";
 import { dayLagos } from "@/lib/geo";
 import { useSession } from "@/lib/useSession";
@@ -15,7 +15,8 @@ import { FaceDisc } from "@/components/Avatar";
 import Mascot from "@/components/Mascot";
 import PageHeader from "@/components/app/PageHeader";
 import { useLinger } from "@/components/chat/useLinger";
-import { useGroups } from "@/lib/game";
+import { useGroups, type CrewGroup } from "@/lib/game";
+import { getSupabase } from "@/lib/supabase/client";
 import { usePingGames } from "@/lib/game-time/hooks";
 import { useEvents } from "@/lib/useEvents";
 import { useTheme } from "@/lib/useTheme";
@@ -23,13 +24,14 @@ import VerifiedBadge from "@/components/VerifiedBadge";
 import RoomCard from "./RoomCard";
 
 /**
- * ROOMS (the middle tab, /crew): places. Your rooms with the one big button, event rooms and group chats, rooms to find, and
- * the leaderboard folded away at the bottom. People live on the Chat tab (CHATS and CREW): waves, your crew, your friends.
+ * ROOMZ (the middle tab, /crew): places. Your roomz with the one big button, event rooms and group chats, a search for a
+ * room by name, and the leaderboard folded away at the bottom. People live on the Chat tab (CHATS and CREW): waves, your
+ * crew, your friends. Open rooms are found by name, never listed in a heap; a private room is joined through its invite link.
  */
 function RoomsPage() {
   const { userId, profile, state } = useSession();
   const { crew } = useCrew(userId);
-  const { groups, openGroups, create: createGroup, join: joinGroup, plan, rsvp } = useGroups(userId);
+  const { groups, create: createGroup, join: joinGroup, plan, rsvp } = useGroups(userId);
   const { groups: chats, join: joinChat, leave: leaveChat } = useEventGroups(userId);
   const eventRooms = useMyEventRooms(userId);
   const games = usePingGames(!!userId && state === "ready");
@@ -43,11 +45,33 @@ function RoomsPage() {
   const settled = useLinger(state !== "loading", 900);
 
   const [groupName, setGroupName] = useState("");
-  const [invite, setInvite] = useState("");
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<CrewGroup[] | null>(null);
   const [visibility, setVisibility] = useState<"private" | "open">("private");
   const [moving, setMoving] = useState<string | null>(null);
-  const [form, setForm] = useState<"code" | "start" | null>(null);
+  const [starting, setStarting] = useState(false);
   const [board, setBoard] = useState(false);
+
+  // Find a room: open rooms by name, as you type. Row level security already lets everyone read an open room.
+  useEffect(() => {
+    const t = q.trim();
+    if (t.length < 2) {
+      setHits(null);
+      return;
+    }
+    let live = true;
+    const timer = setTimeout(async () => {
+      const sb = getSupabase();
+      if (!sb) return;
+      const like = t.replace(/[\\%_]/g, (c) => `\\${c}`);
+      const { data } = await sb.from("crews").select("*").eq("visibility", "open").ilike("name", `%${like}%`).order("name").limit(20);
+      if (live) setHits(((data ?? []) as CrewGroup[]).sort((a, b) => Number(!!b.verified) - Number(!!a.verified)));
+    }, 280);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [q]);
 
   const standings = useMemo(() => {
     const me = {
@@ -67,19 +91,10 @@ function RoomsPage() {
     const id = await createGroup(groupName.trim(), visibility);
     if (id) {
       setGroupName("");
-      setForm(null);
+      setStarting(false);
       say("Room created. Your invite code is ready.", "ok");
     } else {
       say("Couldn't start the room. Try again.", "error");
-    }
-  };
-
-  const joinByCode = async () => {
-    const ok = await joinGroup(invite);
-    say(ok ? "You're in the room." : "Code not found. Check it and try again.", ok ? "ok" : "error");
-    if (ok) {
-      setInvite("");
-      setForm(null);
     }
   };
 
@@ -91,14 +106,14 @@ function RoomsPage() {
 
   return (
     <div className="h-full overflow-y-auto px-4 pb-6">
-      <PageHeader title="Rooms" caption="Where your people are" />
+      <PageHeader title="Roomz" caption="Where your people are" />
 
-      <p className="seclabel mb-2">Your rooms</p>
+      <p className="seclabel mb-2">Your roomz</p>
       {groups.length === 0 && settled && (
         <div className="card mb-2 flex flex-col items-center px-3 py-5 text-center">
           <Mascot state="oya" size={104} edge={theme === "day" ? "ink" : "ground"} label="The Hoppaz mascot, calling you over" />
-          <p className="mt-3 font-display text-[19px] font-black leading-tight">No rooms yet.</p>
-          <p className="hint mt-1 max-w-[17rem]">A room is your people, in a place of your own. Join one below, or start yours.</p>
+          <p className="mt-3 font-display text-[19px] font-black leading-tight">No roomz yet.</p>
+          <p className="hint mt-1 max-w-[17rem]">A room is your people, in a place of your own. Find one below, or start yours.</p>
         </div>
       )}
       {groups.map((g) => (
@@ -121,7 +136,7 @@ function RoomsPage() {
       {(eventRooms.length > 0 || chats.length > 0) && (
         <>
           <div className="mb-2 mt-4 flex items-center justify-between gap-2">
-            <p className="seclabel">Event rooms and group chats</p>
+            <p className="seclabel">Event roomz and group chats</p>
             {invites.length > 0 && <span className="pill pill-lagoon">{invites.length} INVITE{invites.length === 1 ? "" : "S"}</span>}
           </div>
           {eventRooms.map((r) => (
@@ -169,38 +184,37 @@ function RoomsPage() {
       )}
 
       <p className="seclabel mb-2 mt-4">Find a room</p>
-      {openGroups.map((g) => (
-        <div key={g.id} className="flex items-center gap-2 border-t border-line py-2">
-          <Link href={`/crew/${g.id}`} className="flex min-h-[44px] min-w-0 flex-1 items-center gap-1.5">
-            <span className="min-w-0 truncate font-display text-[15px] font-semibold">{g.name}</span>
-            {g.verified && <VerifiedBadge size={15} />}
-          </Link>
-          <button
-            className="btn btn-ghost flex-none px-4"
-            onClick={async () => {
-              const ok = await joinGroup(g.id);
-              say(ok ? "You're in the room. Tap ENTER ROOM to walk in." : "Couldn't join. Try again.", ok ? "ok" : "error");
-            }}
-          >
-            JOIN
-          </button>
-        </div>
-      ))}
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <button className="btn btn-ghost" aria-expanded={form === "code"} onClick={() => setForm(form === "code" ? null : "code")}>
-          JOIN WITH CODE
-        </button>
-        <button className="btn btn-ghost" aria-expanded={form === "start"} onClick={() => setForm(form === "start" ? null : "start")}>
-          <Plus size={15} aria-hidden /> START A ROOM
-        </button>
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-3.5 text-dim" aria-hidden />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name" className="pl-9" autoComplete="off" aria-label="Search for a room by name" />
       </div>
-      {form === "code" && (
-        <div className="mt-2 flex gap-2">
-          <input value={invite} onChange={(e) => setInvite(e.target.value)} placeholder="Invite code" aria-label="Invite code" autoCapitalize="characters" />
-          <button className="btn flex-none px-4" onClick={joinByCode}>JOIN</button>
+      {hits && (
+        <div className="mt-1">
+          {hits.filter((g) => !groups.some((m) => m.id === g.id)).map((g) => (
+            <div key={g.id} className="flex items-center gap-2 border-b border-line py-2">
+              <Link href={`/crew/${g.id}`} className="flex min-h-[44px] min-w-0 flex-1 items-center gap-1.5">
+                <span className="min-w-0 truncate font-display text-[15px] font-semibold">{g.name}</span>
+                {g.verified && <VerifiedBadge size={15} />}
+              </Link>
+              <button
+                className="btn btn-ghost flex-none px-4"
+                onClick={async () => {
+                  const ok = await joinGroup(g.id);
+                  say(ok ? "You're in. Tap ENTER ROOM to walk in." : "Couldn't join. Try again.", ok ? "ok" : "error");
+                  if (ok) setQ("");
+                }}
+              >
+                JOIN
+              </button>
+            </div>
+          ))}
+          {hits.filter((g) => !groups.some((m) => m.id === g.id)).length === 0 && <p className="hint py-2">No room by that name.</p>}
         </div>
       )}
-      {form === "start" && (
+      <button className="btn btn-ghost mt-2 w-full" aria-expanded={starting} onClick={() => setStarting((v) => !v)}>
+        <Plus size={15} aria-hidden /> START A ROOM
+      </button>
+      {starting && (
         <div className="mt-2 flex gap-2">
           <input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="Name your room" aria-label="Name your room" maxLength={50} />
           <select value={visibility} onChange={(e) => setVisibility(e.target.value as "private" | "open")} aria-label="Who can find it" className="max-w-28">
@@ -252,7 +266,7 @@ function closes(at: number) {
 /** Needs an account: anonymous Hoppers get the sign-up here instead. */
 export default function CrewPage() {
   return (
-    <RequireAccount title="Rooms." caption="Make an account to join rooms, plan moves together and keep your group chats.">
+    <RequireAccount title="Roomz." caption="Make an account to join roomz, plan moves together and keep your group chats.">
       <RoomsPage />
     </RequireAccount>
   );
