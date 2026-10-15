@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { Hand, MessageCircle } from "lucide-react";
 import Sheet from "@/components/Sheet";
 import ChatFace from "@/components/chat/ChatFace";
 import { blockPerson } from "@/lib/chat";
+import { hotspotWave, type HotspotWaveResult } from "@/lib/social";
 import { getSupabase } from "@/lib/supabase/client";
 import { useToast } from "@/lib/store";
 import { reportHotspot } from "./api";
@@ -13,16 +16,20 @@ import { REASONS, reportCopy } from "./copy";
 export type HeadPerson = { key: string; alias: string; look: unknown; messageId?: string; excerpt?: string };
 
 /**
- * What you can do about someone in a hotspot: report them (or the message you tapped) and block them. Wave,
- * Link up and Vibe come with Play mode Phase 5; until then a hotspot has chat, Block and Report only.
- * Block and Report work on the opaque room key, so the browser never learns who it is.
+ * What you can do about someone in a hotspot: SAY HI (a crew request as your alias; a wave back makes you crew both ways and
+ * shows both real names: Jae, 15 Oct 2026; hotspotWave in lib/social, crew_friend_hotspot_wave in crew_friends.sql), report
+ * them (or the message you tapped) and block them. Everything works on the opaque room key, so the browser never learns who
+ * it is until they wave back.
  */
 export default function HeadCard({
   person,
+  youKey,
   onClose,
   onBlocked,
 }: {
   person: HeadPerson;
+  /** Your own key in this room: your own message has no SAY HI. */
+  youKey?: string | null;
   onClose: () => void;
   /** After a block: hide their messages and re-read the room. */
   onBlocked: (key: string) => void;
@@ -30,6 +37,15 @@ export default function HeadCard({
   const say = useToast((s) => s.say);
   const [step, setStep] = useState<"actions" | "block" | "report">("actions");
   const [busy, setBusy] = useState(false);
+  const [hi, setHi] = useState<HotspotWaveResult | null>(null);
+  const self = !!youKey && youKey === person.key;
+  const crew = hi?.kind === "matched";
+
+  const sayHi = async () => {
+    setBusy(true);
+    setHi(await hotspotWave(person.key, person.alias));
+    setBusy(false);
+  };
 
   const doBlock = async () => {
     setBusy(true);
@@ -57,11 +73,30 @@ export default function HeadCard({
           <ChatFace look={person.look} alias={person.look ? null : person.alias} size={48} />
           <div className="min-w-0 flex-1 pt-0.5">
             <p className="truncate font-display text-base font-black leading-tight">{person.alias}</p>
-            <p className="hint mt-1">An alias. Nobody in a hotspot sees real names.</p>
+            <p className="hint mt-1">{self ? "This is you." : "An alias. Say hi: if they wave back, you are crew and see each other's names."}</p>
           </div>
         </div>
 
         {person.excerpt && <p className="mt-3 break-words border-l-2 border-line pl-3 font-body text-[14px] leading-snug text-cream/80">“{person.excerpt}”</p>}
+
+        {step === "actions" && !self && (
+          <div className="mt-3">
+            {hi && (
+              <p role="status" className={`mb-2 font-mono text-[11px] font-medium uppercase tracking-[0.1em] ${hi.kind === "failed" ? "text-dim" : "text-orange"}`}>
+                {hi.text}
+              </p>
+            )}
+            {crew ? (
+              <Link href={hi?.dm ? `/chat/dm/${hi.dm}` : "/chat"} className="btn w-full" onClick={onClose}>
+                <MessageCircle size={16} aria-hidden /> MESSAGE
+              </Link>
+            ) : (
+              <button type="button" className="btn w-full" onClick={sayHi} disabled={busy || hi?.kind === "sent" || hi?.kind === "already"}>
+                <Hand size={16} aria-hidden /> {hi?.kind === "sent" || hi?.kind === "already" ? "WAVED" : "SAY HI"}
+              </button>
+            )}
+          </div>
+        )}
 
         {step === "actions" && (
           <div className="mt-3 flex items-center justify-center gap-2">

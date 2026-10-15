@@ -194,6 +194,7 @@ function LiveRoom({ slug, room, data }: { slug: string; room: NonNullable<Return
       {person && phase.t === "in" && (
         <HeadCard
           person={person}
+          youKey={entered?.key}
           onClose={() => setPerson(null)}
           onBlocked={(key) => {
             chat.hide(key);
