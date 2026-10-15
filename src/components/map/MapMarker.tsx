@@ -44,7 +44,10 @@ export default function MapMarker({
   // Added to the map and removed with it. The first position is the one the props hold when it mounts.
   useEffect(() => {
     marker.setLngLat([lng, lat]).addTo(map);
+    // The map's own declutter (NightMap) places signs around landmark markers: tell it this one has arrived.
+    const raf = requestAnimationFrame(() => window.dispatchEvent(new Event("hz-declutter")));
     return () => {
+      cancelAnimationFrame(raf);
       try {
         marker.remove();
       } catch {

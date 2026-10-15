@@ -1,5 +1,7 @@
 # Hoppaz Hotspots
 
+> **15 Oct 2026: hotspots are on the main map, not inside Play.** The separate Play view was removed (see [DECISIONS.md](DECISIONS.md), 15 Oct). The open hotspots show as pins on the events map, with a "Hotspots" button and list; a pin opens the sheet and ENTER opens the room straight away, with no avatar run. The list loads once per visit. Every way into a room goes through `openHotspot()` in `src/lib/hotspots/open.ts`; the map layer is `src/components/hotspots/MainHotspots.tsx`. Sections 6, 7 and 14 below describe the Play version (the tray row, the avatar run, the pointer) as it was built. Open question 5 is answered: yes, a hotspot pin on the events map.
+
 Status: built and open (wave 1), 10 Oct 2026. The plan below was written 9 Oct and updated 10 Oct; section 15 says what the review of 10 Oct found and what was changed. Jae's zone decision of 9 Oct replaces the size classes (section 4): Lagos is cut into 13 zones with one hotspot each, and the zones, junctions and split hints are built as data (`supabase/hotspot_zones.sql`, made by `scripts/hotspots/zones.mjs`, tested by `supabase/tests/hotspot_zones_test.sql`). The database for steps 1, 3, 4 and 6 is built (10 Oct: `supabase/hotspots.sql`, tested by `supabase/tests/hotspots_test.sql`, contract in section 13). The room screen, the 18+ sheet, the reward moment and the admin section are built (10 Oct, section 14); the Play screens live in `src/components/play/hotspots/`. A safety, correctness and phone review of 10 Oct found 26 things; all are fixed or answered (section 15). It sits on top of Play mode ([PLAY-MODE.md](PLAY-MODE.md)) and Ola's chat system (`supabase/chat_accounts.sql`). Jae's rows in [DECISIONS.md](DECISIONS.md) win over any number here.
 
 Jae's words, tidied from his voice note: "Three spots in Yaba that are always open 24/7, a general group that people in Yaba can enter and have conversations and vibe. Anyone anywhere can enter, but it should be closer to the people in that region. When you click Play you see the hotspots near you on the map, you move your avatar there, you enter the conversation and enjoy yourself or interact with people from the same community. Start with three in Yaba, then scale: Phase 1 maybe two, very large areas several. Call them HOTSPOTS. They should always be at junctions."
@@ -487,7 +489,7 @@ Settled on 10 Oct 2026: Jae said "let it rip" and Ola agreed, so the defaults in
 2. **The zones.** Are the 13 zones in section 4 right? The borders follow the LGA lines, so Gbagada and Anthony are in Ojota and Gbagada, Ilupeju and Oshodi are in Surulere, Mushin and Oshodi, Maryland is in Ikeja, and Jibowu is in Yaba. Open Yaba alone first, or wave 1 (Yaba, Lekki, Victoria Island, Ikeja)?
 3. **The 13 junctions.** Jibowu (Yaba), Admiralty Way (Lekki), Adeola Odeku (Victoria Island), Allen Roundabout (Ikeja), Ojuelegba (Surulere, Mushin and Oshodi), Bourdillon (Ikoyi), Obalende (Lagos Island), Ojota, Mile 2, Ajah, Ikotun, Iyana Iba, Ikorodu. Please correct the local names and swap any. On 10 Oct Jae settled three: Mile 2 moved to the Jakande Estate Road crossing, Bourdillon kept, and Ikorodu Garage at the roundabout after the Agric bus stops (section 4). OpenStreetMap does not back six of the split junctions; they are marked unsure in section 4. Falomo for Ikoyi would need the 100 m military rule lifted for that one place.
 4. **Anyone anywhere.** Section 6 lets a Hopper outside Lagos, or with location off, see and enter hotspots, with an account. OK?
-5. **The events map.** A small hotspot icon on the main map that opens Play? Boxes still never show there.
+5. **The events map.** A small hotspot icon on the main map that opens Play? Boxes still never show there. (Answered 15 Oct: open hotspots are pins on the events map and there is no Play view; see DECISIONS.md.)
 6. **Age.** Is there an age rule (18 and over)? A public chat of strangers needs it.
 7. **Area chip.** Opt-in "YABA" tag next to your alias, off by default, from the area the Hopper chose? Or a room line like "mostly from Yaba tonight" with no names? Or neither?
 8. **Night.** Slow mode 00:00 to 05:00 and 24/7 otherwise. Who looks at reports in the morning, and how fast must they be answered?
@@ -574,7 +576,7 @@ Each is his body plus a branch that starts `like 'hotspot:%'`; nothing changes f
 
 ## 14. The room screen and the admin section (built 10 Oct 2026)
 
-The app half of steps 3, 4 and 6 that is not the map: the room Hoppers stand in, the 18+ sheet, the daily reward moment, the staff section and the privacy line. Play's own screens (marker, sheet, tray row, the run) are described by their files in `src/components/play/hotspots/` and `src/lib/hotspots/`.
+The app half of steps 3, 4 and 6 that is not the map: the room Hoppers stand in, the 18+ sheet, the daily reward moment, the staff section and the privacy line. Play's own screens (the tray row and the pointer) are in `src/components/play/hotspots/`; the marker, sheet, list and room are in `src/components/hotspots/`, and `src/lib/hotspots/` holds the data.
 
 ### Files
 
@@ -587,8 +589,9 @@ The app half of steps 3, 4 and 6 that is not the map: the room Hoppers stand in,
 | `.../room/ChatPanel.tsx` | The chat on Ola's pieces, plus the plain state line (rules, slow mode, countdown, refusals) |
 | `.../room/HeadCard.tsx`, `AdultSheet.tsx`, `RewardMoment.tsx` | The card for a head or a message (Report, Block), the 18+ sheet, the "+10 XP" and Regular stamp |
 | `.../room/api.ts`, `copy.ts`, `demo.ts`, `useKeyboardUp.ts` | The typed calls, every line of copy, the no-database room, the keyboard hook |
-| `src/components/play/hotspots/HotspotPointer.tsx` | A chip on the edge of the Play map pointing to your hotspot, with its name and distance, whenever its pin is off the screen (the junction is usually a kilometre or more away at the zoom Play opens on) |
-| `src/components/play/hotspots/HotspotsRow.tsx`, `HotspotsAll.tsx` | The tray row (one line of 44 px chips and an "All 13" chip) and the full list (your side first, nearest first when we know where you are) |
+| `src/components/play/hotspots/HotspotPointer.tsx` | (Play only, unmounted) A chip on the edge of the Play map pointing to your hotspot, with its name and distance, whenever its pin is off the screen (the junction is usually a kilometre or more away at the zoom Play opens on) |
+| `src/components/play/hotspots/HotspotsRow.tsx` (Play only, unmounted), `src/components/hotspots/HotspotsAll.tsx` | The tray row (one line of 44 px chips and an "All 13" chip) and the full list (your side first, nearest first when we know where you are; the map passes only the open ones and the list says "Hotspots could not load" with a way to try again) |
+| `src/components/hotspots/MainHotspots.tsx`, `src/lib/hotspots/open.ts` | The events-map layer (pins, button, "Your home base" chip, sheet, room) and the one place that decides what is open and how a room is entered (`openHotspot`) |
 | `src/components/admin/HotspotsSection.tsx`, `src/app/api/admin/game/hotspots.ts` | The staff section and the handlers behind it; the route (`route.ts`) only dispatches `hotspot_*` actions and adds `hotspots` to its GET |
 | `src/app/privacy/page.tsx` | A "Hotspots" section |
 | `src/components/chat/Composer.tsx` | One new prop, `images` (default true): a hotspot turns the picture button off |

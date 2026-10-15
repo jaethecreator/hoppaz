@@ -103,6 +103,11 @@ type Sign = {
 const GAP = 4;
 /** What the page's chrome covers when it does not say: the day rail above, the scrubber below. */
 const DEFAULT_HUD = { top: 132, bottom: 96 };
+/** Below this zoom a hotspot pin (a landmark marker, .hz-pin) is just its disc: the camera is out over all of Lagos. */
+const PIN_FAR_ZOOM = 12.6;
+/** A hotspot pin with its name takes this much room around its point (px), and its disc alone this much. */
+const PIN_FULL = { left: 60, up: 30, right: 60, down: 38 } as const;
+const PIN_DISC = 18;
 /** From here in, venues are 3D houses: dots fade, and signs become cards floating over the roofs. */
 const STREET_ZOOM = 14.6;
 /** A sign stands this far above its dot, px. Up close it is lifted past the house instead. */
@@ -500,11 +505,38 @@ export default function NightMap({
       const c = ctrl.getBoundingClientRect();
       if (c.width) taken.push([c.left - h0.left, c.top - h0.top, c.right - h0.left, c.bottom - h0.top]);
     }
+    // Anything else on the page over the map that signs must keep clear of (the Hotspots buttons) says so with data-hz-obstacle.
+    if (h0) {
+      document.querySelectorAll<HTMLElement>("[data-hz-obstacle]").forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.width) taken.push([r.left - h0.left, r.top - h0.top, r.right - h0.left, r.bottom - h0.top]);
+      });
+    }
     // A sign cut off by the screen edge or tucked under the chrome reads as broken:
     // it only shows if it fits, otherwise it drops to its price tag, then its dot.
     const free = (x0: number, y0: number, x1: number, y1: number) =>
       x0 >= GAP && x1 <= vw - GAP && y0 >= top && y1 <= vh - bottom &&
       !taken.some(([a0, b0, a1, b1]) => x0 < a1 + GAP && x1 + GAP > a0 && y0 < b1 + GAP && y1 + GAP > b0);
+    // Landmarks (the hotspot pins, .hz-pin) take their place before the signs, so the signs flow around them: a pin keeps
+    // its name when that clears the edge, the chrome and the pins already placed, and shrinks to its disc when it does not.
+    // The pin you are looking at (.hz-pin-on) and your own (.hz-pin-mine) are placed first.
+    if (h0) {
+      const rank = (el: Element) => Number(el.classList.contains("hz-pin-on")) * 2 + Number(el.classList.contains("hz-pin-mine"));
+      const pins = [...(holder.current?.querySelectorAll<HTMLElement>(".hz-pin") ?? [])].sort((a, b) => rank(b) - rank(a));
+      const far = m.getZoom() < PIN_FAR_ZOOM;
+      for (const el of pins) {
+        const r = el.getBoundingClientRect();
+        if (!r.width) continue;
+        const cx = r.left + r.width / 2 - h0.left;
+        const cy = r.top + r.height / 2 - h0.top;
+        const full: Box = [cx - PIN_FULL.left, cy - PIN_FULL.up, cx + PIN_FULL.right, cy + PIN_FULL.down];
+        const disc: Box = [cx - PIN_DISC, cy - PIN_DISC, cx + PIN_DISC, cy + PIN_DISC];
+        const named = !far && (el.classList.contains("hz-pin-on") || free(...full));
+        taken.push(named ? full : disc);
+        const fit = named ? "full" : "disc";
+        if (el.dataset.fit !== fit) el.dataset.fit = fit;
+      }
+    }
     const order: Mode[] = street ? ["card", "banner", "mini"] : ["banner", "mini"];
     [...signs.current.values()]
       .sort((a, b) => a.rank - b.rank)
@@ -725,6 +757,20 @@ export default function NightMap({
       m.setStyle(style, { diff: false });
     })();
   }, [theme, epoch]);
+
+  // Other layers' markers (the hotspot pins) ask for a re-place when they arrive or change.
+  useEffect(() => {
+    let raf = 0;
+    const on = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => declutter.current());
+    };
+    window.addEventListener("hz-declutter", on);
+    return () => {
+      window.removeEventListener("hz-declutter", on);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
 
   /* ------------------------------------------------ chrome insets as CSS ---- */
   useEffect(() => {

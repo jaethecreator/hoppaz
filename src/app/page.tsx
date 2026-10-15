@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
+import type { Map as MLMap } from "maplibre-gl";
 import AreaPicker from "@/components/AreaPicker";
 import EventCard from "@/components/EventCard";
 import HopSheet from "@/components/HopSheet";
@@ -33,6 +34,7 @@ import { busPosition } from "@/lib/busPosition";
 import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
 import { NEXT_COUNT, nextEvents } from "@/lib/filters";
+import { closeHotspots, useHotspotNav } from "@/lib/hotspots/open";
 
 // MapLibre touches window on import, so it stays out of the server bundle.
 const NightMap = dynamic(() => import("@/components/map/NightMap"), {
@@ -43,6 +45,9 @@ const NightMap = dynamic(() => import("@/components/map/NightMap"), {
     </div>
   ),
 });
+
+// The hotspot pins hang on the map, and MapLibre touches window on import: also client only, in its own chunk.
+const MainHotspots = dynamic(() => import("@/components/hotspots/MainHotspots"), { ssr: false });
 
 // One stable empty list, so memo deps do not change on every render.
 const NO_TYPES: string[] = [];
@@ -56,6 +61,7 @@ const IS_DEV = process.env.NODE_ENV !== "production";
 export default function MapPage() {
   const { fix, radiusKm, dateFilter, setDateFilter, types, setTypes } = useHoppaz();
   const { userId, refresh } = useSession();
+  const [map, setMap] = useState<MLMap | null>(null);
   const { events: allEvents, demo, ready, failed, reload } = useEvents(fix, radiusKm);
   const hop = useHop();
   const { done, checkedAt, busy, checkIn } = useCheckin(userId, refresh);
@@ -231,6 +237,26 @@ export default function MapPage() {
     [counts, dayKey]
   );
 
+  /* ------------------------------------------------------------ the map -- */
+  const onMapReady = useCallback((m: MLMap) => setMap(m), []);
+  const onMapUnavailable = useCallback(() => setMap(null), []);
+
+  /* ---------------------------------------------------------- hotspots -- */
+  // A hotspot's sheet, the list or the room has the screen: whatever card was open steps aside. Picking an event does the same
+  // the other way (pickEvent below), so there are never two cards.
+  const hotspotUi = useHotspotNav((s) => !!s.sheet || s.list || !!s.room);
+  useEffect(() => {
+    if (!hotspotUi) return;
+    setSelected(null);
+    setHopOpen(false);
+    setFiltering(false);
+    setPicking(false);
+  }, [hotspotUi]);
+  const pickEvent = useCallback((id: string) => {
+    closeHotspots();
+    setSelected(id);
+  }, []);
+
   /* ---------------------------------------- the side card's left and right -- */
   const navRef = useRef<((fromId: string, dir: -1 | 1) => string | null) | null>(null);
   const step = (dir: -1 | 1) => (selected ? navRef.current?.(selected, dir) ?? null : null);
@@ -276,31 +302,39 @@ export default function MapPage() {
       // An open event docks on the right, from just under the top chrome.
       style={{ ["--hz-side-top" as string]: `${hud.top + 4}px` }}
     >
-      <NightMap
-        events={events}
-        collectibleEventIds={dropIds}
-        hopStops={hop?.stops ?? NO_STOPS}
-        fix={fix}
-        radiusKm={radiusKm}
-        bus={bus}
-        busFocus={busFocus}
-        at={mode === "next" ? now : slot?.t ?? now}
-        live={mode === "next" ? true : slot?.live ?? true}
-        onClear={() => setSelected(null)}
-        fitKey={`${mode === "next" ? "next" : dayKey}|${shownTypes.join(",")}`}
-        selectedId={selected}
-        onSelect={setSelected}
-        onHopSelect={() => setHopOpen(true)}
-        hopActive={hopActive}
-        hopDate={hop?.hop_date ?? null}
-        onBus={() => setHopOpen(true)}
-        hudTop={hud.top}
-        hudBottom={hud.bottom}
-        swoop={mounted}
-        sidePanel={!!event}
-        allHot={mode === "next"}
-        navRef={navRef}
-      />
+      {/* The map is its own stacking context: its markers carry z-indexes of their own and must stay under the nav and the chrome. */}
+      <div className="absolute inset-0 isolate">
+        <NightMap
+          events={events}
+          collectibleEventIds={dropIds}
+          hopStops={hop?.stops ?? NO_STOPS}
+          fix={fix}
+          radiusKm={radiusKm}
+          bus={bus}
+          busFocus={busFocus}
+          at={mode === "next" ? now : slot?.t ?? now}
+          live={mode === "next" ? true : slot?.live ?? true}
+          onClear={() => setSelected(null)}
+          fitKey={`${mode === "next" ? "next" : dayKey}|${shownTypes.join(",")}`}
+          selectedId={selected}
+          onSelect={pickEvent}
+          onHopSelect={() => setHopOpen(true)}
+          hopActive={hopActive}
+          hopDate={hop?.hop_date ?? null}
+          onBus={() => setHopOpen(true)}
+          hudTop={hud.top}
+          hudBottom={hud.bottom}
+          swoop={mounted}
+          onMapReady={onMapReady}
+          onMapUnavailable={onMapUnavailable}
+          sidePanel={!!event}
+          allHot={mode === "next"}
+          navRef={navRef}
+        />
+      </div>
+
+      {/* Hotspots: a pin on each open one, the Hotspots button and list, the sheet and the room. Placed under the chrome's measured height. */}
+      {mounted && <MainHotspots map={map} fix={fix} top={hud.top} hidden={!!event || filtering || picking || hopOpen} />}
 
       {/* The chrome is all "now" (today's rail, the clock), so it draws on the client only: a page
           prerendered yesterday must not hydrate against today's rail. */}
@@ -329,10 +363,12 @@ export default function MapPage() {
           onClearTypes={() => setTypes([])}
           streak={streak}
           onFilter={() => {
+            closeHotspots();
             setSelected(null);
             setFiltering(true);
           }}
           onLocate={() => {
+            closeHotspots();
             setSelected(null);
             setPicking(true);
           }}
