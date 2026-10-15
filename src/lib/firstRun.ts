@@ -40,19 +40,37 @@ export const rememberLocationAsk = (a: "yes" | "no") => {
     /* private window: it asks again next visit, no harm */
   }
 };
+/**
+ * The location question was put to this Hopper (by either card) and they moved on without answering. That is an answer for
+ * this purpose: neither card asks again. It never overwrites a real "yes" or "no".
+ */
+export const markLocationAsked = () => {
+  try {
+    if (!localStorage.getItem(ASK_KEY)) localStorage.setItem(ASK_KEY, "seen");
+  } catch {
+    /* private window */
+  }
+};
 
-/** Private mode cannot save, so the step is also kept for this visit. */
+/**
+ * Private mode cannot save, so the step is also kept for this visit. It is only the fallback: what is saved wins, so a step
+ * another tab saved (or its "done") is the one every tab goes by.
+ */
 let remembered: FirstRunStep | null = null;
 
 function readSaved(): FirstRunStep | null {
-  if (remembered) return remembered;
   try {
     const v = localStorage.getItem(KEY);
-    return STEPS.includes(v as FirstRunStep) ? (v as FirstRunStep) : null;
-  } catch {
+    if (STEPS.includes(v as FirstRunStep)) return v as FirstRunStep;
+    if (v === null) return remembered;
     return null;
+  } catch {
+    return remembered;
   }
 }
+
+/** The key a tab hears about when another tab changes the saved step (the `storage` event). */
+export const FIRST_RUN_KEY = KEY;
 
 function save(step: FirstRunStep) {
   remembered = step;
@@ -84,6 +102,8 @@ type FirstRunState = {
   /** The saved step has been read (it needs the browser). */
   ready: boolean;
   hydrate: () => void;
+  /** Another tab changed the saved step: follow it. */
+  sync: () => void;
   go: (step: FirstRunStep) => void;
   finish: () => void;
 };
@@ -93,6 +113,11 @@ export const useFirstRun = create<FirstRunState>((set, get) => ({
   ready: false,
   hydrate: () => {
     if (!get().ready) set({ step: readSaved(), ready: true });
+  },
+  sync: () => {
+    const saved = readSaved();
+    // "Done" in another tab is done here too; a step never walks backwards because of another tab.
+    if (saved === "done" && get().step !== "done") set({ step: "done" });
   },
   go: (step) => {
     save(step);

@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { MapPin, X } from "lucide-react";
 import AreaPicker from "@/components/AreaPicker";
 import Mascot from "@/components/Mascot";
-import { FIRST_RUN_ENABLED, rememberLocationAsk, startingStep, useFirstRun } from "@/lib/firstRun";
+import { FIRST_RUN_ENABLED, FIRST_RUN_KEY, markLocationAsked, rememberLocationAsk, startingStep, useFirstRun } from "@/lib/firstRun";
 import { insideLagos, nearestArea } from "@/lib/geo";
 import { useHotspots } from "@/lib/hotspots/useHotspots";
 import { useTopNear } from "@/lib/nearEvents";
@@ -23,10 +23,16 @@ const NO_TOUCH_MS = 25_000;
 
 type Layer = "location" | "events" | "home" | "arrived";
 
-/** A link that takes someone to one thing (an event, a hotspot, a day) is not met with a card first. */
-const isDeepLink = () => {
+/**
+ * A link that takes someone to one thing (an event, a hotspot or its room, a day) is not met with a card first. It is read once,
+ * from the address the visit started on: later the app rewrites its own address (/?hotspot=yaba becomes /room/yaba), and
+ * that must not look like an ordinary visit to the map.
+ */
+const landedOnLink = () => {
+  if (typeof window === "undefined") return false;
   const q = new URLSearchParams(window.location.search);
-  return q.has("e") || q.has("hotspot") || q.has("date");
+  const p = window.location.pathname;
+  return q.has("e") || q.has("hotspot") || q.has("date") || p.startsWith("/room/") || p.startsWith("/event/");
 };
 
 /** Where the bottom layers sit: above the page's own bottom controls on a phone, at the corner of a wide screen. */
@@ -40,7 +46,7 @@ const BOTTOM = "calc(var(--hz-nav-bottom, 5.25rem) + var(--hz-toast-lift, 0px) +
 export default function FirstRun() {
   const pathname = usePathname();
   const router = useRouter();
-  const { step, ready, hydrate, go, finish } = useFirstRun();
+  const { step, ready, hydrate, sync, go, finish } = useFirstRun();
   const { hasAccount, state: session } = useSession();
   const fix = useHoppaz((s) => s.fix);
   const setFix = useHoppaz((s) => s.setFix);
@@ -58,8 +64,21 @@ export default function FirstRun() {
   const [late, setLate] = useState(false);
   /** A test host asked for the first run again: an account does not stop it. */
   const forced = useRef(false);
+  /** This visit started on a link to one thing. */
+  const [viaLink] = useState(landedOnLink);
+  /** A card of the first run has been on the screen in this visit. */
+  const shown = useRef(false);
 
   useEffect(() => hydrate(), [hydrate]);
+
+  // Another tab finished it (or answered): this one is finished too.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === FIRST_RUN_KEY || e.key === null) sync();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [sync]);
 
   // Start, once the session has settled (an account never meets it). On test hosts /?welcome starts it again, with no
   // location, so the first card is there.
@@ -79,8 +98,13 @@ export default function FirstRun() {
       if (step !== "done") finish();
       return;
     }
-    if (step === null && !isDeepLink()) go(startingStep());
-  }, [ready, session, hasAccount, step, go, finish, setFix]);
+    // Someone who came for one thing never gets it, and it does not start later when they go to the map.
+    if (viaLink) {
+      if (step !== "done") finish();
+      return;
+    }
+    if (step === null) go(startingStep());
+  }, [ready, session, hasAccount, step, viaLink, go, finish, setFix]);
 
   // The location came in (from the card, the crosshair, anywhere): the map zooms to you, and the second layer follows.
   useEffect(() => {
@@ -97,6 +121,11 @@ export default function FirstRun() {
     return step;
   }, [ready, step, onMap, inRoom, running]);
 
+  // In the room the run is over. (Left set, it would bring the "taking you there" card back on the next visit to the map.)
+  useEffect(() => {
+    if (inRoom && running) setRunning(false);
+  }, [inRoom, running]);
+
   // Back on the map after the run was meant to open a room and did not (a reload, the back button): that was the end of it.
   useEffect(() => {
     if (onMap && ready && step === "arrived" && !running) finish();
@@ -109,6 +138,20 @@ export default function FirstRun() {
     const t = setTimeout(() => setLate(true), BEAT_MS[layer]);
     return () => clearTimeout(t);
   }, [layer, pathname]);
+
+  // A card has been on the screen, and now they have gone to another tab (not the map, not a room): they have seen it, and it
+  // does not come back every time they pass the map. A card they never got to see (they left in the beat before it) waits.
+  const visible = !!layer && late && !(covered && !running);
+  useEffect(() => {
+    if (visible) shown.current = true;
+  }, [visible]);
+  useEffect(() => {
+    if (!ready || !step || step === "done" || !shown.current || onMap || inRoom) return;
+    if (step === "location") markLocationAsked();
+    window.dispatchEvent(new Event("hz-cancel-hotspot-run"));
+    setRunning(false);
+    finish();
+  }, [ready, step, onMap, inRoom, pathname, finish]);
 
   // Anything else that is a dialog (an event's card, a hotspot sheet, the area sheet) has the screen first.
   useEffect(() => {

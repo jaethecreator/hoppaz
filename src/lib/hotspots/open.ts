@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { requireAccount } from "@/lib/accountGate";
+import { appNavigate } from "@/lib/appNav";
 import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
 
 /**
@@ -75,7 +76,10 @@ export function useHotspotBackButton() {
   }, []);
 }
 
-/** How to go to a page without a reload: the map registers the router. Before it does, a plain navigation. */
+/**
+ * The map still registers its router here (it is the same router the layout hands to lib/appNav); with none registered a
+ * hotspot link goes through appNavigate, which is a move inside the app too, never a page load from another tab.
+ */
 let navigate: ((href: string) => void) | null = null;
 export function setHotspotNavigator(fn: (href: string) => void) {
   navigate = fn;
@@ -99,7 +103,7 @@ export function openHotspot(slug: string): boolean {
   if (hasHotspotRoom(s)) {
     const href = `/room/${s}`;
     if (navigate) navigate(href);
-    else window.location.href = href;
+    else appNavigate(href);
     return true;
   }
   peekHotspot(s);
