@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
@@ -25,7 +25,11 @@ export default function HotspotRoomPage() {
   const room = hotspotRoom(slug);
   const data = hotspotRoomData(slug);
   const { profile } = useSession();
-  const look = useMemo(() => (profile?.avatar ? normalizeLook(profile.avatar) : DEFAULT_LOOK), [profile?.avatar]);
+  // The world reads the window (device tier, camera): draw it on the client only.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const avatar = profile?.avatar;
+  const look = useMemo(() => (avatar ? normalizeLook(avatar) : DEFAULT_LOOK), [avatar]);
   const social: SocialWorld | null = useMemo(
     () => (room ? { peers: [], circles: [], selfId: "me", circleId: null, areaId: null, watching: false, observedAt: new Date().toISOString(), reset: { x: room.layout.spawn.x, y: room.layout.spawn.y, revision: 0 }, onStep: () => true } : null),
     [room]
@@ -57,7 +61,7 @@ export default function HotspotRoomPage() {
         </div>
       </header>
       <div className="relative min-h-0 flex-1 overflow-hidden" style={{ isolation: "isolate" }}>
-        <CampaignWorld key={room.key} layout={room.layout} look={look} brand={data.junction} social={social} placeId={room.key} />
+        {mounted && <CampaignWorld key={room.key} layout={room.layout} look={look} brand={data.junction} social={social} placeId={room.key} />}
       </div>
     </div>
   );
