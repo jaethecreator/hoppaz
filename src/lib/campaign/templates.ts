@@ -8,11 +8,7 @@ import { HOTSPOT_YABA } from "./rooms/hotspotYaba";
 import { HOTSPOT_LEKKI } from "./rooms/hotspotLekki";
 import { HOTSPOT_VICTORIA_ISLAND } from "./rooms/hotspotVictoriaIsland";
 import { HOTSPOT_IKEJA } from "./rooms/hotspotIkeja";
-import { HOTSPOT_LAGOS_ISLAND } from "./rooms/hotspotLagosIsland";
 import { HOTSPOT_IKOYI } from "./rooms/hotspotIkoyi";
-import { HOTSPOT_SURULERE } from "./rooms/hotspotSurulere";
-import { HOTSPOT_OJOTA } from "./rooms/hotspotOjota";
-import { HOTSPOT_FESTAC } from "./rooms/hotspotFestac";
 import { HOTSPOT_AJAH } from "./rooms/hotspotAjah";
 import { HOTSPOT_ALIMOSHO } from "./rooms/hotspotAlimosho";
 import { HOTSPOT_OJO_BADAGRY } from "./rooms/hotspotOjoBadagry";
@@ -105,11 +101,7 @@ export const HOTSPOT_ROOMS: PlaceRoom[] = [
   { key: "hotspot-lekki", kind: "hotspot", slug: "lekki", name: "Lekki Phase 1", description: "The Lekki hotspot room.", layout: HOTSPOT_LEKKI },
   { key: "hotspot-victoria-island", kind: "hotspot", slug: "victoria-island", name: "Adeola Odeku", description: "The Victoria Island hotspot room.", layout: HOTSPOT_VICTORIA_ISLAND },
   { key: "hotspot-ikeja", kind: "hotspot", slug: "ikeja", name: "Allen Roundabout", description: "The Ikeja hotspot room.", layout: HOTSPOT_IKEJA },
-  { key: "hotspot-lagos-island", kind: "hotspot", slug: "lagos-island", name: "Obalende", description: "The Obalende hotspot room.", layout: HOTSPOT_LAGOS_ISLAND },
   { key: "hotspot-ikoyi", kind: "hotspot", slug: "ikoyi", name: "Bourdillon", description: "The Bourdillon hotspot room.", layout: HOTSPOT_IKOYI },
-  { key: "hotspot-surulere", kind: "hotspot", slug: "surulere", name: "Ojuelegba", description: "The Ojuelegba hotspot room.", layout: HOTSPOT_SURULERE },
-  { key: "hotspot-ojota", kind: "hotspot", slug: "ojota", name: "Ojota", description: "The Ojota hotspot room.", layout: HOTSPOT_OJOTA },
-  { key: "hotspot-festac", kind: "hotspot", slug: "festac", name: "Mile 2", description: "The Mile 2 hotspot room.", layout: HOTSPOT_FESTAC },
   { key: "hotspot-ajah", kind: "hotspot", slug: "ajah", name: "Ajah", description: "The Ajah hotspot room.", layout: HOTSPOT_AJAH },
   { key: "hotspot-alimosho", kind: "hotspot", slug: "alimosho", name: "Ikotun", description: "The Ikotun hotspot room.", layout: HOTSPOT_ALIMOSHO },
   { key: "hotspot-ojo-badagry", kind: "hotspot", slug: "ojo-badagry", name: "Iyana Iba", description: "The Iyana Iba hotspot room.", layout: HOTSPOT_OJO_BADAGRY },
