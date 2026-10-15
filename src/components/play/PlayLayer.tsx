@@ -6,8 +6,6 @@ import clsx from "clsx";
 import { requireAccount } from "@/lib/accountGate";
 import type { Hotspot } from "@/lib/hotspots/types";
 import { useHotspots } from "@/lib/hotspots/useHotspots";
-import { introActive, introEvent, registerIntroAction, useIntroActive } from "@/lib/intro";
-import { introSetOpening } from "@/lib/intro/store";
 import { deviceTier, playTuning } from "@/lib/deviceTier";
 import type { PlayBox } from "@/lib/playTypes";
 import { sfx } from "@/lib/sound/sfx";
@@ -26,13 +24,18 @@ import { loadDropCards } from "@/lib/cards";
 import Avatar, { type AvatarHandle } from "./Avatar";
 import Crate, { TIER_ART } from "./Crate";
 import Hud, { type HudHandle } from "./Hud";
-import MapMarker from "./MapMarker";
+import MapMarker from "@/components/map/MapMarker";
 import { clamp, circleRing, easeInOut, easeOut, insideLagos, lerp, metresBetween, nudgePoint, reducedMotion } from "./geo";
 import type { TrayLine } from "./Tray";
 import OpenStage, { type ClaimResult, type LandKind, type OpenTargets } from "./open/OpenStage";
 import HotspotsLayer from "./hotspots/HotspotsLayer";
 import HotspotsRow from "./hotspots/HotspotsRow";
 
+/*
+ * NOT MOUNTED since 15 Oct 2026. The separate Play view was removed from the map page (docs/DECISIONS.md): hotspots now
+ * show on the main map (components/hotspots/MainHotspots). This shell, with the crates, the HUD and the open moment, is
+ * kept as it was so boxes can move into rooms later; nothing imports it.
+ */
 const IS_DEV = process.env.NODE_ENV !== "production";
 
 /** The camera in Play: close enough to see all three welcome boxes on a phone. */
@@ -131,7 +134,6 @@ export default function PlayLayer({
   look,
   fix,
   streak,
-  onNeedLocation,
 }: {
   map: MLMap;
   /** The Hopper's own look (profile avatar, or the local copy). */
@@ -140,12 +142,9 @@ export default function PlayLayer({
   fix: { lat: number; lng: number; source: "gps" | "area" } | null;
   /** Streak days, from the stats the page already reads. */
   streak: number;
-  /** Open the location sheet ("Turn on location to open boxes"). */
-  onNeedLocation: () => void;
 }) {
   const playing = usePlayMode((s) => s.active);
   const say = useToast((s) => s.say);
-  const touring = useIntroActive();
   const { userId, hasAccount, profile, refresh } = useSession();
   const tuning = useMemo(() => playTuning(), []);
   usePlayBackButton();
@@ -784,7 +783,6 @@ export default function PlayLayer({
       const h = hereRef.current;
       if (!h) {
         tell("Finding you");
-        introEvent("location_needed");
         return;
       }
       // An account is asked for before the tape rips, never for a welcome box.
@@ -813,30 +811,11 @@ export default function PlayLayer({
     [playing, tell, farNudge, runTo, showStage]
   );
 
-  // Paz's tour: SEND IT on the far welcome box starts the same run a tap on it does, and it opens like any remote box.
-  const farWelcome = useMemo(() => boxes.find((b) => b.kind === "welcome" && b.slot === "c") ?? null, [boxes]);
-  useEffect(() => {
-    if (!farWelcome) return;
-    return registerIntroAction("send_avatar", () => {
-      if (busy.current) return;
-      onBoxTap(farWelcome);
-      if (!busy.current) return;
-      // The card steps out for the run; the open moment's own events keep it out and bring it back.
-      introSetOpening(true);
-      setTimeout(() => {
-        if (!busy.current) introSetOpening(false);
-      }, 6000);
-    });
-  }, [farWelcome, onBoxTap]);
-  useEffect(() => {
-    if (!playing) introSetOpening(false);
-  }, [playing]);
-
   /* ------------------------------------------------------------ hotspots --- */
   // Hotspots are for everyone (docs/HOTSPOTS.md section 6): the pins, the tray row and the sheet work with location off
   // and outside Lagos. "Your hotspot" and every distance are worked out here from the public zone shapes; nothing about
   // where the Hopper is goes to the server for them.
-  const hotspotsOn = playing && !touring;
+  const hotspotsOn = playing;
   const hs = useHotspots({ active: hotspotsOn, at: home });
   const { reload: reloadHotspots } = hs;
   const pinsRef = useRef(hs.pins);
@@ -1012,8 +991,7 @@ export default function PlayLayer({
     if (new URL(window.location.href).searchParams.has("hotspot")) void reloadHotspots(true);
   }, [reloadHotspots]);
   useEffect(() => {
-    // Paz's first-run tour has the screen: the link waits for it to end.
-    if (hotspotLinked.current || !hs.loaded || touring) return;
+    if (hotspotLinked.current || !hs.loaded) return;
     const slug = new URL(window.location.href).searchParams.get("hotspot");
     if (!slug) return;
     // A timer, not a straight call, for the same Strict Mode reason as /?play.
@@ -1029,7 +1007,7 @@ export default function PlayLayer({
       setTimeout(() => usePlayMode.getState().active && openSheet(h), ms(1000));
     }, 0);
     return () => clearTimeout(t);
-  }, [hs, openSheet, touring]);
+  }, [hs, openSheet]);
 
   /* ------------------------------------------------------ entering Play ---- */
   const pendingEnter = useRef(false);
@@ -1052,19 +1030,13 @@ export default function PlayLayer({
     }
     // No fresh GPS yet: ask for it, and go in the moment it arrives.
     if (live.status === "denied") {
-      introEvent("location_needed");
-      if (introActive()) {
-        say("Turn on location to open boxes.");
-        onNeedLocation();
-        return;
-      }
       // Hotspots do not need to know where you are, so Play opens anyway; the tray says boxes need location.
       enterNow();
       return;
     }
     pendingEnter.current = true;
     setWantLive(true);
-  }, [playing, map, livePos, fix, areaForGps, enterNow, live.status, say, onNeedLocation]);
+  }, [playing, map, livePos, fix, areaForGps, enterNow, live.status]);
 
   // The precise watch is on only while Play is wanted: once we are in, or the attempt fails, it lets go.
   useEffect(() => {
@@ -1076,21 +1048,14 @@ export default function PlayLayer({
     } else if (live.status === "denied") {
       pendingEnter.current = false;
       setWantLive(false);
-      introEvent("location_needed");
-      if (introActive()) {
-        say("Turn on location to open boxes.");
-        onNeedLocation();
-      } else {
-        enterNow();
-      }
+      enterNow();
     } else if (live.status === "unavailable") {
       // A timeout or no signal is not a settings problem. Play opens on the hotspots, and boxes follow once we find you.
       pendingEnter.current = false;
       setWantLive(false);
-      if (introActive()) say("Still finding you. Try again in a moment.");
-      else enterNow();
+      enterNow();
     }
-  }, [livePos, live.status, enterNow, say, onNeedLocation]);
+  }, [livePos, live.status, enterNow]);
 
   // /?play opens Play straight away (the Me tab's Today's box will link here).
   const deepLinked = useRef(false);
@@ -1172,7 +1137,6 @@ export default function PlayLayer({
               lat={b.lat}
               anchor="bottom"
               className="hz-crate"
-              dataIntro={b.kind === "welcome" ? (b.slot === "c" ? "far-box" : "box") : undefined}
               label={`${name}, ${art.name}. ${b.needsPresence ? (live ? "In reach. Tap to open." : `About ${dist} metres away. Tap to see the way.`) : "Tap to send your avatar."}`}
               onClick={() => onBoxTap(b)}
               style={{ zIndex: Math.round((90 - b.lat) * 100_000) }}

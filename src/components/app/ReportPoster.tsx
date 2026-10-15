@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Mascot from "@/components/Mascot";
 import Wordmark from "@/components/Wordmark";
 import LoadingStub from "@/components/app/LoadingStub";
+import { TAGLINE } from "@/lib/brand";
 import { getSupabase, supabaseConfigured } from "@/lib/supabase/client";
 
 /**
@@ -176,7 +177,7 @@ function Poster({ report }: { report: Report }) {
       <div className="mt-auto pt-7">
         <OpenHoppaz className="w-full" />
         <p className="mt-3 text-center font-mono text-[10.5px] font-medium tracking-[0.16em] text-dim">
-          COME ALONE. LEAVE WITH FRIENDS.
+          {TAGLINE}
         </p>
       </div>
     </>

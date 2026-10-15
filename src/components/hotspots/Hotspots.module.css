@@ -1,5 +1,5 @@
 /*
- * Play: hotspot pins. A dark disc with a cream crossroads inside an orange ring, the place name under it, and a small
+ * Hotspot pins. A dark disc with a cream crossroads inside an orange ring, the place name under it, and a small
  * bar badge for how many are there. The marker element is MapLibre's to move, so the animations live on the wrapper
  * inside it. The pin looks the same by day and by night (brand colours, not theme ones).
  */
@@ -154,6 +154,21 @@
     0 0 0 4px rgb(255 77 0 / 0.28),
     0 4px 10px rgb(0 0 0 / 0.5);
 }
+/* Your avatar has arrived: the pin bobs open, then its room does. */
+.bob .wrap {
+  animation: bob 0.48s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+@keyframes bob {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.5);
+  }
+  100% {
+    transform: scale(1.18);
+  }
+}
 /* Not open yet: the ring goes quiet and the name dims. Still tappable, it says "Opening soon". */
 .soon {
   --ring: rgb(245 235 221 / 0.45);
@@ -164,29 +179,35 @@
 .soon .glyph {
   opacity: 0.75;
 }
-/* Zoomed out over all of Lagos: just the disc. */
-.far .disc {
+/* Zoomed out over all of Lagos, or no room for the name beside the event signs (NightMap sets data-fit): just the disc. */
+.far .disc,
+.spot[data-fit="disc"] .disc {
   left: 14px;
   top: 14px;
   width: 28px;
   height: 28px;
   border-width: 2.5px;
 }
-.far .glyph {
+.far .glyph,
+.spot[data-fit="disc"] .glyph {
   width: 15px;
   height: 15px;
 }
-.far .pulse {
+.far .pulse,
+.spot[data-fit="disc"] .pulse {
   left: 14px;
   top: 14px;
   width: 28px;
   height: 28px;
 }
 .far .name,
-.far .yours {
+.far .yours,
+.spot[data-fit="disc"] .name,
+.spot[data-fit="disc"] .yours {
   display: none;
 }
-.far .bars {
+.far .bars,
+.spot[data-fit="disc"] .bars {
   right: 5px;
   top: 12px;
   transform: scale(0.8);

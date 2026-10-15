@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import clsx from "clsx";
-import { ChevronDown, FileText, Lock, Play, Settings, ShieldCheck, Trash2, UserRound } from "lucide-react";
+import { ChevronDown, FileText, Lock, Settings, ShieldCheck, Trash2, UserRound } from "lucide-react";
 import { RowButton, RowLink, RowValue } from "./Rows";
 import { setThemePref, themePref, type ThemePref } from "@/lib/theme";
 import {
@@ -26,8 +26,6 @@ import { music } from "@/lib/sound/music";
 import { haptics } from "@/lib/haptics";
 import { vibeMute } from "@/lib/crew-room/vibeMute";
 import { useSessionStore } from "@/lib/useSession";
-import ReplayTourRow from "@/components/intro/ReplayTourRow";
-import { INTRO_ENABLED } from "@/lib/intro/flag";
 
 const LOOKS: ReadonlyArray<[ThemePref, string]> = [
   ["night", "Dark"],
@@ -76,7 +74,7 @@ function SwitchRow({ label, on, line, onToggle }: { label: string; on: boolean; 
 }
 
 /**
- * Sound, Music and Buzz. Sound is the app's one mute (the speaker in Play and the button on Today are the same
+ * Sound, Music and Buzz. Sound is the app's one mute (the speaker on Today and this row are the same
  * switch, saved as hz-sound). Music is its own switch for the background loops (lib/sound/music.ts, hz-music), on by
  * default; Sound off silences it as well. Buzz is its own switch for the Android buzz (lib/haptics.ts), on by default.
  * Turning Sound or Buzz on answers with a tiny tick or tap, so the tap is felt; Music answers by starting.
@@ -227,7 +225,7 @@ function SpawnAlerts() {
   const canTurnOn = on && !live && !canInstall && push?.support === "ok" && push.permission !== "denied";
 
   return (
-    <div className="px-4 py-3.5" data-intro="alerts">
+    <div className="px-4 py-3.5">
       <span className="seclabel block">SPAWN ALERTS</span>
       <div role="radiogroup" aria-label="Spawn alerts" className="mt-2 grid grid-cols-3 gap-1.5">
         {ALERT_LEVELS.map(([k, label]) => (
@@ -246,7 +244,7 @@ function SpawnAlerts() {
       </div>
       {line && <p className="hint mt-2" aria-live="polite">{line}</p>}
       {canInstall && (
-        <button type="button" data-intro="install" className="btn mt-3 w-full" onClick={askToInstall}>
+        <button type="button" className="btn mt-3 w-full" onClick={askToInstall}>
           ADD TO HOME SCREEN
         </button>
       )}
@@ -277,7 +275,7 @@ function SpawnAlerts() {
 
 /**
  * Settings, folded away at the bottom of Me. Name, home area, appearance, sound and
- * buzz, spawn alerts, account, replay the intro, privacy, community rules, staff
+ * buzz, spawn alerts, account, privacy, community rules, staff
  * (only for staff) and delete.
  */
 export default function SettingsGroup({
@@ -291,7 +289,6 @@ export default function SettingsGroup({
   isAdmin,
   onSaveName,
   onChangeArea,
-  onReplayIntro,
   onDelete,
 }: {
   className?: string;
@@ -305,7 +302,6 @@ export default function SettingsGroup({
   isAdmin: boolean;
   onSaveName: (name: string | null) => Promise<void>;
   onChangeArea: () => void;
-  onReplayIntro: () => void;
   onDelete: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -373,8 +369,6 @@ export default function SettingsGroup({
               ) : (
                 <RowLink href="/account" icon={UserRound} title="Make an account" hint="Wave at people, join crews, chat privately. Your XP comes with you." />
               ))}
-            {INTRO_ENABLED && <RowButton icon={Play} title="Replay the intro" onClick={onReplayIntro} />}
-            <ReplayTourRow />
             <RowLink href="/privacy" icon={Lock} title="Privacy" />
             <RowLink href="/community" icon={FileText} title="Community rules" />
             {isAdmin && <RowLink href="/admin" icon={ShieldCheck} title="Staff" />}

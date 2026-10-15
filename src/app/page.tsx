@@ -8,7 +8,6 @@ import type { Map as MLMap } from "maplibre-gl";
 import AreaPicker from "@/components/AreaPicker";
 import EventCard from "@/components/EventCard";
 import HopSheet from "@/components/HopSheet";
-import TitleSequence from "@/components/TitleSequence";
 import FilterCard from "@/components/FilterCard";
 import DayPick from "@/components/pick/DayPick";
 import TopChrome from "@/components/map-chrome/TopChrome";
@@ -24,20 +23,19 @@ import {
   scrubTicks,
 } from "@/components/map-chrome/scrub";
 import { TODAY, countByDay, matchesType, nightOf, todayKey, type DateFilter } from "@/lib/filters";
-import { useHoppaz, useToast } from "@/lib/store";
+import { useHoppaz } from "@/lib/store";
 import { useSession } from "@/lib/useSession";
 import { useEvents, useHop } from "@/lib/useEvents";
 import { useCheckin } from "@/lib/useCheckin";
 import { useGameDashboard } from "@/lib/game";
-import { haversineKm, hasVenue, nearestArea } from "@/lib/geo";
+import { haversineKm, hasVenue } from "@/lib/geo";
 import type { HopStop } from "@/lib/types";
+import { nearFirst, topThisWeek, useTopNear } from "@/lib/nearEvents";
 import { busPosition } from "@/lib/busPosition";
 import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
-import { NEXT_COUNT, nextEvents } from "@/lib/filters";
-import { usePlayMode } from "@/lib/usePlayMode";
-import { introEvent, introPending, registerIntroAction } from "@/lib/intro";
-import { INTRO_ENABLED } from "@/lib/intro/flag";
+import { closeHotspots, useHotspotNav } from "@/lib/hotspots/open";
+import YouMarker from "@/components/map/YouMarker";
 
 // MapLibre touches window on import, so it stays out of the server bundle.
 const NightMap = dynamic(() => import("@/components/map/NightMap"), {
@@ -49,8 +47,8 @@ const NightMap = dynamic(() => import("@/components/map/NightMap"), {
   ),
 });
 
-// Play (the avatar, the crates, the HUD and the open moment) loads in its own chunk, once the map is up.
-const PlayLayer = dynamic(() => import("@/components/play/PlayLayer"), { ssr: false });
+// The hotspot pins hang on the map, and MapLibre touches window on import: also client only, in its own chunk.
+const MainHotspots = dynamic(() => import("@/components/hotspots/MainHotspots"), { ssr: false });
 
 // One stable empty list, so memo deps do not change on every render.
 const NO_TYPES: string[] = [];
@@ -61,17 +59,12 @@ let firstDayChosen = false;
 
 const IS_DEV = process.env.NODE_ENV !== "production";
 
+
 export default function MapPage() {
-  const {
-    fix, radiusKm, seenIntro, markIntroSeen, seenTitle, setSeenTitle,
-    dateFilter, setDateFilter, types, setTypes, look, setFix,
-  } = useHoppaz();
-  const say = useToast((s) => s.say);
+  const { fix, radiusKm, dateFilter, setDateFilter, types, setTypes, look } = useHoppaz();
   const { userId, refresh, profile } = useSession();
-  // Play closes the map around you: the events chrome steps out and the page's own tickers and polls wait.
-  const playing = usePlayMode((s) => s.active);
   const [map, setMap] = useState<MLMap | null>(null);
-  const { events: allEvents, demo, ready, failed, reload } = useEvents(fix, radiusKm, { paused: playing });
+  const { events: allEvents, demo, ready, failed, reload } = useEvents(fix, radiusKm);
   const hop = useHop();
   const { done, checkedAt, busy, checkIn } = useCheckin(userId, refresh);
   // Only the streak is needed here, so ask for the lite read (one call, signed-in Hoppers only).
@@ -89,10 +82,6 @@ export default function MapPage() {
   // reads it waits a tick, or the server HTML would disagree with the first paint.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  // The city title sequence is part of the first-run intro: with the intro switched off (src/lib/intro/flag.ts) it never plays,
-  // and the camera swoops in at once, as it does for a Hopper who has seen it.
-  const titles = INTRO_ENABLED && mounted && !seenTitle;
-  const titleOut = mounted && (!INTRO_ENABLED || seenTitle);
 
   // Clocks: the bus and the scrubber re-place themselves every half minute.
   const [now, setNow] = useState(() => Date.now());
@@ -108,7 +97,12 @@ export default function MapPage() {
   const typed = useMemo(() => allEvents.filter((e) => hasVenue(e) && matchesType(e, shownTypes)), [allEvents, shownTypes]);
   const counts = useMemo(() => countByDay(typed), [typed]);
   // NEXT 20: the next events from now, whatever night they fall on, so the map never opens empty.
-  const next = useMemo(() => nextEvents(typed, NEXT_COUNT, now), [typed, now]);
+  // With a location (the first run asks for one), the ones close by come first, topped up with the rest (src/lib/nearEvents.ts).
+  const located = !!fix;
+  const next = useMemo(() => nearFirst(typed, located, now), [typed, located, now]);
+  // The first run's second layer shows this week's best near you.
+  const setTopNear = useTopNear((s) => s.set);
+  useEffect(() => setTopNear(located ? topThisWeek(typed, now) : []), [typed, located, now, setTopNear]);
   // Otherwise everything on the map (pins, heat, the scrubber) works off the one chosen day.
   const dayEvents = useMemo(() => typed.filter((e) => nightOf(Date.parse(e.starts_at)) === dayKey), [typed, dayKey]);
   const events = mode === "next" ? next.list : dayEvents;
@@ -137,7 +131,6 @@ export default function MapPage() {
     const onVisible = () => document.visibilityState === "visible" && snap();
     document.addEventListener("visibilitychange", onVisible);
     const tick = setInterval(() => {
-      if (usePlayMode.getState().active) return;
       setNow(Date.now());
       snap();
     }, 30_000);
@@ -236,24 +229,6 @@ export default function MapPage() {
   // The NEXT view spans several nights, so there it waits for the Hop's own night.
   const hopActive = !!hop && hop.hop_date === (mode === "next" ? todayStr : dayKey);
 
-  // The first-run title plays once; after it, ask for a location once, never nag.
-  // That ask is part of the intro: switched off, a new Hopper meets the map, not a sheet (the locate button is still there).
-  const signNames = useMemo(
-    () => [...allEvents].sort((a, b) => b.heat - a.heat).slice(0, 12).map((e) => e.title),
-    [allEvents]
-  );
-  useEffect(() => {
-    if (!INTRO_ENABLED || !mounted || !seenTitle) return;
-    if (!fix && !seenIntro) {
-      const t = setTimeout(() => {
-        // A new Hopper meets Paz first: her "Let's find you" step is the one ask, so the sheet stays shut for the whole tour.
-        if (!introPending()) setPicking(true);
-        markIntroSeen();
-      }, 600);
-      return () => clearTimeout(t);
-    }
-  }, [mounted, seenTitle, fix, seenIntro, markIntroSeen]);
-
   const closeCard = useCallback(() => setSelected(null), []);
   const event = useMemo(() => allEvents.find((e) => e.id === selected) ?? null, [allEvents, selected]);
   const isHopStop = useMemo(() => {
@@ -269,51 +244,31 @@ export default function MapPage() {
     [counts, dayKey]
   );
 
-  /* --------------------------------------------------- Paz's first-run tour -- */
-  const onMapReady = useCallback((m: MLMap) => {
-    setMap(m);
-    introEvent("map_ready");
-  }, []);
+  /* ------------------------------------------------------------ the map -- */
+  const onMapReady = useCallback((m: MLMap) => setMap(m), []);
   const onMapUnavailable = useCallback(() => setMap(null), []);
 
-  // Paz's "Let's find you": what "Use my location" does in the location sheet, without opening the sheet, so one
-  // tap asks the browser, sets the fix (the map flies to the Hopper) and tells the tour what the answer was.
-  const locateMe = useCallback(() => {
-    if (!("geolocation" in navigator)) {
-      introEvent("location_denied");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude: lat, longitude: lng } = pos.coords;
-        const near = nearestArea(lat, lng);
-        setFix({ lat, lng, source: "gps", area: near.name });
-        say(`Locked on. ${near.name}.`, "ok");
-        introEvent("location_granted", { lat, lng });
-      },
-      (err) => {
-        if (err.code === err.PERMISSION_DENIED) introEvent("location_denied");
-        else say("Still finding you. Try again in a moment.");
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-    );
-  }, [setFix, say]);
-  useEffect(() => (INTRO_ENABLED ? registerIntroAction("locate", locateMe) : undefined), [locateMe]);
-
-  /* ------------------------------------------------------------- Play -- */
-  // Opening Play leaves whatever card was open; the camera is Play's from here.
+  /* ---------------------------------------------------------- hotspots -- */
+  // A hotspot's sheet, the list or the room has the screen: whatever card was open steps aside. Picking an event does the same
+  // the other way (pickEvent below), so there are never two cards.
+  const hotspotUi = useHotspotNav((s) => !!s.sheet || s.list || !!s.room);
   useEffect(() => {
-    if (playing) {
-      setSelected(null);
-      setHopOpen(false);
-      setFiltering(false);
-      setPicking(false);
-    }
-  }, [playing]);
-  // Back on the events map: catch the clock up (it did not tick in Play).
+    if (!hotspotUi) return;
+    setSelected(null);
+    setHopOpen(false);
+    setFiltering(false);
+    setPicking(false);
+  }, [hotspotUi]);
+  const pickEvent = useCallback((id: string) => {
+    closeHotspots();
+    setSelected(id);
+  }, []);
+  // A flyer on the first run's events layer opens that event.
   useEffect(() => {
-    if (!playing) setNow(Date.now());
-  }, [playing]);
+    const on = (e: Event) => pickEvent((e as CustomEvent<{ id: string }>).detail.id);
+    window.addEventListener("hz-open-event", on);
+    return () => window.removeEventListener("hz-open-event", on);
+  }, [pickEvent]);
 
   /* ---------------------------------------- the side card's left and right -- */
   const navRef = useRef<((fromId: string, dir: -1 | 1) => string | null) | null>(null);
@@ -335,7 +290,7 @@ export default function MapPage() {
     if (topRef.current) ro.observe(topRef.current);
     if (bottomRef.current) ro.observe(bottomRef.current);
     return () => ro.disconnect();
-  }, [mounted, event, todayStr, playing]);
+  }, [mounted, event, todayStr]);
 
   // The toast sits above the bottom card, not on top of its text (the side card has no bottom card under it).
   useEffect(() => {
@@ -360,51 +315,48 @@ export default function MapPage() {
       // An open event docks on the right, from just under the top chrome.
       style={{ ["--hz-side-top" as string]: `${hud.top + 4}px` }}
     >
-      <NightMap
-        events={events}
-        collectibleEventIds={dropIds}
-        hopStops={hop?.stops ?? NO_STOPS}
-        fix={fix}
-        radiusKm={radiusKm}
-        bus={bus}
-        busFocus={busFocus}
-        at={mode === "next" ? now : slot?.t ?? now}
-        live={mode === "next" ? true : slot?.live ?? true}
-        onClear={() => setSelected(null)}
-        fitKey={`${mode === "next" ? "next" : dayKey}|${shownTypes.join(",")}`}
-        selectedId={selected}
-        onSelect={setSelected}
-        onHopSelect={() => setHopOpen(true)}
-        hopActive={hopActive}
-        hopDate={hop?.hop_date ?? null}
-        onBus={() => setHopOpen(true)}
-        hudTop={hud.top}
-        hudBottom={hud.bottom}
-        swoop={titleOut}
-        mode={playing ? "play" : "events"}
-        onMapReady={onMapReady}
-        onMapUnavailable={onMapUnavailable}
-        sidePanel={!!event}
-        allHot={mode === "next"}
-        navRef={navRef}
-      />
-
-      {/* Play: your avatar (tap it to play), the crates, the HUD and the open moment. It waits for the map. */}
-      {map && (
-        <PlayLayer
-          map={map}
-          look={profile?.avatar ?? look}
+      {/* The map is its own stacking context: its markers carry z-indexes of their own and must stay under the nav and the chrome. */}
+      <div className="absolute inset-0 isolate">
+        <NightMap
+          events={events}
+          collectibleEventIds={dropIds}
+          hopStops={hop?.stops ?? NO_STOPS}
           fix={fix}
-          streak={streak}
-          onNeedLocation={() => setPicking(true)}
+          radiusKm={radiusKm}
+          bus={bus}
+          busFocus={busFocus}
+          at={mode === "next" ? now : slot?.t ?? now}
+          live={mode === "next" ? true : slot?.live ?? true}
+          onClear={() => setSelected(null)}
+          fitKey={`${mode === "next" ? "next" : dayKey}|${shownTypes.join(",")}`}
+          selectedId={selected}
+          onSelect={pickEvent}
+          onHopSelect={() => setHopOpen(true)}
+          hopActive={hopActive}
+          hopDate={hop?.hop_date ?? null}
+          onBus={() => setHopOpen(true)}
+          hudTop={hud.top}
+          hudBottom={hud.bottom}
+          swoop={mounted}
+          onMapReady={onMapReady}
+          onMapUnavailable={onMapUnavailable}
+          sidePanel={!!event}
+          allHot={mode === "next"}
+          navRef={navRef}
         />
-      )}
+      </div>
+
+      {/* You: your own mini avatar at your location. Nothing to tap. */}
+      {mounted && map && <YouMarker map={map} fix={fix} look={profile?.avatar ?? look} />}
+
+      {/* Hotspots: a pin on each open one, the Hotspots button and list, the sheet and the room. Placed under the chrome's measured height. */}
+      {mounted && <MainHotspots map={map} fix={fix} top={hud.top} hidden={!!event || filtering || picking || hopOpen} />}
 
       {/* The chrome is all "now" (today's rail, the clock), so it draws on the client only: a page
           prerendered yesterday must not hydrate against today's rail. */}
 
       {/* -------------------------------------------------------------- top -- */}
-      {mounted && !playing && (
+      {mounted && (
         <TopChrome
           key={todayStr} /* a new day (6am) rebuilds the bar */
           hudRef={topRef}
@@ -427,10 +379,12 @@ export default function MapPage() {
           onClearTypes={() => setTypes([])}
           streak={streak}
           onFilter={() => {
+            closeHotspots();
             setSelected(null);
             setFiltering(true);
           }}
           onLocate={() => {
+            closeHotspots();
             setSelected(null);
             setPicking(true);
           }}
@@ -441,7 +395,7 @@ export default function MapPage() {
         </TopChrome>
       )}
 
-      {showEmpty && !playing && (
+      {showEmpty && (
         <EmptyDay
           filtered={shownTypes.length > 0}
           nextLabel={nextBusy ? dayTag(nextBusy) : null}
@@ -450,7 +404,7 @@ export default function MapPage() {
       )}
 
       {/* ----------------------------------------------------------- bottom -- */}
-      {mounted && !event && !playing && (
+      {mounted && !event && (
         <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3.5 pb-2.5">
           <div className="mx-auto flex max-w-[560px] items-end gap-2">
             <Link href="/drop" aria-label="Post a flyer" title="Post a flyer" className="btn pointer-events-auto grid h-11 w-11 flex-none place-items-center p-0">
@@ -504,7 +458,6 @@ export default function MapPage() {
         />
       )}
       {hopOpen && <HopSheet hop={hop} fix={fix} onClose={() => setHopOpen(false)} />}
-      {titles && <TitleSequence signs={signNames} onDone={() => setSeenTitle(true)} />}
     </div>
   );
 }

@@ -32,7 +32,6 @@ import { useGameDashboard, useGameDrops } from "@/lib/game";
 import { useDailyBox } from "@/lib/useDailyBox";
 import { GENDERS, useNextAsk } from "@/lib/account";
 import type { Profile } from "@/lib/types";
-import { introEvent } from "@/lib/intro";
 
 type CatalogBadge = { key: string; name: string; icon: string; description: string };
 type Seen = { streak: number; xp: number; level: string };
@@ -54,7 +53,7 @@ function MePagePage() {
   const { stats, makeReport, busy: reportBusy, ready: statsReady, reload: reloadStats } = useGameDashboard(userId, { lite: true });
   const daily = useDailyBox(userId, { demo: DEMO });
   const { drops, ready: dropsReady } = useGameDrops(undefined, { staffOnly: true });
-  const { fix, look, setSeenTitle } = useHoppaz();
+  const { fix, look } = useHoppaz();
   const say = useToast((s) => s.say);
   const router = useRouter();
   const now = useNow(60_000);
@@ -427,10 +426,6 @@ function MePagePage() {
           say("Saved.", "ok");
         }}
         onChangeArea={() => setPicking(true)}
-        onReplayIntro={() => {
-          setSeenTitle(false);
-          router.push("/");
-        }}
         onDelete={deleteAccount}
       />
 
@@ -463,12 +458,8 @@ function MePagePage() {
 
 /** Needs an account: anonymous Hoppers get the sign-up here instead. */
 export default function MePage() {
-  // Paz's tour: here, even behind the sign-up wall, so the last step still shows.
-  useEffect(() => {
-    introEvent("me_viewed");
-  }, []);
   return (
-    <RequireAccount preview title="Make it yours." caption="Your nights, XP, badges and your Hopper live here.">
+    <RequireAccount title="Make it yours." caption="Your nights, XP, badges and your Hopper live here.">
       <MePagePage />
     </RequireAccount>
   );

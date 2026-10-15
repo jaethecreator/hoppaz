@@ -41,6 +41,18 @@ end; avoid the waitlist tab in IMG_1951.
 
 ## 2. Sign-up: early, short and fun (no guest mode)
 
+> **Replaced on 15 Oct 2026 (Jae, after testing the first cut): no splash, no pager, no sign-up gate.** The first run is
+> layers on the map as it always was (`src/lib/firstRun.ts`, `src/components/firstrun/`): (1) a small card, "Set your
+> location to see the best events near you", in the look of Ola's location ask; once it is set the map zooms to you and shows
+> your mini avatar; (2) Paz at the side: the best events near you are on the map, zoom in or pick any day; (3) when the map
+> has been looked at and left still (or after a while), the map moves to the closest hotspot, your avatar runs there, the pin
+> bobs and its room (`/room/<slug>`) opens, and Paz says to chat with someone in your area. Then they are free. Every layer
+> closes, and closing ends it. The Hopper maker and the four-step tour below were dropped from the first run. Test hosts:
+> `/?welcome` starts it again. Same day, after review: the saved step is `hz-first-v2`; accounts and link arrivals skip it; the
+> location card shares Ola's `hoppaz.locationAsk` key; the events layer shows up to four "top this week near you" flyers;
+> your mini avatar on the map opens the avatar editor and comes back; from 1024 px up the nav is a 72 px rail on the left and
+> the cards sit beside it, bottom left.
+
 Jae chose this direction on 14 Oct: his flow, plus hooks that keep the whole city in view.
 
 1. **City splash.** About 2 seconds of Lagos at night. No buttons.
@@ -129,6 +141,8 @@ crews.
 - No "Tap your avatar" copy. Play is gone.
 
 ## 8. Tour: four steps, under a minute
+
+> Not part of the first run any more (15 Oct 2026): the layered first run above replaced it. The four steps stay here as the tour design.
 
 The first-run tour points at the real controls, with dots and Skip (Lagos Life 2035–2041):
 1. **The map:** "Events and your people, live."

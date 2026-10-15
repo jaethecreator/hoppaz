@@ -4,19 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Map, CalendarDays, Users, MessageSquare, CircleUserRound, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
-import { usePlayMode } from "@/lib/usePlayMode";
 import { useLeaveStore } from "@/lib/crew-room/rails";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { sfx } from "@/lib/sound/sfx";
 
-type Tab = { href: string; label: string; Icon: LucideIcon; intro?: string };
+type Tab = { href: string; label: string; Icon: LucideIcon };
 
 const TABS: ReadonlyArray<Tab> = [
   { href: "/", label: "MAP", Icon: Map },
-  { href: "/discover", label: "EVENTS", Icon: CalendarDays, intro: "today-tab" },
-  { href: "/crew", label: "CREW", Icon: Users, intro: "crew-tab" },
+  { href: "/discover", label: "EVENTS", Icon: CalendarDays },
+  { href: "/crew", label: "CREW", Icon: Users },
   { href: "/chat", label: "CHAT", Icon: MessageSquare },
-  { href: "/me", label: "ME", Icon: CircleUserRound, intro: "me-tab" },
+  { href: "/me", label: "ME", Icon: CircleUserRound },
 ];
 
 /** Sub-pages keep their parent tab lit, so you always know where you are. */
@@ -40,24 +39,22 @@ const FULL_SCREEN = [/^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/a
 
 export default function BottomNav() {
   const path = usePathname();
-  // Play has the whole screen: the map closes around you and the tab bar steps out.
-  const playing = usePlayMode((s) => s.active);
-  if (playing || FULL_SCREEN.some((re) => re.test(path))) return null;
+  if (FULL_SCREEN.some((re) => re.test(path))) return null;
   const parent = PARENT.find(([p]) => path === p || path.startsWith(`${p}/`))?.[1];
   const active = parent ?? path;
   return (
     <nav
-      className="z-30 flex flex-none border-t border-line bg-ink-2"
+      // A bar along the bottom on a phone; a 72 px rail down the left side from 1024 px up.
+      className="z-30 flex flex-none border-t border-line bg-ink-2 lg:order-first lg:w-[72px] lg:flex-col lg:justify-start lg:gap-1 lg:border-r lg:border-t-0 lg:pt-3"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       aria-label="Main"
     >
-      {TABS.map(({ href, label, Icon, intro }, i) => {
+      {TABS.map(({ href, label, Icon }, i) => {
         const on = href === "/" ? active === "/" : active === href || active.startsWith(`${href}/`);
         return (
           <Link
             key={href}
             href={href}
-            data-intro={intro}
             aria-current={on ? "page" : undefined}
             // A very quiet wood tick, one pitch up the scale per tab, only when the lit tab is about to change.
             onClick={(e) => {
@@ -71,7 +68,7 @@ export default function BottomNav() {
               if (!on) sfx.tabTick(i);
             }}
             className={clsx(
-              "flex min-h-[52px] flex-1 flex-col items-center justify-center gap-1 transition-colors",
+              "flex min-h-[52px] flex-1 flex-col items-center justify-center gap-1 transition-colors lg:min-h-[64px] lg:flex-none",
               on ? "text-orange" : "text-dim"
             )}
           >

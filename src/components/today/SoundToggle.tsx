@@ -5,9 +5,9 @@ import { Volume2, VolumeX } from "lucide-react";
 import { sfx } from "@/lib/sound/sfx";
 
 /**
- * The sound switch for the Today screen: the same one Play has (it is the app's
- * one mute, kept in the same place, so what a Hopper chose in Play holds here
- * and the other way round). The deck's agogo tick and its buzz both follow it.
+ * The sound switch for the Today screen: it is the app's one mute, kept in the
+ * same place as the Sound row in Me, so what a Hopper chose there holds here and
+ * the other way round. The deck's agogo tick and its buzz both follow it.
  * A soft tick answers when sound comes back on, so the tap is heard.
  */
 export default function SoundToggle({ className = "" }: { className?: string }) {

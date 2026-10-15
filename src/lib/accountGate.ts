@@ -1,6 +1,5 @@
 "use client";
 
-import { introActive, introNeedAccount } from "./intro/active";
 import { getSupabase } from "./supabase/client";
 import { useSessionStore } from "./useSession";
 
@@ -9,10 +8,6 @@ import { useSessionStore } from "./useSession";
  * OUTSIDE, checking in, claiming rewards, crews, your profile) needs an
  * account. A gated action calls requireAccount(): with an account it is a
  * no-op; without one it routes to the full account page.
- *
- * Paz's first-run tour has one sign-up moment of its own (her "keep your Golden
- * Danfo" card). Gated actions stay quiet while she is with the Hopper; normal
- * account routing resumes after the tour ends or is skipped.
  */
 
 /**
@@ -45,10 +40,6 @@ export function requireAccount(reason: string, opts?: { quiet?: boolean }): bool
   if (useSessionStore.getState().email) return true;
   // Quiet: the caller has asked already this visit (the Today deck's right swipes) and only needs the answer.
   if (opts?.quiet) return false;
-  if (introActive()) {
-    introNeedAccount();
-    return false;
-  }
   // Return to this screen after sign-in; the Hopper can repeat the action.
   goToAccount(reason);
   return false;

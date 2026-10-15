@@ -12,8 +12,7 @@ import OfflineLine from "@/components/app/OfflineLine"
 import PushAlert from "@/components/app/PushAlert"
 import SoundLane from "@/components/app/SoundLane"
 import GameTimePing from "@/components/game-time/GameTimePing"
-import IntroHost from "@/components/intro/IntroHost"
-import { INTRO_ENABLED } from "@/lib/intro/flag"
+import FirstRun from "@/components/firstrun/FirstRun"
 import { THEME_BOOT_SCRIPT } from "@/lib/theme"
 import "@fontsource/archivo/400.css"
 import "@fontsource/archivo/500.css"
@@ -93,15 +92,18 @@ export default function RootLayout({
         <SoundLane />
         <MusicHost />
         <PushAlert />
-        <div className="fixed inset-0 flex flex-col">
-          <OfflineLine />
-          <main className="relative flex-1 min-h-0">{children}</main>
+        {/* A column with the tab bar under it; from 1024 px up a row, with the tabs as a rail on the left (BottomNav). */}
+        <div className="fixed inset-0 flex flex-col lg:flex-row">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <OfflineLine />
+            <main className="relative flex-1 min-h-0">{children}</main>
+          </div>
           <BottomNav />
         </div>
         <GameTimePing />
         <Toaster />
         <InstallSheet />
-        {INTRO_ENABLED && <IntroHost />}
+        <FirstRun />
       </body>
     </html>
   )

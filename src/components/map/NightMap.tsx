@@ -16,6 +16,7 @@ import {
   eventPrice,
   eventPriceShort,
   eventTitle,
+  insideLagos,
   isEventLead,
   travelEstimate,
 } from "@/lib/geo";
@@ -49,14 +50,9 @@ export type NightMapProps = {
   bus: BusFix | null;
   /** Bumped by the bus button in the HUD: fly to the bus. */
   busFocus?: number;
-  /** Flips true once the intro is out of the way: the camera then swoops in. */
+  /** Flips true once the page has mounted: the camera then swoops in. */
   swoop?: boolean;
-  /**
-   * "events" is the map as it always was. "play" closes it around the Hopper: event signs, the bus, the stops,
-   * heat, houses, rings and the basemap's text go quiet, gestures lock, and the Play layer owns the camera.
-   */
-  mode?: "events" | "play";
-  /** Called once with the MapLibre map when the style and our layers are in (the Play layer hangs its avatar and crates on it). */
+  /** Called once with the MapLibre map when the style and our layers are in (the hotspot pins hang on it). */
   onMapReady?: (map: MLMap) => void;
   onMapUnavailable?: () => void;
   selectedId: string | null;
@@ -108,6 +104,11 @@ type Sign = {
 const GAP = 4;
 /** What the page's chrome covers when it does not say: the day rail above, the scrubber below. */
 const DEFAULT_HUD = { top: 132, bottom: 96 };
+/** Below this zoom a hotspot pin (a landmark marker, .hz-pin) is just its disc: the camera is out over all of Lagos. */
+const PIN_FAR_ZOOM = 12.6;
+/** A hotspot pin with its name takes this much room around its point (px), and its disc alone this much. */
+const PIN_FULL = { left: 60, up: 30, right: 60, down: 38 } as const;
+const PIN_DISC = 18;
 /** From here in, venues are 3D houses: dots fade, and signs become cards floating over the roofs. */
 const STREET_ZOOM = 14.6;
 /** A sign stands this far above its dot, px. Up close it is lifted past the house instead. */
@@ -126,15 +127,9 @@ const SRC = {
   hop: "hoppaz-hop",
   lots: "hoppaz-lots",
   radius: "hoppaz-radius",
-  /** Play: the reach ring around you, and the dashed line to a box that needs a walk. Empty until the Play layer fills them. */
-  reach: "hoppaz-play-reach",
-  path: "hoppaz-play-path",
 } as const;
 
-/** What Play hides on the map, by layer id. The basemap's own text layers are found by type. */
-const PLAY_HIDDEN = ["heat-blur", "lots", "pins", "pins-halo", "hop-line", "radius-fill", "radius-line"];
-
-/** The little Hop bus from the intro: cream body, orange windows. */
+/** The little Hop bus: cream body, orange windows. */
 const BUS_ART =
   '<svg viewBox="0 0 32 20" width="28" height="18" aria-hidden="true"><rect x="1" y="1" width="30" height="14" rx="3" fill="#F5EBDD"/><rect x="4" y="4" width="6" height="5" rx="1" fill="#FF4D00"/><rect x="12" y="4" width="6" height="5" rx="1" fill="#FF4D00"/><rect x="20" y="4" width="8" height="7" rx="1" fill="#0E0B0A"/><circle cx="8" cy="16" r="3" fill="#0E0B0A"/><circle cx="24" cy="16" r="3" fill="#0E0B0A"/></svg>';
 
@@ -319,37 +314,6 @@ function setupLayers(m: MLMap, theme: Theme, cityGrown: boolean) {
       },
     });
   }
-
-  /* ---- Play: the reach ring (violet, in metres on the ground) and the dashed line to a far box ---- */
-  if (!m.getSource(SRC.reach)) m.addSource(SRC.reach, { type: "geojson", data: fc([]) });
-  if (!m.getLayer("play-reach-fill")) {
-    m.addLayer({
-      id: "play-reach-fill",
-      type: "fill",
-      source: SRC.reach,
-      layout: { visibility: "none" },
-      paint: { "fill-color": BRAND.violet, "fill-opacity": 0.12 },
-    });
-  }
-  if (!m.getLayer("play-reach-line")) {
-    m.addLayer({
-      id: "play-reach-line",
-      type: "line",
-      source: SRC.reach,
-      layout: { visibility: "none" },
-      paint: { "line-color": "#8A66FF", "line-width": 2, "line-opacity": 0.85, "line-dasharray": [2, 2] },
-    });
-  }
-  if (!m.getSource(SRC.path)) m.addSource(SRC.path, { type: "geojson", data: fc([]) });
-  if (!m.getLayer("play-path")) {
-    m.addLayer({
-      id: "play-path",
-      type: "line",
-      source: SRC.path,
-      layout: { visibility: "none", "line-cap": "round" },
-      paint: { "line-color": BRAND.cream, "line-width": 3, "line-opacity": 0.9, "line-dasharray": [0.1, 2.2], "line-opacity-transition": { duration: 400, delay: 0 } },
-    });
-  }
 }
 
 export default function NightMap({
@@ -363,7 +327,6 @@ export default function NightMap({
   bus,
   busFocus = 0,
   swoop = true,
-  mode = "events",
   onMapReady,
   selectedId,
   onSelect,
@@ -400,11 +363,8 @@ export default function NightMap({
   const [fontsEpoch, setFontsEpoch] = useState(0);
   /** Bumps every minute so "TODAY" and "ENDED" on the signs do not go stale. */
   const [minute, setMinute] = useState(0);
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
   useEffect(() => {
-    // Play has no signs to keep fresh: the interval waits it out.
-    const t = setInterval(() => modeRef.current !== "play" && setMinute((n) => n + 1), 60_000);
+    const t = setInterval(() => setMinute((n) => n + 1), 60_000);
     return () => clearInterval(t);
   }, []);
 
@@ -509,8 +469,7 @@ export default function NightMap({
   // Runs on every move.
   declutter.current = () => {
     const m = map.current;
-    // Play shows no signs, so there is nothing to place.
-    if (!m || modeRef.current === "play") return;
+    if (!m) return;
     const street = m.getZoom() >= STREET_ZOOM;
     // Up close the house stands under the sign, so the sign floats above its roof and diamond.
     const mpp = (156543.03 * Math.cos((m.getCenter().lat * Math.PI) / 180)) / 2 ** m.getZoom();
@@ -528,9 +487,7 @@ export default function NightMap({
     // The open event's card covers the right of the map: nothing else may hide under it.
     const side = sideRef.current && !!selectedRef.current;
     if (side) taken.push([vw - sidePanelWidth(vw) - SIDE_PANEL.gap * 2, 0, vw, vh]);
-    // Your avatar sits above your point (the Play layer draws it), the bus hangs below its own, the stops and zoom buttons stay clear.
-    const me = fixRef.current;
-    if (me) reserve(me.lng, me.lat, 26, 54, 26, 14);
+    // The bus hangs below its own point, the stops and zoom buttons stay clear.
     const h0 = holder.current?.getBoundingClientRect();
     const busEl = busMk.current?.getElement();
     if (busEl && h0) {
@@ -549,11 +506,39 @@ export default function NightMap({
       const c = ctrl.getBoundingClientRect();
       if (c.width) taken.push([c.left - h0.left, c.top - h0.top, c.right - h0.left, c.bottom - h0.top]);
     }
+    // Anything else over the map that signs must keep clear of says so: the Hotspots buttons (data-hz-obstacle) and your own
+    // avatar on the map (.hz-obstacle).
+    if (h0) {
+      document.querySelectorAll<HTMLElement>("[data-hz-obstacle], .hz-obstacle").forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.width) taken.push([r.left - h0.left, r.top - h0.top, r.right - h0.left, r.bottom - h0.top]);
+      });
+    }
     // A sign cut off by the screen edge or tucked under the chrome reads as broken:
     // it only shows if it fits, otherwise it drops to its price tag, then its dot.
     const free = (x0: number, y0: number, x1: number, y1: number) =>
       x0 >= GAP && x1 <= vw - GAP && y0 >= top && y1 <= vh - bottom &&
       !taken.some(([a0, b0, a1, b1]) => x0 < a1 + GAP && x1 + GAP > a0 && y0 < b1 + GAP && y1 + GAP > b0);
+    // Landmarks (the hotspot pins, .hz-pin) take their place before the signs, so the signs flow around them: a pin keeps
+    // its name when that clears the edge, the chrome and the pins already placed, and shrinks to its disc when it does not.
+    // The pin you are looking at (.hz-pin-on) and your own (.hz-pin-mine) are placed first.
+    if (h0) {
+      const rank = (el: Element) => Number(el.classList.contains("hz-pin-on")) * 2 + Number(el.classList.contains("hz-pin-mine"));
+      const pins = [...(holder.current?.querySelectorAll<HTMLElement>(".hz-pin") ?? [])].sort((a, b) => rank(b) - rank(a));
+      const far = m.getZoom() < PIN_FAR_ZOOM;
+      for (const el of pins) {
+        const r = el.getBoundingClientRect();
+        if (!r.width) continue;
+        const cx = r.left + r.width / 2 - h0.left;
+        const cy = r.top + r.height / 2 - h0.top;
+        const full: Box = [cx - PIN_FULL.left, cy - PIN_FULL.up, cx + PIN_FULL.right, cy + PIN_FULL.down];
+        const disc: Box = [cx - PIN_DISC, cy - PIN_DISC, cx + PIN_DISC, cy + PIN_DISC];
+        const named = !far && (el.classList.contains("hz-pin-on") || free(...full));
+        taken.push(named ? full : disc);
+        const fit = named ? "full" : "disc";
+        if (el.dataset.fit !== fit) el.dataset.fit = fit;
+      }
+    }
     const order: Mode[] = street ? ["card", "banner", "mini"] : ["banner", "mini"];
     [...signs.current.values()]
       .sort((a, b) => a.rank - b.rank)
@@ -605,7 +590,7 @@ export default function NightMap({
       if (ac.signal.aborted || !holder.current) return;
       styleTheme.current = t;
 
-      // The map opens high over Lagos; the swoop (below) brings it down once the intro is done.
+      // The map opens high over Lagos; the swoop (below) brings it down once the page has mounted.
       let created: MLMap;
       try {
         created = new maplibregl.Map({
@@ -775,35 +760,19 @@ export default function NightMap({
     })();
   }, [theme, epoch]);
 
-  /* ---------------------------------------------------------- Play mode ---- */
-  // Play closes the map around the Hopper: our layers and the basemap's text go quiet, the Hopper's own gestures lock
-  // (the camera follows the avatar), the signs, bus and stops fade, and the zoom buttons step aside.
-  const savedVis = useRef<{ epoch: number; vis: Map<string, string> }>({ epoch: -1, vis: new Map() });
+  // Other layers' markers (the hotspot pins) ask for a re-place when they arrive or change.
   useEffect(() => {
-    const m = map.current;
-    if (!m || !ready.current || epoch === 0) return;
-    const play = mode === "play";
-    if (savedVis.current.epoch !== epoch) savedVis.current = { epoch, vis: new Map() };
-    const { vis } = savedVis.current;
-    for (const layer of m.getStyle().layers ?? []) {
-      if (!PLAY_HIDDEN.includes(layer.id) && layer.type !== "symbol") continue;
-      if (play) {
-        if (!vis.has(layer.id)) vis.set(layer.id, (m.getLayoutProperty(layer.id, "visibility") as string | undefined) ?? "visible");
-        m.setLayoutProperty(layer.id, "visibility", "none");
-      } else if (vis.has(layer.id)) {
-        m.setLayoutProperty(layer.id, "visibility", vis.get(layer.id) as "visible" | "none");
-      }
-    }
-    for (const id of ["play-reach-fill", "play-reach-line", "play-path"]) {
-      if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", play ? "visible" : "none");
-    }
-    if (!play) vis.clear();
-    const handlers = [m.dragPan, m.scrollZoom, m.doubleClickZoom, m.touchZoomRotate, m.touchPitch, m.boxZoom, m.keyboard];
-    handlers.forEach((h) => (play ? h.disable() : h.enable()));
-    if (!play) m.touchZoomRotate.disableRotation();
-    holder.current?.classList.toggle("hz-playing", play);
-    declutter.current();
-  }, [mode, epoch]);
+    let raf = 0;
+    const on = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => declutter.current());
+    };
+    window.addEventListener("hz-declutter", on);
+    return () => {
+      window.removeEventListener("hz-declutter", on);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
 
   /* ------------------------------------------------ chrome insets as CSS ---- */
   useEffect(() => {
@@ -912,7 +881,7 @@ export default function NightMap({
         const el = make("button", "hz-sign");
         el.type = "button";
         const board = make("span", "hz-board");
-        // Signs pop up one after another, the way the intro's signs do.
+        // Signs pop up one after another.
         board.style.setProperty("--d", `${Math.min(rank, 20) * 0.06}s`);
         const face = make("span", "hz-face");
         const art = make("span", "hz-art");
@@ -1002,16 +971,17 @@ export default function NightMap({
   }, [epoch, events, collectibleEventIds, fix, radiusKm, selectedId, at, live, fontsEpoch, minute]);
 
   /* ------------------------------------------------------- the swoop ---- */
-  // After the titles: start high and flat over Lagos, then sweep down into a
+  // Once the page is up: start high and flat over Lagos, then sweep down into a
   // pitched, illustrated city at an angle. Once per visit to the map.
   const swooped = useRef(false);
   useEffect(() => {
     const m = map.current;
     if (!m || !ready.current || !swoop || swooped.current) return;
     swooped.current = true;
-    const to = fixRef.current ?? LAGOS_CENTER;
+    const at = fixRef.current;
+    const to = at && insideLagos(at.lat, at.lng) ? at : LAGOS_CENTER;
     m.jumpTo({ center: [LAGOS_CENTER.lng - 0.08, LAGOS_CENTER.lat + 0.03], zoom: 9.6, pitch: 0, bearing: 0 });
-    m.flyTo({ center: [to.lng, to.lat], zoom: fixRef.current ? 12.2 : 11.2, pitch: 50, bearing: -14, duration: ms(3400), curve: 1.3 });
+    m.flyTo({ center: [to.lng, to.lat], zoom: to !== LAGOS_CENTER ? 12.2 : 11.2, pitch: 50, bearing: -14, duration: ms(3400), curve: 1.3 });
   }, [epoch, swoop]);
 
   /* -------------------------------------------- frame the filtered events ---- */
@@ -1020,8 +990,6 @@ export default function NightMap({
     const m = map.current;
     if (!m || !ready.current || fitKey === lastFit.current) return;
     lastFit.current = fitKey;
-    // Play owns the camera: a filter change made earlier does not pull it away.
-    if (modeRef.current === "play") return;
     if (!events.length) return;
     // Frame what is within your reach, so a day spread from Ikeja to Tarkwa Bay does not shrink
     // into one blob where no sign fits. Fewer than two in reach: the whole day. Hop day keeps its route in.
@@ -1046,11 +1014,6 @@ export default function NightMap({
     if (!m || !ready.current) return;
     // The camera is about to fly the venue under the cursor: drop any hover card first.
     peek.current.hide();
-    // Play owns the camera. Leaving an event for Play must not ease back to where the map was.
-    if (modeRef.current === "play") {
-      before.current = null;
-      return;
-    }
     const e = eventsRef.current.find((x) => x.id === selectedId);
     if (!e) {
       if (before.current) m.easeTo({ ...before.current, duration: ms(800) });
@@ -1199,8 +1162,10 @@ export default function NightMap({
     const f = fixRef.current;
     if (!f || fixKey === lastFix.current) return;
     lastFix.current = fixKey;
-    if (selectedRef.current || modeRef.current === "play") return;
-    m.easeTo({ center: [f.lng, f.lat], zoom: Math.max(m.getZoom(), 11.4), duration: ms(700) });
+    if (selectedRef.current) return;
+    // The map is Lagos only (maxBounds): a location outside it is shown as Lagos, not as an edge of the bounds.
+    const to = insideLagos(f.lat, f.lng) ? f : LAGOS_CENTER;
+    m.easeTo({ center: [to.lng, to.lat], zoom: Math.max(m.getZoom(), 12.4), duration: ms(900) });
   }, [epoch, fixKey]);
 
   // Inline on purpose: MapLibre's own CSS gives .maplibregl-map position relative, and when the
