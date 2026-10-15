@@ -17,16 +17,20 @@
 --   * The one who waved first hears the answer live as a 'crew' ping (crew_pings), in the room or anywhere in the app.
 --   * Unread messages are tracked per person per chat (dm_reads, crew_friend_read), so the app can badge the Chat tab
 --     and say who messaged you (crew_friend_inbox).
+--   * Being on the map is YOURS to switch on: crew_map_share, default off (crew_friend_map). Being crew puts nobody on a
+--     map. Nothing draws friends on the map yet; the day something does, it must read this and show only people who said yes.
 --
 -- WHAT THIS FILE ADDS (nothing existing is changed)
 --   tables     crew_pings (a poke, or "you are crew now", between two people; private, live)
 --              dm_reads   (when each person last read each chat)
+--              crew_map_share (who has chosen to be on their crew's map; no row means no)
 --   functions  crew_friend_wave(crew, peer)      SAY HI in a crew room: request, or the answer that makes you crew
 --              crew_friend_respond(wave, accept) WAVE BACK / PASS from the Chat tab (no room needed)
 --              crew_friend_open_dm(peer)         MESSAGE: the chat with a crew friend (made if there is none yet)
 --              crew_friend_poke(peer)            POKE a crew friend
 --              crew_friend_read(dm)              I have read this chat up to now
 --              crew_friend_inbox()               waves waiting, crew faces, chats with unread counts, in one read
+--              crew_friend_map(on)               SHOW ME ON THE MAP: my own switch, off until I turn it on
 --
 -- WHAT IS NOT CHANGED, ON PURPOSE
 --   * Event rooms, group chats, move chats and the Hop keep send_wave / respond_wave / add_to_crew as they are: a
@@ -78,6 +82,14 @@ begin
   end if;
 end $do$;
 alter table public.dm_reads enable row level security;
+
+-- One row per person who has ever touched the switch. No row means off. Own row only; the switch is a function.
+create table if not exists public.crew_map_share (
+  user_id    uuid primary key references public.profiles(id) on delete cascade,
+  on_map     boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+alter table public.crew_map_share enable row level security;
 
 -- ----------------------------------------------------------------- helpers ---
 -- Both people have the other in their crew.
@@ -149,6 +161,11 @@ create policy crew_pings_read on public.crew_pings for select to authenticated
   using (public._cf_visible(from_user, to_user));
 revoke all on public.crew_pings from anon, authenticated;
 grant select on public.crew_pings to authenticated;
+
+drop policy if exists crew_map_share_own on public.crew_map_share;
+create policy crew_map_share_own on public.crew_map_share for select to authenticated using (user_id = auth.uid());
+revoke all on public.crew_map_share from anon, authenticated;
+grant select on public.crew_map_share to authenticated;
 
 drop policy if exists dm_reads_own on public.dm_reads;
 create policy dm_reads_own on public.dm_reads for select to authenticated using (user_id = auth.uid());
@@ -316,12 +333,24 @@ begin
   on conflict (user_id, dm_id) do update set read_at = excluded.read_at;
 end $$;
 
+-- --------------------------------------------------------- SHOW ME ON THE MAP ---
+-- My own switch. Returns the new state, or null without a session or an account. Off until I turn it on.
+create or replace function public.crew_friend_map(p_on boolean) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.has_account() then return null; end if;
+  insert into crew_map_share (user_id, on_map, updated_at) values (auth.uid(), coalesce(p_on, false), now())
+  on conflict (user_id) do update set on_map = excluded.on_map, updated_at = now();
+  return coalesce(p_on, false);
+end $$;
+
 -- ------------------------------------------------------------- the Chat tab ---
 -- One read for the whole tab, and for the badge and the "who messaged me" toast:
 --   waves  waiting for me: id, from (their user id, room waves only), name, look, where (the crew, or the event), room, at
 --   crew   my crew friends (both ways): id, name, look, dm (the chat id or null), unread
 --   dms    my chats, newest first: the my_dms columns, plus other_id (crew friends only), unread, crew
 --   unread messages waiting, in all
+--   on_map my own SHOW ME ON THE MAP switch (false until I turn it on)
 -- Names: a crew friend or a room wave shows the name the room showed (display name, then handle). Anyone else keeps the
 -- old rule: the handle until both have revealed.
 create or replace function public.crew_friend_inbox() returns jsonb
@@ -402,16 +431,17 @@ begin
      order by coalesce(l.created_at, x.created_at) desc
      limit 100) t;
 
-  return jsonb_build_object('waves', v_waves, 'crew', v_crew, 'dms', v_dms, 'unread', v_unread);
+  return jsonb_build_object('waves', v_waves, 'crew', v_crew, 'dms', v_dms, 'unread', v_unread,
+                            'on_map', coalesce((select m.on_map from crew_map_share m where m.user_id = me), false));
 end $$;
 
 -- ------------------------------------------------------------------ grants ---
 revoke all on function public.crew_friend_wave(uuid, uuid), public.crew_friend_respond(uuid, boolean),
   public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_read(uuid),
-  public.crew_friend_inbox() from public, anon;
+  public.crew_friend_inbox(), public.crew_friend_map(boolean) from public, anon;
 grant execute on function public.crew_friend_wave(uuid, uuid), public.crew_friend_respond(uuid, boolean),
   public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_read(uuid),
-  public.crew_friend_inbox() to authenticated;
+  public.crew_friend_inbox(), public.crew_friend_map(boolean) to authenticated;
 
 -- ------------------------------------------------------------ OPTIONAL, LATER ---
 -- Once the new app is live for everyone, close the old way into a room chat, so a chat from a crew room can only come

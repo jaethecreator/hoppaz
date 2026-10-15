@@ -13,7 +13,7 @@ import type { DmThread, Wave } from "./types";
  *   unread  messages waiting, in all (the Chat tab badge)
  *
  * It is filled by ONE read, crew_friend_inbox(), kept fresh by SocialPing (src/components/social/SocialPing.tsx) and read
- * by the room card, the Chat tab, the Crew tab and the tab bar. A person is crew when they are in `crew`; the room card shows
+ * by the room card, the Chat tab (CHATS and CREW) and the tab bar. A person is crew when they are in `crew`; the room card shows
  * POKE for them and SAY HI for everyone else.
  *
  * FALLBACK. If the new calls are not on the server yet (the app deployed before crew_friends.sql ran), every call below
@@ -35,11 +35,13 @@ type SocialState = {
   unread: number;
   /** Who is in my crew (both ways), by user id. */
   crewIds: Record<string, CrewFace>;
+  /** SHOW ME ON THE MAP: my own switch, off until I turn it on. Nothing draws friends on the map yet; this is what it must honour. */
+  onMap: boolean;
   /** When I last poked each person (ms), so POKE reads POKED for the minute the server asks for. */
   pokedAt: Record<string, number>;
 };
 
-const EMPTY: SocialState = { supported: null, loaded: false, waves: [], crew: [], dms: [], unread: 0, crewIds: {}, pokedAt: {} };
+const EMPTY: SocialState = { supported: null, loaded: false, waves: [], crew: [], dms: [], unread: 0, crewIds: {}, onMap: false, pokedAt: {} };
 
 export const useSocial = create<SocialState>(() => EMPTY);
 
@@ -74,9 +76,9 @@ export function onInboxDiff(fn: (diff: InboxDiff) => void): () => void {
   return () => listeners.delete(fn);
 }
 
-type InboxJson = { waves?: WaveIn[]; crew?: CrewFace[]; dms?: ChatRow[]; unread?: number };
+type InboxJson = { waves?: WaveIn[]; crew?: CrewFace[]; dms?: ChatRow[]; unread?: number; on_map?: boolean };
 
-function apply(next: { waves: WaveIn[]; crew: CrewFace[]; dms: ChatRow[]; unread: number }, supported: boolean): InboxDiff {
+function apply(next: { waves: WaveIn[]; crew: CrewFace[]; dms: ChatRow[]; unread: number; onMap?: boolean }, supported: boolean): InboxDiff {
   const prev = useSocial.getState();
   const diff: InboxDiff = { newWaves: [], newMessages: [] };
   if (prev.loaded) {
@@ -93,6 +95,7 @@ function apply(next: { waves: WaveIn[]; crew: CrewFace[]; dms: ChatRow[]; unread
     dms: next.dms,
     unread: next.unread,
     crewIds: Object.fromEntries(next.crew.map((c) => [c.id, c])),
+    onMap: next.onMap ?? false,
   });
   return diff;
 }
@@ -103,7 +106,7 @@ async function fetchOnce(): Promise<InboxDiff> {
   const { data, error } = await sb.rpc("crew_friend_inbox");
   if (!error && data) {
     const j = data as InboxJson;
-    return apply({ waves: j.waves ?? [], crew: j.crew ?? [], dms: j.dms ?? [], unread: j.unread ?? 0 }, true);
+    return apply({ waves: j.waves ?? [], crew: j.crew ?? [], dms: j.dms ?? [], unread: j.unread ?? 0, onMap: !!j.on_map }, true);
   }
   if (!isMissing(error)) return { newWaves: [], newMessages: [] }; // a bad connection says nothing either way
   // The old server: the waves and chats it always had, nobody "crew", nothing unread.
@@ -247,4 +250,21 @@ export async function markRead(dm: string): Promise<void> {
   if (!sb) return;
   const { error } = await sb.rpc("crew_friend_read", { p_dm: dm });
   if (isMissing(error)) useSocial.setState({ supported: false });
+}
+
+/** SHOW ME ON THE MAP, on or off. Shown at once, put back if the server says no. */
+export async function setMapShare(on: boolean): Promise<boolean> {
+  const before = useSocial.getState().onMap;
+  useSocial.setState({ onMap: on });
+  const sb = getSupabase();
+  if (!sb) {
+    useSocial.setState({ onMap: before });
+    return false;
+  }
+  const { data, error } = await sb.rpc("crew_friend_map", { p_on: on });
+  if (error || data === null) {
+    useSocial.setState({ onMap: before });
+    return false;
+  }
+  return true;
 }

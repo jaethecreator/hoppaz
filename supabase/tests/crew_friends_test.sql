@@ -255,6 +255,21 @@ begin
   perform pg_temp.admin();
   perform pg_temp.ok(n = 1 and (select count(*) from public.dm_reads where dm_id = dm1) = 2, 'a person sees only their own read row');
 
+  -- SHOW ME ON THE MAP: off until I say so, mine alone, and being crew does not change it.
+  perform pg_temp.ok(not (pg_temp.inbox(a) ->> 'on_map')::boolean, 'the map switch is off by default');
+  perform pg_temp.actor(a); perform public.crew_friend_map(true);
+  r := (select count(*)::text from public.crew_map_share);
+  perform pg_temp.admin();
+  perform pg_temp.ok((pg_temp.inbox(a) ->> 'on_map')::boolean, 'turning it on is remembered');
+  perform pg_temp.ok(not (pg_temp.inbox(b) ->> 'on_map')::boolean, 'and is nobody else''s');
+  perform pg_temp.ok(r = '1', 'a person reads only their own switch row');
+  perform pg_temp.actor(g);
+  r := coalesce(public.crew_friend_map(true)::text, 'null');
+  perform pg_temp.admin();
+  perform pg_temp.ok(r = 'null', 'a guest without an account has no switch');
+  perform pg_temp.actor(a); perform public.crew_friend_map(false); perform pg_temp.admin();
+  perform pg_temp.ok(not (pg_temp.inbox(a) ->> 'on_map')::boolean, 'and it turns off again');
+
   -- Old chats keep working: a chat made the old way between two non-crew people is still listed, as before.
   delete from public.crew where user_id in (a, b) or friend_id in (a, b);
   j := pg_temp.inbox(a);
