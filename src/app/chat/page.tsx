@@ -58,7 +58,7 @@ function People() {
         if (r.needAccount) { say("Make an account to chat."); router.push("/account?next=/chat"); }
         // Waving back made them crew: say so, and they join the list right here. Anyone else (an event room wave) opens
         // their chat, as before.
-        else if (r.crew) say(`${w.name} is in your crew.`, "ok");
+        else if (r.crew) say(`${r.name ?? w.name} is in your crew.`, "ok");
         else if (r.dm) router.push(`/chat/dm/${r.dm}`);
         else if (r.text) say(sentence(r.text), "error");
       }}

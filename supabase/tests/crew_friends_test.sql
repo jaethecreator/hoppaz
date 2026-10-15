@@ -293,6 +293,139 @@ begin
   j := pg_temp.inbox(a);
   perform pg_temp.ok(jsonb_array_length(j -> 'dms') = 1 and not (j -> 'dms' -> 0 ->> 'crew')::boolean, 'an old chat with no crew rows is still listed, not marked crew');
   perform pg_temp.ok(jsonb_array_length(j -> 'crew') = 0, 'and there is no crew face for it');
+end $$;
+
+-- ---------------------------------------------------------------------------------------------------------------------
+-- SAY HI at a hotspot head (crew_friend_hotspot_wave): an alias asks, the wave back makes crew and reveals both names.
+-- Needs hotspots.sql loaded; without it this block says so and is skipped.
+create function pg_temp.enterhs(u uuid) returns jsonb language plpgsql as $$
+declare r jsonb;
+begin
+  perform pg_temp.actor(u);
+  perform public.confirm_adult();
+  r := public.enter_hotspot('yaba');
+  perform pg_temp.admin();
+  if (r ->> 'ok')::boolean is not true then raise exception 'FAILED: could not enter the hotspot: %', r; end if;
+  return r;
+end $$;
+create function pg_temp.hwave(u uuid, k text) returns text language plpgsql as $$
+declare r text;
+begin
+  perform pg_temp.actor(u);
+  r := public.crew_friend_hotspot_wave(k);
+  perform pg_temp.admin();
+  return r;
+end $$;
+
+do $$
+declare
+  a uuid := pg_temp.newuser(false, 'Hs Ada'); b uuid := pg_temp.newuser(false, 'Hs Ben'); c uuid := pg_temp.newuser(false, 'Hs Chi');
+  d uuid := pg_temp.newuser(false, 'Hs Dayo'); e uuid := pg_temp.newuser(false, 'Hs Efe'); f uuid := pg_temp.newuser(false, 'Hs Femi');
+  g uuid := pg_temp.newuser(false, 'Hs Outsider');
+  ka text; kb text; kc text; kd text; ke text; kf text; alias_a text;
+  r text; dm1 uuid; j jsonb; w uuid; p uuid; n int; i int;
+begin
+  if to_regclass('public.hotspot_visits') is null or not exists (select 1 from public.hotspots where slug = 'yaba' and status = 'active') then
+    raise notice 'SKIP: hotspots.sql is not loaded here (or yaba is not open), so the hotspot wave cases did not run';
+    raise notice 'ALL CREW FRIENDS TESTS PASSED';
+    return;
+  end if;
+  ka := pg_temp.enterhs(a) ->> 'key'; kb := pg_temp.enterhs(b) ->> 'key'; kc := pg_temp.enterhs(c) ->> 'key';
+  kd := pg_temp.enterhs(d) ->> 'key'; ke := pg_temp.enterhs(e) ->> 'key'; kf := pg_temp.enterhs(f) ->> 'key';
+  select alias into alias_a from public.room_identities where id = ka::uuid;
+
+  -- The ask.
+  perform pg_temp.ok(pg_temp.hwave(a, kb) = 'sent', 'SAY HI at a head in a hotspot room is a crew request (sent)');
+  perform pg_temp.ok(not pg_temp.mutual(a, b), 'a request alone makes no crew');
+  j := pg_temp.inbox(b);
+  perform pg_temp.ok(jsonb_array_length(j -> 'waves') = 1, 'it waits in their Chat tab');
+  perform pg_temp.ok(j -> 'waves' -> 0 ->> 'name' = alias_a, 'it carries the alias, not the name');
+  perform pg_temp.ok(j -> 'waves' -> 0 ->> 'name' not in ('Hs Ada', (select handle from public.profiles where id = a)), 'and not the handle either');
+  perform pg_temp.ok(j -> 'waves' -> 0 ->> 'where' like 'at %' and (j -> 'waves' -> 0 ->> 'alias')::boolean, 'with "at <place>" and the alias flag');
+  perform pg_temp.ok(jsonb_typeof(j -> 'waves' -> 0 -> 'from') = 'null', 'and no user id in the "from" field');
+  perform pg_temp.ok(position(a::text in j::text) = 0, 'and their user id is nowhere in the whole answer');
+  perform pg_temp.actor(b);
+  select count(*) into n from public.my_waves();
+  perform pg_temp.admin();
+  perform pg_temp.ok(n = 0, 'the old my_waves() never lists it, so an older app cannot show the handle');
+  perform pg_temp.ok(pg_temp.hwave(a, kb) = 'already', 'a second ask is already');
+  perform pg_temp.ok(pg_temp.hwave(a, ka) = 'self', 'not at your own head');
+  perform pg_temp.ok(pg_temp.hwave(g, kb) = 'not_met', 'someone who is not in the room cannot');
+  perform pg_temp.ok(pg_temp.hwave(a, gen_random_uuid()::text) = 'gone', 'a key that is nobody is gone');
+  perform pg_temp.ok(pg_temp.hwave(a, 'not a key') = 'gone', 'and so is text that is not a key');
+
+  -- Gone, blocks and the limit's neighbours.
+  delete from public.hotspot_visits where user_id = c;
+  perform pg_temp.ok(pg_temp.hwave(a, kc) = 'gone', 'a head that has left the room is gone');
+  insert into public.hotspot_blocks (blocker, blocked, label) values (d, a, 'x');
+  perform pg_temp.ok(pg_temp.hwave(a, kd) = 'sent' and not exists (select 1 from public.crew_hotspot_waves where from_user = a and to_user = d),
+                     'a head that blocked you from hotspots says sent and writes nothing');
+  insert into public.hotspot_blocks (blocker, blocked, label) values (a, e, 'x');
+  perform pg_temp.ok(pg_temp.hwave(a, ke) = 'blocked', 'your own hotspot block says blocked');
+  insert into public.blocks (blocker, blocked, label) values (f, a, 'A');
+  perform pg_temp.ok(pg_temp.hwave(a, kf) = 'sent' and not exists (select 1 from public.crew_hotspot_waves where from_user = a and to_user = f),
+                     'and so does a global block: sent, nothing written');
+  delete from public.blocks where blocker = f;
+  delete from public.hotspot_blocks;
+
+  -- The wave back: crew both ways, a chat, and both names open.
+  r := pg_temp.hwave(b, ka);
+  perform pg_temp.ok(r like 'crew:%', 'waving back at their head makes crew');
+  dm1 := substr(r, 6)::uuid;
+  perform pg_temp.ok(pg_temp.mutual(a, b), 'crew rows both ways');
+  perform pg_temp.ok((select status from public.crew_hotspot_waves where from_user = a and to_user = b) = 'accepted', 'the request is accepted');
+  perform pg_temp.ok(exists (select 1 from public.dms where id = dm1 and a_revealed and b_revealed), 'the chat is revealed on both sides');
+  select id into p from public.crew_pings where from_user = b and to_user = a and kind = 'crew';
+  perform pg_temp.ok(p is not null, 'the one who asked is told live');
+  j := pg_temp.inbox(a);
+  perform pg_temp.ok(j -> 'crew' -> 0 ->> 'name' = 'Hs Ben', 'the asker now sees the real name in the crew list');
+  perform pg_temp.ok(j -> 'dms' -> 0 ->> 'other_name' = 'Hs Ben', 'and in the chat');
+  j := pg_temp.inbox(b);
+  perform pg_temp.ok(j -> 'crew' -> 0 ->> 'name' = 'Hs Ada' and jsonb_array_length(j -> 'waves') = 0, 'and the other side sees the real name, with the wave gone');
+  perform pg_temp.ok(pg_temp.hwave(a, kb) = 'already_crew:' || dm1::text, 'SAY HI at a head that is already crew says already_crew');
+
+  -- WAVE BACK from the Chat tab, and PASS.
+  perform pg_temp.ok(pg_temp.hwave(e, kb) = 'sent', 'another head asks b');
+  select (pg_temp.inbox(b) -> 'waves' -> 0 ->> 'id')::uuid into w;
+  perform pg_temp.actor(b); r := public.crew_friend_respond(w, true); perform pg_temp.admin();
+  perform pg_temp.ok(r like 'crew:%' and pg_temp.mutual(b, e), 'WAVE BACK from the Chat tab makes crew and opens the chat');
+  perform pg_temp.ok(exists (select 1 from public.dms where id = substr(r, 6)::uuid and a_revealed and b_revealed), 'and reveals both names');
+  perform pg_temp.ok(pg_temp.hwave(f, kb) = 'sent', 'a third head asks b');
+  select (pg_temp.inbox(b) -> 'waves' -> 0 ->> 'id')::uuid into w;
+  perform pg_temp.actor(b); r := public.crew_friend_respond(w, false); perform pg_temp.admin();
+  perform pg_temp.ok(r = 'passed' and not pg_temp.mutual(b, f), 'PASS makes nothing');
+  perform pg_temp.ok(pg_temp.hwave(f, kb) = 'already', 'and there is no second try');
+  perform pg_temp.ok(not exists (select 1 from public.waves where from_user = f or to_user = f), 'none of this wrote a row in the waves table');
+
+  -- The two kinds of wave meet: a crew room wave one way, a hotspot wave the other.
+  declare
+    h uuid := pg_temp.newuser(false, 'Hs Hana'); i2 uuid := pg_temp.newuser(false, 'Hs Ike'); kh text; ki text;
+    j2 uuid := pg_temp.newuser(false, 'Hs Jide'); k2 uuid := pg_temp.newuser(false, 'Hs Kemi'); kj text; kk text;
+    room uuid := gen_random_uuid(); room2 uuid := gen_random_uuid();
+  begin
+    insert into public.crews (id, name, created_by) values (room, 'Hs room one', h), (room2, 'Hs room two', j2);
+    insert into public.crew_members (crew_id, user_id, role) values (room, h, 'owner'), (room, i2, 'member'), (room2, j2, 'owner'), (room2, k2, 'member');
+    perform pg_temp.ok(pg_temp.hi(h, room, i2) = 'sent', 'h waves at i in a crew room');
+    kh := pg_temp.enterhs(h) ->> 'key'; ki := pg_temp.enterhs(i2) ->> 'key';
+    r := pg_temp.hwave(i2, kh);
+    perform pg_temp.ok(r like 'crew:%' and pg_temp.mutual(h, i2), 'i waves back at h''s head in a hotspot: that answers the crew room wave');
+    perform pg_temp.ok((select status from public.waves where from_user = h and to_user = i2) = 'accepted', 'and the crew room wave is accepted');
+    kj := pg_temp.enterhs(j2) ->> 'key'; kk := pg_temp.enterhs(k2) ->> 'key';
+    perform pg_temp.ok(pg_temp.hwave(j2, kk) = 'sent', 'j asks k at a head');
+    perform pg_temp.ok(pg_temp.hi(k2, room2, j2) like 'crew:%' and pg_temp.mutual(j2, k2), 'k saying hi to j in a crew room answers it');
+  end;
+
+  -- The limit counts both kinds.
+  declare m uuid := pg_temp.newuser(false, 'Hs Mo'); n2 uuid := pg_temp.newuser(false, 'Hs Nia'); km text; kn text;
+  begin
+    km := pg_temp.enterhs(m) ->> 'key'; kn := pg_temp.enterhs(n2) ->> 'key';
+    for i in 1..30 loop
+      insert into public.crew_hotspot_waves (from_user, to_user, place, from_alias, created_at)
+      values (m, pg_temp.newuser(), 'Yaba', 'x', now() - interval '1 hour');
+    end loop;
+    perform pg_temp.ok(pg_temp.hwave(m, kn) = 'slow_down', 'the 31st wave in a day is slow_down');
+  end;
+
   raise notice 'ALL CREW FRIENDS TESTS PASSED';
 end $$;
 rollback;

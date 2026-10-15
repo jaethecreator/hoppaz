@@ -17,6 +17,9 @@
 --   * The one who waved first hears the answer live as a 'crew' ping (crew_pings), in the room or anywhere in the app.
 --   * Unread messages are tracked per person per chat (dm_reads, crew_friend_read), so the app can badge the Chat tab
 --     and say who messaged you (crew_friend_inbox).
+--   * A HOTSPOT room (hotspots.sql) is the same idea with names hidden: everyone there is an alias. SAY HI to a head is a crew
+--     request that shows only the alias and "at <place>" (crew_friend_hotspot_wave). Wave back and you are crew, and both real
+--     names are revealed to each other from then on. Nobody's user id is ever sent to the other side before that.
 --   * Being on the map is YOURS to switch on: crew_map_share, default off (crew_friend_map). Being crew puts nobody on a
 --     map. Nothing draws friends on the map yet; the day something does, it must read this and show only people who said yes.
 --
@@ -24,6 +27,8 @@
 --   tables     crew_pings (a poke, or "you are crew now", between two people; private, live)
 --              dm_reads   (when each person last read each chat)
 --              crew_map_share (who has chosen to be on their crew's map; no row means no)
+--              crew_hotspot_waves (waves made in a hotspot room: alias and place only, apart from waves on purpose, so the
+--                                  old my_waves can never show the handle of someone who only gave an alias)
 --   functions  crew_friend_wave(crew, peer)      SAY HI in a crew room: request, or the answer that makes you crew
 --              crew_friend_respond(wave, accept) WAVE BACK / PASS from the Chat tab (no room needed)
 --              crew_friend_open_dm(peer)         MESSAGE: the chat with a crew friend (made if there is none yet)
@@ -32,6 +37,7 @@
 --              crew_friend_inbox()               waves waiting, crew faces, chats with unread counts, in one read
 --              crew_friend_map(on)               SHOW ME ON THE MAP: my own switch, off until I turn it on
 --              crew_friend_staff(crew)           the room's owner and admins, for the panel the owner's logo opens
+--              crew_friend_hotspot_wave(key)     SAY HI to a head in a hotspot room (the head's key; no user id leaves the server)
 --
 -- WHAT IS NOT CHANGED, ON PURPOSE
 --   * Event rooms, group chats, move chats and the Hop keep send_wave / respond_wave / add_to_crew as they are: a
@@ -92,6 +98,26 @@ create table if not exists public.crew_map_share (
 );
 alter table public.crew_map_share enable row level security;
 
+-- A wave made at a head in a hotspot room. Apart from `waves` on purpose: waves + my_waves() would show the sender's
+-- handle (my_waves prefers it over the alias), and a hotspot wave must show the alias and the place only. Written and
+-- read by the functions here; nothing is granted. place is the hotspot's name as the room shows it, kept as it was.
+create table if not exists public.crew_hotspot_waves (
+  id           uuid primary key default gen_random_uuid(),
+  from_user    uuid not null references public.profiles(id) on delete cascade,
+  to_user      uuid not null references public.profiles(id) on delete cascade,
+  hotspot_id   uuid,
+  place        text not null default '',
+  from_alias   text not null,
+  status       text not null default 'pending' check (status in ('pending', 'accepted', 'declined')),
+  created_at   timestamptz not null default now(),
+  responded_at timestamptz,
+  unique (from_user, to_user),
+  check (from_user <> to_user)
+);
+create index if not exists crew_hotspot_waves_to_idx on public.crew_hotspot_waves (to_user, status, created_at desc);
+alter table public.crew_hotspot_waves enable row level security;
+revoke all on public.crew_hotspot_waves from anon, authenticated;
+
 -- ----------------------------------------------------------------- helpers ---
 -- Both people have the other in their crew.
 create or replace function public._cf_mutual(p_a uuid, p_b uuid) returns boolean
@@ -151,8 +177,25 @@ begin
   return d;
 end $$;
 
+-- A hotspot block (hotspots.sql keeps these apart from the global blocks): did p_blocker block p_blocked from hotspots?
+-- False on a database that has no hotspots yet.
+create or replace function public._cf_hs_block(p_blocker uuid, p_blocked uuid) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if to_regclass('public.hotspot_blocks') is null then return false; end if;
+  return exists (select 1 from hotspot_blocks where blocker = p_blocker and blocked = p_blocked);
+end $$;
+
+-- Two people who have just become crew through a hotspot alias: the chat shows both real names from now on (a revealed chat
+-- is the old rule for "known": the display names, not the handles), on an existing chat too.
+create or replace function public._cf_reveal(p_dm uuid) returns void
+language sql security definer set search_path = public as $$
+  update dms set a_revealed = true, b_revealed = true where id = p_dm;
+$$;
+
 revoke all on function public._cf_mutual(uuid, uuid), public._cf_name(uuid), public._cf_shared_crew(uuid, uuid),
-  public._cf_make_crew(uuid, uuid), public._cf_dm(uuid, uuid) from public, anon, authenticated;
+  public._cf_make_crew(uuid, uuid), public._cf_dm(uuid, uuid), public._cf_hs_block(uuid, uuid), public._cf_reveal(uuid)
+  from public, anon, authenticated;
 revoke all on function public._cf_visible(uuid, uuid) from public, anon;
 grant execute on function public._cf_visible(uuid, uuid) to authenticated;
 
@@ -194,7 +237,7 @@ language plpgsql security definer set search_path = public as $$
 declare
   me uuid := auth.uid();
   fresh timestamptz := clock_timestamp() - public._crew_room_ttl();
-  back waves; mine waves; n int; dm uuid;
+  back waves; mine waves; hw crew_hotspot_waves; n int; dm uuid;
 begin
   if me is null then return 'no_session'; end if;
   if not public.has_account() then return 'need_account'; end if;
@@ -237,9 +280,37 @@ begin
     return 'already';
   end if;
 
+  -- They waved at me first at a hotspot head (as an alias)? Waving back is the answer, and both names open up.
+  select * into hw from crew_hotspot_waves where from_user = p_peer and to_user = me;
+  if found then
+    if hw.status in ('pending', 'accepted') then
+      if hw.status = 'pending' then
+        update crew_hotspot_waves set status = 'accepted', responded_at = now() where id = hw.id;
+        insert into crew_pings (from_user, to_user, kind) values (me, p_peer, 'crew');
+      end if;
+      perform public._cf_make_crew(me, p_peer);
+      dm := public._cf_dm(p_peer, me);
+      perform public._cf_reveal(dm);
+      return 'crew:' || dm::text;
+    end if;
+    return 'already';
+  end if;
+  -- My own wave at their hotspot alias, answered or still waiting.
+  select * into hw from crew_hotspot_waves where from_user = me and to_user = p_peer;
+  if found then
+    if hw.status = 'accepted' then
+      perform public._cf_make_crew(me, p_peer);
+      dm := public._cf_dm(me, p_peer);
+      perform public._cf_reveal(dm);
+      return 'crew:' || dm::text;
+    end if;
+    return 'already';
+  end if;
+
   -- A first wave. They need not be in the room: it waits in their inbox (and the owner's logo can ask the owner who is away).
   -- The tap on the shoulder, live, goes only to someone who is in the room right now.
-  select count(*) into n from waves where from_user = me and created_at > now() - interval '1 day';
+  select (select count(*) from waves where from_user = me and created_at > now() - interval '1 day')
+       + (select count(*) from crew_hotspot_waves where from_user = me and created_at > now() - interval '1 day') into n;
   if n >= 30 then return 'slow_down'; end if;
   insert into waves (from_user, to_user, event_id, from_alias, to_alias)
   values (me, p_peer, null,
@@ -260,12 +331,29 @@ create or replace function public.crew_friend_respond(p_wave uuid, p_accept bool
 language plpgsql security definer set search_path = public as $$
 declare
   me uuid := auth.uid();
-  w waves; shared uuid; dm uuid;
+  w waves; hw crew_hotspot_waves; shared uuid; dm uuid;
 begin
   if me is null then return 'no_session'; end if;
   if p_accept and not public.has_account() then return 'need_account'; end if;
   select * into w from waves where id = p_wave and to_user = me and status = 'pending';
-  if not found then return 'gone'; end if;
+  if not found then
+    -- A wave made at a hotspot head: answered the same way, and the answer opens both names.
+    select * into hw from crew_hotspot_waves where id = p_wave and to_user = me and status = 'pending';
+    if not found then return 'gone'; end if;
+    if not p_accept then
+      update crew_hotspot_waves set status = 'declined', responded_at = now() where id = hw.id;
+      return 'passed';
+    end if;
+    if public.is_blocked(hw.from_user, me) or public._cf_hs_block(hw.from_user, me) or public._cf_hs_block(me, hw.from_user) then
+      return 'blocked';
+    end if;
+    update crew_hotspot_waves set status = 'accepted', responded_at = now() where id = hw.id;
+    perform public._cf_make_crew(me, hw.from_user);
+    dm := public._cf_dm(hw.from_user, me);
+    perform public._cf_reveal(dm);
+    insert into crew_pings (from_user, to_user, kind) values (me, hw.from_user, 'crew');
+    return 'crew:' || dm::text;
+  end if;
   if not p_accept then
     update waves set status = 'declined', responded_at = now() where id = w.id;
     return 'passed';
@@ -346,6 +434,115 @@ begin
   return coalesce(p_on, false);
 end $$;
 
+-- ------------------------------------------------------ SAY HI at a hotspot ---
+-- A head in a hotspot room is an alias. p_key is the head's key from hotspot_room(); it is resolved to a person here and the
+-- user id never leaves the server. Same rules as crew_friend_wave. Returns:
+--   sent              the request is out; they see your alias and "at <place>" (and your look), not your name
+--   crew:<dm id>      they had waved at you first: crew both ways, the chat is open, and both names are revealed
+--   already_crew:<dm> they are already your crew (this tells you which head they are: they chose to be your crew)
+--   already | blocked | slow_down | self | gone | not_met | no_session | need_account
+--   gone       that head has left the room (or the key is not one)
+--   not_met    you are not in that hotspot's room right now, or the key is not a hotspot head
+create or replace function public.crew_friend_hotspot_wave(p_key text) returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := auth.uid();
+  k uuid; them uuid; ch text; hid uuid; place text; mine_alias text;
+  hw crew_hotspot_waves; back waves; mine waves; n int; dm uuid;
+begin
+  if me is null then return 'no_session'; end if;
+  if not public.has_account() then return 'need_account'; end if;
+  if to_regclass('public.hotspot_visits') is null then return 'not_met'; end if;
+  begin
+    k := p_key::uuid;
+  exception when others then
+    return 'gone';
+  end;
+  select user_id, channel into them, ch from room_identities where id = k;
+  if them is null then return 'gone'; end if;
+  if ch is null or ch not like 'hotspot:%' then return 'not_met'; end if;
+  if them = me then return 'self'; end if;
+  begin
+    hid := substr(ch, 9)::uuid;
+  exception when others then
+    return 'gone';
+  end;
+  -- both are in this room right now
+  if not exists (select 1 from hotspot_visits where user_id = me and hotspot_id = hid and fades_at > now()) then return 'not_met'; end if;
+  if not exists (select 1 from hotspot_visits where user_id = them and hotspot_id = hid and fades_at > now()) then return 'gone'; end if;
+
+  -- blocks, both kinds, and a block is never revealed
+  if exists (select 1 from blocks where blocker = me and blocked = them) or public._cf_hs_block(me, them) then return 'blocked'; end if;
+  if exists (select 1 from blocks where blocker = them and blocked = me) or public._cf_hs_block(them, me) then return 'sent'; end if;
+
+  if public._cf_mutual(me, them) then return 'already_crew:' || public._cf_dm(me, them)::text; end if;
+
+  -- They waved at me first: as an alias, or in a crew room. Waving back is the answer.
+  select * into hw from crew_hotspot_waves where from_user = them and to_user = me;
+  if found then
+    if hw.status in ('pending', 'accepted') then
+      if hw.status = 'pending' then
+        update crew_hotspot_waves set status = 'accepted', responded_at = now() where id = hw.id;
+        insert into crew_pings (from_user, to_user, kind) values (me, them, 'crew');
+      end if;
+      perform public._cf_make_crew(me, them);
+      dm := public._cf_dm(them, me);
+      perform public._cf_reveal(dm);
+      return 'crew:' || dm::text;
+    end if;
+    return 'already';
+  end if;
+  select * into back from waves where from_user = them and to_user = me;
+  if found then
+    if back.status in ('pending', 'accepted') then
+      if back.status = 'pending' then
+        update waves set status = 'accepted', responded_at = now() where id = back.id;
+        insert into crew_pings (from_user, to_user, kind) values (me, them, 'crew');
+      end if;
+      perform public._cf_make_crew(me, them);
+      dm := public._cf_dm(back.from_user, back.to_user);
+      perform public._cf_reveal(dm);
+      return 'crew:' || dm::text;
+    end if;
+    return 'already';
+  end if;
+
+  -- My own wave, in either place: answered, or still waiting.
+  select * into hw from crew_hotspot_waves where from_user = me and to_user = them;
+  if found then
+    if hw.status = 'accepted' then
+      perform public._cf_make_crew(me, them);
+      dm := public._cf_dm(me, them);
+      perform public._cf_reveal(dm);
+      return 'crew:' || dm::text;
+    end if;
+    return 'already';
+  end if;
+  select * into mine from waves where from_user = me and to_user = them;
+  if found then
+    if mine.status = 'accepted' then
+      perform public._cf_make_crew(me, them);
+      dm := public._cf_dm(me, them);
+      perform public._cf_reveal(dm);
+      return 'crew:' || dm::text;
+    end if;
+    return 'already';
+  end if;
+
+  -- A first wave: the limit counts every wave I make, in a crew room or at a head.
+  select (select count(*) from waves where from_user = me and created_at > now() - interval '1 day')
+       + (select count(*) from crew_hotspot_waves where from_user = me and created_at > now() - interval '1 day') into n;
+  if n >= 30 then return 'slow_down'; end if;
+  select alias into mine_alias from room_identities where user_id = me and channel = ch and not anon limit 1;
+  select public.hotspot_place_name(h.junction, h.name) into place from hotspots h where h.id = hid;
+  insert into crew_hotspot_waves (from_user, to_user, hotspot_id, place, from_alias)
+  values (me, them, hid, coalesce(place, ''), coalesce(mine_alias, 'A Hopper'));
+  if random() < 0.05 then
+    delete from crew_hotspot_waves where status <> 'accepted' and created_at < now() - interval '30 days';
+  end if;
+  return 'sent';
+end $$;
+
 -- ---------------------------------------------------------- owner and admins ---
 -- The people who run a room, for the panel the owner's logo opens: id, name (as the room shows it), look, role, since
 -- (when they joined), me (it is me), crew (they are my crew, so MESSAGE; otherwise SAY HI). Members of the room only.
@@ -370,7 +567,8 @@ end $$;
 
 -- ------------------------------------------------------------- the Chat tab ---
 -- One read for the whole tab, and for the badge and the "who messaged me" toast:
---   waves  waiting for me: id, from (their user id, room waves only), name, look, where (the crew, or the event), room, at
+--   waves  waiting for me: id, from (their user id, room waves only), name, look, where (the crew, or the event, or "at <place>"
+--          for a hotspot head), room, alias (true: a hotspot head, name is their alias), at
 --   crew   my crew friends (both ways): id, name, look, dm (the chat id or null), unread
 --   dms    my chats, newest first: the my_dms columns, plus other_id (crew friends only), unread, crew
 --   unread messages waiting, in all
@@ -386,24 +584,37 @@ begin
   end if;
 
   select coalesce(jsonb_agg(t.x order by t.at desc), '[]'::jsonb) into v_waves from (
-    select k.created_at as at,
-           jsonb_build_object(
-             'id', k.id,
-             'from', case when k.room then k.from_user end,
-             'name', case when k.room then public._cf_name(k.from_user) else coalesce(p.handle, k.from_alias) end,
-             'look', p.avatar,
-             'where', case when k.room then k.crew_name else e.title end,
-             'room', k.room,
-             'at', k.created_at) as x
-      from (select w.id, w.from_user, w.from_alias, w.event_id, w.created_at,
-                   (w.event_id is null and public._cf_shared_crew(w.from_user, w.to_user) is not null) as room,
-                   (select c.name from crews c where c.id = public._cf_shared_crew(w.from_user, w.to_user)) as crew_name
-              from waves w
-             where w.to_user = me and w.status = 'pending' and not public.is_blocked(w.from_user, w.to_user)) k
-      join profiles p on p.id = k.from_user
-      left join events e on e.id = k.event_id
-     order by k.created_at desc
-     limit 50) t;
+    select u.at, u.x from (
+      select k.created_at as at,
+             jsonb_build_object(
+               'id', k.id,
+               'from', case when k.room then k.from_user end,
+               'name', case when k.room then public._cf_name(k.from_user) else coalesce(p.handle, k.from_alias) end,
+               'look', p.avatar,
+               'where', case when k.room then k.crew_name else e.title end,
+               'room', k.room,
+               'at', k.created_at) as x
+        from (select w.id, w.from_user, w.from_alias, w.event_id, w.created_at,
+                     (w.event_id is null and public._cf_shared_crew(w.from_user, w.to_user) is not null) as room,
+                     (select c.name from crews c where c.id = public._cf_shared_crew(w.from_user, w.to_user)) as crew_name
+                from waves w
+               where w.to_user = me and w.status = 'pending' and not public.is_blocked(w.from_user, w.to_user)) k
+        join profiles p on p.id = k.from_user
+        left join events e on e.id = k.event_id
+      union all
+      -- A wave at a hotspot head: the alias and the place, never the name or handle, no user id. The look is the Hopper's own.
+      select h.created_at as at,
+             jsonb_build_object(
+               'id', h.id, 'from', null, 'name', h.from_alias, 'look', p.avatar,
+               'where', 'at ' || h.place, 'room', false, 'alias', true, 'at', h.created_at) as x
+        from crew_hotspot_waves h
+        join profiles p on p.id = h.from_user
+       where h.to_user = me and h.status = 'pending'
+         and not public.is_blocked(h.from_user, me)
+         and not public._cf_hs_block(h.from_user, me) and not public._cf_hs_block(me, h.from_user)
+    ) u
+    order by u.at desc
+    limit 50) t;
 
   select coalesce(jsonb_agg(t.x order by t.at desc nulls last, t.nm), '[]'::jsonb) into v_crew from (
     select l.last_at as at, public._cf_name(f.friend_id) as nm,
@@ -462,10 +673,12 @@ end $$;
 -- ------------------------------------------------------------------ grants ---
 revoke all on function public.crew_friend_wave(uuid, uuid), public.crew_friend_respond(uuid, boolean),
   public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_read(uuid),
-  public.crew_friend_inbox(), public.crew_friend_map(boolean), public.crew_friend_staff(uuid) from public, anon;
+  public.crew_friend_inbox(), public.crew_friend_map(boolean), public.crew_friend_staff(uuid),
+  public.crew_friend_hotspot_wave(text) from public, anon;
 grant execute on function public.crew_friend_wave(uuid, uuid), public.crew_friend_respond(uuid, boolean),
   public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_read(uuid),
-  public.crew_friend_inbox(), public.crew_friend_map(boolean), public.crew_friend_staff(uuid) to authenticated;
+  public.crew_friend_inbox(), public.crew_friend_map(boolean), public.crew_friend_staff(uuid),
+  public.crew_friend_hotspot_wave(text) to authenticated;
 
 -- ------------------------------------------------------------ OPTIONAL, LATER ---
 -- Once the new app is live for everyone, close the old way into a room chat, so a chat from a crew room can only come
