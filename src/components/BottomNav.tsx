@@ -14,8 +14,8 @@ type Tab = { href: string; label: string; Icon: LucideIcon; tour?: string };
 const TABS: ReadonlyArray<Tab> = [
   { href: "/", label: "MAP", Icon: Map },
   { href: "/discover", label: "EVENTS", Icon: CalendarDays, tour: "events" },
-  // ROOMS: places (your rooms, event rooms, rooms to find). People are on CHAT (CHATS and CREW). The route stays /crew.
-  { href: "/crew", label: "ROOMS", Icon: Users },
+  // ROOMZ (brand spelling): places (your roomz, event rooms, a search for a room). People are on CHAT (CHATS and CREW). The route stays /crew.
+  { href: "/crew", label: "ROOMZ", Icon: Users },
   { href: "/chat", label: "CHAT", Icon: MessageSquare },
   { href: "/me", label: "ME", Icon: CircleUserRound },
 ];

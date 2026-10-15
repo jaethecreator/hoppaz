@@ -20,8 +20,8 @@ export default function ChatPage() {
 
 /**
  * Chat is people: CHATS (your private chats, with what is unread) and CREW (waves waiting for you, then everyone who is in
- * your crew). Rooms are places, so the event rooms live under ROOMS (/crew); one is still opened from its event card or
- * from ROOMS as /chat?c=<event id>, which shows that room with a way back.
+ * your crew). Rooms are places, so the event rooms live under ROOMZ (/crew); one is still opened from its event card or
+ * from ROOMZ as /chat?c=<event id>, which shows that room with a way back.
  */
 function Chat() {
   const params = useSearchParams();
@@ -67,7 +67,7 @@ function People() {
   </div>;
 }
 
-/** One event room (or the Hop's), opened from its event card or from ROOMS. */
+/** One event room (or the Hop's), opened from its event card or from ROOMZ. */
 function EventRoom({ id }: { id: string }) {
   const { userId, hasAccount } = useSession();
   const { fix } = useHoppaz();
