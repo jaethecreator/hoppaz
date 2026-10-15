@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import RequireAccount from "@/components/app/RequireAccount";
 import Link from "next/link";
-import { MessageSquare, Plus, Search, UserMinus, UserPlus } from "lucide-react";
+import { MessageCircle, MessageSquare, Plus, Search, UserMinus, UserPlus } from "lucide-react";
 import { useEventGroups } from "@/lib/chat";
 import { areaByName, dayLagos, travelEstimate } from "@/lib/geo";
 import { useSession } from "@/lib/useSession";
 import { useCrew } from "@/lib/useCrew";
+import { useSocial } from "@/lib/social";
+import CrewSheet, { type CrewPerson } from "@/components/social/CrewSheet";
 import { useHoppaz, useToast } from "@/lib/store";
 import { levelFor } from "@/lib/brand";
 import type { Profile } from "@/lib/types";
@@ -42,6 +44,9 @@ function CrewPagePage() {
   const [invite, setInvite] = useState("");
   const [visibility, setVisibility] = useState<"private" | "open">("private");
   const [moving, setMoving] = useState<string | null>(null);
+  // Crew both ways (the room's wave, answered): a tap on their row opens MESSAGE and POKE. An old one-way row stays as it was.
+  const crewIds = useSocial((s) => s.crewIds);
+  const [picked, setPicked] = useState<CrewPerson | null>(null);
 
   useEffect(() => {
     if (q.trim().length < 2) {
@@ -263,8 +268,9 @@ function CrewPagePage() {
             const here = fix ? { ...fix, side: areaByName(fix.area)?.side } : null;
             const there = areaByName(m.area);
             const trip = here && there ? travelEstimate(here, there) : null;
-            return (
-              <div key={m.id} className="card mb-2 flex items-center gap-3 py-3">
+            const mutual = crewIds[m.id];
+            const who = (
+              <>
                 <Face p={m} />
                 <span className="min-w-0 flex-1">
                   <b className="block truncate font-display text-[15px] font-semibold">{m.display_name ?? "A Hopper"}</b>
@@ -275,6 +281,23 @@ function CrewPagePage() {
                     </p>
                   )}
                 </span>
+              </>
+            );
+            return (
+              <div key={m.id} className="card mb-2 flex items-center gap-3 py-3">
+                {mutual ? (
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    onClick={() => setPicked({ id: m.id, name: mutual.name, look: mutual.look ?? m.avatar })}
+                    aria-label={`Message or poke ${mutual.name}`}
+                  >
+                    {who}
+                    <MessageCircle size={16} className="flex-none text-dim" aria-hidden />
+                  </button>
+                ) : (
+                  <div className="flex min-w-0 flex-1 items-center gap-3">{who}</div>
+                )}
                 <button
                   className="btn btn-ghost w-11 flex-none px-0"
                   aria-label={`Remove ${m.display_name ?? "this Hopper"}`}
@@ -287,6 +310,8 @@ function CrewPagePage() {
           })}
         </div>
       )}
+
+      {picked && <CrewSheet person={picked} onClose={() => setPicked(null)} />}
 
       <div className="mb-3 h-px bg-line" />
       <p className="seclabel mb-2">Crew leaderboard</p>
