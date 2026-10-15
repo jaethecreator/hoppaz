@@ -17,11 +17,11 @@ function load(file) {
   if (cache.has(abs)) return cache.get(abs).exports;
   const source = fs.readFileSync(abs, "utf8");
   const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const module = { exports: {} };
-  cache.set(abs, module);
+  const mod = { exports: {} };
+  cache.set(abs, mod);
   const context = {
-    exports: module.exports,
-    module,
+    exports: mod.exports,
+    module: mod,
     URL,
     require: (name) => {
       if (name.startsWith("@/")) return load(resolve(path.join(rootPath, "src", name.slice(2))));
@@ -30,7 +30,7 @@ function load(file) {
     },
   };
   vm.runInNewContext(js, context, { filename: abs });
-  return module.exports;
+  return mod.exports;
 }
 
 function resolve(base) {

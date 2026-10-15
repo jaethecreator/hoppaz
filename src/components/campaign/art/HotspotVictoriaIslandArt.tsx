@@ -1,39 +1,40 @@
 import type { ReactNode } from "react";
 import type { CampaignProp } from "@/lib/campaign/layout";
 import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
-import { FONT, Frame, P, Props, type RoomArtProps } from "./kit";
+import { BRAND_LINES, BrandSign, FONT, Frame, HopBus, P, PaperScraps, Props, RouteLine, type RoomArtProps } from "./kit";
 
 /**
- * Victoria Island, Adeola Odeku at night: the loud lounge-and-restaurant strip. A dark street, wet asphalt, neon in the
- * data's pink and yellow, lit windows, valets and SUVs. Same pixel look as the clubhouse (2 px ink outlines, top-left
+ * Victoria Island, Adeola Odeku at night: the loud lounge-and-restaurant strip. A dark street in the app's warm night, wet
+ * asphalt, the gantry in Hoppaz orange, the lounges' neon in the data's pink and yellow, lit windows, valets and SUVs, and
+ * the Hop bus parked among them with the route running past the four doors. Same pixel look as the clubhouse (2 px ink outlines, top-left
  * light, hard lower-right shadow, flat colour); glow is flat low-opacity shapes, never a gradient.
  *
  * Everything is drawn here (night tones, so no kit prop is dimmed by a wash); the kit supplies the frame, the prop sorter
  * and the map signpost and stools. Layout: src/lib/campaign/rooms/hotspotVictoriaIsland.ts.
  */
 
-/** Night materials: the clubhouse tones pushed dark, with the street colours on top. */
+/** Night materials: the app's warm night ramp for sky, walls and paving; roads, glass and lit windows keep the street. */
 const T = {
-  sky: "#0A0916",
-  wallA: "#1F1B33",
+  sky: P.night,
+  wallA: P.nightCard,
   roadA: "#23252D",
   roadB: "#2D303A",
   roadC: "#3A3F4E",
-  paveA: "#463F55",
-  paveB: "#383247",
-  paveC: "#5A5270",
-  kerb: "#8B86A0",
-  kerbDark: "#5B5570",
+  paveA: P.nightLine,
+  paveB: P.nightCard,
+  paveC: P.nightDim,
+  kerb: P.nightDim,
+  kerbDark: P.nightLine,
   glass: "#18233D",
   glassHi: "#3F5784",
   lit: "#F7D46A",
   litDeep: "#C98A1E",
   amber: "#7A4A12",
   steel: "#8A90A4",
-  dusk: "#14112A",
+  dusk: P.nightRaised,
 } as const;
 
-/** The room's two neon colours (the data's palette) and a bright core for each, so a tube reads as lit. */
+/** The room's two neon colours (the data's palette) and a bright core for each, so a tube reads as lit. The cores are brand cream. */
 type Look = { pink: string; pinkCore: string; yellow: string; yellowCore: string };
 type FacadeProps = { w: number; h: number; uid: string; name: string; k: Look };
 
@@ -107,23 +108,22 @@ function Rsvp({ w, h, name, k }: FacadeProps) {
   return (
     <g>
       <Shadow w={w} h={h} />
-      <rect x="10" y="-16" width={w - 20} height="18" fill="#2A2540" stroke={P.ink} strokeWidth="2" />
+      <rect x="10" y="-16" width={w - 20} height="18" fill={P.nightCard} stroke={P.ink} strokeWidth="2" />
       <path d={`M16 -9H${w - 16}`} stroke={k.yellowCore} strokeWidth="3" strokeDasharray="3 9" />
       <path d={`M14 -15V-1M${cx} -15V-1M${w - 14} -15V-1`} stroke={P.ink} strokeWidth="2" />
-      <rect x="1" y="1" width={w - 2} height={h - 2} fill="#1B1828" stroke={P.ink} strokeWidth="2" />
+      <rect x="1" y="1" width={w - 2} height={h - 2} fill={P.nightRaised} stroke={P.ink} strokeWidth="2" />
       <rect x="3" y="3" width={w - 6} height="2" fill={P.paper} opacity=".2" />
       <rect x="3" y="8" width={w - 6} height="3" fill={k.pinkCore} />
       <rect x={cx - 48} y="16" width="96" height="36" fill={P.night} stroke={P.ink} strokeWidth="2" />
-      <Neon x={cx} y="38" text={t} size={fit(t, 96, 28, 6)} core={k.pinkCore} halo={k.pink} ls={6} />
-      <Neon x={cx} y="48" text="RESTAURANT + LOUNGE" size={5.5} core={k.yellowCore} halo={k.yellow} ls={1} mono />
+      <Neon x={cx} y="42" text={t} size={fit(t, 96, 28, 6)} core={k.pinkCore} halo={k.pink} ls={6} />
       <rect x="12" y="60" width={w - 24} height="62" fill={T.glass} stroke={P.ink} strokeWidth="2" />
       <rect x="14" y="98" width={w - 28} height="22" fill={T.amber} />
       <path d={`M20 72H${w - 20}`} stroke={k.pinkCore} strokeWidth="2" strokeDasharray="4 10" />
       <path d={mullions} stroke={P.ink} strokeWidth="2" />
       <path d="M26 62H52L30 120H14Z" fill={P.paper} opacity=".08" />
-      <rect x={cx - 56} y="54" width="112" height="8" fill="#0F1020" stroke={P.ink} strokeWidth="2" />
+      <rect x={cx - 56} y="54" width="112" height="8" fill={P.nightRaised} stroke={P.ink} strokeWidth="2" />
       <rect x={cx - 54} y="62" width="108" height="3" fill={k.pinkCore} opacity=".85" />
-      <rect x={cx - 24} y="70" width="48" height="54" fill="#0F1020" stroke={k.pinkCore} strokeWidth="3" />
+      <rect x={cx - 24} y="70" width="48" height="54" fill={P.nightRaised} stroke={k.pinkCore} strokeWidth="3" />
       <rect x={cx - 20} y="74" width="40" height="48" fill={T.litDeep} opacity=".6" />
       <path d={`M${cx} 74V122M${cx - 8} 98v6M${cx + 6} 98v6`} stroke={P.ink} strokeWidth="2" />
       <rect x={cx - 34} y={h - 6} width="68" height="8" fill={T.kerbDark} stroke={P.ink} strokeWidth="2" />
@@ -147,7 +147,7 @@ function Eko({ w, h, uid, name, k }: FacadeProps) {
       <rect x="10" y="50" width={w - 20} height="70" fill={`url(#${uid}-win)`} stroke={P.ink} strokeWidth="2" />
       <rect x={cx - 76} y="48" width="152" height="26" fill={P.night} stroke={P.ink} strokeWidth="2" />
       <Neon x={cx} y="67" text={t} size={fit(t, 152, 18, 2)} core={P.paper} halo={P.lagoonLight} ls={2} />
-      <rect x={cx - 74} y="95" width="148" height="30" fill="#0F1020" />
+      <rect x={cx - 74} y="95" width="148" height="30" fill={P.nightRaised} />
       <rect x={cx - 26} y="100" width="52" height="25" fill={T.glass} stroke={P.ink} strokeWidth="2" />
       <rect x={cx - 22} y="104" width="44" height="21" fill={T.litDeep} opacity=".7" />
       <path d={`M${cx} 100V125`} stroke={P.ink} strokeWidth="2" />
@@ -188,7 +188,7 @@ function Place({ w, h, uid, name, k }: FacadeProps) {
       <path d={`M8 134Q${cx} 152 ${w - 8} 134`} fill="none" stroke={P.ink} strokeWidth="1" />
       {Array.from({ length: 9 }, (_, i) => {
         const tt = (i + 0.5) / 9;
-        return <rect key={i} x={8 + (w - 16) * tt - 2} y={134 + Math.sin(tt * Math.PI) * 8} width="4" height="5" fill={i % 2 ? k.yellowCore : k.pinkCore} stroke={P.ink} strokeWidth="1" />;
+        return <rect key={i} x={8 + (w - 16) * tt - 2} y={134 + Math.sin(tt * Math.PI) * 8} width="4" height="5" fill={i % 2 ? k.yellowCore : k.yellow} stroke={P.ink} strokeWidth="1" />;
       })}
     </g>
   );
@@ -202,14 +202,14 @@ function Hero({ w, h, uid, sign, place, k }: { w: number; h: number; uid: string
   return (
     <g>
       <rect x="8" y="14" width={w - 4} height={h - 14} fill={P.shadow} opacity=".4" />
-      <rect x="0" y="62" width={w} height="66" fill="#5B5570" stroke={P.ink} strokeWidth="2" />
+      <rect x="0" y="62" width={w} height="66" fill={T.kerbDark} stroke={P.ink} strokeWidth="2" />
       <rect x="4" y="66" width={w - 8} height="44" fill={`url(#${uid}-pave)`} stroke={P.ink} strokeWidth="2" />
-      <rect x="2" y="112" width={w - 4} height="14" fill="#6E6A78" />
+      <rect x="2" y="112" width={w - 4} height="14" fill={T.kerb} />
       <rect x="2" y="112" width={w - 4} height="2" fill={P.paper} opacity=".3" />
       <rect x="6" y="119" width={w - 12} height="3" fill={k.pinkCore} />
       {[18, w - 32].map((x) => (
         <g key={x}>
-          <rect x={x} y="50" width="14" height="38" fill="#2A2640" stroke={P.ink} strokeWidth="2" />
+          <rect x={x} y="50" width="14" height="38" fill={P.nightCard} stroke={P.ink} strokeWidth="2" />
           <rect x={x + 3} y="52" width="3" height="34" fill={k.pinkCore} />
           <rect x={x - 4} y="84" width="22" height="8" fill={P.ink} />
         </g>
@@ -283,22 +283,24 @@ function Keke({ k }: { k: Look }) {
   );
 }
 
-/** A roadside billboard on two legs. Variant 0 is the Hoppaz board (orange on night), 1 the pink one. */
+/** A roadside billboard on two legs. Variant 0 is the Hoppaz board (the bounce wordmark on night), 1 a hoarding with posters pasted on it. */
 function Billboard({ w, h, v, k }: { w: number; h: number; v: number; k: Look }) {
-  const pinkBoard = v === 1;
   const lamps = [w * 0.25, w * 0.5, w * 0.75];
-  const main = pinkBoard ? "OPEN TILL LATE" : "HOPPAZ";
   return (
     <g>
       <rect x="8" y="12" width={w - 4} height={h - 12} fill={P.shadow} opacity=".4" />
-      <rect x="22" y="44" width="9" height={h - 44} fill="#1A1826" stroke={P.ink} strokeWidth="2" />
-      <rect x={w - 31} y="44" width="9" height={h - 44} fill="#1A1826" stroke={P.ink} strokeWidth="2" />
-      <rect x="2" y="6" width={w - 4} height="40" fill={pinkBoard ? k.pink : P.night} stroke={P.ink} strokeWidth="3" />
-      <rect x="7" y="11" width={w - 14} height="30" fill="none" stroke={pinkBoard ? k.pinkCore : P.orange} strokeWidth="2" />
-      <text x={w / 2} y={pinkBoard ? 31 : 29} textAnchor="middle" fontFamily={FONT.display} fontWeight={900} fontSize={fit(main, w - 20, pinkBoard ? 15 : 24, 1)} letterSpacing="1" fill={pinkBoard ? P.night : P.orange}>{main}</text>
-      <text x={w / 2} y="38" textAnchor="middle" fontFamily={FONT.mono} fontSize="5.5" letterSpacing="1" fill={pinkBoard ? P.night : P.paper}>{pinkBoard ? "THE ISLAND NEVER SLEEPS" : "COME ALONE. LEAVE WITH FRIENDS."}</text>
-      <path d={lamps.map((x) => `M${x - 4} 1h8`).join("")} stroke={k.yellowCore} strokeWidth="4" />
-      <path d={lamps.map((x) => `M${x - 3} 4L${x - 20} 44H${x + 20}L${x + 3} 4Z`).join("")} fill={k.yellowCore} opacity=".1" />
+      <rect x="22" y="44" width="9" height={h - 44} fill={P.nightRaised} stroke={P.ink} strokeWidth="2" />
+      <rect x={w - 31} y="44" width="9" height={h - 44} fill={P.nightRaised} stroke={P.ink} strokeWidth="2" />
+      {v === 1 ? (
+        <g>
+          <rect x="2" y="4" width={w - 4} height="42" fill={P.nightCard} stroke={P.ink} strokeWidth="3" />
+          <PaperScraps x={14} y={6} w={w - 28} h={38} seed={1} text={BRAND_LINES.wait} />
+        </g>
+      ) : (
+        <BrandSign x={2} y={2} w={w - 4} h={44} wordmark sub={BRAND_LINES.friends} />
+      )}
+      <path d={lamps.map((x) => `M${x - 4} -1h8`).join("")} stroke={k.yellowCore} strokeWidth="4" />
+      <path d={lamps.map((x) => `M${x - 3} 2L${x - 20} 44H${x + 20}L${x + 3} 2Z`).join("")} fill={k.yellowCore} opacity=".1" />
     </g>
   );
 }
@@ -321,8 +323,8 @@ function Lamp({ v, label, k }: { v: number; label: string; k: Look }) {
   );
 }
 
-/** A palm in a lit planter. Variant 1 is lit yellow, 0 pink. */
-function PlanterPalm({ v, k }: { v: number; k: Look }) {
+/** A palm in a lit planter, the light strip orange. */
+function PlanterPalm() {
   return (
     <g>
       <ellipse cx="18" cy="29" rx="12" ry="3" fill={P.shadow} opacity=".35" />
@@ -333,7 +335,7 @@ function PlanterPalm({ v, k }: { v: number; k: Look }) {
       </g>
       <rect x="8" y="20" width="18" height="10" fill={T.kerbDark} stroke={P.ink} strokeWidth="2" />
       <rect x="9" y="21" width="16" height="2" fill={T.kerb} />
-      <rect x="10" y="26" width="14" height="2" fill={v ? k.yellowCore : k.pinkCore} />
+      <rect x="10" y="26" width="14" height="2" fill={P.orange} />
     </g>
   );
 }
@@ -383,14 +385,14 @@ function Valet({ k }: { k: Look }) {
       <rect x="6" y="12" width="52" height="18" fill="#2B1D14" stroke={P.ink} strokeWidth="2" />
       <rect x="4" y="9" width="56" height="7" fill={P.woodDark} stroke={P.ink} strokeWidth="2" />
       <rect x="18" y="-16" width="28" height="12" fill={P.night} stroke={P.ink} strokeWidth="2" />
-      <Neon x="32" y="-6.5" text="VALET" size={8} core={k.pinkCore} halo={k.pink} ls={1} />
+      <Neon x="32" y="-6.5" text="VALET" size={8} core={k.pinkCore} halo={P.orange} ls={1} />
     </g>
   );
 }
 
-/** A patio table under a parasol (pink or yellow). */
+/** A patio table under a parasol (orange or yellow). */
 function PatioTable({ v, k }: { v: number; k: Look }) {
-  const c = v ? k.yellow : k.pink;
+  const c = v ? k.yellow : P.orange;
   return (
     <g>
       <ellipse cx="18" cy="29" rx="12" ry="3" fill={P.shadow} opacity=".35" />
@@ -445,10 +447,12 @@ export default function HotspotVictoriaIslandArt({ layout, uid, brand }: RoomArt
   const H = layout.grid.height * tile;
   const k: Look = {
     pink: data?.palette.primary ?? "#C94A8A",
-    pinkCore: "#FFD0E4",
+    pinkCore: P.paper,
     yellow: data?.palette.accent ?? "#F2B705",
-    yellowCore: "#FFE887",
+    yellowCore: P.paper,
   };
+  // The gantry is Hoppaz neon: orange tubes with cream cores (the lounges keep the data's pink and yellow).
+  const heroLook: Look = { pink: P.orange, pinkCore: P.paper, yellow: P.orange, yellowCore: P.paper };
   const sign = (data?.sign ?? brand).toUpperCase();
   const place = (data?.place ?? "Victoria Island").toUpperCase();
   const FALLBACK = ["Terra Kulture", "RSVP", "Eko Hotels", "The Place"];
@@ -475,12 +479,13 @@ export default function HotspotVictoriaIslandArt({ layout, uid, brand }: RoomArt
     "venue-2": (p) => <Rsvp w={p.w * tile} h={p.h * tile} uid={uid} name={names[1]} k={k} />,
     "venue-3": (p) => <Eko w={p.w * tile} h={p.h * tile} uid={uid} name={names[2]} k={k} />,
     "venue-4": (p) => <Place w={p.w * tile} h={p.h * tile} uid={uid} name={names[3]} k={k} />,
-    hero: (p) => <Hero w={p.w * tile} h={p.h * tile} uid={uid} sign={sign} place={place} k={k} />,
+    hero: (p) => <Hero w={p.w * tile} h={p.h * tile} uid={uid} sign={sign} place={place} k={heroLook} />,
+    "suv-4": () => <HopBus w={96} h={64} />,
     suv: (p) => <Suv v={p.variant ?? 0} k={k} />,
     keke: () => <Keke k={k} />,
     billboard: (p) => <Billboard w={p.w * tile} h={p.h * tile} v={p.variant ?? 0} k={k} />,
     streetlamp: (p) => <Lamp v={p.variant ?? 0} label={roadTag(roads[(p.variant ?? 1) - 1] ?? roads[0])} k={k} />,
-    planterpalm: (p) => <PlanterPalm v={p.variant ?? 0} k={k} />,
+    planterpalm: () => <PlanterPalm />,
     rope: () => <Rope />,
     posterrail: () => <PosterRail k={k} />,
     valet: () => <Valet k={k} />,
@@ -503,10 +508,10 @@ export default function HotspotVictoriaIslandArt({ layout, uid, brand }: RoomArt
     plate("venue-2", ((at("venue-2")?.w ?? 6) * tile) / 2 - 48, 16, 96, 36, k.pink),
     plate("venue-3", ((at("venue-3")?.w ?? 8) * tile) / 2 - 76, 48, 152, 26, P.lagoonLight),
     plate("venue-4", ((at("venue-4")?.w ?? 7) * tile) / 2 - 62, 12, 124, 30, k.yellow),
-    plate("hero", 14, 8, (at("hero")?.w ?? 12) * tile - 28, 46, k.pink),
+    plate("hero", 14, 8, (at("hero")?.w ?? 12) * tile - 28, 46, P.orange),
   ].filter((g): g is { x: number; y: number; w: number; h: number; c: string } => g !== null);
   const zebraX = 7 * tile;
-  // Neon on the wet road under the hero: short ripple bars (pink and yellow), n bars stacked under each letter group.
+  // Neon on the wet road under the hero: short ripple bars (the gantry's orange, then the strip's yellow), n bars stacked under each letter group.
   const rippleY = (hero ? py(hero) + hero.h * tile : 416) + 3;
   const ripple = (list: [number, number][]) => list.map(([x, n]) => Array.from({ length: n }, (_, i) => `M${x + i} ${rippleY + i * 9}h${12 - i * 3}`).join("")).join("");
   const pinkRipple = ripple([[322, 3], [392, 3], [482, 3], [572, 2], [652, 2]]);
@@ -554,8 +559,8 @@ export default function HotspotVictoriaIslandArt({ layout, uid, brand }: RoomArt
       <rect x={W - tile} y="0" width={tile} height={H} fill={T.dusk} />
       <rect x="0" y={tile} width={tile} height={H - tile * 2} fill={`url(#${uid}-win)`} opacity=".32" />
       <rect x={W - tile} y={tile} width={tile} height={H - tile * 2} fill={`url(#${uid}-win)`} opacity=".32" />
-      <rect x="9" y="60" width="14" height="190" fill={k.pink} opacity=".3" />
-      <rect x="14" y="60" width="4" height="190" fill={k.pinkCore} />
+      <rect x="9" y="60" width="14" height="190" fill={P.orange} opacity=".3" />
+      <rect x="14" y="60" width="4" height="190" fill={P.paper} />
       <rect x={W - 23} y="300" width="14" height="170" fill={k.yellow} opacity=".3" />
       <rect x={W - 18} y="300" width="4" height="170" fill={k.yellowCore} />
       <rect x="0" y={H - tile} width={W} height={tile} fill={T.dusk} />
@@ -578,10 +583,13 @@ export default function HotspotVictoriaIslandArt({ layout, uid, brand }: RoomArt
       {[[168, 384, 34], [608, 322, 28], [790, 410, 30]].map(([cx, cy, rx]) => <ellipse key={cx} cx={cx} cy={cy} rx={rx} ry="7" fill={T.glassHi} opacity=".22" />)}
       <circle cx={19 * tile + 4} cy={roadTop + 20} r="9" fill={T.roadB} stroke={T.roadC} strokeWidth="2" />
       <circle cx={26 * tile - 6} cy={roadBottom - 20} r="9" fill={T.roadB} stroke={T.roadC} strokeWidth="2" />
-      {/* Neon on the wet road: pink and yellow streaks under the hero's letters and the signs. */}
-      <path d={pinkRipple} stroke={k.pink} strokeWidth="4" opacity=".45" />
+      {/* Neon on the wet road: orange and yellow streaks under the hero's letters and the signs. */}
+      <path d={pinkRipple} stroke={P.orange} strokeWidth="4" opacity=".45" />
       <path d={yellowRipple} stroke={k.yellow} strokeWidth="4" opacity=".4" />
       {[[doors[0].cx - 10, k.yellow], [doors[1].cx - 6, k.pink], [doors[3].cx - 10, k.yellow]].map(([x, c]) => <rect key={String(x)} x={Number(x)} y={roadTop} width="12" height="34" fill={String(c)} opacity=".18" />)}
+
+      {/* The Hop route along the pavement: one stop per venue door, Terra Kulture to The Place (the finale). */}
+      <RouteLine points={[[144, 198], [368, 198], [528, 198], [816, 198]]} />
 
       <Props layout={layout} uid={uid} custom={custom} />
 
@@ -597,20 +605,21 @@ export default function HotspotVictoriaIslandArt({ layout, uid, brand }: RoomArt
         </g>
       ))}
       {kind("suv").map((p) => {
-        const left = (p.variant ?? 0) >= 3;
+        const bus = p.id === "suv-4";
+        const left = !bus && (p.variant ?? 0) >= 3;
         const hx = left ? px(p) + 4 : px(p) + 92;
         const tx = left ? px(p) + 92 : px(p) + 4;
-        const y = py(p) + 31;
+        const y = py(p) + (bus ? 44 : 31);
         const dir = left ? -1 : 1;
         return (
           <g key={p.id}>
             <path d={`M${hx} ${y - 3}L${hx + dir * 62} ${y - 14}V${y + 18}L${hx} ${y + 3}Z`} fill={k.yellowCore} opacity=".1" />
-            <circle cx={tx} cy={y} r="7" fill={P.red} opacity=".35" />
+            <circle cx={tx} cy={y} r="7" fill={bus ? P.orange : P.red} opacity=".35" />
           </g>
         );
       })}
       {signGlows.map((g, i) => <rect key={i} x={g.x - 5} y={g.y - 5} width={g.w + 10} height={g.h + 10} fill={g.c} opacity=".14" />)}
-      {hero && <rect x={px(hero) - 8} y={py(hero) + hero.h * tile} width={hero.w * tile + 16} height="30" fill={k.pink} opacity=".12" />}
+      {hero && <rect x={px(hero) - 8} y={py(hero) + hero.h * tile} width={hero.w * tile + 16} height="30" fill={P.orange} opacity=".12" />}
       {exit && <rect x={px(exit) - 6} y={py(exit) - 6} width={exit.w * tile + 12} height={tile + 10} fill={k.yellowCore} opacity=".12" />}
       <rect x={tile} y={H - tile * 3} width={W - tile * 2} height={tile * 2} fill={T.sky} opacity=".22" />
       </g>

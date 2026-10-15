@@ -1,17 +1,19 @@
 import type { ReactNode } from "react";
 import type { CampaignProp } from "@/lib/campaign/layout";
-import { Defs, Flyer, Floor, FONT, Lineup, P, Props, Shade, type RoomArtProps } from "./kit";
+import { BRAND_LINES, Defs, Floor, FONT, HopFlyer, HoppazWordmark, Lineup, P, Props, RouteLine, Shade, Stamp, type RoomArtProps } from "./kit";
 
 /**
  * Pool party: a hotel or villa pool in the afternoon sun. Daytime and loud next to the night rooms: turquoise water, white
- * tile and wall, wood deck, bright palm greens, coral and orange. Same pixel look as the clubhouse (2 px ink outlines, top
+ * tile and wall, wood deck, bright palm greens, orange and night. Same pixel look as the clubhouse (2 px ink outlines, top
  * left light, lower right hard shadow, flat colour, crispEdges). The flyer and the line-up hang on the white back wall.
+ * Hoppaz owns the designed surfaces (orange first, night and cream); the water, deck, lawn and palms stay natural, and the
+ * flamingo and the danfo yellow are the two colour punches.
  */
 
 /** Day colours the clubhouse kit does not have: pool turquoise, silver chrome and straw. */
 const T = { turq: "#35C2D4", turqDark: "#1A9DB8", turqLight: "#8FF0F0", aqua: "#58B6D8", silver: "#DDE6EA", straw: "#D9B45E", strawDark: "#A9823A", strawLight: "#EBD088", pink: "#FF8E8E", pinkLight: "#FFC2B8" } as const;
-/** Float, lounger and parasol accents by variant: aqua, coral, yellow. */
-const ACCENT = [T.aqua, P.ember, P.danfo] as const;
+/** Float, lounger and parasol accents by variant: orange, night, and the danfo yellow punch. */
+const ACCENT = [P.orange, P.night, P.danfo] as const;
 
 /** A pie wedge from angle a0 to a1 (degrees) of a circle: parasol segments and the beach ball. */
 const wedge = (cx: number, cy: number, r: number, a0: number, a1: number) => {
@@ -45,11 +47,13 @@ function Pool({ w, h, uid }: { w: number; h: number; uid: string }) {
     <g>
       <rect x="6" y="8" width={w - 2} height={h - 2} fill={P.shadow} opacity=".25" />
       <rect x="0" y="0" width={w} height={h} fill={P.white} stroke={P.ink} strokeWidth="2" />
-      <rect x="2" y="2" width={w - 4} height="3" fill="#FFFFFF" />
+      <rect x="2" y="2" width={w - 4} height="3" fill={P.paper} />
       <rect x="9" y="9" width={w - 18} height={h - 18} fill={u("pooltile")} stroke={P.ink} strokeWidth="2" />
       <rect x={wx} y={wy} width={ww} height={wh} fill={T.turq} />
       <rect x={wx} y={wy} width={ww} height={wh} fill={u("water")} opacity=".4" />
       <rect x={deep} y={wy} width={wx + ww - deep} height={wh} fill={T.turqDark} opacity=".35" />
+      {/* The room's wordmark, painted on the pool floor under the water: it always shows. */}
+      <g opacity=".5"><HoppazWordmark x={200} y={52} h={20} fill={P.paper} anchor="middle" /></g>
       {/* Steps in the shallow corner, a lane rope where the deep end starts. */}
       <rect x={wx} y={wy} width="46" height="38" fill="#9FE3F0" stroke={P.ink} strokeWidth="1" />
       <rect x={wx} y={wy} width="31" height="38" fill="#C7F0F7" stroke={P.ink} strokeWidth="1" />
@@ -73,7 +77,7 @@ function Pool({ w, h, uid }: { w: number; h: number; uid: string }) {
         <rect x="0" y="0" width="46" height="20" fill={P.danfo} stroke={P.ink} strokeWidth="2" />
         <rect x="4" y="3" width="38" height="3" fill={P.paper} opacity=".7" />
         <rect x="0" y="9" width="46" height="3" fill={P.paper} />
-        <rect x="36" y="3" width="8" height="14" fill={P.ember} />
+        <rect x="36" y="3" width="8" height="14" fill={P.orange} />
       </g>
       <g transform="translate(102,128)">
         <ellipse cx="3" cy="6" rx="28" ry="15" fill={T.turqDark} opacity=".5" />
@@ -95,8 +99,8 @@ function Pool({ w, h, uid }: { w: number; h: number; uid: string }) {
       <g transform="translate(246,142)">
         <ellipse cx="3" cy="5" rx="11" ry="5" fill={T.turqDark} opacity=".5" />
         <circle r="10" fill={P.paper} stroke={P.ink} strokeWidth="2" />
-        <path d={wedge(0, 0, 9, -90, -10)} fill={P.ember} />
-        <path d={wedge(0, 0, 9, 110, 190)} fill={T.aqua} />
+        <path d={wedge(0, 0, 9, -90, -10)} fill={P.orange} />
+        <path d={wedge(0, 0, 9, 110, 190)} fill={P.night} />
         <path d={wedge(0, 0, 9, 190, 270)} fill={P.danfo} />
       </g>
       <path d="M180 46h10M196 52h8M232 112h10M70 92h9M330 150h12M150 160h10" stroke={T.turqLight} strokeWidth="2" />
@@ -123,11 +127,11 @@ function Cabana({ w, h, uid }: { w: number; h: number; uid: string }) {
       <rect x={w - 7} y="22" width="7" height="64" fill={P.wood} stroke={P.ink} strokeWidth="2" />
       <rect x="0" y="58" width={w} height={h - 58} fill={u("wood")} stroke={P.ink} strokeWidth="2" />
       <rect x="2" y="60" width={w - 4} height="10" fill={P.white} />
-      <rect x="2" y="60" width={w - 4} height="2" fill="#FFFFFF" />
+      <rect x="2" y="60" width={w - 4} height="2" fill={P.paper} />
       <rect x="2" y="72" width={w - 4} height="2" fill={P.woodDark} opacity=".5" />
       <rect x="2" y={h - 8} width={w - 4} height="4" fill={P.orange} />
       <circle cx="40" cy="62" r="6" fill={P.woodDark} stroke={P.ink} strokeWidth="2" />
-      <rect x="45" y="48" width="2" height="12" fill={P.ember} />
+      <rect x="45" y="48" width="2" height="12" fill={P.orange} />
       <rect x="86" y="50" width="8" height="14" fill={T.turqLight} stroke={P.ink} strokeWidth="1" />
       <rect x="90" y="46" width="2" height="8" fill={P.orange} />
       <rect x="108" y="52" width="8" height="12" fill={P.paper} stroke={P.ink} strokeWidth="1" />
@@ -277,7 +281,7 @@ function Cooler() {
     <g>
       <rect x="6" y="12" width="26" height="19" fill={P.shadow} opacity=".25" />
       <rect x="3" y="12" width="26" height="17" fill={P.white} stroke={P.ink} strokeWidth="2" />
-      <rect x="5" y="19" width="22" height="3" fill={T.aqua} />
+      <rect x="5" y="19" width="22" height="3" fill={P.night} />
       <rect x="2" y="7" width="28" height="7" fill={P.orange} stroke={P.ink} strokeWidth="2" />
       <rect x="11" y="4" width="10" height="3" fill={P.ink} />
     </g>
@@ -291,15 +295,15 @@ function Booth({ w, h }: { w: number; h: number }) {
       <Shade w={w} h={h} />
       <rect x="1" y="2" width={w - 2} height={h - 4} fill={P.woodDark} stroke={P.ink} strokeWidth="2" />
       <rect x="3" y="4" width={w - 6} height="15" fill={P.white} />
-      <rect x="3" y="4" width={w - 6} height="2" fill="#FFFFFF" />
+      <rect x="3" y="4" width={w - 6} height="2" fill={P.paper} />
       <circle cx="30" cy="12" r="8" fill={P.ink} stroke={P.slateLight} strokeWidth="1" />
       <circle cx="30" cy="12" r="2.5" fill={P.orange} />
       <path d="M40 6l-8 6" stroke={P.slateLight} strokeWidth="2" />
       <circle cx={w - 30} cy="12" r="8" fill={P.ink} stroke={P.slateLight} strokeWidth="1" />
-      <circle cx={w - 30} cy="12" r="2.5" fill={T.turq} />
+      <circle cx={w - 30} cy="12" r="2.5" fill={P.paper} />
       <path d={`M${w - 40} 6l-8 6`} stroke={P.slateLight} strokeWidth="2" />
       <rect x={w / 2 - 14} y="5" width="28" height="13" fill={P.ink} />
-      {[0, 1, 2, 3].map((i) => <rect key={i} x={w / 2 - 11 + i * 6} y="7" width="3" height="3" fill={[P.orange, T.turq, P.danfo, P.paper][i]} />)}
+      {[0, 1, 2, 3].map((i) => <rect key={i} x={w / 2 - 11 + i * 6} y="7" width="3" height="3" fill={[P.orange, P.paper, P.danfo, P.paper][i]} />)}
       <rect x={w / 2 - 10} y="13" width="20" height="2" fill={P.slateLight} />
       <path d={`M10 21c4-8 10-8 12 0c-4-3-8-3-12 0ZM${w - 24} 21c4-8 10-8 12 0c-4-3-8-3-12 0Z`} fill={P.keke} />
       <rect x="3" y={h - 7} width={w - 6} height="3" fill={P.orange} />
@@ -324,7 +328,7 @@ function Platform({ w, h, uid }: { w: number; h: number; uid: string }) {
   );
 }
 
-/** A daybed: a wide white mattress with cushions under an aqua canopy with a scalloped hem. 3 by 2 tiles. */
+/** A daybed: a wide white mattress with cushions under an orange canopy with a scalloped hem. 3 by 2 tiles. */
 function Daybed({ w, h }: { w: number; h: number }) {
   const hem = `M1 12${"l8 7l8 -7".repeat(Math.floor((w - 2) / 16))}Z`;
   return (
@@ -333,16 +337,16 @@ function Daybed({ w, h }: { w: number; h: number }) {
       <rect x="4" y="10" width="4" height="26" fill={P.wood} stroke={P.ink} strokeWidth="2" />
       <rect x={w - 8} y="10" width="4" height="26" fill={P.wood} stroke={P.ink} strokeWidth="2" />
       <path d={hem} fill={P.paper} stroke={P.ink} strokeWidth="1" />
-      <rect x="1" y="0" width={w - 2} height="13" fill={T.aqua} stroke={P.ink} strokeWidth="2" />
+      <rect x="1" y="0" width={w - 2} height="13" fill={P.orange} stroke={P.ink} strokeWidth="2" />
       <rect x="3" y="2" width={w - 6} height="3" fill={P.paper} opacity=".4" />
       <rect x="2" y="24" width={w - 4} height={h - 26} fill={P.woodDark} stroke={P.ink} strokeWidth="2" />
       <rect x="5" y="26" width={w - 10} height={h - 34} fill={P.white} stroke={P.ink} strokeWidth="1" />
-      <rect x="9" y="28" width="18" height="12" fill={T.aqua} stroke={P.ink} strokeWidth="1" />
+      <rect x="9" y="28" width="18" height="12" fill={P.night} stroke={P.ink} strokeWidth="1" />
       <rect x="29" y="28" width="18" height="12" fill={P.paper} stroke={P.ink} strokeWidth="1" />
-      <rect x={w - 40} y="27" width="31" height={h - 36} fill={P.ember} />
+      <rect x={w - 40} y="27" width="31" height={h - 36} fill={P.orange} />
       <rect x={w - 33} y="27" width="4" height={h - 36} fill={P.paper} />
       <rect x={w - 21} y="27" width="4" height={h - 36} fill={P.paper} />
-      <path d={`M8 ${h - 14}H${w - 8}`} stroke={T.aqua} strokeWidth="2" />
+      <path d={`M8 ${h - 14}H${w - 8}`} stroke={P.orange} strokeWidth="2" />
     </g>
   );
 }
@@ -358,8 +362,8 @@ function FloatRack({ w, h }: { w: number; h: number }) {
       <circle cx="20" cy="20" r="8" fill="none" stroke={P.ink} strokeWidth="8" />
       <circle cx="20" cy="20" r="8" fill="none" stroke={P.orange} strokeWidth="4" />
       <circle cx="20" cy="20" r="8" fill="none" stroke={P.paper} strokeWidth="4" strokeDasharray="5 10" />
-      <ellipse cx="38" cy="21" rx="8" ry="6" fill={T.pink} stroke={P.ink} strokeWidth="2" />
-      <rect x="42" y="10" width="6" height="8" fill={T.pink} stroke={P.ink} strokeWidth="2" />
+      <ellipse cx="38" cy="21" rx="8" ry="6" fill={P.orange} stroke={P.ink} strokeWidth="2" />
+      <rect x="42" y="10" width="6" height="8" fill={P.orange} stroke={P.ink} strokeWidth="2" />
       <rect x="47" y="11" width="5" height="3" fill={P.danfo} stroke={P.ink} strokeWidth="1" />
       <rect x="9" y="12" width="4" height="14" fill={P.danfo} stroke={P.ink} strokeWidth="1" />
     </g>
@@ -371,12 +375,12 @@ function TowelDesk({ w, h }: { w: number; h: number }) {
   return (
     <g>
       <Shade w={w} h={h} />
-      <rect x="2" y="2" width="14" height="10" fill={T.aqua} stroke={P.ink} strokeWidth="2" />
-      <rect x="18" y="0" width="14" height="12" fill={P.ember} stroke={P.ink} strokeWidth="2" />
+      <rect x="2" y="2" width="14" height="10" fill={P.night} stroke={P.ink} strokeWidth="2" />
+      <rect x="18" y="0" width="14" height="12" fill={P.orange} stroke={P.ink} strokeWidth="2" />
       <rect x="34" y="3" width="13" height="9" fill={P.paper} stroke={P.ink} strokeWidth="2" />
       <rect x="2" y="9" width={w - 6} height={h - 11} fill={P.white} stroke={P.ink} strokeWidth="2" />
-      <rect x="4" y="11" width={w - 10} height="4" fill="#FFFFFF" />
-      <rect x="4" y={h - 11} width={w - 10} height="5" fill={T.aqua} />
+      <rect x="4" y="11" width={w - 10} height="4" fill={P.paper} />
+      <rect x="4" y={h - 11} width={w - 10} height="5" fill={P.orange} />
       <rect x={w - 14} y="2" width="3" height="8" fill={P.goldDark} />
       <rect x={w / 2 - 14} y="-8" width="28" height="9" fill={P.orange} stroke={P.ink} strokeWidth="2" />
       <text x={w / 2} y="-0.5" textAnchor="middle" fill={P.night} fontFamily={FONT.display} fontWeight={900} fontSize="6.5" letterSpacing=".8">EXIT</text>
@@ -408,10 +412,10 @@ export default function PoolArt({ layout, uid, brand, content }: RoomArtProps) {
   const by = wy + 14;
   const titleSize = Math.max(9, Math.min(line ? 20 : 22, 262 / Math.max(5, title.length * 0.72)));
   const flags = buntingPaths(wx + 8, W - wx - 8, wy + 10, 6, 24);
-  const flagColors = [P.orange, T.aqua, P.danfo];
+  const flagColors = [P.orange, P.paper, P.night];
 
   const custom: Record<string, (p: CampaignProp, t: number) => ReactNode> = {
-    "event-flyer": (p, t) => <Flyer uid={uid} x={0} y={4} w={p.w * t} h={p.h * t - 8} url={content?.flyerUrl} title={title} line={content?.line} />,
+    "event-flyer": (p, t) => <HopFlyer uid={uid} x={0} y={4} w={p.w * t} h={p.h * t - 8} url={content?.flyerUrl} title={title} line={content?.line} />,
     "event-lineup": (p, t) => (
       <g>
         <rect x="-3" y="1" width={p.w * t + 6} height={p.h * t - 6} fill={P.woodLight} stroke={P.ink} strokeWidth="2" />
@@ -454,17 +458,12 @@ export default function PoolArt({ layout, uid, brand, content }: RoomArtProps) {
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true" shapeRendering="crispEdges">
-      <Defs uid={uid} names={["deck", "paving", "water", "pooltile", "wood"]} />
+      <Defs uid={uid} names={["deck", "paving", "water", "pooltile", "wood", "grass"]} />
       <defs>
         <pattern id={`${uid}-apron`} width="32" height="32" patternUnits="userSpaceOnUse">
           <rect width="32" height="32" fill="#F4F1E7" />
           <path d="M0 0H32V32" fill="none" stroke="#D3CDB9" strokeWidth="1" />
           <path d="M5 6h3M20 21h4M12 27h1M26 9h2" stroke="#CFE9EE" strokeWidth="1" />
-        </pattern>
-        <pattern id={`${uid}-lawn`} width="32" height="32" patternUnits="userSpaceOnUse">
-          <rect width="32" height="32" fill={P.keke} />
-          <path d="M4 6h3v2M20 22h3v2M12 17h2M28 3h2" stroke={P.kekeDark} strokeWidth="1" />
-          <path d="M5 25h3M24 12h2" stroke="#7BD27A" strokeWidth="1" />
         </pattern>
         <pattern id={`${uid}-hedge`} width="32" height="32" patternUnits="userSpaceOnUse">
           <rect width="32" height="32" fill={P.kekeDark} />
@@ -481,27 +480,26 @@ export default function PoolArt({ layout, uid, brand, content }: RoomArtProps) {
         </pattern>
         <pattern id={`${uid}-stripe`} width="32" height="32" patternUnits="userSpaceOnUse">
           <rect width="32" height="32" fill={P.paper} />
-          <rect width="8" height="32" fill="#F9C9B3" />
-          <rect x="16" width="8" height="32" fill="#F9C9B3" />
+          <rect width="8" height="32" fill={P.orange} />
+          <rect x="16" width="8" height="32" fill={P.orange} />
         </pattern>
         <pattern id={`${uid}-awn`} width="16" height="12" patternUnits="userSpaceOnUse">
           <rect width="16" height="12" fill={P.paper} />
           <rect width="8" height="12" fill={P.orange} />
         </pattern>
         <pattern id={`${uid}-mural`} width="64" height="24" patternUnits="userSpaceOnUse">
-          <rect width="64" height="24" fill={T.turq} />
+          <rect width="64" height="24" fill={P.night} />
           <path d="M2 24C4 10 18 2 34 4C26 8 20 14 16 24Z" fill={P.kekeDark} />
           <path d="M30 24C34 12 48 4 64 8C54 10 46 16 42 24Z" fill={P.keke} />
           <path d="M12 24C14 16 22 10 30 10C24 14 22 18 22 24Z" fill={P.keke} />
-          <circle cx="50" cy="8" r="4" fill={P.ember} />
-          <circle cx="50" cy="8" r="1.5" fill={P.danfo} />
-          <circle cx="8" cy="9" r="3" fill={P.orange} />
-          <path d="M0 0H64" stroke={T.turqLight} strokeWidth="1" />
+          <circle cx="50" cy="8" r="4" fill={P.orange} />
+          <circle cx="8" cy="9" r="3" fill={P.paper} />
+          <path d="M0 0H64" stroke={P.nightLine} strokeWidth="1" />
         </pattern>
       </defs>
 
       {/* The lawn around the villa, then the deck. */}
-      <rect width={W} height={H} fill={u("lawn")} />
+      <rect width={W} height={H} fill={u("grass")} />
       <rect x={tile} y={tile} width={W - tile * 2} height={H - tile * 2} fill={u("deck")} stroke={P.ink} strokeWidth="4" />
 
       {/* White tile round the pool, sandy paving under the cabana and the poolside tables, a path to the gate. */}
@@ -522,15 +520,17 @@ export default function PoolArt({ layout, uid, brand, content }: RoomArtProps) {
         </g>
       ))}
 
-      {/* The back wall: white plaster, a coral trim, a tropical mural strip and bunting. */}
+      {/* The back wall: white plaster, an orange trim, a tropical mural strip on night and bunting. */}
       <rect x={wx + 5} y={wy + 7} width={ww} height={wh} fill={P.shadow} opacity=".25" />
       <rect x={wx} y={wy} width={ww} height={wh} fill={P.ink} />
       <rect x={wx + 3} y={wy + 3} width={ww - 6} height={wh - 10} fill={P.white} />
-      <rect x={wx + 2} y={wy + 2} width={ww - 4} height="5" fill="#FFFFFF" />
-      <rect x={wx + 3} y={wy + 7} width={ww - 6} height="3" fill={P.ember} />
+      <rect x={wx + 2} y={wy + 2} width={ww - 4} height="5" fill={P.paper} />
+      <rect x={wx + 3} y={wy + 7} width={ww - 6} height="3" fill={P.orange} />
       <rect x={wx + 3} y={wy + 62} width={ww - 6} height="24" fill={u("mural")} stroke={P.ink} strokeWidth="2" />
       <path d={`M${wx + 8} ${wy + 10}Q${W / 2} ${wy + 22} ${W - wx - 8} ${wy + 10}`} fill="none" stroke={P.ink} strokeWidth="1" />
       {flags.map((d, i) => <path key={i} d={d} fill={flagColors[i]} stroke={P.ink} strokeWidth="1" />)}
+      {/* One rubber stamp on the plaster, right of the line-up. */}
+      <Stamp x={850} y={76} text={BRAND_LINES.hop} size={8} />
 
       {/* The banner over the DJ: the party's name, and its date and place under it. */}
       <path d={`M${bx + 30} ${wy + 8}V${by}M${bx + bw - 30} ${wy + 8}V${by}`} stroke={P.ink} strokeWidth="2" />
@@ -542,14 +542,17 @@ export default function PoolArt({ layout, uid, brand, content }: RoomArtProps) {
       <text x={W / 2} y={by + (line ? 25 : 28)} textAnchor="middle" fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize={titleSize} letterSpacing="1.5">{title}</text>
       {line && <text x={W / 2} y={by + 37} textAnchor="middle" fill={P.night} fontFamily={FONT.mono} fontWeight={700} fontSize="8" letterSpacing="1">{line}</text>}
 
+      {/* The route round the pool: in at the gate, past the pool's two ends, finale in front of the DJ deck. */}
+      <RouteLine points={[[496, 604], [496, 496], [704, 496, 0], [704, 392], [704, 262, 0], [496, 262]]} />
+
       <Props layout={layout} uid={uid} custom={custom} order={(p) => (p.solid === false ? -1000 + p.y : p.y + p.h)} />
 
       {/* The low front wall along the bottom, open where the path comes in to the gate. */}
       <g>
         <rect x={wx} y={H - 26} width={13 * tile - wx - 8} height="16" fill={P.paper} stroke={P.ink} strokeWidth="2" />
-        <rect x={wx} y={H - 26} width={13 * tile - wx - 8} height="4" fill={P.ember} />
+        <rect x={wx} y={H - 26} width={13 * tile - wx - 8} height="4" fill={P.orange} />
         <rect x={17 * tile + 8} y={H - 26} width={W - wx - 17 * tile - 8} height="16" fill={P.paper} stroke={P.ink} strokeWidth="2" />
-        <rect x={17 * tile + 8} y={H - 26} width={W - wx - 17 * tile - 8} height="4" fill={P.ember} />
+        <rect x={17 * tile + 8} y={H - 26} width={W - wx - 17 * tile - 8} height="4" fill={P.orange} />
         <rect x={13 * tile - 10} y={H - 38} width="14" height="36" fill={P.white} stroke={P.ink} strokeWidth="2" />
         <rect x={17 * tile - 4} y={H - 38} width="14" height="36" fill={P.white} stroke={P.ink} strokeWidth="2" />
         <rect x={13 * tile - 12} y={H - 42} width="18" height="6" fill={P.orange} stroke={P.ink} strokeWidth="2" />

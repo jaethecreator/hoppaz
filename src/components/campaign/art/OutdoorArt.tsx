@@ -1,11 +1,12 @@
+/* eslint-disable react/display-name -- the curried draw helpers below return plain draw functions, not React components */
 import type { ReactNode } from "react";
 import type { CampaignProp } from "@/lib/campaign/layout";
-import { Defs, Flyer, FONT, Frame, Hedges, Lineup, P, Plate, Props, Walls, type RoomArtProps } from "./kit";
+import { BRAND_LINES, BrandSign, Defs, FONT, Frame, Hedges, HopBus, HopFlyer, Lineup, P, PaperScraps, Plate, Props, RouteLine, Walls, type RoomArtProps } from "./kit";
 
 /**
  * Outdoor party: a Lagos compound at dusk. Painted wall and a stage truck with an LED screen at the top, jollof, suya and
  * ice stalls along the sides, canopy tents with plastic chairs, a plank dance floor with string lights on poles, a fire
- * pit, and the compound gate at the front with a danfo and a keke parked outside. Same pixel look as the clubhouse.
+ * pit, and the compound gate at the front with the orange Hoppaz bus and a keke parked outside. Same pixel look as the clubhouse.
  * Everything custom is drawn here, locally, from the shared kit's palette.
  */
 
@@ -29,7 +30,7 @@ function valance(x0: number, x1: number, y: number, step: number, depth: number,
 const bars = (x0: number, heights: number[], base: number, gap = 10, bw = 6) => heights.map((h, i) => `M${x0 + i * gap} ${base}v${-h}h${bw}v${h}z`).join("");
 
 /** A sagging wire with warm bulbs: one path for the wire and one per colour for the bulbs, however many there are. */
-function Lights({ a, b, sag = 12, n = 10, colors = [P.gold, P.paper, P.ember] }: { a: Pt; b: Pt; sag?: number; n?: number; colors?: string[] }) {
+function Lights({ a, b, sag = 12, n = 10, colors = [P.gold, P.paper, P.orange] }: { a: Pt; b: Pt; sag?: number; n?: number; colors?: string[] }) {
   const cx = (a[0] + b[0]) / 2;
   const cy = (a[1] + b[1]) / 2 + sag * 2;
   const at = (t: number): Pt => [
@@ -50,7 +51,7 @@ function Lights({ a, b, sag = 12, n = 10, colors = [P.gold, P.paper, P.ember] }:
 }
 
 /** Bunting: flat triangles on a sagging line. */
-function Bunting({ a, b, sag = 14, n = 9, colors = [P.orange, P.cream, P.ember, P.gold] }: { a: Pt; b: Pt; sag?: number; n?: number; colors?: string[] }) {
+function Bunting({ a, b, sag = 14, n = 9, colors = [P.orange, P.paper, P.night] }: { a: Pt; b: Pt; sag?: number; n?: number; colors?: string[] }) {
   const cx = (a[0] + b[0]) / 2;
   const cy = (a[1] + b[1]) / 2 + sag * 2;
   const at = (t: number): Pt => [
@@ -87,15 +88,13 @@ const stageTruck = (uid: string, ticker: string): Draw => (p, t) => {
       <path d={`M40 -59h10v7H40z M${w / 2 - 30} -59h10v7h-10z M${w / 2 + 20} -59h10v7h-10z M${w - 50} -59h10v7h-10z`} fill={P.gold} stroke={P.ink} strokeWidth="1" />
       {/* the LED screen: dusk sky, a big sun, equaliser bars, LIVE chip and the event line as a ticker */}
       <rect x="28" y="-58" width={w - 56} height="90" fill={P.night} stroke={P.ink} strokeWidth="2" />
-      <rect x="32" y="-54" width={w - 64} height="34" fill="#1D1511" />
-      <rect x="32" y="-20" width={w - 64} height="26" fill="#4A2213" />
-      <rect x="32" y="6" width={w - 64} height="22" fill="#8A3A12" />
+      <rect x="32" y="-54" width={w - 64} height="82" fill={P.night} />
       <path d={`M${w / 2 - 30} 2h60v4h-60z M${w / 2 - 26} -2h52v4h-52z M${w / 2 - 20} -6h40v4h-40z M${w / 2 - 12} -10h24v4h-24z`} fill={P.orange} />
-      <path d={`M${w / 2 - 14} 2h28v4h-28z M${w / 2 - 10} -2h20v4h-20z`} fill={P.gold} />
+      <path d={`M${w / 2 - 14} 2h28v4h-28z M${w / 2 - 10} -2h20v4h-20z`} fill={P.orange} />
       <path d={`M${w / 2 - 24} 12h48v3h-48z M${w / 2 - 16} 18h32v3h-32z M${w / 2 - 8} 24h16v3h-16z`} fill={P.orange} opacity=".6" />
-      <path d={bars(40, [14, 26, 10, 32, 18, 28, 12, 22], 28)} fill={P.danfo} />
-      <path d={bars(w - 112, [22, 12, 28, 18, 32, 10, 26, 14], 28)} fill={P.ember} />
-      <rect x="38" y="-50" width="30" height="12" fill={P.red} stroke={P.ink} strokeWidth="1" />
+      <path d={bars(40, [14, 26, 10, 32, 18, 28, 12, 22], 28)} fill={P.orange} />
+      <path d={bars(w - 112, [22, 12, 28, 18, 32, 10, 26, 14], 28)} fill={P.paper} />
+      <rect x="38" y="-50" width="30" height="12" fill={P.orange} stroke={P.ink} strokeWidth="1" />
       <text x="53" y="-41" textAnchor="middle" fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize="8" letterSpacing=".8">LIVE</text>
       {ticker && <text x={w - 38} y="-41" textAnchor="end" fill={P.paper} fontFamily={FONT.mono} fontSize="7" letterSpacing=".5">{ticker}</text>}
       <path d={`M28 -58H${w - 28}M28 -58V32`} fill="none" stroke={P.paper} strokeWidth="2" opacity=".3" />
@@ -171,7 +170,7 @@ const gen: Draw = (p, t) => {
       <rect x="6" y="14" width={w - 4} height="18" fill={P.shadow} opacity=".25" />
       <rect x="9" y="-4" width="5" height="10" fill={P.ink} />
       <rect x="7" y="-10" width="9" height="6" fill={P.paper} opacity=".55" />
-      <rect x="3" y="6" width={w - 8} height="22" fill={P.ember} stroke={P.ink} strokeWidth="2" />
+      <rect x="3" y="6" width={w - 8} height="22" fill={P.danfo} stroke={P.ink} strokeWidth="2" />
       <rect x="5" y="8" width={w - 12} height="3" fill={P.paper} opacity=".35" />
       <rect x="10" y="13" width="14" height="8" fill={P.gold} stroke={P.ink} strokeWidth="1" />
       <rect x={w - 26} y="13" width="18" height="10" fill={P.ink} />
@@ -200,8 +199,8 @@ const suyaStall = (uid: string): Draw => (p, t) => {
       <rect x="76" y="19" width="9" height="10" fill={P.red} stroke={P.ink} strokeWidth="1" />
       <rect x="77" y="16" width="7" height="3" fill={P.gold} />
       <Plate x={26} y={42} w={42} h={14} text="Suya" fill={P.orange} color={P.night} />
-      <rect x="0" y="-6" width={w - 2} height="14" fill={`url(#${uid}-stripeE)`} stroke={P.ink} strokeWidth="2" />
-      <path d={valance(2, w - 4, 13, 12, 5, 5)} fill={P.cream} stroke={P.ink} strokeWidth="1" />
+      <rect x="0" y="-6" width={w - 2} height="14" fill={`url(#${uid}-stripeN)`} stroke={P.ink} strokeWidth="2" />
+      <path d={valance(2, w - 4, 13, 12, 5, 5)} fill={P.paper} stroke={P.ink} strokeWidth="1" />
       <rect x="48" y="-14" width="10" height="8" fill={P.paper} opacity=".55" />
       <rect x="53" y="-23" width="8" height="8" fill={P.paper} opacity=".5" />
       <rect x="59" y="-31" width="7" height="7" fill={P.paper} opacity=".45" />
@@ -230,7 +229,7 @@ const jollofStall = (uid: string): Draw => (p, t) => {
       <path d="M70 31h16v6H70z M71 26h14v5H71z" fill={P.paper} stroke={P.ink} strokeWidth="1" />
       <Plate x={26} y={46} w={42} h={12} text="Jollof" fill={P.night} color={P.paper} size={8} />
       <rect x="0" y="-6" width={w - 2} height="14" fill={`url(#${uid}-stripeO)`} stroke={P.ink} strokeWidth="2" />
-      <path d={valance(2, w - 4, 13, 12, 5, 5)} fill={P.cream} stroke={P.ink} strokeWidth="1" />
+      <path d={valance(2, w - 4, 13, 12, 5, 5)} fill={P.paper} stroke={P.ink} strokeWidth="1" />
       <rect x="30" y="10" width="6" height="5" fill={P.paper} opacity=".55" />
       <rect x="35" y="4" width="6" height="5" fill={P.paper} opacity=".5" />
       <rect x="40" y="-2" width="5" height="5" fill={P.paper} opacity=".45" />
@@ -258,7 +257,7 @@ const iceStall = (uid: string): Draw => (p, t) => {
       <rect x="118" y="46" width="36" height="16" fill={P.woodLight} stroke={P.ink} strokeWidth="2" />
       <path d="M118 54h36M136 46v16" stroke={P.woodDark} strokeWidth="2" />
       <rect x="0" y="-6" width={w - 2} height="14" fill={`url(#${uid}-stripeB)`} stroke={P.ink} strokeWidth="2" />
-      <path d={valance(2, w - 4, 13, 12, 5, 5)} fill={P.cream} stroke={P.ink} strokeWidth="1" />
+      <path d={valance(2, w - 4, 13, 12, 5, 5)} fill={P.paper} stroke={P.ink} strokeWidth="1" />
       <Plate x={w / 2 - 38} y={16} w={76} h={14} text="Cold drinks" fill={P.night} color={P.paper} size={8} />
     </g>
   );
@@ -277,7 +276,7 @@ const drum: Draw = () => (
 
 /* ------------------------------------------------------------------ seating --------------------------------------- */
 
-const ROOF = ["stripeO", "stripeW", "stripeE"] as const;
+const ROOF = ["stripeO", "stripeW", "stripeW"] as const;
 
 /** A canopy tent roof with a scalloped valance and two front posts; the chairs are separate props under it. */
 const tent = (uid: string): Draw => (p, t) => {
@@ -291,7 +290,7 @@ const tent = (uid: string): Draw => (p, t) => {
       <path d={`M24 5H${w - 24}`} stroke={P.paper} strokeWidth="2" opacity=".5" />
       <path d="M21 6L6 34" stroke={P.paper} strokeWidth="2" opacity=".3" />
       <rect x={w / 2 - 4} y="-6" width="8" height="8" fill={P.gold} stroke={P.ink} strokeWidth="1" />
-      <path d={valance(2, w - 2, 42, 10, 6, 6)} fill={v === 1 ? P.orange : P.cream} stroke={P.ink} strokeWidth="2" />
+      <path d={valance(2, w - 2, 42, 10, 6, 6)} fill={v === 1 ? P.orange : P.paper} stroke={P.ink} strokeWidth="2" />
     </g>
   );
 };
@@ -361,7 +360,7 @@ const dancefloor = (uid: string): Draw => (p, t) => {
   return (
     <g>
       <rect x="0" y="0" width={w} height={h} fill={`url(#${uid}-floorchk)`} stroke={P.ink} strokeWidth="2" />
-      <rect x="4" y="4" width={w - 8} height={h - 8} fill="none" stroke={P.gold} strokeWidth="2" />
+      <rect x="4" y="4" width={w - 8} height={h - 8} fill="none" stroke={P.orange} strokeWidth="2" />
       <rect x="6" y="6" width={w - 12} height="2" fill={P.paper} opacity=".3" />
     </g>
   );
@@ -398,7 +397,7 @@ const wristbands: Draw = (p, t) => {
       <rect x="6" y="16" width={w - 20} height="16" fill={P.shadow} opacity=".25" />
       <rect x="2" y="14" width={w - 20} height="17" fill={P.paper} stroke={P.ink} strokeWidth="2" />
       <rect x="4" y="25" width={w - 24} height="4" fill={P.orange} />
-      <rect x="2" y="9" width={w - 20} height="7" fill={P.cream} stroke={P.ink} strokeWidth="2" />
+      <rect x="2" y="9" width={w - 20} height="7" fill={P.paper} stroke={P.ink} strokeWidth="2" />
       <path d="M7 6h5v4H7z M15 7h5v3h-5z M23 6h5v4h-5z" fill={P.gold} stroke={P.ink} strokeWidth="1" />
       <rect x="32" y="4" width="9" height="6" fill={P.wall} stroke={P.ink} strokeWidth="1" />
       <path d="M10 -2V9M36 -2V9" stroke={P.ink} strokeWidth="2" />
@@ -423,30 +422,6 @@ const guardBooth: Draw = () => (
     <rect x="44" y="48" width="2" height="4" fill={P.gold} />
   </g>
 );
-
-/** A parked danfo: yellow bus, black stripe, a slogan, a route board. */
-const danfo: Draw = (p, t) => {
-  const w = p.w * t;
-  return (
-    <g>
-      <rect x="8" y="44" width={w - 4} height="20" fill={P.shadow} opacity=".25" />
-      <rect x="2" y="8" width={w - 6} height="44" fill={P.danfo} stroke={P.ink} strokeWidth="2" />
-      <rect x="4" y="10" width={w - 10} height="3" fill={P.paper} opacity=".4" />
-      <rect x="4" y="32" width={w - 10} height="10" fill={P.night} />
-      <text x="10" y="40" fill={P.paper} fontFamily={FONT.mono} fontSize="6.5" letterSpacing=".6">ENTER WITH YOUR CHANGE</text>
-      <path d="M8 15h22v13H8z M34 15h22v13H34z M60 15h22v13H60z M86 15h22v13H86z M112 15h22v13h-22z M138 15h14v15h-14z" fill={P.lagoonLight} stroke={P.ink} strokeWidth="2" />
-      <path d="M11 17h6v2h-6z M37 17h6v2h-6z M63 17h6v2h-6z M89 17h6v2h-6z M115 17h6v2h-6z" fill={P.paper} opacity=".55" />
-      <rect x="2" y="44" width="4" height="6" fill={P.red} />
-      <rect x={w - 12} y="44" width="7" height="6" fill={P.paper} stroke={P.ink} strokeWidth="1" />
-      <rect x={w - 14} y="50" width="12" height="4" fill={P.ink} />
-      <circle cx="36" cy="54" r="10" fill={P.night} stroke={P.ink} strokeWidth="2" />
-      <circle cx={w - 36} cy="54" r="10" fill={P.night} stroke={P.ink} strokeWidth="2" />
-      <circle cx="36" cy="54" r="4" fill={P.slateLight} />
-      <circle cx={w - 36} cy="54" r="4" fill={P.slateLight} />
-      <Plate x={w - 44} y={-2} w={34} h={10} text="Yaba" fill={P.night} color={P.danfo} mono size={6} />
-    </g>
-  );
-};
 
 /** A parked keke: green body, cream canopy, three wheels. */
 const keke: Draw = () => (
@@ -495,7 +470,7 @@ export default function OutdoorArt({ layout, uid, brand, content }: RoomArtProps
   const panels = (x: number, w: number, y: number, h: number) => Array.from({ length: Math.floor(w / 128) }, (_, i) => `M${x + 128 * (i + 1)} ${y + 8}v${h - 36}`).join("");
 
   const custom: Record<string, Draw> = {
-    "event-flyer": (p) => <Flyer uid={uid} x={0} y={4} w={p.w * tile} h={p.h * tile - 8} url={content?.flyerUrl} title={title} line={content?.line} />,
+    "event-flyer": (p) => <HopFlyer uid={uid} x={0} y={4} w={p.w * tile} h={p.h * tile - 8} url={content?.flyerUrl} title={title} line={content?.line} />,
     "event-lineup": (p) => <Lineup x={0} y={4} w={p.w * tile} h={p.h * tile - 8} items={lineup} />,
     stage: stageTruck(uid, ticker),
     speakerstack: tower,
@@ -515,7 +490,8 @@ export default function OutdoorArt({ layout, uid, brand, content }: RoomArtProps
     bin,
     wristbands,
     guardbooth: guardBooth,
-    danfo,
+    // The orange Hoppaz bus parks on the lower tile of danfo-1, nose to the gate.
+    danfo: (p, t) => <HopBus w={p.w * t} h={p.h * t} flip slogan={BRAND_LINES.wait} />,
     keke,
   };
 
@@ -523,11 +499,11 @@ export default function OutdoorArt({ layout, uid, brand, content }: RoomArtProps
     <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true" shapeRendering="crispEdges">
       <Defs uid={uid} names={["grass", "paving", "concrete", "asphalt", "stagewood"]} />
       <defs>
-        <pattern id={`${uid}-stripeO`} width="32" height="16" patternUnits="userSpaceOnUse"><rect width="32" height="16" fill={P.cream} /><rect width="16" height="16" fill={P.orange} /></pattern>
-        <pattern id={`${uid}-stripeE`} width="32" height="16" patternUnits="userSpaceOnUse"><rect width="32" height="16" fill={P.cream} /><rect width="16" height="16" fill={P.ember} /></pattern>
-        <pattern id={`${uid}-stripeB`} width="32" height="16" patternUnits="userSpaceOnUse"><rect width="32" height="16" fill={P.cream} /><rect width="16" height="16" fill={P.lagoon} /></pattern>
+        <pattern id={`${uid}-stripeO`} width="32" height="16" patternUnits="userSpaceOnUse"><rect width="32" height="16" fill={P.paper} /><rect width="16" height="16" fill={P.orange} /></pattern>
+        <pattern id={`${uid}-stripeN`} width="32" height="16" patternUnits="userSpaceOnUse"><rect width="32" height="16" fill={P.paper} /><rect width="16" height="16" fill={P.night} /></pattern>
+        <pattern id={`${uid}-stripeB`} width="32" height="16" patternUnits="userSpaceOnUse"><rect width="32" height="16" fill={P.paper} /><rect width="16" height="16" fill={P.night} /></pattern>
         <pattern id={`${uid}-stripeW`} width="32" height="16" patternUnits="userSpaceOnUse"><rect width="32" height="16" fill={P.paper} /><rect width="2" height="16" fill={P.orange} /><rect x="16" width="2" height="16" fill={P.orange} /></pattern>
-        <pattern id={`${uid}-floorchk`} width="32" height="32" patternUnits="userSpaceOnUse"><rect width="32" height="32" fill="#2B2420" /><rect x="16" width="16" height="16" fill="#3A2E27" /><rect y="16" width="16" height="16" fill="#3A2E27" /><rect x="1" y="1" width="14" height="14" fill={P.brandEmber} /><rect x="17" y="17" width="14" height="14" fill={P.danfoDark} /><path d="M3 3h6v2H3z M19 19h6v2h-6z" fill={P.paper} opacity=".4" /></pattern>
+        <pattern id={`${uid}-floorchk`} width="32" height="32" patternUnits="userSpaceOnUse"><rect width="32" height="32" fill="#2B2420" /><rect x="16" width="16" height="16" fill="#3A2E27" /><rect y="16" width="16" height="16" fill="#3A2E27" /><rect x="1" y="1" width="14" height="14" fill={P.orange} /><rect x="17" y="17" width="14" height="14" fill={P.nightLine} /><path d="M3 3h6v2H3z M19 19h6v2h-6z" fill={P.paper} opacity=".4" /></pattern>
       </defs>
       <Frame layout={layout} ground="#222B24" />
 
@@ -577,6 +553,8 @@ export default function OutdoorArt({ layout, uid, brand, content }: RoomArtProps
         <text x="247" y="68" textAnchor="middle" fill={P.ink} fontFamily={FONT.mono} fontWeight={700} fontSize="10" letterSpacing=".8">POST NO BILL</text>
         <text x="247" y="76" textAnchor="middle" fill={P.ink} fontFamily={FONT.mono} fontSize="4.5">OFFENDERS WILL BE PROSECUTED</text>
       </g>
+      <PaperScraps x={648} y={44} w={80} h={66} />
+      <BrandSign x={842} y={48} w={80} h={56} wordmark tone="orange" />
       <Hedges layout={sideLayout} />
       <Walls layout={frontLayout} face={PLASTER} cap={PLASTER_LIGHT} />
       {front.map((b, i) => <rect key={i} x={b.x * tile + 3} y={b.y * tile + 16} width={b.w * tile - 6} height="3" fill={P.orange} />)}
@@ -599,6 +577,9 @@ export default function OutdoorArt({ layout, uid, brand, content }: RoomArtProps
       <circle cx={p4[0]} cy={p4[1] + 52} r="42" fill={P.gold} opacity=".13" />
       <circle cx={5 * tile} cy={10 * tile} r="64" fill={P.gold} opacity=".16" />
       <circle cx="480" cy={14 * tile} r="40" fill={P.gold} opacity=".1" />
+
+      {/* The route: in through the gateway, round the left of the dance floor, finale at the stage front. */}
+      <RouteLine points={[[512, 540], [512, 440], [304, 440, 0], [304, 330], [304, 272, 0], [496, 272]]} />
 
       <Props layout={layout} uid={uid} custom={custom} order={(q) => (q.solid === false ? -100 : q.y)} />
 

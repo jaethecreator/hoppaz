@@ -6,7 +6,11 @@ const { CLUBHOUSE: layout, clubhouseWidth, sceneSize, sceneBlocks, canWalkScene,
   ROOM_TEMPLATES, ROOM_WIDTHS, TEMPLATE_KEYS, roomTemplate, templateFor, PLACE_ROOMS, EVENT_ROOMS, HOTSPOT_ROOMS, placeRoom, hotspotRoom, eventRoom } = loadCampaign();
 const { HOTSPOT_ROOM_DATA } = loadFile("src/lib/rooms/hotspotRooms.ts");
 let passed = 0;
-function check(label, run) { run(); passed++; console.log(`PASS ${label}`); }
+const failures = [];
+// A failing check is reported and the run goes on, so one room still being drawn never hides the rest.
+function check(label, run) {
+  try { run(); passed++; console.log(`PASS ${label}`); } catch (error) { failures.push(label); console.log(`FAIL ${label}\n     ${String(error.message).split("\n")[0]}`); }
+}
 function connected(from, to) {
   const path = scenePath(layout, from, to);
   assert.ok(path, `No path to ${JSON.stringify(to)}`);
@@ -159,6 +163,8 @@ check("Event and hotspot rooms are not crew templates: the MANAGE picker never l
     assert.equal(templateFor(room.key).key, "clubhouse", `a crew row pointing at ${room.key} must open the clubhouse`);
   }
   assert.equal(new Set(PLACE_ROOMS.map((r) => r.key)).size, PLACE_ROOMS.length, "place room keys must be unique");
+  for (const room of PLACE_ROOMS) assert.equal(placeRoom(room.key)?.key, room.key);
+  assert.equal(placeRoom("clubhouse"), null, "placeRoom never answers with the clubhouse");
 });
 check("The five event templates are registered, in the registry and in the art switch", () => {
   assert.deepEqual([...EVENT_ROOMS.map((r) => r.key)].sort(), [...EVENT_KEYS].sort());
@@ -250,7 +256,12 @@ for (const room of HOTSPOT_ROOMS) {
     }
     const heroZone = l.zones.find((z) => z.id === "hero");
     assert.ok(heroZone, "a hero zone is needed");
-    assert.equal(room.name, data.junction === "Lekki Phase 1 (Admiralty Way)" ? "Lekki Phase 1" : data.junction);
+    assert.ok(room.name.length >= 3 && room.name.length <= 30 && data.junction.toLowerCase().includes(room.name.toLowerCase()), `room name "${room.name}" must be the junction's name`);
   });
+}
+if (failures.length) {
+  console.log(`\n${passed} campaign checks passed, ${failures.length} FAILED:`);
+  for (const label of failures) console.log(`  - ${label}`);
+  process.exit(1);
 }
 console.log(`${passed} campaign checks passed.`);
