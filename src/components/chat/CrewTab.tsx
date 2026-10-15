@@ -50,7 +50,7 @@ export default function CrewTab({
             <div key={w.id} className="card mb-2 flex items-center gap-3 py-3">
               <ChatFace look={w.look} alias={w.look ? null : w.name} size={38} caption={!w.look} />
               <div className="min-w-0 flex-1">
-                <b className="block truncate font-display text-[15px] font-semibold">{w.room ? w.name : `@${w.name}`}</b>
+                <b className="block truncate font-display text-[15px] font-semibold">{w.room || w.alias ? w.name : `@${w.name}`}</b>
                 {w.where && <p className="hint truncate">{w.where}</p>}
               </div>
               <button className="btn px-3" onClick={() => onAnswer(w)}>WAVE BACK</button>

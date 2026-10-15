@@ -89,7 +89,7 @@ export default function SocialPing() {
       }
       if (ROOM.test(here)) return; // the room has its own chip, the one with WAVE BACK
       for (const w of diff.newWaves) {
-        show({ name: w.name, look: w.look, line: `${upper(w.name)} WAVED AT YOU`, href: "/chat" }, "wave");
+        show({ name: w.name, look: w.look, line: `${upper(w.name)} WAVED AT YOU`, sub: w.where ?? undefined, href: "/chat" }, "wave");
       }
     };
     const unsubscribe = onInboxDiff((d) => live && notify(d));
