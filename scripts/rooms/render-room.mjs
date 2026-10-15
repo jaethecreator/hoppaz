@@ -2,7 +2,7 @@
 //   node scripts/rooms/render-room.mjs event-indoor            -> <out>/event-indoor.png
 //   node scripts/rooms/render-room.mjs all                     -> every registered room
 //   node scripts/rooms/render-room.mjs event-indoor --props    -> also outlines every prop box and the walkable grid
-// Output goes to $ROOM_OUT or ./.room-renders (git-ignored). It loads the TSX with TypeScript's transpiler and
+// Output goes to $ROOM_OUT or ./.room-renders (git-ignored); ROOM_DENSITY=192 gives a 1920 px wide image (default 96, 1280 px). It loads the TSX with TypeScript's transpiler and
 // renders to static SVG with react-dom/server, then rasterises with sharp: fonts are the system's, so type is only roughly
 // right; the shapes are exact.
 import Module, { createRequire } from "node:module";
@@ -57,6 +57,6 @@ for (const room of rooms) {
     svg = art.replace(/<\/svg>\s*$/, `${walls}${boxes}${zones}${spawn}</svg>`);
   }
   const file = path.join(outDir, `${room.key}${withProps ? "-boxes" : ""}.png`);
-  await sharp(Buffer.from(svg), { density: 96 }).png().toFile(file);
+  await sharp(Buffer.from(svg), { density: Number(process.env.ROOM_DENSITY) || 96 }).png().toFile(file);
   console.log(file);
 }
