@@ -8,7 +8,8 @@ import { exitProp, floorProp, prop, room, wall, zone } from "./build";
  *   rows 3-5   the lagoon, with a short jetty and a moored boat (water is a wall)
  *   rows 6-8   the waterfront promenade: benches on the rail, palms, the coconut seller; the Bay Lounge deck to the left,
  *              the conservation garden to the right
- *   rows 9-15  Admiralty Way: sidewalks with palms and lamps, a road with a lane line, a keke parked at the kerb
+ *   rows 9-15  Admiralty Way: sidewalks with palms and lamps, a road with the Hoppaz route down it, a keke at the kerb and
+ *              the Hoppaz bus in the northbound lane
  *   rows 16-18 the forecourt with the map signpost (the exit) and the spawn
  *
  * Venues, left to right: Bay Lounge (top left, on the water), Circa Lagos (left, with a patio), Ile Eros (right, with a
@@ -76,6 +77,7 @@ export const HOTSPOT_LEKKI = room("hotspot-lekki", {
     prop("lamp-4", "streetlamp", 20, 15, 1, 1),
     prop("keke-1", "keke", 17, 11, 2, 1),
     prop("keke-2", "keke", 13, 13, 2, 1, { variant: 1 }),
+    prop("hop-bus", "hopbus", 17, 12, 2, 4), // the Hoppaz bus, northbound lane, nose to the lagoon
 
     // Circa Lagos and its patio.
     prop("venue-2", "restaurant", 3, 11, 5, 4),

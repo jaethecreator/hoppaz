@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { CampaignProp } from "@/lib/campaign/layout";
 import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
-import { Defs, FONT, P, Plate, Props, type RoomArtProps } from "./kit";
+import { Defs, FONT, HopBus, HoppazWordmark, P, Plate, Props, RouteLine, type RoomArtProps } from "./kit";
 
 /**
  * Lekki Phase 1: Admiralty Way running straight down to the lagoon, late afternoon. Cream and sand paving, blue water,
@@ -145,19 +145,19 @@ function StreetSignArt({ line1, line2, blue }: { line1: string; line2: string; b
   );
 }
 
-/** The welcome wall on the forecourt: the place's sign in two lines on a blue face. */
-function MonumentArt({ line1, line2, blue, hot }: { line1: string; line2: string; blue: string; hot: string }) {
+/** The welcome wall on the forecourt: the place's sign in two lines on a Hoppaz night face. */
+function MonumentArt({ line1, line2, hot }: { line1: string; line2: string; hot: string }) {
   return (
     <g>
       <rect x="6" y="9" width="126" height="56" fill={P.shadow} opacity=".25" />
       <rect x="0" y="4" width="128" height="58" fill={P.ink} />
       <rect x="3" y="7" width="122" height="52" fill={P.stone} />
       <rect x="0" y="0" width="128" height="9" fill={P.paper} stroke={P.ink} strokeWidth="2" />
-      <rect x="6" y="12" width="116" height="38" fill={blue} stroke={P.ink} strokeWidth="2" />
-      <rect x="8" y="14" width="112" height="3" fill={P.lagoonLight} />
-      <text x="64" y="32" textAnchor="middle" fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize="17" letterSpacing="1.5">{line1}</text>
-      <rect x="26" y="36" width="76" height="3" fill={hot} />
-      <text x="64" y="47" textAnchor="middle" fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize="10" letterSpacing="2">{line2}</text>
+      <rect x="6" y="12" width="116" height="38" fill={P.night} stroke={P.ink} strokeWidth="2" />
+      <rect x="9" y="15" width="110" height="32" fill="none" stroke={P.paper} strokeWidth="1.5" />
+      <text x="64" y="30" textAnchor="middle" fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize="17" letterSpacing="1.5">{line1}</text>
+      <rect x="26" y="33" width="76" height="3" fill={hot} />
+      <text x="64" y="44" textAnchor="middle" fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize="10" letterSpacing="2">{line2}</text>
       <path d="M3 59V56H12V54H26V56H40V54H56V56H70V54H86V56H100V54H114V56H125V59Z" fill={P.leaf} stroke={P.ink} strokeWidth="1.5" />
     </g>
   );
@@ -196,7 +196,7 @@ function BayLounge({ name, blue, cream, hot }: Skin & { name: string }) {
       <rect x="7" y="9" width="190" height="152" fill={P.shadow} opacity=".25" />
       <rect x="0" y="0" width="192" height="158" fill={P.ink} />
       <rect x="3" y="3" width="186" height="152" fill={cream} />
-      <rect x="3" y="3" width="5" height="152" fill={P.white} />
+      <rect x="3" y="3" width="5" height="152" fill={P.paper} />
       <rect x="176" y="3" width="13" height="152" fill={P.cream} />
       <rect x="3" y="3" width="186" height="12" fill={blue} />
       <rect x="3" y="3" width="186" height="3" fill={P.lagoonLight} />
@@ -233,7 +233,7 @@ function Circa({ name, blue, cream, hot }: Skin & { name: string }) {
       <rect x="3" y="3" width="5" height="120" fill={P.slateLight} />
       <rect x="146" y="3" width="11" height="120" fill="#475D66" />
       <rect x="0" y="0" width="160" height="12" fill={cream} stroke={P.ink} strokeWidth="2" />
-      <rect x="3" y="2" width="154" height="3" fill={P.white} />
+      <rect x="3" y="2" width="154" height="3" fill={P.paper} />
       <circle cx="26" cy="31" r="9" fill="none" stroke={hot} strokeWidth="4" />
       <circle cx="26" cy="31" r="2.5" fill={cream} />
       <Plate x={42} y={19} w={110} h={24} text={name} fill={P.night} color={P.paper} size={14} />
@@ -400,7 +400,7 @@ export default function HotspotLekkiArt({ layout, uid }: RoomArtProps) {
     restaurant: () => <Circa name={names[1]} {...skin} />,
     woodhouse: () => <Eros name={names[2]} {...skin} />,
     grove: () => <Grove name={names[3]} {...skin} grass={url("grass")} hedge={`url(#${uid}-hedge)`} />,
-    cocktail: (p) => <PatioTableArt wood={p.variant === 1} chair={p.variant === 1 ? blue : P.emberDark} />,
+    cocktail: (p) => <PatioTableArt wood={p.variant === 1} chair={p.variant === 1 ? blue : P.night} />,
     jetty: () => (
       <g>
         <rect x="6" y="6" width="58" height="58" fill={P.lagoonDark} opacity=".35" />
@@ -427,11 +427,12 @@ export default function HotspotLekkiArt({ layout, uid }: RoomArtProps) {
     palm: (p) => <PalmArt flip={p.variant === 1} />,
     streetlamp: () => <LampArt />,
     keke: (p) => <KekeArt yellow={p.variant === 1} />,
+    hopbus: (p, t) => <HopBus w={p.w * t} h={p.h * t} dir="v" flip />,
     umbrella: (p) => <UmbrellaArt a={p.variant === 1 ? cream : blue} b={p.variant === 1 ? blue : cream} />,
-    coconut: () => <CoconutArt a={P.keke} b={cream} />,
+    coconut: () => <CoconutArt a={P.orange} b={P.paper} />,
     bikerack: () => <BikeRackArt a={hot} b={blue} />,
     streetsign: () => <StreetSignArt line1={streetFirst} line2={streetRest.join(" ")} blue={blue} />,
-    monument: () => <MonumentArt line1={signFirst} line2={signRest.join(" ")} blue={blue} hot={hot} />,
+    monument: () => <MonumentArt line1={signFirst} line2={signRest.join(" ")} hot={hot} />,
     signboard: () => <SignboardArt text="Canopy walk" />,
   };
 
@@ -474,10 +475,6 @@ export default function HotspotLekkiArt({ layout, uid }: RoomArtProps) {
       <rect x="96" y="480" width="160" height="64" fill={url("floortile")} stroke={blue} strokeWidth="2" />
       <rect x="704" y="480" width="160" height="64" fill={url("deck")} stroke={P.ink} strokeWidth="2" />
       <rect x="288" y="512" width="384" height="96" fill={url("floortile")} stroke={P.ink} strokeWidth="2" />
-      <circle cx="496" cy="568" r="42" fill="none" stroke={blue} strokeWidth="4" />
-      <circle cx="496" cy="568" r="34" fill={cream} stroke={P.ink} strokeWidth="2" />
-      <path d="M496 540L506 568L496 596L486 568Z" fill={hot} stroke={P.ink} strokeWidth="2" />
-      <path d="M468 568L496 558L524 568L496 578Z" fill={blue} stroke={P.ink} strokeWidth="2" />
 
       {/* Admiralty Way: sidewalks, the road with its lane line, the kerbs and the crossing at the promenade. */}
       <rect x="288" y="288" width="64" height="224" fill={url("concrete")} stroke={P.ink} strokeWidth="2" />
@@ -487,13 +484,20 @@ export default function HotspotLekkiArt({ layout, uid }: RoomArtProps) {
       <rect x="608" y="288" width="6" height="224" fill={P.stone} stroke={P.ink} strokeWidth="2" />
       <rect x="352" y="508" width="256" height="6" fill={P.stone} stroke={P.ink} strokeWidth="2" />
       <path d="M360 330V500M600 330V500" stroke={P.paper} strokeWidth="2" opacity=".8" />
-      <path d="M480 336V500" stroke={P.paper} strokeWidth="3" strokeDasharray="16 14" />
       <path d={zebra} fill={P.paper} />
+
+      {/* The Hoppaz route runs down the boulevard where the lane line was: the forecourt, the crossing, the promenade. */}
+      <RouteLine points={[[480, 568], [480, 470], [480, 340], [480, 236]]} />
+
+      {/* The room's one bounce wordmark: road paint in the left lane, the way a bus lane carries its legend. */}
+      <g opacity=".9">
+        <HoppazWordmark x={422} y={378} h={15} fill={P.paper} anchor="middle" />
+      </g>
 
       <Props layout={layout} uid={uid} custom={custom} />
 
       {/* A faint warm wash: the light is low. */}
-      <rect width={W} height={H} fill="#FFB35C" opacity=".07" />
+      <rect width={W} height={H} fill={P.orange} opacity=".05" />
     </svg>
   );
 }
