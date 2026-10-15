@@ -8,11 +8,11 @@ import { useLeaveStore } from "@/lib/crew-room/rails";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { sfx } from "@/lib/sound/sfx";
 
-type Tab = { href: string; label: string; Icon: LucideIcon };
+type Tab = { href: string; label: string; Icon: LucideIcon; tour?: string };
 
 const TABS: ReadonlyArray<Tab> = [
   { href: "/", label: "MAP", Icon: Map },
-  { href: "/discover", label: "EVENTS", Icon: CalendarDays },
+  { href: "/discover", label: "EVENTS", Icon: CalendarDays, tour: "events" },
   { href: "/crew", label: "CREW", Icon: Users },
   { href: "/chat", label: "CHAT", Icon: MessageSquare },
   { href: "/me", label: "ME", Icon: CircleUserRound },
@@ -35,7 +35,7 @@ const PARENT: Array<[string, string]> = [
  * the room is a place inside the app, so the tabs stay under it with CREW lit (the path starts with /crew).
  */
 const ROOM = /^\/crew\/[^/]+\/room(?:\/|$)/;
-const FULL_SCREEN = [/^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/];
+const FULL_SCREEN = [/^\/welcome/, /^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/];
 
 export default function BottomNav() {
   const path = usePathname();
@@ -48,12 +48,13 @@ export default function BottomNav() {
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       aria-label="Main"
     >
-      {TABS.map(({ href, label, Icon }, i) => {
+      {TABS.map(({ href, label, Icon, tour }, i) => {
         const on = href === "/" ? active === "/" : active === href || active.startsWith(`${href}/`);
         return (
           <Link
             key={href}
             href={href}
+            data-tour={tour}
             aria-current={on ? "page" : undefined}
             // A very quiet wood tick, one pitch up the scale per tab, only when the lit tab is about to change.
             onClick={(e) => {
