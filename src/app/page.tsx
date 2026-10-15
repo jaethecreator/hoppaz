@@ -8,7 +8,6 @@ import type { Map as MLMap } from "maplibre-gl";
 import AreaPicker from "@/components/AreaPicker";
 import EventCard from "@/components/EventCard";
 import HopSheet from "@/components/HopSheet";
-import TitleSequence from "@/components/TitleSequence";
 import FilterCard from "@/components/FilterCard";
 import DayPick from "@/components/pick/DayPick";
 import TopChrome from "@/components/map-chrome/TopChrome";
@@ -24,20 +23,18 @@ import {
   scrubTicks,
 } from "@/components/map-chrome/scrub";
 import { TODAY, countByDay, matchesType, nightOf, todayKey, type DateFilter } from "@/lib/filters";
-import { useHoppaz, useToast } from "@/lib/store";
+import { useHoppaz } from "@/lib/store";
 import { useSession } from "@/lib/useSession";
 import { useEvents, useHop } from "@/lib/useEvents";
 import { useCheckin } from "@/lib/useCheckin";
 import { useGameDashboard } from "@/lib/game";
-import { haversineKm, hasVenue, nearestArea } from "@/lib/geo";
+import { haversineKm, hasVenue } from "@/lib/geo";
 import type { HopStop } from "@/lib/types";
 import { busPosition } from "@/lib/busPosition";
 import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
 import { NEXT_COUNT, nextEvents } from "@/lib/filters";
 import { usePlayMode } from "@/lib/usePlayMode";
-import { introEvent, introPending, registerIntroAction } from "@/lib/intro";
-import { INTRO_ENABLED } from "@/lib/intro/flag";
 
 // MapLibre touches window on import, so it stays out of the server bundle.
 const NightMap = dynamic(() => import("@/components/map/NightMap"), {
@@ -62,11 +59,7 @@ let firstDayChosen = false;
 const IS_DEV = process.env.NODE_ENV !== "production";
 
 export default function MapPage() {
-  const {
-    fix, radiusKm, seenIntro, markIntroSeen, seenTitle, setSeenTitle,
-    dateFilter, setDateFilter, types, setTypes, look, setFix,
-  } = useHoppaz();
-  const say = useToast((s) => s.say);
+  const { fix, radiusKm, dateFilter, setDateFilter, types, setTypes, look } = useHoppaz();
   const { userId, refresh, profile } = useSession();
   // Play closes the map around you: the events chrome steps out and the page's own tickers and polls wait.
   const playing = usePlayMode((s) => s.active);
@@ -89,10 +82,6 @@ export default function MapPage() {
   // reads it waits a tick, or the server HTML would disagree with the first paint.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  // The city title sequence is part of the first-run intro: with the intro switched off (src/lib/intro/flag.ts) it never plays,
-  // and the camera swoops in at once, as it does for a Hopper who has seen it.
-  const titles = INTRO_ENABLED && mounted && !seenTitle;
-  const titleOut = mounted && (!INTRO_ENABLED || seenTitle);
 
   // Clocks: the bus and the scrubber re-place themselves every half minute.
   const [now, setNow] = useState(() => Date.now());
@@ -236,24 +225,6 @@ export default function MapPage() {
   // The NEXT view spans several nights, so there it waits for the Hop's own night.
   const hopActive = !!hop && hop.hop_date === (mode === "next" ? todayStr : dayKey);
 
-  // The first-run title plays once; after it, ask for a location once, never nag.
-  // That ask is part of the intro: switched off, a new Hopper meets the map, not a sheet (the locate button is still there).
-  const signNames = useMemo(
-    () => [...allEvents].sort((a, b) => b.heat - a.heat).slice(0, 12).map((e) => e.title),
-    [allEvents]
-  );
-  useEffect(() => {
-    if (!INTRO_ENABLED || !mounted || !seenTitle) return;
-    if (!fix && !seenIntro) {
-      const t = setTimeout(() => {
-        // A new Hopper meets Paz first: her "Let's find you" step is the one ask, so the sheet stays shut for the whole tour.
-        if (!introPending()) setPicking(true);
-        markIntroSeen();
-      }, 600);
-      return () => clearTimeout(t);
-    }
-  }, [mounted, seenTitle, fix, seenIntro, markIntroSeen]);
-
   const closeCard = useCallback(() => setSelected(null), []);
   const event = useMemo(() => allEvents.find((e) => e.id === selected) ?? null, [allEvents, selected]);
   const isHopStop = useMemo(() => {
@@ -269,36 +240,9 @@ export default function MapPage() {
     [counts, dayKey]
   );
 
-  /* --------------------------------------------------- Paz's first-run tour -- */
-  const onMapReady = useCallback((m: MLMap) => {
-    setMap(m);
-    introEvent("map_ready");
-  }, []);
+  /* ------------------------------------------------------------ the map -- */
+  const onMapReady = useCallback((m: MLMap) => setMap(m), []);
   const onMapUnavailable = useCallback(() => setMap(null), []);
-
-  // Paz's "Let's find you": what "Use my location" does in the location sheet, without opening the sheet, so one
-  // tap asks the browser, sets the fix (the map flies to the Hopper) and tells the tour what the answer was.
-  const locateMe = useCallback(() => {
-    if (!("geolocation" in navigator)) {
-      introEvent("location_denied");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude: lat, longitude: lng } = pos.coords;
-        const near = nearestArea(lat, lng);
-        setFix({ lat, lng, source: "gps", area: near.name });
-        say(`Locked on. ${near.name}.`, "ok");
-        introEvent("location_granted", { lat, lng });
-      },
-      (err) => {
-        if (err.code === err.PERMISSION_DENIED) introEvent("location_denied");
-        else say("Still finding you. Try again in a moment.");
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-    );
-  }, [setFix, say]);
-  useEffect(() => (INTRO_ENABLED ? registerIntroAction("locate", locateMe) : undefined), [locateMe]);
 
   /* ------------------------------------------------------------- Play -- */
   // Opening Play leaves whatever card was open; the camera is Play's from here.
@@ -380,7 +324,7 @@ export default function MapPage() {
         onBus={() => setHopOpen(true)}
         hudTop={hud.top}
         hudBottom={hud.bottom}
-        swoop={titleOut}
+        swoop={mounted}
         mode={playing ? "play" : "events"}
         onMapReady={onMapReady}
         onMapUnavailable={onMapUnavailable}
@@ -396,7 +340,6 @@ export default function MapPage() {
           look={profile?.avatar ?? look}
           fix={fix}
           streak={streak}
-          onNeedLocation={() => setPicking(true)}
         />
       )}
 
@@ -504,7 +447,6 @@ export default function MapPage() {
         />
       )}
       {hopOpen && <HopSheet hop={hop} fix={fix} onClose={() => setHopOpen(false)} />}
-      {titles && <TitleSequence signs={signNames} onDone={() => setSeenTitle(true)} />}
     </div>
   );
 }

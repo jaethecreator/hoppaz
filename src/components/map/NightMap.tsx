@@ -49,7 +49,7 @@ export type NightMapProps = {
   bus: BusFix | null;
   /** Bumped by the bus button in the HUD: fly to the bus. */
   busFocus?: number;
-  /** Flips true once the intro is out of the way: the camera then swoops in. */
+  /** Flips true once the page has mounted: the camera then swoops in. */
   swoop?: boolean;
   /**
    * "events" is the map as it always was. "play" closes it around the Hopper: event signs, the bus, the stops,
@@ -134,7 +134,7 @@ const SRC = {
 /** What Play hides on the map, by layer id. The basemap's own text layers are found by type. */
 const PLAY_HIDDEN = ["heat-blur", "lots", "pins", "pins-halo", "hop-line", "radius-fill", "radius-line"];
 
-/** The little Hop bus from the intro: cream body, orange windows. */
+/** The little Hop bus: cream body, orange windows. */
 const BUS_ART =
   '<svg viewBox="0 0 32 20" width="28" height="18" aria-hidden="true"><rect x="1" y="1" width="30" height="14" rx="3" fill="#F5EBDD"/><rect x="4" y="4" width="6" height="5" rx="1" fill="#FF4D00"/><rect x="12" y="4" width="6" height="5" rx="1" fill="#FF4D00"/><rect x="20" y="4" width="8" height="7" rx="1" fill="#0E0B0A"/><circle cx="8" cy="16" r="3" fill="#0E0B0A"/><circle cx="24" cy="16" r="3" fill="#0E0B0A"/></svg>';
 
@@ -605,7 +605,7 @@ export default function NightMap({
       if (ac.signal.aborted || !holder.current) return;
       styleTheme.current = t;
 
-      // The map opens high over Lagos; the swoop (below) brings it down once the intro is done.
+      // The map opens high over Lagos; the swoop (below) brings it down once the page has mounted.
       let created: MLMap;
       try {
         created = new maplibregl.Map({
@@ -912,7 +912,7 @@ export default function NightMap({
         const el = make("button", "hz-sign");
         el.type = "button";
         const board = make("span", "hz-board");
-        // Signs pop up one after another, the way the intro's signs do.
+        // Signs pop up one after another.
         board.style.setProperty("--d", `${Math.min(rank, 20) * 0.06}s`);
         const face = make("span", "hz-face");
         const art = make("span", "hz-art");
@@ -1002,7 +1002,7 @@ export default function NightMap({
   }, [epoch, events, collectibleEventIds, fix, radiusKm, selectedId, at, live, fontsEpoch, minute]);
 
   /* ------------------------------------------------------- the swoop ---- */
-  // After the titles: start high and flat over Lagos, then sweep down into a
+  // Once the page is up: start high and flat over Lagos, then sweep down into a
   // pitched, illustrated city at an angle. Once per visit to the map.
   const swooped = useRef(false);
   useEffect(() => {
