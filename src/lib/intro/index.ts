@@ -9,7 +9,7 @@
  *
  * See docs/INTRO.md.
  */
-export { introEvent, onIntroEvent, introReplay, introSkip, introAdvance, introPauseTour, introReset, useIntro, introHasRun, introAsksLocation, introPending, INTRO_EVENT } from "./store";
+export { introEvent, onIntroEvent, introReplay, introSkip, introAdvance, introPauseTour, introCloseTour, introReset, useIntro, introHasRun, introAsksLocation, introPending, INTRO_EVENT } from "./store";
 export { introActive, introStepNow, useIntroActive } from "./active";
 export { registerIntroAction, runIntroAction } from "./actions";
 export { REPLAY_ROW, LINES, EXTRA, HAS_CARDS } from "./lines";

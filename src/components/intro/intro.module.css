@@ -245,6 +245,39 @@
 .skip:active {
   color: rgb(var(--text));
 }
+.headEnd {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+/* The close: a full 44px target, a clear x in a round chip, so it is easy to find and hit. */
+.close {
+  position: relative;
+  isolation: isolate;
+  margin: -10px -12px -10px 0;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: rgb(var(--text));
+}
+.close::before {
+  content: "";
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: rgb(var(--hairline));
+  z-index: -1;
+}
+.close:active::before {
+  background: rgb(var(--dim) / 0.4);
+}
+/* Next to the x, Skip keeps its own room instead of reaching under it. */
+.headEnd .skip {
+  margin-right: 0;
+}
 
 .title {
   margin-top: 2px;

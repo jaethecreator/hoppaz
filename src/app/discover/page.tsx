@@ -15,6 +15,7 @@ import { snapTick } from "@/components/today/tick";
 import Marquee from "@/components/today/Marquee";
 import { EmptyDay, FilteredOut, LoadFailed } from "@/components/today/Empty";
 import YourDays from "@/components/today/YourDays";
+import LocationAsk from "@/components/today/LocationAsk";
 import { useEventQuests } from "@/components/today/useEventQuests";
 import { useViewport } from "@/components/today/useViewport";
 import {
@@ -52,6 +53,8 @@ import type { EventRow } from "@/lib/types";
 
 // One stable empty list, so memo deps do not change on every render.
 const NO_TYPES: string[] = [];
+/** With the Hopper's real location, events this close (km) go to the front of the deck. */
+const NEAR_KM = 12;
 
 /**
  * TODAY (the /discover route): the night as a pile of big flyer cards you
@@ -139,16 +142,32 @@ export default function TodayPage() {
   // Calendar counts: everything loaded, narrowed by type only (the same dots the Map's calendar shows).
   const typed = useMemo(() => allEvents.filter((e) => matchesType(e, shownTypes)), [allEvents, shownTypes]);
   const counts = useMemo(() => countByDay(typed), [typed]);
-  // The next events from now, whatever night: the deck's NEXT view and the strip under it.
-  const next = useMemo(() => nextEvents(typed, NEXT_COUNT, now), [typed, now]);
-  // One night: the busiest first, the ones already over at the back.
+  // Shared location: the ones close by come first. Without it (or with a picked area) nothing is reordered.
+  const gps = fix?.source === "gps";
+  const far = useCallback((e: EventRow) => gps && !(e.distance_m <= NEAR_KM * 1000), [gps]);
+  // The next events from now, whatever night: the deck's NEXT view and the strip under it. With a location, the
+  // next ones close by, topped up with the rest when there are not enough.
+  const next = useMemo(() => {
+    if (!gps) return nextEvents(typed, NEXT_COUNT, now);
+    const near = nextEvents(typed.filter((e) => !far(e)), NEXT_COUNT, now).list;
+    const taken = new Set(near.map((e) => e.id));
+    const rest = nextEvents(typed.filter((e) => !taken.has(e.id)), NEXT_COUNT - near.length, now).list;
+    return { list: [...near, ...rest] };
+  }, [typed, now, gps, far]);
+  // One night: the ones close by first (with a location), then the busiest, the ones already over at the back.
   const dayEvents = useMemo(
     () =>
       typed
         .filter((e) => nightOf(Date.parse(e.starts_at)) === dayKey)
-        .sort((a, b) => Number(hasEnded(a, now)) - Number(hasEnded(b, now)) || byGoingThenStart(a, b)),
-    [typed, dayKey, now]
+        .sort(
+          (a, b) =>
+            Number(hasEnded(a, now)) - Number(hasEnded(b, now)) || Number(far(a)) - Number(far(b)) || byGoingThenStart(a, b)
+        ),
+    [typed, dayKey, now, far]
   );
+  // A new location reorders the deck: start the pile again from its new order.
+  const fixKey = fix ? `${fix.source}:${fix.lat.toFixed(3)},${fix.lng.toFixed(3)}` : "";
+  useEffect(() => setPile({ key: "", order: [] }), [fixKey]);
   const dayTotal = useMemo(
     () => allEvents.filter((e) => nightOf(Date.parse(e.starts_at)) === dayKey).length,
     [allEvents, dayKey]
@@ -683,6 +702,8 @@ export default function TodayPage() {
           requireAccount("save your WE OUTSIDE list and get the group chats");
         }}
       />
+
+      <LocationAsk paused={filming || listOpen || !!story || !!event} />
 
       <StorySheet event={story} going={story ? goingOf(story) : 0} box={story ? dropSet.has(story.id) : false} onClose={closeStory} />
 

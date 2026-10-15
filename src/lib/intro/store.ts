@@ -209,6 +209,12 @@ export function introPauseTour(): void {
   commit(pauseSave(get().save));
 }
 
+/** The card's close (x, or Escape): the tour stops for good. The Replay the tour row on Me brings it back. */
+export function introCloseTour(): void {
+  set({ nudge: false, wantLocate: false });
+  commit({ ...get().save, status: "done" });
+}
+
 /** The Replay the tour row on Me. */
 export function introReplay(): void {
   set({ nudge: false, wantLocate: false });

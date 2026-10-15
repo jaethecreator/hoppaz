@@ -15,6 +15,7 @@ import { currentStep, type IntroCtx } from "@/lib/intro/machine";
 import {
   bindIntro,
   introAdvance,
+  introCloseTour,
   introDismissNudge,
   introMarkReturning,
   introPauseTour,
@@ -187,6 +188,7 @@ export default function IntroHost({
       picture: view.picture,
       skip: view.skip ? { label: view.skip, onClick: () => introSkip(view.id) } : undefined,
       end: view.id === "welcome" || view.id === "me" || view.id === "open_app" ? undefined : introPauseTour,
+      close: hidden ? undefined : introCloseTour,
     };
   } else if (showNudge) {
     card = {
@@ -196,6 +198,7 @@ export default function IntroHost({
       line: nudgeCard.line,
       cta: { label: nudgeCard.cta ?? "Okay", onClick: onNudgeCta, busy: asked === "locate" && save.loc === "unknown" },
       skip: nudgeCard.skip ? { label: nudgeCard.skip, onClick: introDismissNudge } : undefined,
+      close: hidden ? undefined : introDismissNudge,
     };
   }
 

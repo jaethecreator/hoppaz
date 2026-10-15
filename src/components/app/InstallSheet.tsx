@@ -208,9 +208,11 @@ export default function InstallSheet() {
           type="button"
           onClick={close}
           aria-label="Close"
-          className="absolute right-1.5 top-1.5 grid h-11 w-11 place-items-center text-dim hover:text-cream"
+          className="absolute right-1.5 top-1.5 grid h-11 w-11 place-items-center"
         >
-          <X size={18} />
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-line text-cream">
+            <X size={18} strokeWidth={2.4} aria-hidden />
+          </span>
         </button>
 
         <div className="flex items-center gap-4 pr-8">
