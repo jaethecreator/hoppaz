@@ -176,7 +176,10 @@ begin
   delete from public.dms where id in (dm1, dm2);
 
   -- The refusals of the room wave.
-  perform pg_temp.ok(pg_temp.hi(a, crew, e) = 'gone', 'a first wave at someone not in the room is gone');
+  perform pg_temp.ok(pg_temp.hi(a, crew, e) = 'sent', 'a first wave at someone who is away from the room is sent: it waits in their inbox');
+  perform pg_temp.ok(not exists (select 1 from public.crew_room_vibes where from_user = a and to_user = e), 'with no live tap, they are not there to feel it');
+  perform pg_temp.ok(jsonb_array_length(pg_temp.inbox(e) -> 'waves') = 1, 'and the wave is in their inbox');
+  delete from public.waves where from_user = a and to_user = e;
   perform pg_temp.ok(pg_temp.hi(a, crew, d) = 'not_met', 'a wave at someone outside the crew is not_met');
   perform pg_temp.ok(pg_temp.hi(a, crew, a) = 'self', 'not at yourself');
   perform pg_temp.actor(g); r := public.crew_friend_wave(crew, a); perform pg_temp.admin();
@@ -254,6 +257,21 @@ begin
   select count(*) into n from public.dm_reads where dm_id = dm1;
   perform pg_temp.admin();
   perform pg_temp.ok(n = 1 and (select count(*) from public.dm_reads where dm_id = dm1) = 2, 'a person sees only their own read row');
+
+  -- The owner and admins panel.
+  perform pg_temp.actor(b); j := public.crew_friend_staff(crew); perform pg_temp.admin();
+  perform pg_temp.ok(jsonb_array_length(j) = 1 and j -> 0 ->> 'role' = 'owner' and j -> 0 ->> 'name' = 'Ada Test', 'a member reads the owner, with the name the room shows');
+  perform pg_temp.ok(not (j -> 0 ->> 'me')::boolean and (j -> 0 ->> 'crew')::boolean, 'not me, and my crew (we are crew by now): MESSAGE');
+  perform pg_temp.actor(c); j := public.crew_friend_staff(crew); perform pg_temp.admin();
+  perform pg_temp.ok(not (j -> 0 ->> 'me')::boolean and not (j -> 0 ->> 'crew')::boolean, 'for someone who is not crew with the owner: SAY HI');
+  perform pg_temp.actor(a); j := public.crew_friend_staff(crew); perform pg_temp.admin();
+  perform pg_temp.ok((j -> 0 ->> 'me')::boolean, 'the owner sees themselves marked');
+  perform pg_temp.actor(d); j := public.crew_friend_staff(crew); perform pg_temp.admin();
+  perform pg_temp.ok(jsonb_array_length(j) = 0, 'someone outside the room reads nothing');
+  insert into public.blocks (blocker, blocked, label) values (b, a, 'A');
+  perform pg_temp.actor(b); j := public.crew_friend_staff(crew); perform pg_temp.admin();
+  perform pg_temp.ok(jsonb_array_length(j) = 0, 'a blocked owner is left out');
+  delete from public.blocks where blocker = b;
 
   -- SHOW ME ON THE MAP: off until I say so, mine alone, and being crew does not change it.
   perform pg_temp.ok(not (pg_temp.inbox(a) ->> 'on_map')::boolean, 'the map switch is off by default');

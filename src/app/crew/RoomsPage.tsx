@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, MessageSquare, Plus, Search, Users } from "lucide-react";
+import { ChevronRight, DoorOpen, MessageSquare, Plus, Search, Users } from "lucide-react";
 import Sheet from "@/components/Sheet";
 import { useEventGroups, useMyEventRooms } from "@/lib/chat";
 import { dayLagos } from "@/lib/geo";
@@ -16,6 +16,10 @@ import Mascot from "@/components/Mascot";
 import PageHeader from "@/components/app/PageHeader";
 import { useLinger } from "@/components/chat/useLinger";
 import { useGroups, type CrewGroup } from "@/lib/game";
+import { hereLabel } from "@/lib/hotspots/geometry";
+import type { Hotspot } from "@/lib/hotspots/types";
+import { useHotspots } from "@/lib/hotspots/useHotspots";
+import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
 import { getSupabase } from "@/lib/supabase/client";
 import { usePingGames } from "@/lib/game-time/hooks";
 import { useEvents } from "@/lib/useEvents";
@@ -53,6 +57,13 @@ export default function RoomsPage() {
   const [menu, setMenu] = useState<"choose" | "start" | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const [board, setBoard] = useState(false);
+  const [spots, setSpots] = useState(false);
+  // Hotspots are places too: the one you stand in is your home base, and the rest are one tap away.
+  const hs = useHotspots({ active: true, at: fix });
+  const home = hs.yours;
+  const open = hs.list.filter((h) => h.status === "open");
+  // A hotspot with a room drawn opens it; one without goes to the map's sheet, as before.
+  const roomHref = (h: Hotspot) => (hotspotRoomData(h.slug) ? `/room/${h.slug}` : `/?hotspot=${h.slug}`);
 
   // Find a room: open rooms by name, as you type. Row level security already lets everyone read an open room.
   useEffect(() => {
@@ -109,9 +120,53 @@ export default function RoomsPage() {
   return (
     <>
     <div className="h-full overflow-y-auto px-4 pb-24">
+    <div className="mx-auto w-full max-w-[560px]">
       <PageHeader title="Roomz" caption="Where your people are" />
 
-      <p className="seclabel mb-2">Your roomz</p>
+      {home && (
+        <>
+          <p className="seclabel mb-2">Your home base</p>
+          <div className="card mb-2 p-3">
+            <div className="flex items-center gap-3">
+              <span className="grid h-11 w-11 flex-none place-items-center rounded-full border border-line bg-ink-3 font-display text-lg font-black">
+                {home.name.trim().charAt(0).toUpperCase() || "H"}
+              </span>
+              <span className="min-w-0 flex-1">
+                <b className="block truncate font-display text-[15px] font-semibold">{home.name}</b>
+                <span className="hint block truncate">{hereLabel(home)}</span>
+              </span>
+            </div>
+            <Link href={roomHref(home)} className="btn mt-3 w-full text-[14px] lg:w-auto lg:px-10">
+              <DoorOpen size={18} aria-hidden /> ENTER ROOM
+            </Link>
+          </div>
+        </>
+      )}
+      {open.length > 0 && (
+        <>
+          <button
+            type="button"
+            className="mb-2 flex min-h-[44px] w-full items-center justify-between font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-dim"
+            aria-expanded={spots}
+            onClick={() => setSpots((v) => !v)}
+          >
+            <span>All hotspots · {open.length}</span>
+            <ChevronRight size={14} aria-hidden className={spots ? "rotate-90" : undefined} />
+          </button>
+          {spots &&
+            open.map((h) => (
+              <Link key={h.slug} href={roomHref(h)} className="flex min-h-[44px] items-center gap-3 border-b border-line py-2">
+                <span className="min-w-0 flex-1">
+                  <b className="block truncate font-display text-[15px] font-semibold">{h.name}</b>
+                  <span className="hint block truncate">{h.zoneLabel}</span>
+                </span>
+                <span className="flex-none font-mono text-[10px] font-medium tracking-[0.12em] text-orange">OPEN →</span>
+              </Link>
+            ))}
+        </>
+      )}
+
+      <p className="seclabel mb-2 mt-4">Your roomz</p>
       {groups.length === 0 && settled && (
         <div className="card mb-2 flex flex-col items-center px-3 py-5 text-center">
           <Mascot state="oya" size={104} edge={theme === "day" ? "ink" : "ground"} label="The Hoppaz mascot, calling you over" />
@@ -240,6 +295,7 @@ export default function RoomsPage() {
           </div>
         ))}
     </div>
+    </div>
 
     {/* The map's own + (same place, same size, same orange), here to join or start a room. */}
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3.5 pb-2.5">
@@ -260,6 +316,7 @@ export default function RoomsPage() {
       <>
         <div className="absolute inset-0 z-[39] bg-ink/60" onClick={() => setMenu(null)} aria-hidden />
         <Sheet open onClose={() => setMenu(null)} label={menu === "start" ? "Start a room" : "Join or start a room"}>
+          <div className="mx-auto w-full max-w-[480px]">
           {menu === "choose" ? (
             <div className="grid gap-2 pt-1">
               <button
@@ -294,6 +351,7 @@ export default function RoomsPage() {
               </button>
             </div>
           )}
+          </div>
         </Sheet>
       </>
     )}

@@ -30,6 +30,8 @@ const PARENT: Array<[string, string]> = [
   ["/privacy", "/me"],
   ["/community", "/me"],
   ["/account", "/me"],
+  // A hotspot's room (/room/<slug>) is a place, so ROOMZ stays lit inside it.
+  ["/room", "/crew"],
 ];
 
 /**

@@ -68,7 +68,7 @@ export default function CrewTab({
         </div>
       )}
       {crew.length === 0 ? (
-        <p className="hint">Say hi to someone in a crew room. When they wave back, they&apos;re here.</p>
+        <p className="hint">Say hi to someone in a room. Wave back and you&apos;re crew.</p>
       ) : list.length === 0 ? (
         <p className="hint">Nobody in your crew by that name.</p>
       ) : (

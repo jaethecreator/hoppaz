@@ -15,7 +15,7 @@ export default function ChatList({ dms, hasAccount }: { dms: ChatRow[]; hasAccou
     <div className="min-h-0 flex-1 overflow-y-auto pb-4">
       {!hasAccount && <AccountNudge text="Make an account to chat privately." />}
       {dms.length === 0 ? (
-        <p className="hint">Say hi to someone in a crew room. If they wave back, you&apos;re crew and you can chat.</p>
+        <p className="hint">Say hi to someone in a room. Wave back and you&apos;re crew.</p>
       ) : (
         dms.map((d) => (
           <Link href={`/chat/dm/${d.id}`} key={d.id} className="card mb-2 flex items-center gap-3 py-3">
