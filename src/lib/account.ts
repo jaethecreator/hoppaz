@@ -25,8 +25,10 @@ export async function createAccount(input: { name: string; email: string; passwo
   const token = data.session?.access_token;
   if (!token) {
     // No anonymous session to upgrade (anonymous sign-ins switched off): a plain sign-up.
-    const { error } = await sb.auth.signUp({ email: input.email, password: input.password, options: { data: { name: input.name } } });
+    const { data: made, error } = await sb.auth.signUp({ email: input.email, password: input.password, options: { data: { name: input.name } } });
     if (error) return error.message;
+    // Confirm sign up is on: no session until they tap the link in the email.
+    if (!made.session) return `Almost there. We sent a link to ${input.email}. Tap it to confirm, then log in.`;
     if (input.gender) await sb.rpc("set_private_details", { p_gender: input.gender });
     return null;
   }

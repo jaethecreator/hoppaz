@@ -102,7 +102,6 @@ export default function TopChrome({
 
           <button
             onClick={onLocate}
-            data-intro="locate"
             aria-label="Set your location"
             className="pointer-events-auto -my-1 -mr-0.5 grid h-11 w-10 flex-none place-items-center"
           >

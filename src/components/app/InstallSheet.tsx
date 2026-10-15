@@ -7,8 +7,7 @@ import Mascot from "@/components/Mascot";
 import { FIRST_GOING_EVENT } from "@/lib/useGoing";
 import { FIRST_CHECKIN_EVENT } from "@/lib/useCheckin";
 import { SIGNED_IN_EVENT } from "@/components/app/SignupForm";
-import { introActive } from "@/lib/intro/active";
-import { dropInstallPrompt, fireInstallPrompt, holdInstallPrompt, useInstallPrompt, type InstallPromptEvent } from "@/lib/intro/install";
+import { dropInstallPrompt, fireInstallPrompt, holdInstallPrompt, useInstallPrompt, type InstallPromptEvent } from "@/lib/installPrompt";
 import { ASK_INSTALL_EVENT } from "@/lib/push";
 
 /**
@@ -26,10 +25,6 @@ import { ASK_INSTALL_EVENT } from "@/lib/push";
  * button. iPhone has no such API, so it shows Share, then Add to Home Screen.
  * Anywhere that can do neither (desktop, in-app browsers) it stays quiet and
  * keeps its chances for later.
- *
- * It stays quiet while Paz's first-run tour is with the Hopper (the tour does
- * its own install step, in her card), and keeps its chances for after. Only a
- * Hopper's own tap on an install button (ASK_INSTALL_EVENT) opens it then.
  *
  * If another sheet is open when its moment comes (the event card the Hopper just
  * tapped "I'm going" on), it waits for that sheet to close: it never covers the
@@ -111,18 +106,16 @@ export default function InstallSheet() {
 
     const onPrompt = (e: Event) => {
       e.preventDefault(); // keep the browser's own bar away; we ask at the right moment
-      holdInstallPrompt(e as InstallPromptEvent); // shared with Paz's Android install step
+      holdInstallPrompt(e as InstallPromptEvent);
     };
     const onInstalled = () => {
       dropInstallPrompt();
       save({ stage: 2, done: true });
       setOpen(false);
     };
-    const attempt = (moment: "signup" | "going" | "checkin", asked = false) => {
+    const attempt = (moment: "signup" | "going" | "checkin") => {
       const s = read();
       if (s.done || isStandalone()) return;
-      // Paz is touring: she does the install step herself. The chance is kept for after the tour.
-      if (!asked && introActive()) return;
       if (moment === "going" && s.stage >= 1) return;
       if (moment === "checkin" && s.stage >= 2) return;
       if (QUIET_PATHS.some((re) => re.test(pathRef.current))) return;
@@ -130,7 +123,7 @@ export default function InstallSheet() {
       const next = useInstallPrompt.getState().prompt ? "android" : isIosBrowser() ? "ios" : moment === "signup" ? "bookmark" : null;
       if (!next) return; // nothing to offer here, keep the chance
       const show = () => {
-        if (isStandalone() || QUIET_PATHS.some((re) => re.test(pathRef.current)) || (!asked && introActive())) return;
+        if (isStandalone() || QUIET_PATHS.some((re) => re.test(pathRef.current))) return;
         const nav = document.querySelector('nav[aria-label="Main"]');
         setBottom(nav ? Math.round(nav.getBoundingClientRect().height) : 0);
         setMode(next);
@@ -150,7 +143,7 @@ export default function InstallSheet() {
       }, DELAY_MS);
     };
     const onSignedIn = () => attempt("signup");
-    const onAsk = () => attempt("signup", true);
+    const onAsk = () => attempt("signup");
     const onGoing = () => attempt("going");
     const onCheckin = () => attempt("checkin");
 
@@ -184,7 +177,7 @@ export default function InstallSheet() {
   }, [open, close]);
 
   const install = async () => {
-    // The browser only lets a saved prompt fire once (it is shared with Paz's install step).
+    // The browser only lets a saved prompt fire once.
     if ((await fireInstallPrompt()) === "accepted") save({ stage: 2, done: true });
     close();
   };
@@ -208,9 +201,11 @@ export default function InstallSheet() {
           type="button"
           onClick={close}
           aria-label="Close"
-          className="absolute right-1.5 top-1.5 grid h-11 w-11 place-items-center text-dim hover:text-cream"
+          className="absolute right-1.5 top-1.5 grid h-11 w-11 place-items-center"
         >
-          <X size={18} />
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-line text-cream">
+            <X size={18} strokeWidth={2.4} aria-hidden />
+          </span>
         </button>
 
         <div className="flex items-center gap-4 pr-8">

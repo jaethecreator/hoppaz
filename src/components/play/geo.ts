@@ -23,8 +23,7 @@ export function nudgePoint(lat: number, lng: number, eastM: number, northM: numb
   return { lat: lat + northM / M_PER_DEG_LAT, lng: lng + eastM / mPerDegLng(lat) };
 }
 
-/** Lagos only for now (the same box as the server's bounds). */
-export const insideLagos = (lat: number, lng: number) => lat >= 6.3 && lat <= 6.8 && lng >= 3.05 && lng <= 3.95;
+export { insideLagos } from "@/lib/geo";
 
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;

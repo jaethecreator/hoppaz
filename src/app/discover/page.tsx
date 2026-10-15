@@ -15,6 +15,7 @@ import { snapTick } from "@/components/today/tick";
 import Marquee from "@/components/today/Marquee";
 import { EmptyDay, FilteredOut, LoadFailed } from "@/components/today/Empty";
 import YourDays from "@/components/today/YourDays";
+import LocationAsk from "@/components/today/LocationAsk";
 import { useEventQuests } from "@/components/today/useEventQuests";
 import { useViewport } from "@/components/today/useViewport";
 import {
@@ -47,11 +48,12 @@ import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { useEvents, useHop } from "@/lib/useEvents";
 import { useGoing } from "@/lib/useGoing";
 import { useSession } from "@/lib/useSession";
-import { introEvent } from "@/lib/intro";
 import type { EventRow } from "@/lib/types";
 
 // One stable empty list, so memo deps do not change on every render.
 const NO_TYPES: string[] = [];
+/** With the Hopper's real location, events this close (km) go to the front of the deck. */
+const NEAR_KM = 12;
 
 /**
  * TODAY (the /discover route): the night as a pile of big flyer cards you
@@ -97,11 +99,6 @@ export default function TodayPage() {
   useEffect(() => setMounted(true), []);
   const [now, setNow] = useState(() => Date.now());
 
-  // Paz's tour: the deck is on screen.
-  useEffect(() => {
-    introEvent("deck_viewed");
-  }, []);
-
   // Never sit on a day that is over: past days snap to today, on return and every half minute.
   useEffect(() => {
     const snap = () => {
@@ -139,16 +136,32 @@ export default function TodayPage() {
   // Calendar counts: everything loaded, narrowed by type only (the same dots the Map's calendar shows).
   const typed = useMemo(() => allEvents.filter((e) => matchesType(e, shownTypes)), [allEvents, shownTypes]);
   const counts = useMemo(() => countByDay(typed), [typed]);
-  // The next events from now, whatever night: the deck's NEXT view and the strip under it.
-  const next = useMemo(() => nextEvents(typed, NEXT_COUNT, now), [typed, now]);
-  // One night: the busiest first, the ones already over at the back.
+  // Shared location: the ones close by come first. Without it (or with a picked area) nothing is reordered.
+  const gps = fix?.source === "gps";
+  const far = useCallback((e: EventRow) => gps && !(e.distance_m <= NEAR_KM * 1000), [gps]);
+  // The next events from now, whatever night: the deck's NEXT view and the strip under it. With a location, the
+  // next ones close by, topped up with the rest when there are not enough.
+  const next = useMemo(() => {
+    if (!gps) return nextEvents(typed, NEXT_COUNT, now);
+    const near = nextEvents(typed.filter((e) => !far(e)), NEXT_COUNT, now).list;
+    const taken = new Set(near.map((e) => e.id));
+    const rest = nextEvents(typed.filter((e) => !taken.has(e.id)), NEXT_COUNT - near.length, now).list;
+    return { list: [...near, ...rest] };
+  }, [typed, now, gps, far]);
+  // One night: the ones close by first (with a location), then the busiest, the ones already over at the back.
   const dayEvents = useMemo(
     () =>
       typed
         .filter((e) => nightOf(Date.parse(e.starts_at)) === dayKey)
-        .sort((a, b) => Number(hasEnded(a, now)) - Number(hasEnded(b, now)) || byGoingThenStart(a, b)),
-    [typed, dayKey, now]
+        .sort(
+          (a, b) =>
+            Number(hasEnded(a, now)) - Number(hasEnded(b, now)) || Number(far(a)) - Number(far(b)) || byGoingThenStart(a, b)
+        ),
+    [typed, dayKey, now, far]
   );
+  // A new location reorders the deck: start the pile again from its new order.
+  const fixKey = fix ? `${fix.source}:${fix.lat.toFixed(3)},${fix.lng.toFixed(3)}` : "";
+  useEffect(() => setPile({ key: "", order: [] }), [fixKey]);
   const dayTotal = useMemo(
     () => allEvents.filter((e) => nightOf(Date.parse(e.starts_at)) === dayKey).length,
     [allEvents, dayKey]
@@ -440,7 +453,6 @@ export default function TodayPage() {
       setPicked(null);
       setOpen(true);
     }
-    introEvent("event_opened");
   };
 
   // Docked on the right, the card sits under the header and the deck slides left to stay in view beside it.
@@ -479,8 +491,7 @@ export default function TodayPage() {
       {/* The screen takes the middle card's colours. Behind everything, and it never takes a tap. */}
       {!loading && !noLiveEvents && !empty && top && <DeckGlow urls={flyers} index={0} api={glow} />}
       <div className="relative z-[1] min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {/* Paz's tour sets --intro-reserve while its card is up on this screen, so the deck stops above the card. */}
-        <div className="flex min-h-full flex-col pb-[var(--intro-reserve,0px)]">
+        <div className="flex min-h-full flex-col">
           {/* -------------------------------------------------------- header -- */}
           <header ref={headerRef} className="pad-top flex-none px-4 pb-3">
             <div className="flex items-center gap-1">
@@ -548,7 +559,7 @@ export default function TodayPage() {
           {/* ------------------------------------------------------- the deck -- */}
           <div
             ref={deckBox}
-            className="flex min-h-[calc(400px_-_min(var(--intro-reserve,0px),80px))] flex-1 flex-col pt-2 transition-transform duration-300 ease-[cubic-bezier(.2,.8,.2,1)]"
+            className="flex min-h-[400px] flex-1 flex-col pt-2 transition-transform duration-300 ease-[cubic-bezier(.2,.8,.2,1)]"
             style={{ transform: shift ? `translate3d(${-shift}px,0,0)` : undefined }}
           >
             {loading ? (
@@ -615,10 +626,7 @@ export default function TodayPage() {
                       Share to story
                     </button>
                   }
-                  onOpen={() => {
-                    setOpen(true);
-                    introEvent("event_opened");
-                  }}
+                  onOpen={() => setOpen(true)}
                   label={(id) => `Open ${eventTitle(byId.get(id)!)}`}
                   slide={(id, s) => {
                     const e = byId.get(id);
@@ -655,7 +663,6 @@ export default function TodayPage() {
                 // A night you are going to: slide the deck to it and open it, like a tap on its card.
                 jump(e);
                 setOpen(true);
-                introEvent("event_opened");
               }}
             />}
           <div className="h-3 flex-none" />
@@ -671,7 +678,6 @@ export default function TodayPage() {
         onOpen={(e) => {
           setListOpen(false);
           setPicked(e);
-          introEvent("event_opened");
         }}
         onJoin={async (id) => {
           const ok = await groups.join(id);
@@ -683,6 +689,8 @@ export default function TodayPage() {
           requireAccount("save your WE OUTSIDE list and get the group chats");
         }}
       />
+
+      <LocationAsk paused={filming || listOpen || !!story || !!event} />
 
       <StorySheet event={story} going={story ? goingOf(story) : 0} box={story ? dropSet.has(story.id) : false} onClose={closeStory} />
 

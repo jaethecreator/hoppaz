@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { loadCampaign } from "./load-campaign.mjs";
+import { loadCampaign, loadFile } from "./load-campaign.mjs";
 
 const { CLUBHOUSE: layout, clubhouseWidth, sceneSize, sceneBlocks, canWalkScene, scenePath, privateAreaAt, validCampaignUrl, EMPTY_CAMPAIGN,
-  ROOM_TEMPLATES, ROOM_WIDTHS, TEMPLATE_KEYS, roomTemplate, templateFor } = loadCampaign();
+  ROOM_TEMPLATES, ROOM_WIDTHS, TEMPLATE_KEYS, roomTemplate, templateFor, PLACE_ROOMS, EVENT_ROOMS, HOTSPOT_ROOMS, placeRoom, hotspotRoom, eventRoom } = loadCampaign();
+const { HOTSPOT_ROOM_DATA } = loadFile("src/lib/rooms/hotspotRooms.ts");
 let passed = 0;
 function check(label, run) { run(); passed++; console.log(`PASS ${label}`); }
 function connected(from, to) {
@@ -140,6 +141,118 @@ for (const t of ROOM_TEMPLATES) {
       assert.ok(fountain, `${t.key} needs the courtyard-fountain prop`);
       assert.equal(fountain.kind, "fountain");
     }
+  });
+}
+
+// ---- Place rooms: the five event templates and the hotspot rooms (src/lib/campaign/rooms, src/lib/rooms/hotspotRooms.ts). ----
+const EVENT_KEYS = ["event-theatre", "event-pool", "event-outdoor", "event-indoor", "event-tech"];
+const WAVE_1 = ["yaba", "lekki", "victoria-island", "ikeja"];
+const zoneSql = fs.readFileSync(new URL("../../supabase/hotspot_zones.sql", import.meta.url), "utf8");
+// The 13 zone slugs are the top-level rows of the insert (two-space indent), not the split hints inside the jsonb.
+const ZONE_SLUGS = [...zoneSql.matchAll(/^  \('([a-z-]+)', '[^']+', '/gm)].map((m) => m[1]);
+const artSource = fs.readFileSync(new URL("../../src/components/campaign/roomArt.tsx", import.meta.url), "utf8");
+const copyOk = (text) => !/\u2014|\u2013| -- |360 Playlist|Hoppas|Hopaz/.test(text);
+
+check("Event and hotspot rooms are not crew templates: the MANAGE picker never lists them", () => {
+  for (const room of PLACE_ROOMS) {
+    assert.ok(!TEMPLATE_KEYS.includes(room.key), `${room.key} is in the crew picker`);
+    assert.equal(templateFor(room.key).key, "clubhouse", `a crew row pointing at ${room.key} must open the clubhouse`);
+  }
+  assert.equal(new Set(PLACE_ROOMS.map((r) => r.key)).size, PLACE_ROOMS.length, "place room keys must be unique");
+  for (const room of PLACE_ROOMS) assert.equal(placeRoom(room.key)?.key, room.key);
+  assert.equal(placeRoom("clubhouse"), null, "placeRoom never answers with the clubhouse");
+});
+check("The five event templates are registered, in the registry and in the art switch", () => {
+  assert.deepEqual([...EVENT_ROOMS.map((r) => r.key)].sort(), [...EVENT_KEYS].sort());
+  for (const key of EVENT_KEYS) { assert.equal(eventRoom(key)?.key, key); assert.ok(artSource.includes(`"${key}":`), `${key} has no entry in roomArt.tsx`); }
+  assert.equal(eventRoom("event-nope"), null);
+});
+check("There are 13 hotspot zones, and every hotspot room belongs to one", () => {
+  assert.equal(ZONE_SLUGS.length, 13, `expected 13 zones, read ${ZONE_SLUGS.length}`);
+  for (const room of HOTSPOT_ROOMS) {
+    assert.ok(ZONE_SLUGS.includes(room.slug), `${room.key} has no zone ${room.slug}`);
+    assert.equal(room.key, `hotspot-${room.slug}`);
+    assert.equal(hotspotRoom(room.slug).key, room.key);
+    assert.ok(artSource.includes(`"${room.key}":`), `${room.key} has no entry in roomArt.tsx`);
+  }
+  assert.equal(hotspotRoom("nope"), null);
+  for (const slug of WAVE_1) assert.ok(hotspotRoom(slug), `wave 1 hotspot ${slug} has no room`);
+});
+for (const room of PLACE_ROOMS) {
+  check(`Room ${room.key}: size, spawn, unique ids, in bounds, door, stops and the whole floor are reachable`, () => {
+    const l = room.layout;
+    assert.equal(l.id, room.key, "layout.id must equal the key");
+    assert.equal(JSON.stringify(l.grid), JSON.stringify({ width: 30, height: 20, tile: 32 }));
+    assert.ok(canWalkScene(l, l.spawn), "spawn must be walkable");
+    assert.equal(new Set(l.props.map((p) => p.id)).size, l.props.length, "prop ids must be unique");
+    assert.equal(new Set(l.zones.map((z) => z.id)).size, l.zones.length, "zone ids must be unique");
+    assert.ok(l.zones.length >= 3 && l.zones.length <= 7, "3 to 7 zones (each is a name tag in the room)");
+    for (const item of [...l.zones, ...l.props, ...l.walls]) assert.ok(item.x >= 0 && item.y >= 0 && item.w > 0 && item.h > 0 && item.x + item.w <= 30 && item.y + item.h <= 20, "geometry out of bounds");
+    for (const z of l.zones) {
+      assert.ok(scenePath(l, l.spawn, z.stop), `zone ${z.id} stop is not reachable`);
+      assert.ok(z.stop.x >= z.x && z.stop.x < z.x + z.w && z.stop.y >= z.y && z.stop.y < z.y + z.h, `zone ${z.id} stop is outside it`);
+      assert.ok(z.name.length >= 3 && z.name.length <= 26 && copyOk(z.name + z.subtitle), `zone ${z.id} copy`);
+    }
+    const door = l.props.find((p) => p.id === "entry-map-table");
+    assert.ok(door && door.w >= 2, "needs the entry-map-table exit, 2 tiles wide");
+    for (let dx = 0; dx < door.w; dx++) assert.ok(canWalkScene(l, { x: door.x + dx, y: door.y + door.h }), "the tile in front of the exit must be walkable");
+    assert.ok(scenePath(l, l.spawn, { x: door.x, y: door.y + door.h }), "the exit must be reachable from the spawn");
+    assert.ok(!(l.spawn.x >= door.x && l.spawn.x < door.x + door.w && l.spawn.y >= door.y && l.spawn.y < door.y + door.h));
+    // No pockets: every walkable tile is reachable from the spawn.
+    let walkable = 0; let reached = 0;
+    for (let y = 1; y < 19; y++) for (let x = 1; x < 29; x++) if (canWalkScene(l, { x, y })) { walkable++; if (scenePath(l, l.spawn, { x, y })) reached++; }
+    assert.ok(walkable >= 120, `only ${walkable} walkable tiles: the room is too full to walk`);
+    assert.ok(walkable - reached <= 2, `${walkable - reached} walkable tiles are sealed off from the spawn`);
+  });
+}
+for (const room of EVENT_ROOMS) {
+  check(`Event room ${room.key}: the flyer and the line-up hang on the walls`, () => {
+    const l = room.layout;
+    for (const id of ["event-flyer", "event-lineup"]) {
+      const p = l.props.find((q) => q.id === id);
+      assert.ok(p, `${id} missing`);
+      assert.equal(p.kind, id === "event-flyer" ? "flyer" : "lineup");
+      assert.ok(p.solid && p.w >= 2 && p.h >= 2, `${id} must be a solid prop at least 2 by 2`);
+    }
+    assert.ok(room.name.length >= 3 && room.name.length <= 30 && room.description.length >= 20 && room.description.length <= 140 && copyOk(room.name + room.description), "name and description copy");
+  });
+}
+for (const data of HOTSPOT_ROOM_DATA) {
+  check(`Hotspot data ${data.slug}: sign, colours, lines and four real venues`, () => {
+    assert.ok(ZONE_SLUGS.includes(data.slug), `${data.slug} is not a zone`);
+    assert.ok([1, 2, 3, 4].includes(data.wave));
+    assert.ok(data.sign === data.sign.toUpperCase() && data.sign.length >= 3 && data.sign.length <= 18, "sign: upper case, 3 to 18 characters");
+    for (const c of Object.values(data.palette)) assert.match(c, /^#[0-9A-Fa-f]{6}$/);
+    for (const t of [data.welcome, data.paz, data.hero.name, data.hero.blurb]) assert.ok(t.length >= 8 && t.length <= 120 && copyOk(t), `copy: ${t}`);
+    assert.ok(data.paz.length <= 60, "Paz speaks in a short line");
+    assert.equal(data.landmarks.length, 4);
+    assert.equal(new Set(data.landmarks.map((m) => m.id)).size, 4);
+    assert.equal(new Set(data.landmarks.map((m) => m.name)).size, 4);
+    for (const m of data.landmarks) {
+      assert.ok(m.name.length >= 3 && m.name.length <= 26 && copyOk(m.name + m.blurb), `landmark ${m.id}`);
+      assert.ok(m.blurb.length >= 10 && m.blurb.length <= 120, `blurb ${m.id}`);
+      if (m.source) assert.match(m.source, /^https?:\/\//);
+    }
+    assert.ok(data.local.length >= 3);
+  });
+}
+for (const room of HOTSPOT_ROOMS) {
+  check(`Hotspot room ${room.key}: a hero, four venue corners named for the real venues`, () => {
+    const data = HOTSPOT_ROOM_DATA.find((d) => d.slug === room.slug);
+    assert.ok(data, `no place data for ${room.slug}`);
+    const l = room.layout;
+    const hero = l.props.find((p) => p.id === "hero");
+    assert.ok(hero && hero.w * hero.h >= 12, "the hero landmark must be a big prop (12 tiles or more)");
+    for (let i = 0; i < 4; i++) {
+      const venue = l.props.find((p) => p.id === `venue-${i + 1}`);
+      assert.ok(venue && venue.w * venue.h >= 8, `venue-${i + 1} must be a prop of 8 tiles or more`);
+      const zone = l.zones.find((z) => z.id === `venue-${i + 1}`);
+      assert.ok(zone, `zone venue-${i + 1} missing`);
+      assert.equal(zone.name, data.landmarks[i].name, `zone venue-${i + 1} must be named ${data.landmarks[i].name}`);
+    }
+    const heroZone = l.zones.find((z) => z.id === "hero");
+    assert.ok(heroZone, "a hero zone is needed");
+    assert.equal(room.name, data.junction === "Lekki Phase 1 (Admiralty Way)" ? "Lekki Phase 1" : data.junction);
   });
 }
 console.log(`${passed} campaign checks passed.`);

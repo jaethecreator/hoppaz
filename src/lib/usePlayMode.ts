@@ -4,16 +4,14 @@ import { useEffect } from "react";
 import { create } from "zustand";
 
 /**
- * Whether the map is in Play, and the doorbell for the first-run intro.
+ * Whether the map is in Play. NOT MOUNTED since 15 Oct 2026: the separate Play view was removed from the map page
+ * (docs/DECISIONS.md), so nothing sets `active` and nothing needs to read it. It stays for the Play shell
+ * (components/play/PlayLayer.tsx) that is kept, unmounted, until boxes have a new home in rooms.
  *
- * Play is an overlay on the same map at "/", not a route. Entering pushes one
- * history entry, so the phone's back button leaves Play (the exit arrow does the
- * same thing through enter/exit here). Anything that wants to know the mode
- * (the bottom nav, the toaster, the page's tickers) reads `active`.
+ * Play was an overlay on the same map at "/", not a route. Entering pushed one history entry, so the phone's back
+ * button left Play (the exit arrow did the same thing through enter/exit here).
  *
- * INTRO HOOKS. The Paz the Conductor onboarding is a later step; it listens here
- * and never reaches into the shell. Three moments, each with a `first` flag that
- * is true only on this device's first time:
+ * Three moments are announced, each with a `first` flag that is true only on this device's first time:
  *   - "enter"            Play opened (`first` true the very first time)
  *   - "first-box-opened" a box was opened and paid (only ever once per device)
  *   - "welcome-done"     all three welcome boxes are open (only ever once per device)
@@ -78,7 +76,7 @@ export function markFirst(which: keyof Seen): boolean {
   return true;
 }
 
-/** What this device has already been through. The intro reads it to decide what to show. */
+/** What this device has already been through in Play. */
 export const playSeen = readSeen;
 
 /* ------------------------------------------------------------------ mode -- */

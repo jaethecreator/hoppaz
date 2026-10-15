@@ -2,6 +2,15 @@
 
 Jae's calls, newest first, so the team (and Ola) build to the same thing.
 
+## 15 Oct 2026
+
+| Topic | Decision |
+|---|---|
+| No separate Play view (reverses "Play mode" of 9 Oct: tapping your own avatar enters Play) | Play lost people, so it goes. The map page no longer mounts the Play layer: no avatar to tap, no Play HUD, no tray and no avatar run. Boxes still never show on the events map. The Play shell stays in `src/components/play`, unmounted, until boxes have a new home in rooms (own trickle, room waves, Game Time). The server box jobs and their SQL are untouched. |
+| Hotspots on the main map (reverses "Hotspot in play" of 10 Oct; answers open question 5 in [HOTSPOTS.md](HOTSPOTS.md)) | The open hotspots show as pins on the events map, with a "Hotspots" button and list. A pin opens the hotspot sheet; ENTER opens the hotspot room straight away, with no avatar run. The account gate and the 18+ question stay. The list loads once per visit. Every way into a hotspot room goes through `openHotspot()` in `src/lib/hotspots/open.ts`, so it can be pointed at the new `/room/<slug>` rooms later. |
+| First run: the four-step flow from UI-UPGRADE.md, built for testing | After the Paz intro was removed, the first run is the flow Jae designed on 14 Oct: location, a peek at the nearest hotspot room, make your Hopper, STEP IN (sign-up), spawn in the room with Paz pointing at the door, then a four-step tour on the map (the map, EVENTS, your home base, "Stuck? Ask Paz"). It lives at `/welcome` and on the map page, and uses the room-templates rooms (Adeola Odeku for the tests). Every step has Skip. It is a first cut on `jae/map-cleanup`, not shipped. |
+| Paz welcome flow removed (replaces "Gamified first-run setup" of 9 Oct) | The intro, the Paz tour and the city title sequence are deleted, not just switched off. A new Hopper lands on the map; sign-up is asked at the account gate. The sign-up after the third welcome box stays the redirect to the account page it was. The first run will be rebuilt around hotspot rooms (land in a hotspot room first, with real avatars and real venue names). The line COME ALONE. LEAVE WITH FRIENDS. is kept as `TAGLINE` in `src/lib/brand.ts`. |
+
 ## 10 Oct 2026
 
 | Topic | Decision |

@@ -119,7 +119,6 @@ src/
   components/
     map/NightMap.tsx    all MapLibre: heat layer, pins, Hop route, crew, radius
     SwipeDeck.tsx       pointer-driven cards, no gesture library
-    TitleSequence.tsx   the opening titles, SVG + CSS keyframes
     Avatar.tsx          React wrapper over lib/avatarSvg.ts
     EventSheet.tsx      HopSheet, AreaPicker, Sheet, HeatBar, Wordmark, BottomNav
   lib/
@@ -164,13 +163,11 @@ price and vibe. Everything it finds stays editable before submitting.
 **Location** uses real GPS when the Hopper grants it and falls back to picking one of
 16 Lagos areas. Every distance, travel estimate and check-in works the same either way.
 
-**The opening titles** are modelled on the Silicon Valley (HBO) intro: one long
-sideways camera move across a flat illustrated Lagos at night (mainland, Third Mainland
-Bridge with the bus on it, the Island, the Lekki-Ikoyi Link Bridge, Eko Atlantic) where
-buildings sprout as they come into frame and rooftop signs pop up and flip between
-tonight's real events. It plays once, then the map swoops down into a pitched 3D city
-whose buildings grow out of the ground the first time you zoom in. Replay it from the
-Me tab. Reduced-motion users skip it.
+**The opening** is the map itself: it starts high over Lagos, swoops down into a
+pitched 3D city, and its buildings grow out of the ground the first time you zoom in.
+There is no welcome flow or title sequence any more (the Paz intro was removed on
+15 Oct 2026; the first run will be rebuilt around hotspot rooms). Reduced-motion users
+get the camera without the swoop.
 
 **Avatars are untrusted input.** A look is JSON on `profiles.avatar` and other Hoppers'
 looks are drawn on your map, so `normalizeLook()` maps every field onto the whitelists in

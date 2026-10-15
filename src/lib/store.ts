@@ -13,16 +13,11 @@ type HoppazState = {
   fix: Fix | null;
   radiusKm: number;
   showCrew: boolean;
-  seenIntro: boolean;
-  /** The opening title sequence plays once; the Me tab can replay it. */
-  seenTitle: boolean;
   /** Local copy of the avatar so it shows before, or without, Supabase. */
   look: Look | null;
   setFix: (fix: Fix | null) => void;
   setRadius: (km: number) => void;
   toggleCrew: () => void;
-  markIntroSeen: () => void;
-  setSeenTitle: (seen: boolean) => void;
   setLook: (look: Look) => void;
   /** Map filters. Types are remembered; the date is not, since "tonight" goes stale. */
   dateFilter: DateFilter;
@@ -37,14 +32,10 @@ export const useHoppaz = create<HoppazState>()(
       fix: null,
       radiusKm: 8,
       showCrew: false,
-      seenIntro: false,
-      seenTitle: false,
       look: null,
       setFix: (fix) => set({ fix }),
       setRadius: (radiusKm) => set({ radiusKm }),
       toggleCrew: () => set((s) => ({ showCrew: !s.showCrew })),
-      markIntroSeen: () => set({ seenIntro: true }),
-      setSeenTitle: (seenTitle) => set({ seenTitle }),
       setLook: (look) => set({ look }),
       // Every screen always has one day selected; it opens on today.
       dateFilter: TODAY(),

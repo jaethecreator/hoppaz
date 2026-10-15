@@ -12,7 +12,7 @@ export type OpenTargets = { xp: DOMRect | null; shelf: DOMRect | null; pips: DOM
 /** What a landing item was, for the shell to tick its own counters. */
 export type LandKind = "xp" | "collectible" | "stamp";
 
-/** The hooks the later intro (Paz the Conductor) listens to. */
+/** The moments of the open, for anything that wants to listen (see events.ts). */
 export type OpenEvent =
   | { type: "open-start"; tier: OpenTier }
   | { type: "open-claimed"; tier: OpenTier; result: ClaimResult }

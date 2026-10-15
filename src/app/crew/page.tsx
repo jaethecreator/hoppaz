@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import RequireAccount from "@/components/app/RequireAccount";
 import Link from "next/link";
 import { ChevronRight, MessageSquare, Plus } from "lucide-react";
@@ -21,7 +21,6 @@ import { useEvents } from "@/lib/useEvents";
 import { useTheme } from "@/lib/useTheme";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import RoomCard from "./RoomCard";
-import { introEvent } from "@/lib/intro";
 
 /**
  * ROOMS (the middle tab, /crew): places. Your rooms with the one big button, event rooms and group chats, rooms to find, and
@@ -252,12 +251,8 @@ function closes(at: number) {
 
 /** Needs an account: anonymous Hoppers get the sign-up here instead. */
 export default function CrewPage() {
-  // Paz's tour: here, even behind the sign-up wall, so the next step still shows.
-  useEffect(() => {
-    introEvent("crew_viewed");
-  }, []);
   return (
-    <RequireAccount preview title="Rooms." caption="Make an account to join rooms, plan moves together and keep your group chats.">
+    <RequireAccount title="Rooms." caption="Make an account to join rooms, plan moves together and keep your group chats.">
       <RoomsPage />
     </RequireAccount>
   );

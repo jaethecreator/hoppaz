@@ -2,6 +2,10 @@
 
 A crew owns a walk-in room at `/crew/<crew id>/room`, built from the 360Playlist clubhouse template (more rooms later, see "Room templates"). The first one is the 360Playlist brand crew; the same template serves every crew, brand, hotspot and event room after it. Updated 14 October 2026 on `jae/consolidate`. Local database only so far: nothing has been deployed and no production database has been changed.
 
+> Event rooms (theatre, pool party, outdoor party, indoor party, tech event) and one room per hotspot are built on this
+> engine as "place rooms", not as crew templates: see [ROOM-TEMPLATES.md](ROOM-TEMPLATES.md). The crew picker still lists
+> the clubhouse only.
+
 ## Ways in
 
 | Where | What it does |
@@ -19,7 +23,7 @@ Each crew's `invite_code` (schema.sql, 10 hex digits) is its link. Members get I
 
 ### Explore from here
 
-Tiles that lead out into the app. A crew's own featured event is not a tile: it has its own card above the chat. The tiles are: the crew's next events (live events whose title or venue has one of the crew's event words, the crew name when the owner set none; for 360Playlist "360Playlist, Dave") open the map on that event (`/?e=<id>`); when none match, the next big events of the week (by heat) stand in, labelled BIG THIS WEEK. The two nearest hotspots (from the Hopper's area or position, worked out on the phone) open Play on that hotspot (`/?hotspot=<slug>`). TONIGHT IN LAGOS opens the events deck (`/discover`). What people are going to this week (`room_rails().trending`, from `supabase/crew_rails.sql`; "THIS WEEK" with the day when nobody has said they are going yet) opens the map on the event too. Other open crews, verified first and with their round logo (`room_rails().crews`), open their crew pages. The odd tile at the end fills the row.
+Tiles that lead out into the app. A crew's own featured event is not a tile: it has its own card above the chat. The tiles are: the crew's next events (live events whose title or venue has one of the crew's event words, the crew name when the owner set none; for 360Playlist "360Playlist, Dave") open the map on that event (`/?e=<id>`); when none match, the next big events of the week (by heat) stand in, labelled BIG THIS WEEK. The two nearest hotspots (from the Hopper's area or position, worked out on the phone) open that hotspot's sheet on the map (`/?hotspot=<slug>`; ENTER on the sheet opens the room). TONIGHT IN LAGOS opens the events deck (`/discover`). What people are going to this week (`room_rails().trending`, from `supabase/crew_rails.sql`; "THIS WEEK" with the day when nobody has said they are going yet) opens the map on the event too. Other open crews, verified first and with their round logo (`room_rails().crews`), open their crew pages. The odd tile at the end fills the row.
 
 ## The hub (`/crew/<id>`)
 

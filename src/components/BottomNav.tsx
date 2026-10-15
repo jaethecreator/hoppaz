@@ -4,21 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Map, CalendarDays, Users, MessageSquare, CircleUserRound, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
-import { usePlayMode } from "@/lib/usePlayMode";
 import { useLeaveStore } from "@/lib/crew-room/rails";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { sfx } from "@/lib/sound/sfx";
 import { useSocial } from "@/lib/social";
 
-type Tab = { href: string; label: string; Icon: LucideIcon; intro?: string };
+type Tab = { href: string; label: string; Icon: LucideIcon; tour?: string };
 
 const TABS: ReadonlyArray<Tab> = [
   { href: "/", label: "MAP", Icon: Map },
-  { href: "/discover", label: "EVENTS", Icon: CalendarDays, intro: "today-tab" },
+  { href: "/discover", label: "EVENTS", Icon: CalendarDays, tour: "events" },
   // ROOMS: places (your rooms, event rooms, rooms to find). People are on CHAT (CHATS and CREW). The route stays /crew.
-  { href: "/crew", label: "ROOMS", Icon: Users, intro: "crew-tab" },
+  { href: "/crew", label: "ROOMS", Icon: Users },
   { href: "/chat", label: "CHAT", Icon: MessageSquare },
-  { href: "/me", label: "ME", Icon: CircleUserRound, intro: "me-tab" },
+  { href: "/me", label: "ME", Icon: CircleUserRound },
 ];
 
 /** Sub-pages keep their parent tab lit, so you always know where you are. */
@@ -38,15 +37,13 @@ const PARENT: Array<[string, string]> = [
  * the room is a place inside the app, so the tabs stay under it with CREW lit (the path starts with /crew).
  */
 const ROOM = /^\/crew\/[^/]+\/room(?:\/|$)/;
-const FULL_SCREEN = [/^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/];
+const FULL_SCREEN = [/^\/welcome/, /^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/];
 
 export default function BottomNav() {
   const path = usePathname();
-  // Play has the whole screen: the map closes around you and the tab bar steps out.
-  const playing = usePlayMode((s) => s.active);
   // Unread messages and waves waiting for me: the dot on CHAT (supabase/crew_friends.sql).
   const waiting = useSocial((s) => s.unread + s.waves.length);
-  if (playing || FULL_SCREEN.some((re) => re.test(path))) return null;
+  if (FULL_SCREEN.some((re) => re.test(path))) return null;
   const parent = PARENT.find(([p]) => path === p || path.startsWith(`${p}/`))?.[1];
   const active = parent ?? path;
   return (
@@ -55,13 +52,13 @@ export default function BottomNav() {
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       aria-label="Main"
     >
-      {TABS.map(({ href, label, Icon, intro }, i) => {
+      {TABS.map(({ href, label, Icon, tour }, i) => {
         const on = href === "/" ? active === "/" : active === href || active.startsWith(`${href}/`);
         return (
           <Link
             key={href}
             href={href}
-            data-intro={intro}
+            data-tour={tour}
             aria-current={on ? "page" : undefined}
             // A very quiet wood tick, one pitch up the scale per tab, only when the lit tab is about to change.
             onClick={(e) => {

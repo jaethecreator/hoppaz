@@ -1,15 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DEMO } from "@/components/me/demo";
 import { getSupabase } from "@/lib/supabase/client";
 import { DEMO_HOTSPOTS } from "./demo";
 import { metresApart, nearestOthers, pinsFor, yoursOf } from "./geometry";
 import type { Band, Hotspot, HotspotStatus, Pt, ZoneShape } from "./types";
 
-/** How often the counts are asked again while Play is open, and how soon a sheet may ask again. */
-const REFRESH_MS = 120_000;
-const SHEET_REFRESH_MS = 20_000;
+/** How soon a sheet that is opened may ask for fresh counts. The list itself is fetched once per visit (see `cached`). */
+const SHEET_REFRESH_MS = 60_000;
 
 type Raw = {
   id?: string;
@@ -60,8 +59,37 @@ function toHotspot(r: Raw): Hotspot | null {
   };
 }
 
-/** The list is the same for everyone, so a visit to Play and back does not fetch the 40 KB of shapes again straight away. */
+/**
+ * The list is the same for everyone and carries about 40 KB of zone shapes, so it is fetched once per visit: the map, the
+ * crew hub and every sheet share this copy, and nothing polls. A sheet that opens may ask again for fresh counts, no more
+ * than once a minute (see SHEET_REFRESH_MS).
+ */
 let cached: { list: Hotspot[]; at: number } | null = null;
+let inFlight: Promise<Hotspot[] | null> | null = null;
+
+/** One call to hotspot_list(), shared by whoever asks while it is out. Null when it failed (an old database, a flaky network). */
+function fetchList(): Promise<Hotspot[] | null> {
+  const sb = getSupabase();
+  if (!sb) return Promise.resolve(null);
+  inFlight ??= (async () => {
+    try {
+      const { data, error } = await sb.rpc("hotspot_list");
+      if (error || !Array.isArray(data)) return null;
+      // The server sends wave order; Yaba, where the events are, leads it.
+      const rows = (data as Raw[])
+        .map(toHotspot)
+        .filter((h): h is Hotspot => !!h)
+        .sort((a, b) => Number(b.slug === "yaba") - Number(a.slug === "yaba") || a.wave - b.wave);
+      cached = { list: rows, at: Date.now() };
+      return rows;
+    } catch {
+      return null;
+    } finally {
+      inFlight = null;
+    }
+  })();
+  return inFlight;
+}
 
 /**
  * The hotspots (hotspot_list(), public even signed out) and what "near you" means for one Hopper. Everything about the
@@ -70,42 +98,32 @@ let cached: { list: Hotspot[]; at: number } | null = null;
  *
  * `at` is the Hopper's position inside Lagos, or null (location off, or not in Lagos): then there is no "your
  * hotspot" and no distances, and the list runs in wave order with Yaba on top.
+ *
+ * `failed` is true when the last ask for the list did not come back; `loaded` stays true once a list has. A caller
+ * with nothing to show says "Hotspots could not load" and offers `reload(true)`.
  */
 export function useHotspots({ active, at }: { active: boolean; at: Pt | null }) {
   const [list, setList] = useState<Hotspot[]>(() => (DEMO ? DEMO_HOTSPOTS : (cached?.list ?? [])));
   const [loaded, setLoaded] = useState(DEMO || !!cached);
-  const lastLoad = useRef(0);
-  const inFlight = useRef(false);
+  const [failed, setFailed] = useState(false);
 
+  /** `force` asks now; without it, a copy under a minute old is kept. Whatever is on the map stays when the call fails. */
   const reload = useCallback(async (force = false) => {
     if (DEMO) return;
-    const sb = getSupabase();
-    if (!sb || inFlight.current) return;
-    if (!force && Date.now() - lastLoad.current < SHEET_REFRESH_MS) return;
-    inFlight.current = true;
-    try {
-      const { data, error } = await sb.rpc("hotspot_list");
-      // An old database has no hotspot_list; a flaky network fails the call. Either way keep what is on the map.
-      if (error || !Array.isArray(data)) return;
-      // The server sends wave order; Yaba, where the events are, leads it.
-      const rows = (data as Raw[])
-        .map(toHotspot)
-        .filter((h): h is Hotspot => !!h)
-        .sort((a, b) => Number(b.slug === "yaba") - Number(a.slug === "yaba") || a.wave - b.wave);
-      lastLoad.current = Date.now();
-      cached = { list: rows, at: lastLoad.current };
+    if (!force && cached && Date.now() - cached.at < SHEET_REFRESH_MS) return;
+    const rows = await fetchList();
+    if (rows) {
       setList(rows);
       setLoaded(true);
-    } finally {
-      inFlight.current = false;
+      setFailed(false);
+    } else {
+      setFailed(true);
     }
   }, []);
 
+  // Once per visit: a copy already in hand (the crew hub, an earlier visit to the map) is not fetched again.
   useEffect(() => {
-    if (!active) return;
-    void reload();
-    const t = setInterval(() => document.visibilityState === "visible" && void reload(true), REFRESH_MS);
-    return () => clearInterval(t);
+    if (active && !cached) void reload(true);
   }, [active, reload]);
 
   // Position jitters every second; the answers only change by a street or two. Work from a ~110 m grid.
@@ -128,6 +146,8 @@ export function useHotspots({ active, at }: { active: boolean; at: Pt | null }) 
     return {
       list,
       loaded,
+      /** The last ask for the list failed. With `loaded` false there is nothing to show. */
+      failed,
       yours,
       row,
       pins: pinsFor(list, here, yours?.slug ?? null),
@@ -137,7 +157,7 @@ export function useHotspots({ active, at }: { active: boolean; at: Pt | null }) 
       bySlug,
       reload,
     };
-  }, [list, loaded, here, reload]);
+  }, [list, loaded, failed, here, reload]);
 }
 
 export type HotspotsData = ReturnType<typeof useHotspots>;
