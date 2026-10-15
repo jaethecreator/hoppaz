@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabase } from "./supabase/client";
 import { shrink } from "./image";
-import { sfx } from "./sound/sfx";
-import { haptics } from "./haptics";
-import type { DmMessage, DmThread, Message, Person, Wave } from "./types";
+import { answerWave, loadInbox, markRead, useSocial } from "./social";
+import type { DmMessage, Message, Person } from "./types";
 
 /**
  * Chat, the client half. Everything that touches who-is-who (waves, DMs,
@@ -276,82 +275,54 @@ export function usePeople(room: PeopleOf | null, userId: string | null) {
 
 /* ----------------------------------------------------- waves and DMs ----- */
 
+/**
+ * The Chat tab's data: waves waiting for me, my crew friends, and my chats with what is unread. The store is kept fresh by
+ * SocialPing (it listens app-wide); this hook reads it, asks for a fresh read when the tab opens, and answers waves.
+ * See src/lib/social.ts.
+ */
 export function useInbox(userId: string | null) {
-  const [waves, setWaves] = useState<Wave[]>([]);
-  const [dms, setDms] = useState<DmThread[]>([]);
-  // Every wave a good read has shown. Null until the first read, so the list that opens with the screen never sounds.
-  const knownWaves = useRef<Set<string> | null>(null);
-
-  const load = useCallback(async () => {
-    const sb = getSupabase();
-    if (!sb || !userId) return;
-    const [w, d] = await Promise.all([sb.rpc("my_waves"), sb.rpc("my_dms")]);
-    const list = (w.data ?? []) as Wave[];
-    if (!w.error) {
-      // A wave no read has shown before has just arrived: a soft chime and a tap. A failed read says nothing either way.
-      const known = knownWaves.current ?? new Set<string>();
-      if (knownWaves.current && list.some((x) => !known.has(x.id))) {
-        sfx.wave();
-        haptics.buzz("wave");
-      }
-      list.forEach((x) => known.add(x.id));
-      knownWaves.current = known;
-    }
-    setWaves(list);
-    setDms((d.data ?? []) as DmThread[]);
-  }, [userId]);
-
+  const waves = useSocial((s) => s.waves);
+  const crew = useSocial((s) => s.crew);
+  const dms = useSocial((s) => s.dms);
+  const unread = useSocial((s) => s.unread);
   useEffect(() => {
-    knownWaves.current = null; // a different Hopper starts from their own list
-    void load();
-    const sb = getSupabase();
-    if (!sb || !userId) return;
-    // RLS only delivers DM messages from your own threads; refresh the list on any.
-    const ch = sb
-      .channel(`inbox:${userId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "dm_messages" }, () => void load())
-      .subscribe();
-    const t = setInterval(load, 30_000); // waves have no realtime feed: poll
-    return () => {
-      clearInterval(t);
-      void sb.removeChannel(ch);
-    };
-  }, [load, userId]);
-
-  const respond = useCallback(
-    async (id: string, accept: boolean): Promise<{ dm: string | null; needAccount?: boolean }> => {
-      const sb = getSupabase();
-      if (!sb) return { dm: null };
-      const { data, error } = await sb.rpc("respond_wave", { p_wave: id, p_accept: accept });
-      if (error?.message.includes("need_account")) return { dm: null, needAccount: true };
-      await load();
-      return { dm: (data as string | null) ?? null };
-    },
-    [load]
-  );
-
-  return { waves, dms, respond, reload: load };
+    if (userId) void loadInbox();
+  }, [userId]);
+  /** WAVE BACK (accept) or PASS. crew says the answer made them crew. */
+  const respond = useCallback((id: string, accept: boolean) => answerWave(id, accept), []);
+  const reload = useCallback(() => loadInbox(), []);
+  return { waves, crew, dms, unread, respond, reload };
 }
 
 export function useDm(dmId: string, userId: string | null) {
   const [msgs, setMsgs] = useState<DmMessage[]>([]);
-  const [thread, setThread] = useState<DmThread | null>(null);
-  const [missing, setMissing] = useState(false);
+  // The thread comes from the same store as the Chat tab: for a crew friend it carries the name the room showed.
+  const thread = useSocial((s) => s.dms.find((x) => x.id === dmId) ?? null);
+  const loaded = useSocial((s) => s.loaded);
+  const unread = thread?.unread ?? 0;
+  // A chat just made (a wave answered a second ago) is not in a list read before it: read once more before saying it is gone.
+  const [fresh, setFresh] = useState(false);
+  const missing = fresh && loaded && !thread;
 
-  const loadThread = useCallback(async () => {
-    const sb = getSupabase();
-    if (!sb || !userId) return;
-    const { data } = await sb.rpc("my_dms");
-    const t = ((data ?? []) as DmThread[]).find((x) => x.id === dmId) ?? null;
-    setThread(t);
-    setMissing(!t);
+  useEffect(() => {
+    if (!userId) return;
+    let live = true;
+    setFresh(false);
+    void loadInbox().then(() => live && setFresh(true));
+    return () => {
+      live = false;
+    };
   }, [dmId, userId]);
+
+  // I am looking at this chat: whatever is unread in it is read, now and as new lines arrive.
+  useEffect(() => {
+    if (userId && unread > 0 && document.visibilityState === "visible") void markRead(dmId);
+  }, [dmId, userId, unread]);
 
   useEffect(() => {
     const sb = getSupabase();
     if (!sb || !userId) return;
     let cancelled = false;
-    void loadThread();
     (async () => {
       const { data } = await sb.from("dm_messages").select("*").eq("dm_id", dmId).order("created_at", { ascending: true }).limit(200);
       if (!cancelled) setMsgs((data ?? []) as DmMessage[]);
@@ -364,13 +335,13 @@ export function useDm(dmId: string, userId: string | null) {
       })
       .subscribe();
     // Reveal state can change on the other side.
-    const t = setInterval(loadThread, 20_000);
+    const t = setInterval(() => void loadInbox(), 20_000);
     return () => {
       cancelled = true;
       clearInterval(t);
       void sb.removeChannel(ch);
     };
-  }, [dmId, userId, loadThread]);
+  }, [dmId, userId]);
 
   const send = useCallback(
     async (body: string, image?: File | null): Promise<string | null> => {
@@ -399,8 +370,8 @@ export function useDm(dmId: string, userId: string | null) {
     const sb = getSupabase();
     if (!sb) return;
     await sb.rpc("reveal_dm", { p_dm: dmId });
-    await loadThread();
-  }, [dmId, loadThread]);
+    await loadInbox();
+  }, [dmId]);
 
   return { msgs, thread, missing, send, reveal };
 }

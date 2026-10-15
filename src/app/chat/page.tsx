@@ -11,6 +11,7 @@ import { useInbox, useMyEventRooms, type PeopleOf } from "@/lib/chat";
 import PageHeader from "@/components/app/PageHeader";
 import Inbox from "@/components/chat/Inbox";
 import RoomView from "@/components/chat/RoomView";
+import { sentence } from "@/components/event/copy";
 
 export default function ChatPage() {
   return <Suspense fallback={<div className="grid h-full place-items-center"><span className="hint">LOADING…</span></div>}><Chat /></Suspense>;
@@ -31,10 +32,11 @@ function Chat() {
   const { fix } = useHoppaz();
   const { events } = useEvents(fix, 45);
   const eventRooms = useMyEventRooms(userId);
-  const [view, setView] = useState<"room" | "inbox">("room");
+  // People first: Chats is where waves, crew and unread messages are. An event card's "open chat" still lands on its room.
+  const [view, setView] = useState<"room" | "inbox">(params.get("c") ? "room" : "inbox");
   const [picked, setPicked] = useState<string | null>(null);
   const say = useToast((s) => s.say);
-  const { waves, dms, respond } = useInbox(userId);
+  const { waves, crew, dms, unread, respond } = useInbox(userId);
 
   const linked = params.get("c");
   const rooms = useMemo(() => {
@@ -49,13 +51,13 @@ function Chat() {
     return list;
   }, [eventRooms, linked, events]);
   const room = rooms.find((r) => r.id === (picked ?? linked)) ?? rooms[0] ?? null;
-  const inboxCount = waves.length + dms.length;
+  const inboxCount = unread + waves.length;
 
   return <div className="flex h-full flex-col overflow-hidden px-4">
     <PageHeader title="Chat" caption="Say hi on your terms" className="flex-none" />
     <div role="tablist" aria-label="Chat" className="mb-3 flex flex-none gap-6 border-b border-line">
+      <Tab on={view === "inbox"} onClick={() => setView("inbox")}>CHATS{inboxCount > 0 ? ` · ${inboxCount}` : ""}</Tab>
       <Tab on={view === "room"} onClick={() => setView("room")}>ROOMS</Tab>
-      <Tab on={view === "inbox"} onClick={() => setView("inbox")}>WAVES &amp; DMS{inboxCount > 0 ? ` · ${inboxCount}` : ""}</Tab>
     </div>
 
     {view === "room" ? <>
@@ -86,12 +88,17 @@ function Chat() {
       )}
     </> : <Inbox
       waves={waves}
+      crew={crew}
       dms={dms}
       hasAccount={hasAccount}
       onAnswer={async (w) => {
         const r = await respond(w.id, true);
         if (r.needAccount) { say("Make an account to chat."); router.push("/account?next=/chat"); }
+        // Waving back made them crew: say so, and they join the faces right here with a chat under them. Anyone else (an
+        // event room wave) opens their chat, as before.
+        else if (r.crew) say(`${w.name} is in your crew.`, "ok");
         else if (r.dm) router.push(`/chat/dm/${r.dm}`);
+        else if (r.text) say(sentence(r.text), "error");
       }}
       onPass={(w) => void respond(w.id, false)}
     />}
