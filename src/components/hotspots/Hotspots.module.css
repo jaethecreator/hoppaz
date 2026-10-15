@@ -1,5 +1,5 @@
 /*
- * Play: hotspot pins. A dark disc with a cream crossroads inside an orange ring, the place name under it, and a small
+ * Hotspot pins. A dark disc with a cream crossroads inside an orange ring, the place name under it, and a small
  * bar badge for how many are there. The marker element is MapLibre's to move, so the animations live on the wrapper
  * inside it. The pin looks the same by day and by night (brand colours, not theme ones).
  */
@@ -164,29 +164,35 @@
 .soon .glyph {
   opacity: 0.75;
 }
-/* Zoomed out over all of Lagos: just the disc. */
-.far .disc {
+/* Zoomed out over all of Lagos, or no room for the name beside the event signs (NightMap sets data-fit): just the disc. */
+.far .disc,
+.spot[data-fit="disc"] .disc {
   left: 14px;
   top: 14px;
   width: 28px;
   height: 28px;
   border-width: 2.5px;
 }
-.far .glyph {
+.far .glyph,
+.spot[data-fit="disc"] .glyph {
   width: 15px;
   height: 15px;
 }
-.far .pulse {
+.far .pulse,
+.spot[data-fit="disc"] .pulse {
   left: 14px;
   top: 14px;
   width: 28px;
   height: 28px;
 }
 .far .name,
-.far .yours {
+.far .yours,
+.spot[data-fit="disc"] .name,
+.spot[data-fit="disc"] .yours {
   display: none;
 }
-.far .bars {
+.far .bars,
+.spot[data-fit="disc"] .bars {
   right: 5px;
   top: 12px;
   transform: scale(0.8);

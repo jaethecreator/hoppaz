@@ -42,7 +42,7 @@ export default function HotspotSheet({
             <HotspotGlyph className="h-3.5 w-3.5" />
           </span>
           <span className={clsx("font-mono text-[10px] font-medium uppercase tracking-[0.14em]", mine && !soon ? "text-orange" : "text-dim")}>
-            {soon ? "Opening soon" : mine ? "Your hotspot" : "Hotspot"}
+            {soon ? "Opening soon" : mine ? "Your home base" : "Hotspot"}
             {metres !== null && ` · ${distanceLabel(metres)}`}
           </span>
         </div>

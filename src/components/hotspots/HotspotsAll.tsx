@@ -18,9 +18,11 @@ function status(h: Hotspot) {
 }
 
 /**
- * All 13, grouped Island and Mainland. An "Opening soon" one can still be looked at. Your own group comes first and, once we
- * know where you are, the nearest are on top inside each group; with no position the groups follow the list's own order
- * (Yaba, where the events are, leads it).
+ * The hotspots in `list`, grouped Island and Mainland (the map passes the open ones; an "Opening soon" one in the list
+ * can still be looked at). Your own group comes first and, once we know where you are, the nearest are on top inside each
+ * group; with no position the groups follow the list's own order (Yaba, where the events are, leads it).
+ *
+ * With nothing to list it says why: still asking, could not load (with a way to try again), or none open.
  */
 export default function HotspotsAll({
   list,
@@ -28,12 +30,20 @@ export default function HotspotsAll({
   metres,
   onPick,
   onClose,
+  loaded = true,
+  failed = false,
+  onRetry,
 }: {
   list: Hotspot[];
   yoursSlug: string | null;
   metres: (h: Hotspot) => number | null;
   onPick: (h: Hotspot) => void;
   onClose: () => void;
+  /** The list has come back at least once. */
+  loaded?: boolean;
+  /** The last ask for the list failed. */
+  failed?: boolean;
+  onRetry?: () => void;
 }) {
   const shown = list.filter((h) => h.status !== "paused");
   // metres() is null for every row when we do not know where the Hopper is.
@@ -51,6 +61,25 @@ export default function HotspotsAll({
       <div className="mx-auto max-w-[520px]">
         <h2 className="pr-9 font-display text-[22px] font-black uppercase leading-none">Hotspots</h2>
         <p className="hint mt-1.5">Open ones run all day and night. Anyone can visit any of them.</p>
+        {!groups.length && (
+          <div className="mt-4 rounded-hz border border-line bg-ink-3 px-3 py-3" role="status">
+            {failed && !loaded ? (
+              <>
+                <p className="font-body text-[14px] font-semibold leading-snug">Hotspots could not load.</p>
+                <p className="hint mt-1">Check your signal and try again.</p>
+                {onRetry && (
+                  <button type="button" className="btn mt-3 w-full" onClick={onRetry}>
+                    TRY AGAIN
+                  </button>
+                )}
+              </>
+            ) : !loaded ? (
+              <p className="hint">Finding hotspots…</p>
+            ) : (
+              <p className="font-body text-[14px] leading-snug">No hotspots are open right now.</p>
+            )}
+          </div>
+        )}
         {groups.map((g) => (
           <section key={g.name} className="mt-4" aria-label={g.name}>
             <span className="seclabel">{g.name}</span>

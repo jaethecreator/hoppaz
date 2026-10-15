@@ -10,9 +10,11 @@ import HotspotGlyph from "./HotspotGlyph";
 import s from "./Hotspots.module.css";
 
 /**
- * A hotspot on the Play map (never on the events map). Dark disc, cream crossroads, orange ring, the place name
- * under it, a small bar badge for how many are there. The ring pulses when 3 or more avatars are there. One that is
- * not open yet keeps a quiet ring.
+ * A hotspot on the map. Dark disc, cream crossroads, orange ring, the place name under it, a small bar badge for how
+ * many are there. The ring pulses when 3 or more avatars are there. One that is not open yet keeps a quiet ring.
+ *
+ * On the events map the marker carries the global class "hz-pin": NightMap's declutter places the signs around it and
+ * sets data-fit to "full" (with its name) or "disc" (just the disc) from how much room it has.
  */
 function HotspotMarker({
   map,
@@ -31,7 +33,7 @@ function HotspotMarker({
   picked: boolean;
   /** The camera is out over all of Lagos: just the disc. */
   far: boolean;
-  /** Stacking order: among the pins, and above the boxes (see PIN_Z in HotspotsLayer). In Play the map is under the HUD whatever this is. */
+  /** Stacking order among the map's markers (the event signs use 1 to 4; the Play shell used millions, see PIN_Z in HotspotsLayer). */
   z: number;
   onTap: (h: Hotspot) => void;
 }) {
@@ -44,7 +46,7 @@ function HotspotMarker({
       lng={h.lng}
       lat={h.lat}
       anchor="center"
-      className={clsx(s.spot, mine && s.mine, picked && s.picked, soon && s.soon, far && s.far)}
+      className={clsx("hz-pin", mine && "hz-pin-mine", picked && "hz-pin-on", s.spot, mine && s.mine, picked && s.picked, soon && s.soon, far && s.far)}
       label={label}
       onClick={() => onTap(h)}
       style={{ zIndex: z }}
