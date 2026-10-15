@@ -7,7 +7,7 @@ import { hotspotRoomData } from "../../rooms/hotspotRooms";
  * The room is a street plan seen from the south. The roundabout is the centre: an island of solid tiles (a stepped ellipse
  * 6, 8, 10, 10, 8, 6 tiles wide, the `hero` box plus four `island-*` pieces so people walk round a circle and not a
  * square), a two tile ring road round it and Allen Avenue running through, west to east. Four corners hold the venues,
- * numbered left to right as in the place data: Kalakuta Museum (top left, a house behind a fence and a small gate), New
+ * numbered left to right as in the place data: Ikeja City Mall (top left, a mall front with a paved path in through a gate gap), New
  * Afrika Shrine (bottom left, an open-air stage with its yard), Computer Village (top right, a block of phone stalls with
  * umbrellas out front) and The Place GRA (bottom right, a restaurant with a patio). The map signpost, the spawn, a suya
  * grill, a newspaper stand and a bus stop are on the paved plaza at the bottom. Traffic stands at the edges, so the ring
@@ -16,7 +16,7 @@ import { hotspotRoomData } from "../../rooms/hotspotRooms";
  * Prop ids are stable (Game Time hides boxes by id, other features find the exit by id): never rename one.
  */
 const data = hotspotRoomData("ikeja");
-const names = data?.landmarks.map((l) => l.name) ?? ["Kalakuta Museum", "New Afrika Shrine", "Computer Village", "The Place GRA"];
+const names = data?.landmarks.map((l) => l.name) ?? ["Ikeja City Mall", "New Afrika Shrine", "Computer Village", "The Place GRA"];
 const heroName = data?.hero.name ?? "Allen Roundabout";
 
 export const HOTSPOT_IKEJA = room("hotspot-ikeja", {
@@ -24,13 +24,13 @@ export const HOTSPOT_IKEJA = room("hotspot-ikeja", {
     // The backs of the Allen Avenue buildings along the top, either side of the ALLEN sign.
     wall(8, 1, 3, 2),
     wall(19, 1, 3, 2),
-    // Kalakuta's front fence, with a gate gap at x 4.
+    // The mall's front kerb and hedge, with a gap at x 4 for the path in.
     wall(1, 5, 3, 1),
     wall(5, 5, 3, 1),
   ],
   zones: [
     zone("hero", heroName, "The circle everyone passes", "asphalt", { x: 8, y: 3, w: 14, h: 11 }, { x: 15, y: 13 }, { x: 15, y: 12 }),
-    zone("venue-1", names[0], "A music and heritage corner", "paving", { x: 1, y: 1, w: 7, h: 7 }, { x: 4, y: 6 }, { x: 5, y: 7 }),
+    zone("venue-1", names[0], "Shops, snacks, cold air", "paving", { x: 1, y: 1, w: 7, h: 7 }, { x: 4, y: 6 }, { x: 5, y: 7 }),
     zone("venue-2", names[1], "An open-air stage, live music", "concrete", { x: 1, y: 11, w: 7, h: 8 }, { x: 4, y: 17 }, { x: 4, y: 16 }),
     zone("venue-3", names[2], "Phones, plugs and chargers", "paving", { x: 22, y: 1, w: 7, h: 7 }, { x: 24, y: 6 }, { x: 26, y: 7 }),
     zone("venue-4", names[3], "Food with a patio", "deck", { x: 22, y: 11, w: 7, h: 8 }, { x: 25, y: 17 }, { x: 25, y: 16 }),
@@ -45,7 +45,7 @@ export const HOTSPOT_IKEJA = room("hotspot-ikeja", {
     prop("island-e", "island", 19, 8, 1, 2),
 
     // The four venue corners, left to right.
-    prop("venue-1", "kalakuta", 1, 1, 7, 4),
+    prop("venue-1", "mall", 1, 1, 7, 4),
     prop("venue-2", "shrine", 1, 12, 7, 3),
     prop("venue-3", "computervillage", 22, 1, 7, 4),
     prop("venue-4", "placegra", 22, 12, 7, 3),

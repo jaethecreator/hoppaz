@@ -6,11 +6,12 @@ import { BRAND_LINES, BrandSign, Defs, Floor, FONT, Frame, HopBus, P, Plate, Pro
 /**
  * Allen Roundabout, Ikeja: a bright late afternoon in green and warm yellow. The big circular island is the room's
  * centre (a fountain and a spire in a planted ring), the ring road round it carries lane arrows, Allen Avenue runs
- * through it and zebra crossings guard every arm. Round it sit Kalakuta Museum (a yellow and black house behind a fence and
- * a small gate), New Afrika Shrine (an open-air stage, tall pillars, a long banner), Computer Village (a block of phone
- * stalls under umbrellas) and The Place GRA (a restaurant with a patio). Names, sign and palette come from the place data
- * (src/lib/rooms/hotspotRooms.ts). Same pixel look as the clubhouse: 2 px ink, top-left light, hard shadow to the lower
- * right, flat colour. Names only on the venues: no logos, no photos.
+ * through it and zebra crossings guard every arm. Round it sit Ikeja City Mall (a glass-fronted shopping mall with a canopy,
+ * flag banners and a car park edge with a gap for the entrance walkway), New Afrika Shrine (an open-air stage, tall
+ * pillars, a long banner), Computer Village (a block of phone stalls under umbrellas) and The Place GRA (a restaurant with
+ * a patio). Names, sign and palette come from the place data (src/lib/rooms/hotspotRooms.ts). Same pixel look as the
+ * clubhouse: 2 px ink, top-left light, hard shadow to the lower right, flat colour. Names only on the venues: no logos, no
+ * photos.
  *
  * The Hoppaz layer (brand kit, docs/ROOM-TEMPLATES.md "Look"): the orange Hop bus parked in its bay on the plaza (it is the
  * `danfo-3` prop, so the id and kind stay), the route running Stop 1 in the Shrine yard to the bus, the billboard as the
@@ -19,7 +20,7 @@ import { BRAND_LINES, BrandSign, Defs, Floor, FONT, Frame, HopBus, P, Plate, Pro
 const PLACE = hotspotRoomData("ikeja");
 const SIGN = PLACE?.sign ?? "ALLEN";
 const PAL = PLACE?.palette ?? { primary: "#2FA84F", secondary: "#0E0B0A", accent: "#F2B705" };
-const NAMES = PLACE?.landmarks.map((l) => l.name) ?? ["Kalakuta Museum", "New Afrika Shrine", "Computer Village", "The Place GRA"];
+const NAMES = PLACE?.landmarks.map((l) => l.name) ?? ["Ikeja City Mall", "New Afrika Shrine", "Computer Village", "The Place GRA"];
 
 const GREEN = PAL.primary;
 const GREEN_DARK = P.kekeDark;
@@ -108,45 +109,86 @@ function Roundabout({ ox, oy, uid }: { ox: number; oy: number; uid: string }) {
   );
 }
 
-/** Kalakuta Museum: a yellow and black house, a mural strip, a name plate, and a small gate in the fence row below it. */
-function Kalakuta({ w, h, uid, name }: { w: number; h: number; uid: string; name: string }) {
-  const windows = [24, (w - 32) / 2, w - 56];
+/** The sign's big word. The venue name from the place data goes small under it. */
+const MALL_SIGN = "ICM";
+
+type Pt = [number, number];
+const CAR_BODY: Pt[] = [[1, 22], [1, 14], [6, 11], [14, 10], [19, 2], [37, 2], [46, 10], [54, 12], [55, 16], [55, 22]];
+const CAR_GLASS: Pt[][] = [[[16, 10], [20, 4], [27, 4], [27, 10]], [[30, 4], [36, 4], [42, 10], [30, 10]]];
+
+/** A parked car seen from the side, 56 px wide, as path data (body, glass, wheels, shadow) with its top-left at (x, y). `flip` faces it left. */
+function carPaths(x: number, y: number, flip: boolean) {
+  const X = (px: number) => x + (flip ? 56 - px : px);
+  const poly = (pts: Pt[]) => `${pts.map(([px, py], i) => `${i ? "L" : "M"}${X(px)} ${y + py}`).join("")}Z`;
+  const wheel = (px: number) => `M${X(px) - 5} ${y + 22}a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z`;
+  return { body: poly(CAR_BODY), glass: CAR_GLASS.map(poly).join(""), wheels: wheel(13) + wheel(43), shade: `M${x + 3} ${y + 22}h56v5h-56Z` };
+}
+
+/**
+ * Ikeja City Mall ("ICM"): a modern shopping mall. A wide low-rise front of concrete with three shopfront windows under a
+ * coloured signboard in each wing, a tall glass atrium in the middle with the dark sign on it (ICM big, the venue name small
+ * under it, an orange edge), a canopy over glazed doors, flag banners on poles, and in front a car park with two parked
+ * cars (art only) and planters. The paved walkway runs from the doors out through the gap in the car park's kerb (tile x 4
+ * in the layout), so the gap reads as the way in.
+ */
+function IkejaCityMall({ w, name }: { w: number; name: string }) {
+  const cx = w / 2;
+  const flip = (x: number, wd: number) => w - x - wd;
+  const bays = [6, 24, 42].flatMap((x) => [x, flip(x, 14)]);
+  const boxes = (xs: number[], y: number, wd: number, ht: number) => xs.map((x) => `M${x} ${y}h${wd}v${ht}h${-wd}Z`).join("");
+  const label = name.toUpperCase();
+  const labelSize = Math.min(7, 90 / (label.length * 0.82));
+  const bush = (x: number) => `M${x} 111V104L${x + 4} 99H${x + 12}L${x + 16} 104V111Z`;
+  const left = carPaths(6, 100, false);
+  const right = carPaths(w - 62, 100, true);
   return (
     <g>
-      <Shade w={w} h={h + 4} dx={6} dy={8} />
-      <rect x="1" y="1" width={w - 2} height={h - 2} fill={YELLOW} stroke={P.ink} strokeWidth="2" />
-      <rect x="3" y="3" width={w - 6} height="20" fill={P.asphalt} />
-      <path d={`M3 10H${w - 3}M3 17H${w - 3}`} stroke={P.asphaltLight} strokeWidth="2" />
-      <rect x="3" y="3" width={w - 6} height="3" fill={P.slateLight} />
-      <rect x="3" y="23" width={w - 6} height="3" fill={YELLOW_DARK} />
-      <rect x="3" y="26" width="3" height={h - 30} fill={YELLOW_LIGHT} />
-      <Plate x={12} y={27} w={w - 24} h={18} text={name} fill={NIGHT} color={YELLOW} />
-      {windows.map((x) => (
-        <g key={x}>
-          <rect x={x} y="50" width="32" height="26" fill={NIGHT} stroke={P.ink} strokeWidth="2" />
-          <rect x={x + 4} y="54" width="10" height="18" fill={YELLOW_DARK} />
-          <rect x={x + 18} y="54" width="10" height="18" fill={YELLOW_DARK} />
-        </g>
-      ))}
-      <rect x="14" y="78" width={w - 28} height="4" fill={NIGHT} />
-      <rect x="14" y="82" width={w - 28} height="9" fill={`url(#${uid}-bars)`} />
-      <rect x="14" y="91" width={w - 28} height="3" fill={NIGHT} />
-      <rect x={w / 2 - 15} y="94" width="30" height="34" fill={NIGHT} stroke={P.ink} strokeWidth="2" />
-      <rect x={w / 2 - 11} y="98" width="22" height="30" fill={YELLOW_DARK} />
-      <rect x={w / 2 + 5} y="112" width="3" height="5" fill={P.paper} />
-      <rect x="24" y="98" width="32" height="14" fill={NIGHT} stroke={P.ink} strokeWidth="2" />
-      <rect x={w - 56} y="98" width="32" height="14" fill={NIGHT} stroke={P.ink} strokeWidth="2" />
-      {/* the mural strip */}
-      <rect x="8" y="115" width={w / 2 - 28} height="10" fill={`url(#${uid}-mural)`} stroke={P.ink} strokeWidth="2" />
-      <rect x={w / 2 + 20} y="115" width={w / 2 - 28} height="10" fill={`url(#${uid}-mural)`} stroke={P.ink} strokeWidth="2" />
-      {/* the small gate, in the fence row under the house (tile x 4): two pillars, an arch, the leaves folded back */}
-      <rect x="88" y="134" width="8" height="26" fill={NIGHT} stroke={P.ink} strokeWidth="2" />
-      <rect x="128" y="134" width="8" height="26" fill={NIGHT} stroke={P.ink} strokeWidth="2" />
-      <rect x="89" y="130" width="6" height="5" fill={YELLOW} stroke={P.ink} strokeWidth="1" />
-      <rect x="129" y="130" width="6" height="5" fill={YELLOW} stroke={P.ink} strokeWidth="1" />
-      <path d="M96 140Q112 128 128 140" fill="none" stroke={NIGHT} strokeWidth="3" />
-      <rect x="97" y="142" width="5" height="16" fill={`url(#${uid}-bars)`} />
-      <rect x="122" y="142" width="5" height="16" fill={`url(#${uid}-bars)`} />
+      <Shade w={w} h={94} dx={6} dy={8} />
+      {/* the entrance walkway: an apron under the canopy, then the path out through the kerb gap */}
+      <path d={`M${cx - 22} 92H${cx + 22}V98H${cx + 16}V160H${cx - 16}V98H${cx - 22}Z`} fill={P.concrete} />
+      <path d={`M${cx - 22} 92V98H${cx - 16}V160M${cx + 22} 92V98H${cx + 16}V160`} fill="none" stroke={P.ink} strokeWidth="2" />
+      <path d={`M4 100V127M68 100V127M${w - 68} 100V127M${w - 4} 100V127`} stroke={P.paper} strokeWidth="2" opacity=".9" />
+      {/* the low front: roof edge, a signboard and a shopfront window per bay, the plinth */}
+      <rect x="1" y="12" width={w - 2} height="80" fill={P.concrete} stroke={P.ink} strokeWidth="2" />
+      <rect x="3" y="14" width={w - 6} height="4" fill={P.paper} />
+      <rect x="3" y="18" width={w - 6} height="5" fill={P.concreteDark} />
+      <path d={boxes([6, 42, flip(24, 14)], 27, 14, 8)} fill={GREEN} stroke={P.ink} strokeWidth="1.5" />
+      <path d={boxes([24, flip(6, 14), flip(42, 14)], 27, 14, 8)} fill={YELLOW} stroke={P.ink} strokeWidth="1.5" />
+      <rect x="3" y="84" width={w - 6} height="8" fill={P.concreteDark} />
+      <path d={boxes(bays, 38, 14, 44)} fill={P.lagoonLight} stroke={P.ink} strokeWidth="2" />
+      <path d={boxes(bays.map((x) => x + 1), 39, 12, 8)} fill={P.slate} />
+      <path d={boxes(bays.map((x) => x + 3), 68, 8, 12)} fill={P.paper} />
+      {/* the atrium: a steel frame, glass with a few light streaks, mullions and one transom */}
+      <rect x={cx - 50} y="1" width="100" height="91" fill={P.cap} stroke={P.ink} strokeWidth="2" />
+      <rect x={cx - 47} y="4" width="94" height="85" fill={P.lagoonLight} />
+      <path d={`M${cx - 36} 88L${cx - 22} 36H${cx - 14}L${cx - 28} 88ZM${cx + 4} 88L${cx + 18} 36H${cx + 22}L${cx + 8} 88Z`} fill={P.paper} opacity=".45" />
+      <path d={`M${cx - 36} 4V89M${cx - 24} 4V89M${cx - 12} 4V89M${cx} 4V89M${cx + 12} 4V89M${cx + 24} 4V89M${cx + 36} 4V89M${cx - 47} 50H${cx + 47}`} stroke={P.slate} strokeWidth="2" />
+      {/* the sign: a dark plate, ICM big, the name small, one orange edge */}
+      <rect x={cx - 52} y="3" width="104" height="30" fill={NIGHT} stroke={P.ink} strokeWidth="2" />
+      <rect x={cx - 50} y="30" width="100" height="2" fill={P.orange} />
+      <text x={cx} y="21" textAnchor="middle" fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize="19" letterSpacing="2">{MALL_SIGN}</text>
+      <text x={cx} y="28.5" textAnchor="middle" fill={P.paper} fontFamily={FONT.display} fontWeight={900} fontSize={labelSize} letterSpacing="1">{label}</text>
+      {/* the glazed doors under the canopy */}
+      <rect x={cx - 17} y="74" width="34" height="18" fill={NIGHT} stroke={P.ink} strokeWidth="2" />
+      <path d={boxes([cx - 14, cx + 3], 77, 11, 13)} fill={P.lagoonLight} />
+      <rect x={cx - 34} y="74" width="68" height="7" fill={P.shadow} opacity=".35" />
+      <rect x={cx - 36} y="62" width="72" height="6" fill={P.paper} stroke={P.ink} strokeWidth="2" />
+      <rect x={cx - 36} y="68" width="72" height="6" fill={GREEN} stroke={P.ink} strokeWidth="2" />
+      <path d={`M${cx - 33} 75V100M${cx + 33} 75V100`} stroke={P.ink} strokeWidth="3" />
+      {/* flag banners on poles, either side of the atrium */}
+      <path d={`M${cx - 54} 96V30M${cx - 54} 33H${cx - 40}M${cx + 54} 96V30M${cx + 54} 33H${cx + 40}`} stroke={P.ink} strokeWidth="3" />
+      <path d={`M${cx - 58} 93h8v5h-8ZM${cx + 50} 93h8v5h-8Z`} fill={P.concreteDark} stroke={P.ink} strokeWidth="1.5" />
+      <path d={`M${cx - 52} 35H${cx - 40}V63L${cx - 46} 58L${cx - 52} 63Z`} fill={GREEN} stroke={P.ink} strokeWidth="1.5" />
+      <path d={`M${cx + 40} 35H${cx + 52}V63L${cx + 46} 58L${cx + 40} 63Z`} fill={YELLOW} stroke={P.ink} strokeWidth="1.5" />
+      {/* the kerb's end posts, planters, and the two parked cars */}
+      <path d={`M${cx - 22} 130h6v16h-6ZM${cx + 16} 130h6v16h-6Z`} fill={P.cap} stroke={P.ink} strokeWidth="1.5" />
+      <path d={`M${cx - 40} 110h18v14h-18ZM${cx + 22} 110h18v14h-18Z`} fill={P.concrete} stroke={P.ink} strokeWidth="2" />
+      <path d={bush(cx - 39) + bush(cx + 23)} fill={P.leaf} stroke={P.ink} strokeWidth="2" />
+      <path d={left.shade + right.shade} fill={P.shadow} opacity=".25" />
+      <path d={left.body} fill={P.slate} stroke={P.ink} strokeWidth="2" />
+      <path d={right.body} fill={P.stone} stroke={P.ink} strokeWidth="2" />
+      <path d={left.glass + right.glass} fill={P.lagoonLight} />
+      <path d={left.wheels + right.wheels} fill={P.ink} />
     </g>
   );
 }
@@ -468,8 +510,8 @@ function PatioTable({ w, h, v }: { w: number; h: number; v: number }) {
   );
 }
 
-/** Building backs along the top (h 2) and the fence in front of Kalakuta (h 1). */
-function WallPiece({ x, y, w, h, tall, uid }: { x: number; y: number; w: number; h: number; tall: boolean; uid: string }) {
+/** Building backs along the top (h 2) and the car park's kerb with a clipped hedge in front of the mall (h 1). */
+function WallPiece({ x, y, w, h, tall }: { x: number; y: number; w: number; h: number; tall: boolean }) {
   if (tall) {
     return (
       <g>
@@ -488,13 +530,16 @@ function WallPiece({ x, y, w, h, tall, uid }: { x: number; y: number; w: number;
       </g>
     );
   }
+  const bumps = Math.round((w - 4) / 8);
+  const bump = (w - 4) / bumps;
+  let hedge = `M${x + 2} ${y + 16}`;
+  for (let i = 0; i < bumps; i++) hedge += `V${y + [8, 6, 9, 7][i % 4]}h${bump}`;
+  hedge += `V${y + 16}Z`;
   return (
     <g>
       <rect x={x + 4} y={y + 8} width={w} height={h} fill={P.shadow} opacity=".25" />
-      <rect x={x} y={y + 18} width={w} height={h - 18} fill={YELLOW} stroke={P.ink} strokeWidth="2" />
-      <rect x={x + 2} y={y + 20} width={w - 4} height="3" fill={YELLOW_LIGHT} />
-      <rect x={x + 2} y={y + 4} width={w - 4} height="14" fill={`url(#${uid}-bars)`} />
-      <rect x={x} y={y + 2} width={w} height="4" fill={NIGHT} />
+      <rect x={x} y={y + 14} width={w} height={h - 14} fill={P.concreteDark} stroke={P.ink} strokeWidth="2" />
+      <path d={hedge} fill={P.leaf} stroke={P.ink} strokeWidth="2" />
     </g>
   );
 }
@@ -510,7 +555,7 @@ export default function HotspotIkejaArt({ layout, uid, brand }: RoomArtProps) {
   const custom: Record<string, (prop: CampaignProp, tile: number) => ReactNode> = {
     hero: (p, tl) => <Roundabout ox={p.x * tl} oy={p.y * tl} uid={uid} />,
     island: () => null,
-    "venue-1": (p, tl) => <Kalakuta w={p.w * tl} h={p.h * tl} uid={uid} name={NAMES[0]} />,
+    "venue-1": (p, tl) => <IkejaCityMall w={p.w * tl} name={NAMES[0]} />,
     "venue-2": (p, tl) => <Shrine w={p.w * tl} h={p.h * tl} uid={uid} name={NAMES[1]} />,
     "venue-3": (p, tl) => <ComputerVillage w={p.w * tl} h={p.h * tl} uid={uid} name={NAMES[2]} />,
     "venue-4": (p, tl) => <PlaceGra w={p.w * tl} h={p.h * tl} uid={uid} name={NAMES[3]} />,
@@ -548,21 +593,9 @@ export default function HotspotIkejaArt({ layout, uid, brand }: RoomArtProps) {
           <rect width="3" height="8" fill={GREEN_DARK} />
           <rect x="4" width="1" height="8" fill={GREEN_LIGHT} />
         </pattern>
-        <pattern id={`${uid}-bars`} width="6" height="16" patternUnits="userSpaceOnUse"><rect x="2" width="2" height="16" fill={NIGHT} /></pattern>
         <pattern id={`${uid}-awn`} width="32" height="16" patternUnits="userSpaceOnUse">
           <rect width="16" height="16" fill={GREEN} />
           <rect x="16" width="16" height="16" fill={P.paper} />
-        </pattern>
-        <pattern id={`${uid}-mural`} width="64" height="10" patternUnits="userSpaceOnUse">
-          <rect width="64" height="10" fill={NIGHT} />
-          <rect x="2" y="1" width="10" height="8" fill={GREEN} />
-          <rect x="12" y="1" width="6" height="8" fill={YELLOW} />
-          <rect x="18" y="1" width="8" height="8" fill={P.orange} />
-          <rect x="26" y="1" width="4" height="8" fill={P.white} />
-          <rect x="30" y="1" width="10" height="8" fill={P.lagoon} />
-          <rect x="40" y="1" width="6" height="8" fill={YELLOW} />
-          <rect x="46" y="1" width="10" height="8" fill={GREEN} />
-          <rect x="56" y="1" width="6" height="8" fill={P.orange} />
         </pattern>
       </defs>
 
@@ -597,8 +630,8 @@ export default function HotspotIkejaArt({ layout, uid, brand }: RoomArtProps) {
       <rect x="420" y={t(3)} width="120" height={tile} fill={fill("zebraV")} />
       <rect x="384" y={t(14)} width="192" height={tile} fill={fill("zebraV")} />
 
-      {/* Building backs along the top, the fence and the gate's pillars are drawn with the venue. */}
-      {layout.walls.map((wl, i) => <WallPiece key={i} x={t(wl.x)} y={t(wl.y)} w={t(wl.w)} h={t(wl.h)} tall={wl.h >= 2} uid={uid} />)}
+      {/* Building backs along the top and the car park's kerb in front of the mall (the gap in it is the mall's walkway, drawn with the venue). */}
+      {layout.walls.map((wl, i) => <WallPiece key={i} x={t(wl.x)} y={t(wl.y)} w={t(wl.w)} h={t(wl.h)} tall={wl.h >= 2} />)}
 
       {/* The Hop's route: Stop 1 in the Shrine yard (the natural first stop), along the plaza, finale at the bus in its bay. */}
       <RouteLine points={[[144, 552], [240, 552], [400, 552], [536, 552]]} />

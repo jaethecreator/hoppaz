@@ -70,7 +70,7 @@ export const HOTSPOT_ROOM_DATA: HotspotRoomData[] = [
     landmarks: [
       { id: "unilag", name: "UNILAG", kind: "campus", blurb: "A campus gate inspired by the University of Lagos in Akoka.", address: "University of Lagos, Akoka, Lagos", source: "https://unilag.edu.ng/campus/" },
       { id: "ozone", name: "Ozone Cinemas", kind: "cinema", blurb: "Yaba's cinema stop at the E-Centre on Commercial Avenue.", address: "E-Centre, 1-11 Commercial Avenue, Yaba, Lagos", source: "https://ozone.reachcinema.io/" },
-      { id: "mila", name: "Mila", kind: "restaurant", blurb: "Mila Kitchen & Cocktail Bar's Akoka setting.", address: "Akoka, Lagos", source: "https://www.milalagos.com/", verify: "Its site still says opening soon, but it posted food and cocktails on 13 Oct 2026. Shown as open." },
+      { id: "cchub", name: "CcHub", kind: "landmark", blurb: "Inspired by Yaba's tech hub on Herbert Macaulay Way, where Lagos startups grow.", address: "294 Herbert Macaulay Way, Sabo, Yaba, Lagos", source: "https://cchub.africa", verify: "Address from 2019 listings; confirm it is still there." },
       { id: "beeriga", name: "Beeriga", kind: "bar", blurb: "A waterfront hangout at Bariga Jetty.", address: "Beeriga, Bariga Jetty, Lagos", source: "https://ranked.ng/place/beeriga-7gq2tw" },
     ],
     local: ["danfo", "keke", "brt shelter", "footbridge", "railway crossing", "suya grill"],
@@ -90,7 +90,7 @@ export const HOTSPOT_ROOM_DATA: HotspotRoomData[] = [
       { id: "bay", name: "Bay Lounge", kind: "bar", blurb: "A waterfront stop on Admiralty Road.", address: "Block 12A, 10 Admiralty Road, Lekki Phase 1, Lagos", source: "https://www.instagram.com/thebayloungelekki/" },
       { id: "circa", name: "Circa Lagos", kind: "restaurant", blurb: "A Lekki dining stop on Kola Adeyina Close.", address: "Kola Adeyina Close, Lekki Phase 1, Lagos", source: "https://www.tripadvisor.ca/Restaurant_Review-g2492082-d14791977-Reviews-Circa_Lagos-Lekki_Lagos_State.html" },
       { id: "eros", name: "Ilé Eros", kind: "restaurant", blurb: "A contemporary Nigerian dining stop in Lekki Phase 1.", address: "5b Abeke Animashaun Street, Lekki Phase 1, Lagos", source: "https://www.waze.com/live-map/directions/ng/la/lagos/ile-eros-lagos?to=place.ChIJcylNVdP1OxAREeaFqp4aYmc" },
-      { id: "nature", name: "Lekki Conservation Centre", kind: "garden", blurb: "A planted corner inspired by the wider Lekki area's conservation heritage.", address: "Lekki Conservation Centre, Lagos", source: "https://ncfnigeria.org/our-centers/" },
+      { id: "lcc", name: "LCC", kind: "garden", blurb: "A planted corner inspired by the Lekki Conservation Centre, LCC to everyone.", address: "Lekki Conservation Centre, Lagos", source: "https://ncfnigeria.org/our-centers/" },
     ],
     local: ["palm", "lagoon water", "jetty", "bridge pylon", "keke", "bicycle rack"],
   },
@@ -125,7 +125,7 @@ export const HOTSPOT_ROOM_DATA: HotspotRoomData[] = [
     paz: "Allen is Allen. Walk the circle, find your people.",
     hero: { id: "allen-roundabout", name: "Allen Roundabout", blurb: "The circle at the middle of Allen Avenue, with the whole of Ikeja round it." },
     landmarks: [
-      { id: "kalakuta", name: "Kalakuta Museum", kind: "museum", blurb: "A music and heritage corner inspired by Fela's legacy at Kalakuta Museum in Allen.", address: "Gbemisola Street, off Allen Avenue, Ikeja, Lagos", source: "https://felakuti.com/legacy/kalakuta-museum", verify: "House number 7 or 8 (sources disagree), no site of its own." },
+      { id: "icm", name: "Ikeja City Mall", kind: "shop", blurb: "Inspired by ICM, the big shopping mall on Obafemi Awolowo Way.", address: "Obafemi Awolowo Way, Alausa, Ikeja, Lagos", source: "https://ikejacitymall.com.ng", verify: "Official site not opened by the researcher; confirm hours and what is inside." },
       { id: "shrine", name: "New Afrika Shrine", kind: "stage", blurb: "A stage corner inspired by the New Afrika Shrine, Ikeja's home of live music.", address: "NERDC Road, Agidingbi, Ikeja, Lagos", source: "https://felakuti.com/legacy/new-afrika-shrine" },
       { id: "computer-village", name: "Computer Village", kind: "market", blurb: "Phones, gadgets and repairs: the plug market of Otigba Street.", address: "Otigba Street, Ikeja, Lagos", verify: "Still trading in 2026 (a move to Katangowa has stalled, Nairametrics 28 Jun 2026). No site of its own." },
       { id: "place-gra", name: "The Place GRA", kind: "restaurant", blurb: "A familiar Ikeja food stop with a listed branch on Isaac John Street.", address: "45 Isaac John Street, GRA, Ikeja, Lagos", source: "https://www.theplace.com.ng/locations/" },

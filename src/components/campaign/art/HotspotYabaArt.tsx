@@ -8,13 +8,13 @@ import { Defs, FONT, Frame, HopBus, HoppazWordmark, P, Plate, Props, RouteLine, 
  * Lagos afternoon. Danfo yellow and black, drawn like the 360Playlist room (2 px ink, top-left light, hard shadow to the
  * lower right, flat colour). Names, sign and colours come from the place data (src/lib/rooms/hotspotRooms.ts).
  *
- * From the top: the four venue facades (UNILAG, Ozone Cinemas, Mila, Beeriga), the pavement, the road with the BRT shelter
+ * From the top: the four venue facades (UNILAG, Ozone Cinemas, CcHub, Beeriga), the pavement, the road with the BRT shelter
  * on its median under a footbridge, the railway crossing it with barriers and a red light, the pavement and the plaza with
  * the danfo park, the newspaper stand, the suya grill and the map signpost.
  */
 type Pal = { primary: string; secondary: string; accent: string };
 const FALLBACK: Pal = { primary: "#F2B705", secondary: "#0E0B0A", accent: "#FF4D00" };
-const VENUES = ["UNILAG", "Ozone Cinemas", "Mila", "Beeriga"];
+const VENUES = ["UNILAG", "Ozone Cinemas", "CcHub", "Beeriga"];
 
 /** Subpaths for a row of identical rectangles: one SVG node instead of one per rectangle. */
 const rects = (xs: number[], y: number, w: number, h: number) => xs.map((x) => `M${x} ${y}h${w}v${h}h${-w}Z`).join("");
@@ -339,46 +339,61 @@ function Ozone({ pal, name }: { pal: Pal; name: string }) {
   );
 }
 
-/** Mila: a restaurant and cocktail bar with a striped awning and an "opening soon" ribbon. 7 by 4 tiles. */
-function Mila({ uid, pal, name, ribbon }: { uid: string; pal: Pal; name: string; ribbon?: string }) {
-  const teeth = (parity: number) => Array.from({ length: 12 }, (_, i) => i).filter((i) => i % 2 === parity).map((i) => `M${16 + i * 16} 84h16l-8 8Z`).join("");
-  const bottles = (x: number) => (
-    <g>
-      <rect x={x} y="96" width="72" height="24" fill={P.night} stroke={P.ink} strokeWidth="2" />
-      <rect x={x + 2} y="98" width="68" height="3" fill={P.gold} opacity=".55" />
-      <rect x={x + 4} y="107" width="64" height="2" fill={P.woodLight} />
-      <path d={rects([6, 22, 38, 54].map((o) => x + o), 100, 4, 7)} fill={pal.primary} />
-      <path d={rects([12, 28, 44, 60].map((o) => x + o), 100, 4, 7)} fill={pal.accent} />
-      <path d={rects([9, 25, 41, 57].map((o) => x + o), 111, 4, 7)} fill={P.lagoonLight} />
-    </g>
-  );
+/**
+ * CcHub: the Co-Creation Hub, Yaba's tech hub on Herbert Macaulay Way. A modern three-storey front: a glass curtain wall with
+ * lit floors between two clad wings, the name on a roof-top sign plate (one orange edge), a glass door up two steps, laptops on
+ * desks behind the ground-floor glass, a bike rack and two bean-bags on the forecourt. 7 by 4 tiles.
+ */
+function CcHub({ uid, name }: { uid: string; name: string }) {
+  const bays = [54, 78, 102, 126, 150];
+  const lobby = [54, 78, 126, 150];
+  const wings = [6, 28, 180, 202];
+  const inset = (xs: number[]) => xs.map((x) => x + 1);
+  const bag = (x: number, y: number) => `M${x} ${y + 11}V${y + 6}L${x + 3} ${y + 2}H${x + 13}L${x + 16} ${y + 6}V${y + 11}Z`;
+  const wheel = (cx: number) => `M${cx - 5} 118a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z`;
   return (
     <g>
       <Shade w={224} h={128} dx={5} dy={7} o={0.3} />
-      <rect x="1" y="1" width="222" height="126" fill={P.nightCard} stroke={P.ink} strokeWidth="2" />
-      <rect x="3" y="3" width="218" height="5" fill={P.nightLine} />
-      <rect x="3" y="8" width="218" height="5" fill={P.ink} />
-      <path d="M8 17H216M8 60H216" stroke={P.brandEmber} strokeWidth="2" opacity=".6" />
-      <Plate x={68} y={15} w={88} h={28} text={name} fill={pal.secondary} color={pal.primary} size={22} spacing={2} />
-      <g transform="translate(34 18)"><path d="M0 0H18L9 11Z" fill={P.paper} stroke={P.ink} strokeWidth="1.5" /><path d="M9 11V20M4 21H14" stroke={P.ink} strokeWidth="2" /><circle cx="14" cy="2" r="2.5" fill={pal.accent} /></g>
-      <g transform="translate(172 18)"><path d="M0 0H18L9 11Z" fill={P.paper} stroke={P.ink} strokeWidth="1.5" /><path d="M9 11V20M4 21H14" stroke={P.ink} strokeWidth="2" /><circle cx="14" cy="2" r="2.5" fill={pal.accent} /></g>
-      {ribbon && (
-        <>
-          <path d="M30 48H194L186 56L194 64H30L38 56Z" fill={pal.accent} stroke={P.ink} strokeWidth="2" />
-          <text x="112" y="60" textAnchor="middle" fill={pal.secondary} fontFamily={FONT.display} fontWeight={900} fontSize="9" letterSpacing="1.4">{ribbon.toUpperCase()}</text>
-        </>
-      )}
-      <rect x="16" y="70" width="192" height="14" fill={`url(#${uid}-awning)`} stroke={P.ink} strokeWidth="2" />
-      <rect x="18" y="72" width="188" height="2" fill={P.paper} opacity=".4" />
-      <path d={teeth(0)} fill={pal.primary} stroke={P.ink} strokeWidth="1.5" />
-      <path d={teeth(1)} fill={pal.secondary} stroke={P.ink} strokeWidth="1.5" />
-      {bottles(18)}
-      {bottles(134)}
-      <rect x="100" y="92" width="24" height="34" fill={P.woodDark} stroke={P.ink} strokeWidth="2" />
-      <rect x="104" y="96" width="16" height="14" fill={P.lagoonLight} stroke={P.ink} strokeWidth="1.5" />
-      <rect x="118" y="108" width="3" height="5" fill={P.gold} />
-      <rect x="6" y="104" width="10" height="18" fill={P.wood} stroke={P.ink} strokeWidth="2" /><rect x="4" y="96" width="14" height="11" fill={P.leaf} stroke={P.ink} strokeWidth="2" /><rect x="6" y="98" width="5" height="4" fill={P.mint} />
-      <rect x="208" y="104" width="10" height="18" fill={P.wood} stroke={P.ink} strokeWidth="2" /><rect x="206" y="96" width="14" height="11" fill={P.leaf} stroke={P.ink} strokeWidth="2" /><rect x="208" y="98" width="5" height="4" fill={P.mint} />
+      <rect x="1" y="1" width="222" height="126" fill={P.wall} stroke={P.ink} strokeWidth="2" />
+      <rect x="3" y="3" width="218" height="3" fill={P.cap} />
+      <path d="M8 29h12v7h-12ZM24 31h8v5h-8Z" fill={P.cap} stroke={P.ink} strokeWidth="1.5" />
+      <path d="M190 26h13v10h-13ZM207 31h9v5h-9Z" fill={P.cap} stroke={P.ink} strokeWidth="1.5" />
+      <rect x="1" y="36" width="48" height="72" fill={P.slateLight} stroke={P.ink} strokeWidth="2" />
+      <rect x="175" y="36" width="48" height="72" fill={P.slateLight} stroke={P.ink} strokeWidth="2" />
+      <path d="M3 38h44M177 38h44" stroke={P.paper} strokeWidth="2" opacity=".45" />
+      <path d="M25 41V104M199 41V104" stroke={P.slate} strokeWidth="2" />
+      <rect x="49" y="32" width="126" height="76" fill={P.slate} stroke={P.ink} strokeWidth="2" />
+      <path d={rects(bays, 35, 20, 19) + rects(bays, 58, 20, 19) + rects([6, 28, 180, 202], 42, 16, 12) + rects(wings, 58, 16, 19)} fill={P.lagoon} stroke={P.ink} strokeWidth="1.5" />
+      <path d={rects(bays, 35, 20, 19) + rects([78, 126], 58, 20, 19) + rects([6, 202], 42, 16, 12) + rects([28, 180], 58, 16, 19)} fill={P.paper} stroke={P.ink} strokeWidth="1.5" />
+      <path d={bays.map((x) => `M${x} 44.5h20M${x} 67.5h20`).join("")} stroke={P.ink} strokeWidth="1" opacity=".45" />
+      <path d={rects(lobby, 85, 20, 20) + rects(wings, 85, 16, 20)} fill={P.wall} stroke={P.ink} strokeWidth="1.5" />
+      <path d={rects(inset(lobby), 98, 18, 3) + rects(inset(wings), 98, 14, 3)} fill={P.woodLight} />
+      <path d={rects(inset(lobby), 101, 18, 4) + rects(inset(wings), 101, 14, 4)} fill={P.woodDark} />
+      <path d={rects([10, 32, 184, 206, 84, 130], 90, 8, 6)} fill={P.paper} stroke={P.ink} strokeWidth="1" />
+      <path d={rects([9, 31, 183, 205, 83, 129], 96, 10, 2)} fill={P.ink} />
+      <path d={bays.map((x) => `M${x + 3} 51l6-9M${x + 3} 74l6-9`).join("")} stroke={P.paper} strokeWidth="2" opacity=".4" />
+      <rect x="49" y="77" width="126" height="8" fill={P.slateLight} stroke={P.ink} strokeWidth="2" />
+      <rect x="51" y="79" width="122" height="2" fill={P.paper} opacity=".45" />
+      <rect x="50" y="85" width="124" height="3" fill={P.shadow} opacity=".35" />
+      <rect x="98" y="85" width="28" height="23" fill={P.ink} />
+      <path d={rects([100, 113], 87, 11, 21)} fill={P.lagoonLight} stroke={P.ink} strokeWidth="1.5" />
+      <path d="M109 96v7M115 96v7" stroke={P.ink} strokeWidth="2" />
+      <path d="M102 104l5-8M115 104l5-8" stroke={P.paper} strokeWidth="2" opacity=".6" />
+      <rect x="46" y="25" width="132" height="7" fill={P.slateLight} stroke={P.ink} strokeWidth="2" />
+      <rect x="48" y="27" width="128" height="2" fill={P.paper} opacity=".45" />
+      <path d="M70 23v2M154 23v2" stroke={P.ink} strokeWidth="4" />
+      <Plate x={58} y={3} w={108} h={20} text={name} fill={P.night} color={P.paper} size={13} spacing={2} />
+      <rect x="60" y="19" width="104" height="3" fill={P.orange} />
+      <rect x="1" y="108" width="222" height="19" fill={`url(#${uid}-concrete)`} stroke={P.ink} strokeWidth="2" />
+      <rect x="92" y="108" width="42" height="7" fill={P.slateLight} stroke={P.ink} strokeWidth="2" />
+      <rect x="86" y="115" width="54" height="7" fill={P.slateLight} stroke={P.ink} strokeWidth="2" />
+      <path d="M94 110h38M88 117h50" stroke={P.paper} strokeWidth="2" opacity=".5" />
+      <path d="M10 124v-9h7v9M20 124v-9h7v9M30 124v-9h7v9" fill="none" stroke={P.ink} strokeWidth="2" />
+      <path d={wheel(50) + wheel(68)} fill="none" stroke={P.ink} strokeWidth="2" />
+      <path d="M50 118L56 111H64L68 118M56 111L60 118L64 111M62 108h5" fill="none" stroke={P.ink} strokeWidth="1.5" />
+      <path d={bag(150, 114)} fill={P.lagoon} stroke={P.ink} strokeWidth="2" />
+      <path d={bag(170, 115)} fill={P.leaf} stroke={P.ink} strokeWidth="2" />
+      <path d="M153 117h5M173 118h5" stroke={P.paper} strokeWidth="2" opacity=".5" /><path d="M156 122h6M176 123h6" stroke={P.ink} strokeWidth="1" opacity=".4" />
     </g>
   );
 }
@@ -456,8 +471,6 @@ export default function HotspotYabaArt({ layout, uid, brand }: RoomArtProps) {
   const pal = data?.palette ?? FALLBACK;
   const sign = data?.sign ?? "JIBOWU";
   const name = (i: number) => data?.landmarks[i]?.name ?? VENUES[i];
-  // Only a venue whose own page says it is not open yet carries a ribbon (hotspotRooms.ts `status`).
-  const ribbon = data?.landmarks[2]?.status;
   const tile = layout.grid.tile;
   const W = layout.grid.width * tile;
   const H = layout.grid.height * tile;
@@ -471,7 +484,6 @@ export default function HotspotYabaArt({ layout, uid, brand }: RoomArtProps) {
     <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true" shapeRendering="crispEdges">
       <Defs uid={uid} names={["concrete", "paving", "asphalt", "grass", "water", "deck", "sand"]} />
       <defs>
-        <pattern id={`${uid}-awning`} width="16" height="16" patternUnits="userSpaceOnUse"><rect width="8" height="16" fill={pal.primary} /><rect x="8" width="8" height="16" fill={pal.secondary} /></pattern>
         <pattern id={`${uid}-hzawning`} width="16" height="16" patternUnits="userSpaceOnUse"><rect width="8" height="16" fill={P.orange} /><rect x="8" width="8" height="16" fill={P.paper} /></pattern>
         <pattern id={`${uid}-hazard`} width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="4" fill={P.paper} /><rect y="4" width="8" height="4" fill={P.red} /></pattern>
         <pattern id={`${uid}-ballast`} width="16" height="16" patternUnits="userSpaceOnUse"><rect width="16" height="16" fill={P.cap} /><path d="M2 3h3v2H2ZM10 7h3v2h-3ZM5 12h3v2H5Z" fill={P.wall} /><path d="M12 2h2v2h-2ZM3 8h2v2H3Z" fill={P.stone} /></pattern>
@@ -509,7 +521,7 @@ export default function HotspotYabaArt({ layout, uid, brand }: RoomArtProps) {
       <rect x={t(11)} y={t(15)} width={t(7)} height={t(4)} fill={`url(#${uid}-concrete)`} opacity=".7" />
       <rect x={t(11) + 3} y={t(15) + 3} width={t(7) - 6} height={t(4) - 6} fill="none" stroke={P.concreteDark} strokeWidth="2" />
 
-      {/* The Hop route along the pavement: UNILAG 1, Ozone 2, Mila 3, Beeriga the finale (the rails cover it where it crosses). */}
+      {/* The Hop route along the pavement: UNILAG 1, Ozone 2, CcHub 3, Beeriga the finale (the rails cover it where it crosses). */}
       <RouteLine points={[[112, 176], [304, 176], [528, 176], [816, 176]]} />
       {/* The one bounce wordmark: road paint on the paving apron under the map signpost. */}
       <HoppazWordmark x={480} y={566} h={18} fill={P.orange} shadow={P.brandEmber} anchor="middle" />
@@ -521,7 +533,7 @@ export default function HotspotYabaArt({ layout, uid, brand }: RoomArtProps) {
         custom={{
           "venue-1": () => <Unilag uid={uid} pal={pal} name={name(0)} />,
           "venue-2": () => <Ozone pal={pal} name={name(1)} />,
-          "venue-3": () => <Mila uid={uid} pal={pal} name={name(2)} ribbon={ribbon} />,
+          "venue-3": () => <CcHub uid={uid} name={name(2)} />,
           "venue-4": () => <Beeriga uid={uid} pal={pal} name={name(3)} />,
           hero: () => <BrtShelter pal={pal} sign={sign} />,
           "footbridge-n": (p) => <Stairs w={p.w * tile} h={p.h * tile} />,
