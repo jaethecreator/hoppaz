@@ -7,6 +7,7 @@ import type { CampaignLayout } from "@/lib/campaign/layout";
 import { useEventSheet, useFeatured } from "@/lib/crew-room/featured";
 import { useLeaveStore } from "@/lib/crew-room/rails";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
+import AnnouncementBeam from "./AnnouncementBeam";
 import { ExplorePopover } from "./Explore";
 import css from "./Places.module.css";
 
@@ -21,7 +22,8 @@ import css from "./Places.module.css";
  *   the event sheet      opened by the sticker or the fountain pill (useEventSheet in featured.ts). Closes on the X, the
  *                        scrim, a swipe down or Escape. OPEN ON MAP goes to /?e=<event id>; while a Game Time is on
  *                        (roomStore.huntActive) the button area turns into "Leave the hunt?" with STAY and OPEN ON MAP
- *   the Explore popover  (Explore.tsx) from the logo badge in the header
+ *   the Explore popover  (Explore.tsx) from the logo badge in the header: the owner and admins panel, with announcements
+ *   the announcement beam (AnnouncementBeam.tsx) draws nothing of its own: it makes the logo pulse while there is news
  *   the leave card       "Leave the hunt?" for every other way out: the door, the pill, the Explore rows (useGoOut in
  *                        rails.ts, which the header's back arrow and the tab bar should call too)
  * No price anywhere on the sheet: the ribbon is the owner's words, and the event's own page has the price.
@@ -33,6 +35,7 @@ export default function EventSheet({ crewId, layout }: EventSheetProps) {
   return (
     <>
       <Sheet crewId={crewId} />
+      <AnnouncementBeam crewId={crewId} />
       <ExplorePopover crewId={crewId} />
       <LeaveHunt />
     </>
