@@ -9,7 +9,7 @@ the intro or `crew_rooms.sql`.
 | Kind | Rooms | Key | Opened when |
 |---|---|---|---|
 | Event rooms | theatre, pool party, outdoor party, indoor party, tech event | `event-theatre`, `event-pool`, `event-outdoor`, `event-indoor`, `event-tech` | an event is posted; the flyer and the line-up hang on the walls |
-| Hotspot rooms | one per hotspot, unique to its real place (13 hotspots, wave 1 first) | `hotspot-<slug>` (slug from `supabase/hotspot_zones.sql`) | the hotspot is entered |
+| Hotspot rooms | one per hotspot, unique to its real place. Drawn: the four wave-1 hotspots (yaba, lekki, victoria-island, ikeja) and ikoyi, ajah, alimosho, ojo-badagry, ikorodu. Not drawn (place data only, `hotspotRoom(slug)` is null, so the crossroads screen stays): lagos-island, surulere, ojota, festac. | `hotspot-<slug>` (slug from `supabase/hotspot_zones.sql`) | the hotspot is entered |
 | Crew rooms | the clubhouse | `clubhouse` | unchanged: `ROOM_TEMPLATES`, the MANAGE picker |
 
 Event and hotspot rooms are **place rooms** (`PLACE_ROOMS` in `src/lib/campaign/templates.ts`). They are not crew
