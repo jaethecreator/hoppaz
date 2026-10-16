@@ -459,59 +459,47 @@ export const BRAND_LINES = {
 } as const;
 
 /**
- * Wordmark letter slots in cap heights (H O P P A Z): each glyph's ink width in Poppins Black (cap height 708 of 1000)
- * plus an even 0.07 h gap, wide enough that the opposite tilts never touch. WM_DX centres P's ink (its side bearings differ).
+ * The real Hoppaz wordmark: public/brand/wordmark-{cream,ink,orange}.png (Poppins Black, the bounce and the bunny ears out
+ * of the A, exactly as the brand file draws them). One <image>, so a room never redraws the logo by hand. The PNG is 720 by
+ * 226 px and its capital letters stand on its lower 126 px; the ears fill the rest above them.
  */
-const WM_SLOTS = [0.995, 1.1, 0.888, 0.888, 1.162, 0.819];
-const WM_DX = [0, 0, -0.021, -0.021, 0, 0];
-/** The wordmark's width at cap height `h` (about 5.85 h). The ears rise 0.8 h above the letters: leave that much headroom. */
-export const wordmarkWidth = (h: number) => WM_SLOTS.reduce((a, b) => a + b, 0) * h;
+const WM_W = 720;
+const WM_H = 226;
+const WM_CAPS = 126;
+/** The wordmark's width at cap height `h` (about 5.7 h). The ears rise about 0.8 h above the letters: leave that headroom. */
+export const wordmarkWidth = (h: number) => (WM_W / WM_CAPS) * h;
+
+/** Which brand file reads on a colour: cream for light, ink for the dark ones, orange for the brand orange. */
+function wordmarkFile(color: string): "cream" | "ink" | "orange" {
+  const c = color.toLowerCase();
+  if (c === "#ff4d00" || c === "#f47945" || c === "#b83600") return "orange";
+  if (["#0e0b0a", "#282a31", "#181b21", "#171210", "#221a17", "#2e2320", "#000", "#000000"].includes(c)) return "ink";
+  return "cream";
+}
 
 /**
- * The two block ears out of the A, as on public/brand/wordmark-*.png (left upright, right folded over), on a grid of
- * 0.07 h pixels: [column, row, width, height] rects for the outline, the gap inside it and the inner ear (even-odd fill).
- */
-const EARS = [
-  { x: -0.4, out: [[1, 0, 4, 1], [0, 1, 6, 12]], cut: [[1, 2, 4, 11], [2, 4, 2, 9]] },
-  { x: 0.06, out: [[1, 0, 7, 1], [0, 1, 9, 1], [0, 2, 10, 3], [0, 5, 6, 8], [7, 5, 3, 3]], cut: [[1, 2, 4, 11], [2, 5, 2, 8]] },
-];
-/** The ears as one path about the A's top centre (cx, top). Below a 22 px cap height they are solid blocks (the gap would not read). */
-const earPath = (cx: number, top: number, h: number) => {
-  const u = 0.07 * h;
-  const solid = h < 22;
-  return EARS.map((e) => [...e.out, ...(solid ? [] : e.cut)].map(([c, r, w, hh]) => `M${(cx + e.x * h + c * u).toFixed(2)} ${(top - 0.8 * h + r * u).toFixed(2)}h${(w * u).toFixed(2)}v${(hh * u).toFixed(2)}h${(-w * u).toFixed(2)}Z`).join("")).join("");
-};
-
-/**
- * HOPPAZ with the bounce: Poppins 900 caps, odd letters -4deg and even +4deg about 50% 60% of each letter, one flat
- * baseline, even slots (no overlaps, no vertical nudging), and the bunny ears rising out of the A in blocks. Never a face.
- * Pairs: cream on orange (primary), night on cream, orange on night. About 22 nodes with a shadow.
+ * HOPPAZ, the real logo file. Pairs: cream on orange (primary), ink on cream, orange on night.
  *   x, y     top-left of the letters (the cap top); anchor "middle" makes x the centre
- *   h        cap height in px (default 14); the mark is wordmarkWidth(h) wide and the ears rise 0.8 h above y
- *   fill     letter colour (default cream)
- *   keyline  optional colour of a thin outline round letters and ears: the separation device on a busy ground
- *   shadow   optional colour of a hard copy to the lower right (ember on orange, night on cream)
- *   ears     default true
+ *   h        cap height in px (default 14); the mark is wordmarkWidth(h) wide and the ears rise about 0.8 h above y
+ *   fill     which file: a cream or white fill draws the cream logo, a dark fill the ink one, brand orange the orange one
+ *   keyline  optional colour of a thin outline round the mark: the separation device on a busy ground
+ *   shadow   optional: a hard copy of the ink logo to the lower right at half strength
+ *   ears     always on (the logo carries them); kept so older calls still type-check
  */
-export function HoppazWordmark({ x, y, h = 14, fill = P.paper, keyline, shadow, ears = true, anchor = "start" }: { x: number; y: number; h?: number; fill?: string; keyline?: string; shadow?: string; ears?: boolean; anchor?: "start" | "middle" }) {
-  const left = anchor === "middle" ? x - wordmarkWidth(h) / 2 : x;
-  const base = y + h;
-  const pivot = base - 0.353 * h;
-  const k = keyline ? Math.max(1.5, h * 0.08) : 0;
-  const centres = WM_SLOTS.map((s, i) => left + (WM_SLOTS.slice(0, i).reduce((a, b) => a + b, 0) + s / 2) * h);
-  const ear = ears ? earPath(centres[4], y, h) : "";
-  const copy = (color: string, line: string | undefined, dx: number, dy: number) => (
-    <g transform={dx || dy ? `translate(${dx} ${dy})` : undefined}>
-      {"HOPPAZ".split("").map((ch, i) => (
-        <text key={i} x={centres[i] + WM_DX[i] * h} y={base} transform={`rotate(${i % 2 ? 4 : -4} ${centres[i]} ${pivot})`} textAnchor="middle" fill={color} fontFamily={FONT.display} fontWeight={900} fontSize={h / 0.708} stroke={line} strokeWidth={line ? k * 2 : undefined} strokeLinejoin="miter" paintOrder="stroke">{ch}</text>
-      ))}
-      {ear && <path d={ear} transform={`rotate(-4 ${centres[4]} ${pivot})`} fill={color} fillRule="evenodd" stroke={line} strokeWidth={line ? k * 2 : undefined} paintOrder="stroke" />}
-    </g>
+export function HoppazWordmark({ x, y, h = 14, fill = P.paper, keyline, shadow, anchor = "start" }: { x: number; y: number; h?: number; fill?: string; keyline?: string; shadow?: string; ears?: boolean; anchor?: "start" | "middle" }) {
+  const s = h / WM_CAPS;
+  const w = WM_W * s;
+  const left = anchor === "middle" ? x - w / 2 : x;
+  const top = y - (WM_H - WM_CAPS) * s;
+  const img = (file: string, dx: number, dy: number, opacity?: number, key?: string) => (
+    <image key={key} href={`/brand/wordmark-${file}.png`} x={left + dx} y={top + dy} width={w} height={WM_H * s} opacity={opacity} />
   );
+  const k = keyline ? Math.max(1, h * 0.06) : 0;
   return (
     <g>
-      {shadow && copy(shadow, keyline ? shadow : undefined, h * 0.07, h * 0.09)}
-      {copy(fill, keyline, 0, 0)}
+      {shadow && img("ink", h * 0.07, h * 0.09, 0.5)}
+      {keyline && [[-k, 0], [k, 0], [0, -k], [0, k]].map(([dx, dy], i) => img(wordmarkFile(keyline), dx, dy, undefined, `k${i}`))}
+      {img(wordmarkFile(fill), 0, 0)}
     </g>
   );
 }

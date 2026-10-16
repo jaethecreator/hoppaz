@@ -2,7 +2,7 @@
 //   node scripts/rooms/render-room.mjs event-indoor            -> <out>/event-indoor.png
 //   node scripts/rooms/render-room.mjs all                     -> every registered room
 //   node scripts/rooms/render-room.mjs event-indoor --props    -> also outlines every prop box and the walkable grid
-// Output goes to $ROOM_OUT or ./.room-renders (git-ignored). It loads the TSX with TypeScript's transpiler and
+// Output goes to $ROOM_OUT or ./.room-renders (git-ignored); ROOM_DENSITY=192 gives a 1920 px wide image (default 96, 1280 px). It loads the TSX with TypeScript's transpiler and
 // renders to static SVG with react-dom/server, then rasterises with sharp: fonts are the system's, so type is only roughly
 // right; the shapes are exact.
 import Module, { createRequire } from "node:module";
@@ -47,7 +47,8 @@ if (!rooms.length) {
 for (const room of rooms) {
   const layout = room.layout;
   const art = renderToStaticMarkup(React.createElement(RoomArt, { layout, uid: "r", brand: room.name, content: sample }));
-  let svg = art;
+  // The wordmark is the real logo file under /brand: inline it, since the rasteriser cannot fetch a page-relative path.
+  let svg = art.replace(/href="\/brand\/([a-z-]+\.png)"/g, (_, file) => `href="data:image/png;base64,${fs.readFileSync(path.join(root, "public/brand", file)).toString("base64")}"`);
   if (withProps) {
     const t = layout.grid.tile;
     const boxes = layout.props.map((p) => `<rect x="${p.x * t}" y="${p.y * t}" width="${p.w * t}" height="${p.h * t}" fill="${p.solid ? "rgba(255,0,0,.18)" : "rgba(0,160,255,.18)"}" stroke="${p.solid ? "#f00" : "#09f"}" stroke-width="1"/><text x="${p.x * t + 2}" y="${p.y * t + 9}" font-size="8" fill="#fff" stroke="#000" stroke-width=".4">${p.id}</text>`).join("");
@@ -57,6 +58,6 @@ for (const room of rooms) {
     svg = art.replace(/<\/svg>\s*$/, `${walls}${boxes}${zones}${spawn}</svg>`);
   }
   const file = path.join(outDir, `${room.key}${withProps ? "-boxes" : ""}.png`);
-  await sharp(Buffer.from(svg), { density: 96 }).png().toFile(file);
+  await sharp(Buffer.from(svg), { density: Number(process.env.ROOM_DENSITY) || 96 }).png().toFile(file);
   console.log(file);
 }
