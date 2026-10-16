@@ -88,6 +88,9 @@ export default function RootLayout({
     <html lang="en" data-theme="night" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+        {/* The two biggest public reads start before React hydrates. Same path, no query and same-origin credentials as getJSON in src/lib/publicApi.ts, or the preload is wasted. */}
+        <link rel="preload" href="/api/public/events" as="fetch" crossOrigin="anonymous" />
+        <link rel="preload" href="/api/public/hotspots" as="fetch" crossOrigin="anonymous" />
       </head>
       <body className="overflow-hidden">
         {/* First, so its effect runs before any page's: a page that sends a guest to sign up has the router by then. */}
