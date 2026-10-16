@@ -211,7 +211,7 @@ export function startGameTime(crewId: string): () => void {
   const nextDelay = () => {
     const game = store.getState().game;
     if (!game) return jitter(45_000);
-    if (game.status === "live") return jitter(c.feedLive ? 3500 : 2500);
+    if (game.status === "live") return jitter(c.feedLive ? 3500 : 3000);
     if (game.status === "upcoming") {
       const ms = Date.parse(game.opens_at) - serverNow();
       if (ms <= 20_000) return 1500 + Math.round(Math.random() * 1000);
