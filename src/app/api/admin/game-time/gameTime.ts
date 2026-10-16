@@ -327,7 +327,8 @@ const PRESENCE_TTL_MS = 45_000;
 export async function gameTimeCrew(sb: SupabaseClient, id: string): Promise<Done> {
   if (!isUuid(id)) return gameTimeError("bad_crew");
   const { data: crew, error: crewError } = await sb.from("crews").select("*").eq("id", id).maybeSingle();
-  if (crewError || !crew) return gameTimeError("bad_crew");
+  if (crewError) return { status: 500, json: { ok: false, error: "database", message: `Database error: ${crewError.message}` } };
+  if (!crew) return gameTimeError("bad_crew");
   const now = Date.now();
   const count = async (q: PromiseLike<{ count: number | null; error: unknown }>): Promise<number | null> => {
     try {

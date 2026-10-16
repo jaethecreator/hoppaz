@@ -150,7 +150,8 @@ export default function RoomsSection({ gt, liveEvents, hotspots, room, onRoom, o
 
   return (
     <div className="flex min-h-0 flex-1" data-desk-rooms>
-      <aside className={`${room ? "hidden lg:flex" : "flex"} min-h-0 w-full flex-none flex-col overflow-y-auto border-line lg:w-[300px] lg:border-r`}>
+      {/* While a drop is being added on a laptop, the list steps aside so the flow has room; on a wide screen it stays. */}
+      <aside className={`${room ? (addingCrew ? "hidden xl:flex" : "hidden lg:flex") : "flex"} min-h-0 w-full flex-none flex-col overflow-y-auto border-line lg:w-[260px] lg:border-r xl:w-[300px]`}>
         <div className="sticky top-0 z-10 bg-ink px-4 pb-3 pt-5 lg:px-4">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="font-display text-xl font-black">Rooms</h2>

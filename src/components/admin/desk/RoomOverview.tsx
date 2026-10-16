@@ -128,7 +128,7 @@ export default function RoomOverview({ crew, gt, onAdd }: { crew: Crew; gt: Game
         </div>
       </header>
 
-      <div className="mt-7 grid gap-7 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-6">
+      <div className="mt-7 grid gap-7 xl:grid-cols-[minmax(0,1fr)_300px] xl:gap-6">
         <div className="min-w-0 space-y-7">
           <Block title="Live now">
             {live.length ? (

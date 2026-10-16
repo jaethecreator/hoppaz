@@ -20,7 +20,7 @@ export type Actions = {
 /** The top of the flow: close, the crew, and the five-step bar. Tapping a finished step goes back to it. */
 export function Header({ crew, step, done, onStep, onClose, closeDisabled }: { crew: Crew; step: number; done: (i: number) => boolean; onStep: (i: number) => void; onClose: () => void; closeDisabled: boolean }) {
   return (
-    <header className="border-b border-line px-4 pb-3 pt-4 lg:px-8">
+    <header className="pad-top border-b border-line px-4 pb-3 lg:px-8 lg:pt-4">
       <div className="flex items-center gap-3">
         <button type="button" className="btn btn-ghost !min-h-[48px] !w-12 flex-none !p-0" aria-label="Close without saving" disabled={closeDisabled} onClick={onClose}>
           <X size={20} />
@@ -69,7 +69,7 @@ function Buttons({ a, row }: { a: Actions; row: boolean }) {
 /** Phone: a fixed bar with one short line (the summary, or what is stopping NEXT in red) and BACK + the primary button. */
 export function PhoneBar({ line, problem, actions }: { line: string; problem: string; actions: Actions }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-ink-2 px-4 pad-bottom pt-3 lg:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-ink-2 px-4 pad-bottom pt-3 lg:sticky lg:px-8 xl:hidden">
       <p role="status" className={clsx("mb-2.5 font-mono text-[11px] uppercase leading-snug tracking-[0.1em]", problem ? "text-fireant" : "text-dim")}>
         {problem || line}
       </p>
@@ -115,7 +115,7 @@ export function Aside({
     { key: "Who", value: whoText(f, d, ctx, false) },
   ];
   return (
-    <aside className="hidden border-l border-line lg:block" aria-label="This drop">
+    <aside className="hidden border-l border-line xl:block" aria-label="This drop">
       <div className="sticky top-0 flex flex-col gap-5 p-6">
         <p className="seclabel">This drop</p>
         <p className="font-display text-[19px] font-black leading-snug">{summary(f, d)}</p>

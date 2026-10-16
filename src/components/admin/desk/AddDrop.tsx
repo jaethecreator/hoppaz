@@ -147,8 +147,9 @@ export default function AddDrop({ crew, desk, act, busy, onClose, onSaved }: Add
   return (
     <section ref={root} className="flex min-h-full flex-col bg-ink text-cream" aria-label="Add a drop">
       <Header crew={crew} step={step} done={done} onStep={go} onClose={onClose} closeDisabled={locked} />
-      <div className="grid flex-1 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="min-w-0 px-4 pb-44 pt-6 lg:px-8 lg:pb-12">
+      {/* The side panel needs a wide screen (xl): on a laptop the step gets the full width and the bar sits under it. */}
+      <div className="grid flex-1 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 px-4 pb-44 pt-6 lg:px-8 lg:pb-8 xl:pb-12">
           <div className={clsx("w-full", step === 2 ? "max-w-[860px]" : "max-w-[620px]")}>
             {step === 0 && <StepWhen {...stepProps} />}
             {step === 1 && <StepTickets {...stepProps} />}

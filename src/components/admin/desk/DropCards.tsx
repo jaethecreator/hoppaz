@@ -209,8 +209,9 @@ export function LiveDropCard({ game, gt, showCrew, onOpenRoom }: { game: Game; g
       if (alive && g) setFull(g);
     };
     void read();
-    const poll = setInterval(() => void read(), 5000);
-    const desk = setInterval(() => void reload.current(), 20_000);
+    // Nothing to watch while the tab is hidden: skip the calls until staff come back.
+    const poll = setInterval(() => !document.hidden && void read(), 5000);
+    const desk = setInterval(() => !document.hidden && void reload.current(), 20_000);
     return () => {
       alive = false;
       clearInterval(poll);
@@ -226,7 +227,7 @@ export function LiveDropCard({ game, gt, showCrew, onOpenRoom }: { game: Game; g
       if (alive) setWinners(w);
     };
     void read();
-    const poll = setInterval(() => void read(), 5000);
+    const poll = setInterval(() => !document.hidden && void read(), 5000);
     return () => {
       alive = false;
       clearInterval(poll);
@@ -247,6 +248,7 @@ export function LiveDropCard({ game, gt, showCrew, onOpenRoom }: { game: Game; g
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
         <h4 className="font-display text-lg font-black [overflow-wrap:anywhere]">{d.title}</h4>
         <span className={`pill ${PHASE_PILL.live.cls}`}>{PHASE_PILL.live.label}</span>
+        {!g.room_ok && <span className="pill pill-fireant">ROOM CHANGED</span>}
         {d.i ? (
           <span className="pill">
             DROP {d.i} OF {d.n}
@@ -266,6 +268,18 @@ export function LiveDropCard({ game, gt, showCrew, onOpenRoom }: { game: Game; g
       <p className="hint mt-1.5">
         Opened {hhmm(g.opens_at)} · closes {hhmm(g.closes_at)} · {minsLeft <= 0 ? "closing now" : `${span(minsLeft)} left`}
       </p>
+      <p className="hint mt-0.5">
+        {g.push_sent_at
+          ? g.push_count
+            ? `Opening push sent to ${g.push_count}.`
+            : "No opening push went out (quiet hours, a test run, or nobody to tell)."
+          : g.push_ready
+            ? "Opening push not sent yet."
+            : "Push is not set up on this database."}
+      </p>
+      {!g.room_ok && (
+        <p className="mt-2 text-[13px] leading-snug text-fireant">The crew changed its room, so nobody can search. EDIT and save the hiding spots again.</p>
+      )}
 
       <div className="mt-4 grid grid-cols-3 gap-3 border-y border-line py-4">
         <div className="min-w-0">
@@ -401,6 +415,7 @@ export function UpcomingDrops({ games, gt, showCrew }: { games: Game[]; gt: Game
                         <b className="font-display font-black">{d.title}</b>
                       )}
                       {isRehearsalKey(g.campaign_key) && <span className="pill ml-2 align-middle">TEST RUN</span>}
+                      {!g.room_ok && <span className="pill pill-fireant ml-2 align-middle">ROOM CHANGED</span>}
                     </p>
                     <p className="hint mt-0.5">
                       {showCrew ? `${g.crew_name} · ` : ""}

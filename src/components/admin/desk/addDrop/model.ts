@@ -70,14 +70,19 @@ export type Ctx = {
   days: { value: string; label: string }[];
   spots: RoomObject[];
   layout: CampaignLayout;
-  /** The newest series key of this crew (not its crew-wide rule, not a test run), or "". */
+  /**
+   * The series this crew is running now, or "": the newest key (not its crew-wide rule, not a test run) that still has a drop
+   * live or coming up, or a drop that closed in the last 12 hours. An older key is a finished series (or a staff test), and
+   * reusing it by default would bar everyone who won there.
+   */
   seriesKey: string;
   defaultTitle: string;
 };
 
 export function makeCtx(crew: Crew, desk: Desk, t0: number): Ctx {
   const mine = desk.games.filter((g) => g.crew_id === crew.id).sort((a, b) => Date.parse(b.opens_at) - Date.parse(a.opens_at));
-  const seriesKey = mine.find((g) => g.campaign_key && g.campaign_key !== crewKey(crew.id) && !isRehearsalKey(g.campaign_key))?.campaign_key ?? "";
+  const current = (g: (typeof mine)[number]) => g.phase === "live" || g.phase === "upcoming" || Date.parse(g.closes_at) >= t0 - 12 * HOUR;
+  const seriesKey = mine.find((g) => g.campaign_key && g.campaign_key !== crewKey(crew.id) && !isRehearsalKey(g.campaign_key) && current(g))?.campaign_key ?? "";
   const lastReal = mine.find((g) => !isRehearsalKey(g.campaign_key)) ?? mine[0];
   const title = lastReal ? parseDrop(lastReal.title).title.trim() : "";
   const days = Array.from({ length: 7 }, (_, i) => {
@@ -145,13 +150,18 @@ export function slotLabel(i: number, perDrop: number, series: boolean): string {
   return perDrop === 1 ? `Drop ${i + 1}` : `Drop ${Math.floor(i / perDrop) + 1} · ${(i % perDrop) + 1}`;
 }
 
-/** Writes codes into the fields from field `at` on (a paste of several codes fills this field and the next ones). */
-export function writeCodes(codes: string[], at: number, parts: string[]): string[] {
+/**
+ * Writes codes into the fields: the first into field `at`, the others into the empty fields after it. A field that already
+ * holds a code is never overwritten; codes with no empty field left go past the last field (`total`), where the warning
+ * shows them, so nothing is lost.
+ */
+export function writeCodes(codes: string[], at: number, parts: string[], total: number): string[] {
   const next = [...codes];
-  while (next.length < at) next.push("");
-  parts.forEach((p, k) => {
-    next[at + k] = p;
-  });
+  while (next.length < Math.max(at + 1, total)) next.push("");
+  next[at] = parts[0] ?? "";
+  const rest = parts.slice(1);
+  for (let j = at + 1; j < total && rest.length; j++) if (!next[j].trim()) next[j] = rest.shift() as string;
+  next.push(...rest);
   return next;
 }
 
@@ -184,6 +194,8 @@ export function derive(f: Form, ctx: Ctx, now: number) {
   const codeErr = slotCodes.map((c, i) => {
     if (!c) return "";
     if (c.length > MAX_CODE) return `A code can have ${MAX_CODE} characters at most`;
+    // "DAVE-1111 DAVE-2222" would hide one box whose winner gets both codes.
+    if (/\s/.test(c)) return "This looks like 2 codes. Put each code in its own field.";
     const k = c.toLowerCase();
     const at = firstSeen.get(k);
     if (at !== undefined) return `Same code as ${lower(slotLabel(at, f.perDrop, series))}`;
@@ -206,6 +218,8 @@ export function derive(f: Form, ctx: Ctx, now: number) {
   const nameOk = nameT.length >= 1 && nameT.length <= 80 && !/[\u0000-\u001f\u007f]/.test(nameT) && !nameLow.startsWith("crew:") && !nameLow.startsWith("rehearsal-");
   // The key the server gets. Empty means the crew's own rule ("one per person across every drop of this crew").
   const campaign = f.test ? f.testKey : rule === "series" ? ctx.seriesKey : rule === "new" ? nameT : "";
+  // A "new" series under a name already used would quietly join that series and bar its winners.
+  const nameUsed = !!nameT && desk.games.some((g) => g.campaign_key === nameT);
   const members = f.test ? 0 : f.minKey === "other" ? intIn(f.minOther, 0, 10080) : Number(f.minKey);
 
   // Check
@@ -244,12 +258,16 @@ export function derive(f: Form, ctx: Ctx, now: number) {
       : filled < total
         ? "Fill in every ticket code"
         : firstCodeErr
-          ? firstCodeErr.startsWith("Same") ? "Two tickets share a code: fix it first" : "A code is too long: fix it first"
-          : "",
+          ? `${codeCheck(firstCodeErr)}: fix it first`
+          : series && f.mystery && f.perDrop > 1
+            ? "A mystery series gives 1 ticket per drop. Set the tickets to 1, or turn mystery times off."
+            : "",
     f.picked.length < f.perDrop ? `Pick at least ${plural(f.perDrop, "spot")}: every ticket needs its own spot.` : !ringsOk ? "Hint rings: hot above 0 and up to 100, warm at least hot and up to 200." : "",
     !f.test && rule === "new" && !nameOk
       ? "Name the series: 1 to 80 characters on one line, not starting with “crew:” or “rehearsal-”."
-      : members === null
+      : !f.test && rule === "new" && nameUsed
+        ? "That name is already a series. Give the new one another name."
+        : members === null
         ? "Minutes in the crew: 0 to 10080."
         : "",
     !titleOk ? (titleMax < TITLE_MAX ? `The name needs 2 to ${titleMax} characters (the drop counter takes the rest).` : "The name needs 2 to 60 characters.") : clash,
@@ -259,11 +277,18 @@ export function derive(f: Form, ctx: Ctx, now: number) {
 
   return {
     isNow, series, len, opens, closes, every, dropsN, times, total, slotCodes, overflow, filled, codeErr,
-    hotS, warmS, hot, warm, rule, newName, nameT, nameOk, nameUsed: desk.games.some((g) => g.campaign_key === nameT), campaign, members,
+    hotS, warmS, hot, warm, rule, newName, nameT, nameOk, nameUsed, campaign, members,
     baseTitle, titleMax, windows, clash, problems, blocking,
   };
 }
 export type Derived = ReturnType<typeof derive>;
+
+/** A code field's error as a short check line: "Two tickets share a code". */
+export function codeCheck(err: string): string {
+  if (err.startsWith("Same")) return "Two tickets share a code";
+  if (err.startsWith("A code can")) return "A code is too long";
+  return "A field holds 2 codes";
+}
 
 export type StepProps = { f: Form; d: Derived; ctx: Ctx; set: (p: Partial<Form> | ((s: Form) => Partial<Form>)) => void; now: number };
 
@@ -371,7 +396,7 @@ export function buildChecks(f: Form, d: Derived, step: number, now: number): Che
     const n = d.filled + d.overflow.length;
     out.push({ ok: false, text: `${plural(n, "code")} for ${plural(d.total, "ticket")}: ${plural(n, "winner")}` });
   } else if (d.codeErr.some(Boolean)) {
-    out.push({ ok: false, text: d.codeErr.some((e) => e.startsWith("Same")) ? "Two tickets share a code" : "A code is too long" });
+    out.push({ ok: false, text: codeCheck(d.codeErr.find(Boolean) ?? "") });
   } else if (d.total > 0 && d.filled === d.total) {
     out.push({ ok: true, text: `${plural(d.total, "code")} for ${plural(d.total, "ticket")}` });
   } else if (step === 4) {

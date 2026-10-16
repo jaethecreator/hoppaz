@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/lib/store";
 import type { CrewInfo, Desk, Game, GameTimeAct, GameTimeDeskApi, Winner } from "./types";
 
@@ -16,9 +16,15 @@ export function useGameTimeDesk(token: string, onLock: () => void): GameTimeDesk
   const [busy, setBusy] = useState(false);
   const headers = useMemo(() => ({ authorization: `Bearer ${token}` }), [token]);
 
+  const loaded = useRef(false);
   const load = useCallback(async () => {
     if (!token) return;
-    const r = await fetch("/api/admin/game-time", { headers, cache: "no-store" });
+    // A dropped connection keeps what the desk already shows; only a first load with nothing to show says so.
+    const r = await fetch("/api/admin/game-time", { headers, cache: "no-store" }).catch(() => null);
+    if (!r) {
+      if (!loaded.current) setError("Game Time did not load. Check the connection and try again.");
+      return;
+    }
     const data = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string } & Partial<Desk>;
     if (r.status === 401) return onLock();
     if (!r.ok || !data.ok) {
@@ -26,6 +32,7 @@ export function useGameTimeDesk(token: string, onLock: () => void): GameTimeDesk
       return;
     }
     setError("");
+    loaded.current = true;
     setDesk({ games: data.games ?? [], crews: data.crews ?? [], objects: data.objects ?? {} });
   }, [headers, onLock, token]);
 

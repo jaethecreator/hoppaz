@@ -21,10 +21,12 @@ export default function StepTickets({ f, d, set }: StepProps) {
   const canTickets = !d.series && all.length <= MAX_TICKETS;
   const canDrops = d.series && per === 1 && all.length <= MAX_DROPS;
   const wide = d.series && per > 1;
+  // Hoppers' "N tickets left" counts the drops of a mystery series (lib/game-time/drops.ts ticketsLeft), so it is 1 per drop.
+  const oneEach = d.series && f.mystery;
 
   const write = (i: number, value: string) => {
     const parts = splitCodes(value);
-    set({ codes: writeCodes(f.codes, i, parts.length > 1 ? parts : [value]) });
+    set({ codes: writeCodes(f.codes, i, parts.length > 1 ? parts : [value], d.total) });
   };
 
   return (
@@ -38,7 +40,7 @@ export default function StepTickets({ f, d, set }: StepProps) {
         <span className="num w-12 text-center text-4xl" aria-live="polite">
           {per}
         </span>
-        <button type="button" className="btn btn-ghost !min-h-[48px] !w-12 !p-0" aria-label="One ticket more" disabled={per >= MAX_TICKETS} onClick={() => set({ perDrop: per + 1 })}>
+        <button type="button" className="btn btn-ghost !min-h-[48px] !w-12 !p-0" aria-label="One ticket more" disabled={per >= (oneEach ? 1 : MAX_TICKETS)} onClick={() => set({ perDrop: per + 1 })}>
           <Plus size={20} />
         </button>
         <p className="font-body text-[15px] leading-snug text-dim">
@@ -47,7 +49,7 @@ export default function StepTickets({ f, d, set }: StepProps) {
       </div>
       {d.series && (
         <p className="hint mt-3">
-          {d.dropsN} drops, so {plural(d.total, "code")} in all ({d.dropsN} × {per}).
+          {d.dropsN} drops, so {plural(d.total, "code")} in all ({d.dropsN} × {per}).{oneEach ? " A mystery series gives 1 ticket per drop, because the counter Hoppers see counts drops." : ""}
         </p>
       )}
 
@@ -107,7 +109,7 @@ export default function StepTickets({ f, d, set }: StepProps) {
                       if (!parts.length) return;
                       // One code fills this field. Several fill this one and the next ones; the rest are the extra codes.
                       e.preventDefault();
-                      set({ codes: writeCodes(f.codes, i, parts) });
+                      set({ codes: writeCodes(f.codes, i, parts, d.total) });
                     }}
                   />
                 </div>
