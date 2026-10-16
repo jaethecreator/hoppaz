@@ -955,5 +955,12 @@ begin
     end if;
   end if;
 end $$;
+-- crew_rooms_scale.sql (the crowd versions of the room calls) is installed: this file has just put the old helpers back.
+do $$
+begin
+  if to_regprocedure('public.crew_room_move(uuid,uuid,integer,jsonb)') is not null then
+    raise warning 'crew_rooms.sql put back the slow versions of the room calls: run supabase/crew_rooms_scale.sql again now';
+  end if;
+end $$;
 notify pgrst, 'reload schema';
 commit;
