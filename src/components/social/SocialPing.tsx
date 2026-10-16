@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { FaceDisc } from "@/components/Avatar";
 import { haptics } from "@/lib/haptics";
 import { useGoOut } from "@/lib/crew-room/rails";
+import { backoff, hidden, useMapShown } from "@/lib/idle";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { WAVE_HINT_MS, crewText, useVibes } from "@/lib/crew-room/vibes";
 import { loadInbox, markMentionsSeen, onInboxDiff, resetSocial, useSocial, type InboxDiff } from "@/lib/social";
@@ -17,7 +18,8 @@ import { useSession } from "@/lib/useSession";
  *
  *   keeps src/lib/social.ts fresh   one read at start, again on a new message (Realtime, scoped to my chats by row level
  *                                   security), on a ping to me, when the app comes back to the front, and every 30 s
- *                                   (waves have no live feed). That store feeds the Chat tab badge, the Chat tab and the room card.
+ *                                   (waves have no live feed): 60 s while the Realtime channel is up, 30 s while it is not, slower for
+ *                                   a phone nobody is touching. The first read waits for the map to draw. That store feeds the Chat tab badge, the Chat tab and the room card.
  *   a message arrives               a small toast with the sender's face, their name and the first line. Tap opens the chat.
  *   a wave arrives                  the same toast ("ADA WAVED AT YOU"), anywhere but a crew room (the room has its own chip,
  *                                   the one with WAVE BACK) and the Chat tab itself.
@@ -31,7 +33,12 @@ import { useSession } from "@/lib/useSession";
 const QUIET = [/^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/, /^\/auth/, /^\/reset/];
 const ROOM = /^\/crew\/[^/]+\/room(?:\/|$)/;
 const TOAST_MS = 6000;
-const POLL_MS = 30_000;
+/** The safety poll: waves have no live feed. Slower while the channel is up, since changes then arrive by themselves. */
+const POLL_UP_MS = 60_000;
+const POLL_DOWN_MS = 30_000;
+const POLL_MAX_MS = 180_000;
+/** Coming back to the page: no read when the inbox was read in the last 20 s. */
+const BACK_MAX_AGE = 20_000;
 
 export type Toast = { id: number; name: string; look: unknown; line: string; sub?: string; href: string; mention?: string };
 
@@ -42,6 +49,8 @@ export default function SocialPing() {
   const path = usePathname() ?? "";
   const goOut = useGoOut();
   const { userId, hasAccount } = useSession();
+  // The pins come first: the inbox is read once the map has drawn (or 4 s have passed, or on any other page).
+  const shown = useMapShown();
   const [toast, setToast] = useState<Toast | null>(null);
   const quietNow = useRef(false);
   const pathNow = useRef(path);
@@ -65,10 +74,11 @@ export default function SocialPing() {
   }, [inRoom, tagged]);
 
   useEffect(() => {
-    if (!userId || !hasAccount) return;
+    if (!userId || !hasAccount || !shown) return;
     const sb = getSupabase();
     if (!sb) return;
     let live = true;
+    let subscribed = false;
     let hide: ReturnType<typeof setTimeout> | null = null;
     let seq = 0;
 
@@ -143,11 +153,18 @@ export default function SocialPing() {
     };
 
     void run();
-    const poll = setInterval(() => {
-      if (document.visibilityState === "visible") void run();
-    }, POLL_MS);
+    let poll: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      clearTimeout(poll);
+      poll = setTimeout(() => {
+        if (!live) return;
+        if (!hidden()) void run();
+        arm();
+      }, backoff(subscribed ? POLL_UP_MS : POLL_DOWN_MS, { max: POLL_MAX_MS }));
+    };
+    arm();
     const visible = () => {
-      if (document.visibilityState === "visible") void run();
+      if (!hidden()) void loadInbox({ maxAgeMs: BACK_MAX_AGE });
     };
     document.addEventListener("visibilitychange", visible);
 
@@ -165,11 +182,16 @@ export default function SocialPing() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "crew_pings", filter: `to_user=eq.${userId}` }, (p) =>
         void onPing(p.new as { id: string; from_user: string; kind: string; created_at: string })
       )
-      .subscribe();
+      .subscribe((status) => {
+        const up = status === "SUBSCRIBED";
+        if (up === subscribed) return;
+        subscribed = up;
+        arm();
+      });
 
     return () => {
       live = false;
-      clearInterval(poll);
+      clearTimeout(poll);
       if (later) clearTimeout(later);
       if (hide) clearTimeout(hide);
       document.removeEventListener("visibilitychange", visible);
@@ -178,7 +200,7 @@ export default function SocialPing() {
     };
     // goOut is stable for the life of the router; the effect is about the person, not the page.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, hasAccount]);
+  }, [userId, hasAccount, shown]);
 
   if (!toast || quietNow.current) return null;
   return (

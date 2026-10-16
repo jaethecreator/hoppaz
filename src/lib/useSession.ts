@@ -4,6 +4,7 @@ import { useCallback, useEffect } from "react";
 import { create } from "zustand";
 import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { getSupabase } from "./supabase/client";
+import { clearUser, clearUsersExcept, read, revalidate, write } from "./phoneCache";
 import type { Profile } from "./types";
 
 /**
@@ -20,6 +21,11 @@ type SessionState = {
   email: string | null;
   profile: Profile | null;
   state: "loading" | "ready" | "offline";
+  /**
+   * True only when this page load made a brand-new anonymous user. Such a user has no check-ins, stats or history, so the
+   * hooks that read them skip the network. False for any existing session or sign-in.
+   */
+  freshGuest: boolean;
   set: (patch: Partial<Omit<SessionState, "set">>) => void;
 };
 
@@ -28,16 +34,33 @@ export const useSessionStore = create<SessionState>((set) => ({
   email: null,
   profile: null,
   state: "loading",
+  freshGuest: false,
   set: (patch) => set(patch),
 }));
 
-async function loadProfile(id: string) {
+const profileKey = (id: string) => `u.${id}.profile`;
+/** A copy of someone's profile is shown for up to 30 days while the real one is fetched. */
+const PROFILE_KEEP_MS = 30 * 24 * 3.6e6;
+const PROFILE_FRESH_MS = 5 * 60 * 1000;
+
+/** `force` skips the 5 minute rest: after a check-in, or when an account was just made. */
+async function loadProfile(id: string, force = false) {
   const sb = getSupabase();
   if (!sb) return;
-  const { data } = await sb.from("profiles").select("*").eq("id", id).maybeSingle();
+  const data = await revalidate<Profile>(
+    profileKey(id),
+    async () => {
+      const { data } = await sb.from("profiles").select("*").eq("id", id).maybeSingle();
+      return (data as Profile | null) ?? null;
+    },
+    { freshMs: PROFILE_FRESH_MS, force }
+  );
   // Only if still the same person: a log-in may have swapped users meanwhile.
-  if (data && useSessionStore.getState().userId === id) useSessionStore.getState().set({ profile: data as Profile });
+  if (data && useSessionStore.getState().userId === id) useSessionStore.getState().set({ profile: data });
 }
+
+/** True while `anonymous()` is making a new user: whoever is adopted then is a fresh guest. */
+let creatingGuest = false;
 
 let started = false;
 
@@ -53,18 +76,28 @@ function start() {
     const { userId: before, email: hadEmail } = useSessionStore.getState();
     set({ userId: user?.id ?? null, email: user?.email || null });
     if (user && user.id !== before) {
-      set({ profile: null });
+      // A different person from the one before: their copies must not outlive them on this phone.
+      if (before) clearUser(before);
+      else clearUsersExcept(user.id);
+      const held = read<Profile>(profileKey(user.id));
+      const usable = held && Date.now() - held.at <= PROFILE_KEEP_MS ? held.data : null;
+      // With the phone's copy the app is ready at once and the profile is checked quietly behind it.
+      set(usable ? { profile: usable, state: "ready", freshGuest: creatingGuest } : { profile: null, freshGuest: creatingGuest });
       void loadProfile(user.id).then(() => set({ state: "ready" }));
     } else if (user && (user.email || null) !== hadEmail) {
       // Same person, just made an account: the sign-up set their name, so read it back.
-      void loadProfile(user.id).then(() => set({ state: "ready" }));
+      void loadProfile(user.id, true).then(() => set({ state: "ready" }));
     } else if (user) {
       set({ state: "ready" });
     }
   };
 
   const anonymous = async () => {
-    const { data, error } = await sb.auth.signInAnonymously();
+    creatingGuest = true;
+    const { data, error } = await sb.auth.signInAnonymously().finally(() => {
+      // The auth event for the new user has been heard by now; anything adopted after this is not a fresh guest.
+      setTimeout(() => (creatingGuest = false), 0);
+    });
     if (error) {
       // Almost always: anonymous sign-ins are still switched off in the
       // Supabase dashboard. Say so rather than failing silently.
@@ -89,7 +122,10 @@ function start() {
 
   sb.auth.onAuthStateChange((event, session) => {
     if (event === "SIGNED_OUT") {
-      // Logging out leaves you as a fresh anonymous Hopper, like a first open.
+      // Logging out leaves you as a fresh anonymous Hopper, like a first open. Nothing of the last person stays on the phone.
+      const last = useSessionStore.getState().userId;
+      if (last) clearUser(last);
+      else clearUser();
       set({ userId: null, email: null, profile: null, state: "loading" });
       void anonymous();
       return;
@@ -110,14 +146,18 @@ export function useSession() {
       const sb = getSupabase();
       if (!sb || !userId) return;
       const p = useSessionStore.getState().profile;
-      if (p) set({ profile: { ...p, ...patch } });
+      if (p) {
+        const next = { ...p, ...patch };
+        set({ profile: next });
+        write(profileKey(userId), next);
+      }
       await sb.from("profiles").update(patch).eq("id", userId);
     },
     [userId, set]
   );
 
   const refresh = useCallback(() => {
-    if (userId) void loadProfile(userId);
+    if (userId) void loadProfile(userId, true);
   }, [userId]);
 
   return { userId, email, hasAccount: !!email, profile, state, patchProfile, refresh };

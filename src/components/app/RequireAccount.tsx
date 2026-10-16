@@ -24,7 +24,7 @@ export default function RequireAccount({
   const { hasAccount, state } = useSession();
   const needsAccount = supabaseConfigured() && state !== "offline" && state !== "loading" && !hasAccount;
   useEffect(() => {
-    if (needsAccount) goToAccount(title.toLowerCase().replace(/[.!?]$/, ""), "create", caption);
+    if (needsAccount) goToAccount(title.toLowerCase().replace(/[.!?]$/, ""), "create", caption, { replace: true });
   }, [needsAccount, title, caption]);
   if (!supabaseConfigured() || state === "offline" || hasAccount) return <>{children}</>;
   if (state === "loading") {
