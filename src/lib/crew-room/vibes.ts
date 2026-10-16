@@ -85,6 +85,8 @@ type VibeState = {
   say: (text: string, ttl?: number, action?: Hint["action"], opts?: HintOpts) => void;
   clearHint: (id?: number) => void;
   markWaved: (userId: string) => void;
+  /** Removed from my crew: SAY HI is a fresh request again, so it must not stay greyed to WAVED. */
+  clearWaved: (userId: string) => void;
   reset: () => void;
 };
 
@@ -141,6 +143,7 @@ export const useVibes = create<VibeState>((set, get) => ({
     hintTimer = setTimeout(() => get().clearHint(upNext.id), upNext.ttl);
   },
   markWaved: (userId) => set((s) => (s.waved[userId] ? s : { waved: { ...s.waved, [userId]: true } })),
+  clearWaved: (userId) => set((s) => (s.waved[userId] ? { waved: Object.fromEntries(Object.entries(s.waved).filter(([id]) => id !== userId)) as Record<string, true> } : s)),
   reset: () => {
     if (hintTimer) clearTimeout(hintTimer);
     hintTimer = null;

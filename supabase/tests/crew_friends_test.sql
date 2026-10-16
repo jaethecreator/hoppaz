@@ -1,5 +1,5 @@
 -- Crew = friends (supabase/crew_friends.sql): the mutual wave, MESSAGE, POKE and unread, the backfill of room waves answered
--- the old way (launch night). LOCAL ONLY: every fixture rolls back.
+-- the old way (launch night), and REMOVE FROM CREW. LOCAL ONLY: every fixture rolls back.
 -- Needs schema.sql, chat_accounts.sql, crew_rooms.sql, crew_rails.sql and crew_friends.sql loaded. Ends with ALL CREW FRIENDS TESTS PASSED.
 --   docker exec -i supabase_db_hoppaz-local psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 < supabase/tests/crew_friends_test.sql
 begin;
@@ -298,7 +298,7 @@ end $$;
 
 -- ---------------------------------------------------------------------------------------------------------------------
 -- Launch night: room waves answered the old way (crew_room_wave) wrote an accepted wave and a chat, and no crew rows. The
--- backfill (public._cf_backfill_room_waves, run at the end of crew_friends.sql) makes crew of them.
+-- backfill (public._cf_backfill_room_waves, run at the end of crew_friends.sql) makes crew of them; REMOVE FROM CREW undoes crew.
 -- The file itself is not run again here (it has its own begin and commit); the backfill function is what it calls.
 create function pg_temp.old_wave(u uuid, room uuid, target uuid) returns text language plpgsql as $$
 declare r text;
@@ -317,6 +317,14 @@ begin
   if r not like 'matched:%' then raise exception 'FAILED: old wave back answered %', r; end if;
   return substr(r, 9)::uuid;
 end $$;
+create function pg_temp.rm(u uuid, target uuid) returns text language plpgsql as $$
+declare r text;
+begin
+  perform pg_temp.actor(u);
+  r := public.crew_friend_remove(target);
+  perform pg_temp.admin();
+  return r;
+end $$;
 create function pg_temp.crew_rows(x uuid, y uuid) returns int language sql as $$
   select count(*)::int from public.crew where (user_id = x and friend_id = y) or (user_id = y and friend_id = x);
 $$;
@@ -334,15 +342,16 @@ declare
   chi uuid := pg_temp.newuser(false, 'Bf Chi'); dayo uuid := pg_temp.newuser(false, 'Bf Dayo');   -- accepted event wave
   efe uuid := pg_temp.newuser(false, 'Bf Efe'); femi uuid := pg_temp.newuser(false, 'Bf Femi');   -- efe blocked femi
   gio uuid := pg_temp.newuser(false, 'Bf Gio'); hana uuid := pg_temp.newuser(false, 'Bf Hana');   -- hana blocked gio
-  lola uuid := pg_temp.newuser(false, 'Bf Lola');                                                  -- no one's friend
+  ife uuid := pg_temp.newuser(false, 'Bf Ife'); jide uuid := pg_temp.newuser(false, 'Bf Jide');   -- remove
+  kemi uuid := pg_temp.newuser(false, 'Bf Kemi'); lola uuid := pg_temp.newuser(false, 'Bf Lola'); -- kemi: a third friend; lola: no one
   room uuid := gen_random_uuid(); ev uuid;
-  n int; n_rows int; j jsonb; dm_ab uuid; who uuid;
+  r text; n int; n_rows int; j jsonb; dm_ab uuid; dm_ij uuid; who uuid;
 begin
   insert into public.crews (id, name, created_by) values (room, 'Backfill test crew', ada);
   insert into public.crew_members (crew_id, user_id, role)
   select room, u, case when u = ada then 'owner' else 'member' end
-    from unnest(array[ada, ben, chi, dayo, efe, femi, gio, hana, lola]) u;
-  for who in select unnest(array[ada, ben, chi, dayo, efe, femi, gio, hana, lola]) loop
+    from unnest(array[ada, ben, chi, dayo, efe, femi, gio, hana, ife, jide, kemi, lola]) u;
+  for who in select unnest(array[ada, ben, chi, dayo, efe, femi, gio, hana, ife, jide, kemi, lola]) loop
     perform pg_temp.actor(who); perform public.crew_room_enter(room, gen_random_uuid()); perform pg_temp.admin();
   end loop;
 
@@ -387,6 +396,55 @@ begin
   delete from public.crew where user_id = chi;
   perform pg_temp.ok(not has_function_privilege('anon', 'public._cf_backfill_room_waves()', 'execute')
                      and not has_function_privilege('authenticated', 'public._cf_backfill_room_waves()', 'execute'), 'the backfill is not callable from the app');
+
+  -- (5) REMOVE FROM CREW. A new crew through the new way, then the removal.
+  perform pg_temp.ok(pg_temp.hi(ife, room, jide) = 'sent', 'ife says hi to jide');
+  r := pg_temp.hi(jide, room, ife);
+  perform pg_temp.ok(r like 'crew:%' and pg_temp.mutual(ife, jide), 'and jide waving back makes crew');
+  dm_ij := substr(r, 6)::uuid;
+  perform pg_temp.ok(pg_temp.hi(ife, room, kemi) = 'sent' and pg_temp.hi(kemi, room, ife) like 'crew:%' and pg_temp.mutual(ife, kemi), 'ife has a second friend, kemi');
+  perform pg_temp.ok((select not a_revealed and not b_revealed from public.dms where id = dm_ij), 'a room chat is not marked known: the crew rows are what show the name');
+  perform pg_temp.ok(pg_temp.msg(ife, jide) = 'dm:' || dm_ij::text, 'MESSAGE works while they are crew');
+
+  perform pg_temp.ok(pg_temp.rm(ife, jide) = 'removed', 'REMOVE FROM CREW answers removed');
+  perform pg_temp.ok(pg_temp.crew_rows(ife, jide) = 0 and not pg_temp.mutual(ife, jide), 'the crew rows are gone, both ways');
+  perform pg_temp.ok(not pg_temp.listed(ife, jide) and not pg_temp.listed(jide, ife), 'neither lists the other as crew');
+  perform pg_temp.ok(pg_temp.mutual(ife, kemi), 'the rest of the crew is untouched');
+  perform pg_temp.ok(pg_temp.msg(ife, jide) = 'not_crew' and pg_temp.msg(jide, ife) = 'not_crew', 'MESSAGE now answers not_crew, for both');
+  perform pg_temp.ok(pg_temp.poke(ife, jide) = 'not_crew', 'and so does POKE');
+  perform pg_temp.ok(pg_temp.dms_between(ife, jide) = 1, 'the chat stays');
+  j := pg_temp.inbox(ife);
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(j -> 'dms') d where (d ->> 'id')::uuid = dm_ij and not (d ->> 'crew')::boolean),
+                     'it is still in the chat list, as history, no longer marked crew');
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(j -> 'dms') d where (d ->> 'id')::uuid = dm_ij and d ->> 'other_name' = 'Bf Jide' and (d ->> 'revealed')::boolean),
+                     'and the name stays: real names are not taken back');
+  perform pg_temp.ok((select a_revealed and b_revealed from public.dms where id = dm_ij), 'the chat is marked known on both sides');
+  perform pg_temp.ok(not exists (select 1 from public.waves where status = 'accepted'
+                                  and ((from_user = ife and to_user = jide) or (from_user = jide and to_user = ife))),
+                     'the accepted wave went with the crew rows');
+  -- A new wave is a request again, not an instant crew.
+  perform pg_temp.ok(pg_temp.hi(ife, room, jide) = 'sent', 'SAY HI to someone removed is a fresh request (sent)');
+  perform pg_temp.ok(not pg_temp.mutual(ife, jide) and pg_temp.dms_between(ife, jide) = 1, 'which makes no crew and opens no new chat by itself');
+  j := pg_temp.inbox(jide);
+  perform pg_temp.ok(jsonb_array_length(j -> 'waves') = 1 and (j -> 'waves' -> 0 ->> 'room')::boolean, 'it waits for them in the inbox as a room wave');
+  r := pg_temp.hi(jide, room, ife);
+  perform pg_temp.ok(r = 'crew:' || dm_ij::text and pg_temp.mutual(ife, jide), 'a wave back makes crew again, in the same chat');
+  -- Either of the two can remove.
+  perform pg_temp.ok(pg_temp.rm(jide, ife) = 'removed' and pg_temp.crew_rows(ife, jide) = 0, 'the other one can remove too');
+
+  -- (6) Nothing to remove.
+  perform pg_temp.ok(pg_temp.rm(ife, jide) = 'not_crew', 'removing someone who is no longer crew answers not_crew');
+  perform pg_temp.ok(pg_temp.rm(ife, lola) = 'not_crew', 'removing someone who was never crew answers not_crew');
+  insert into public.crew (user_id, friend_id) values (ife, lola);
+  perform pg_temp.ok(pg_temp.rm(ife, lola) = 'not_crew' and pg_temp.crew_rows(ife, lola) = 1, 'a one-way row is not crew: not_crew, and the row is left alone');
+  delete from public.crew where user_id = ife and friend_id = lola;
+  perform pg_temp.ok(pg_temp.rm(ife, ife) = 'not_crew' and pg_temp.rm(ife, null) = 'not_crew', 'yourself and nobody answer not_crew');
+  perform pg_temp.ok(pg_temp.mutual(ife, kemi), 'and none of it touched kemi');
+  perform set_config('request.jwt.claims', '', true);
+  perform pg_temp.ok(public.crew_friend_remove(kemi) = 'no_session', 'without a session: no_session');
+  perform pg_temp.ok(pg_temp.mutual(ife, kemi), 'which removes nothing');
+  perform pg_temp.ok(not has_function_privilege('anon', 'public.crew_friend_remove(uuid)', 'execute')
+                     and has_function_privilege('authenticated', 'public.crew_friend_remove(uuid)', 'execute'), 'the app calls it as authenticated only');
 end $$;
 
 -- ---------------------------------------------------------------------------------------------------------------------
@@ -477,6 +535,13 @@ begin
   j := pg_temp.inbox(b);
   perform pg_temp.ok(j -> 'crew' -> 0 ->> 'name' = 'Hs Ada' and jsonb_array_length(j -> 'waves') = 0, 'and the other side sees the real name, with the wave gone');
   perform pg_temp.ok(pg_temp.hwave(a, kb) = 'already_crew:' || dm1::text, 'SAY HI at a head that is already crew says already_crew');
+
+  -- REMOVE FROM CREW for a pair who became crew at a hotspot: the rows go, the names stay open, the next hi is a request.
+  perform pg_temp.actor(a); r := public.crew_friend_remove(b); perform pg_temp.admin();
+  perform pg_temp.ok(r = 'removed' and not pg_temp.mutual(a, b), 'REMOVE FROM CREW removes a hotspot friend, both ways');
+  perform pg_temp.ok(exists (select 1 from public.dms where id = dm1 and a_revealed and b_revealed), 'and their chat keeps both names open');
+  perform pg_temp.ok(pg_temp.hwave(a, kb) = 'sent', 'SAY HI at the same head is a fresh request, not already_crew');
+  perform pg_temp.ok(pg_temp.hwave(b, ka) = 'crew:' || dm1::text and pg_temp.mutual(a, b), 'and a hi back makes crew again, in the same chat');
 
   -- WAVE BACK from the Chat tab, and PASS.
   perform pg_temp.ok(pg_temp.hwave(e, kb) = 'sent', 'another head asks b');

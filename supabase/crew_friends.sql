@@ -23,6 +23,8 @@
 --     names are revealed to each other from then on. Nobody's user id is ever sent to the other side before that.
 --   * Being on the map is YOURS to switch on: crew_map_share, default off (crew_friend_map). Being crew puts nobody on a
 --     map. Nothing draws friends on the map yet; the day something does, it must read this and show only people who said yes.
+--   * REMOVE FROM CREW (crew_friend_remove) just removes the person: the crew rows go, both ways. Real names are NOT taken
+--     back, the chat stays in the list as history, and no new chat opens until you are crew again. SAY HI is a fresh request.
 --
 -- WHAT THIS FILE ADDS (nothing existing is changed)
 --   tables     crew_pings (a poke, or "you are crew now", between two people; private, live)
@@ -34,6 +36,7 @@
 --              crew_friend_respond(wave, accept) WAVE BACK / PASS from the Chat tab (no room needed)
 --              crew_friend_open_dm(peer)         MESSAGE: the chat with a crew friend (made if there is none yet)
 --              crew_friend_poke(peer)            POKE a crew friend
+--              crew_friend_remove(peer)          REMOVE FROM CREW: the crew rows go, both ways; names stay, the chat stays
 --              crew_friend_read(dm)              I have read this chat up to now
 --              crew_friend_inbox()               waves waiting, crew faces, chats with unread counts, in one read
 --              crew_friend_map(on)               SHOW ME ON THE MAP: my own switch, off until I turn it on
@@ -440,6 +443,30 @@ begin
   return 'sent';
 end $$;
 
+-- ------------------------------------------------------------ REMOVE FROM CREW ---
+-- Take someone out of my crew: the crew rows between us go, both ways. Returns: removed | not_crew | no_session.
+--   * Real names are not taken back. A chat between us keeps showing both names (it is marked known, the old rule).
+--   * The chat stays in both lists as history. A new chat opens only when we are crew again (crew_friend_open_dm).
+--   * The accepted waves between us go too, in both places (waves and crew_hotspot_waves). An accepted wave is what
+--     crew_friend_wave and the backfill above read as "already crew", so left behind it would make us crew again on the next
+--     SAY HI or the next run of this file. Without it, SAY HI is a fresh request, and a wave back is crew again.
+--   * Someone who is not crew both ways (a one-way old ADD TO CREW row included) answers not_crew and nothing changes.
+create or replace function public.crew_friend_remove(p_peer uuid) returns text
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); dm uuid;
+begin
+  if me is null then return 'no_session'; end if;
+  if p_peer is null or p_peer = me or not public._cf_mutual(me, p_peer) then return 'not_crew'; end if;
+  delete from crew where (user_id = me and friend_id = p_peer) or (user_id = p_peer and friend_id = me);
+  select id into dm from dms where least(a, b) = least(me, p_peer) and greatest(a, b) = greatest(me, p_peer);
+  if dm is not null then perform public._cf_reveal(dm); end if;
+  delete from waves where status = 'accepted'
+     and ((from_user = me and to_user = p_peer) or (from_user = p_peer and to_user = me));
+  delete from crew_hotspot_waves where status = 'accepted'
+     and ((from_user = me and to_user = p_peer) or (from_user = p_peer and to_user = me));
+  return 'removed';
+end $$;
+
 -- ----------------------------------------------------------------- unread ---
 -- "I have read this chat up to now." Called when a chat is open and a message comes in.
 create or replace function public.crew_friend_read(p_dm uuid) returns void
@@ -709,17 +736,18 @@ end $$;
 
 -- ------------------------------------------------------------------ grants ---
 revoke all on function public.crew_friend_wave(uuid, uuid), public.crew_friend_respond(uuid, boolean),
-  public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_read(uuid),
-  public.crew_friend_inbox(), public.crew_friend_map(boolean), public.crew_friend_staff(uuid),
-  public.crew_friend_hotspot_wave(text) from public, anon;
+  public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_remove(uuid),
+  public.crew_friend_read(uuid), public.crew_friend_inbox(), public.crew_friend_map(boolean),
+  public.crew_friend_staff(uuid), public.crew_friend_hotspot_wave(text) from public, anon;
 grant execute on function public.crew_friend_wave(uuid, uuid), public.crew_friend_respond(uuid, boolean),
-  public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_read(uuid),
-  public.crew_friend_inbox(), public.crew_friend_map(boolean), public.crew_friend_staff(uuid),
-  public.crew_friend_hotspot_wave(text) to authenticated;
+  public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_remove(uuid),
+  public.crew_friend_read(uuid), public.crew_friend_inbox(), public.crew_friend_map(boolean),
+  public.crew_friend_staff(uuid), public.crew_friend_hotspot_wave(text) to authenticated;
 
 -- ---------------------------------------------------------- ONE-TIME BACKFILL ---
 -- Room waves answered before this file (launch night) become crew now. Nothing doubles on a run again: pairs that are
--- crew already are skipped, and a pair with a block between them stays apart.
+-- crew already are skipped, a REMOVE FROM CREW took the accepted wave with it, and a pair with a block between them
+-- stays apart.
 do $do$
 declare n int := public._cf_backfill_room_waves();
 begin

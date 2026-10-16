@@ -11,7 +11,9 @@ import { useGoOut } from "@/lib/crew-room/rails";
 import { STAGE_FLAG, readStage } from "@/lib/crew-room/stage";
 import { useRoomStore, type RoomPeerPoint } from "@/lib/crew-room/roomStore";
 import { COOLDOWN_MS, VIBES, sayHi, sayResult, sendVibe, useVibes, vibeBlocked, type VibeId } from "@/lib/crew-room/vibes";
-import { POKE_GAP_MS, isMissing, messageCrew, pokeCrew, useSocial } from "@/lib/social";
+import RemoveConfirm from "@/components/social/RemoveConfirm";
+import { sentence } from "@/components/event/copy";
+import { POKE_GAP_MS, isMissing, messageCrew, pokeCrew, removeFromCrew, useSocial } from "@/lib/social";
 import { getSupabase } from "@/lib/supabase/client";
 import { useToast } from "@/lib/store";
 import { useSessionStore } from "@/lib/useSession";
@@ -34,6 +36,7 @@ import css from "./HopperMenu.module.css";
  *   POKE     takes SAY HI's place for someone already in my crew: a light nudge, a minute apart.
  *   WALK TO  walks to a free tile next to them (roomStore walkTo) and sends the camera to follow me.
  *   PROFILE  a sheet: SAY HI (not crew) or MESSAGE (crew), Block, Report, through the person's room key (crew_room_peer_key).
+ *            For a crew friend it also has a quiet "Remove from crew" (a question first): the person is removed, nothing else.
  * Closes on a choice, an outside tap, my own walking, the chat sheet changing, Escape, or 8 s of nothing.
  *
  * This file also draws the room's one HINT chip (useVibes hint): "WAVED AT ADA", "ADA WAVED AT YOU" + WAVE BACK,
@@ -351,7 +354,7 @@ function HintChip() {
 function ProfileSheet({ crewId, peer, onClose, openDm }: { crewId: string; peer: RoomPeerPoint; onClose: () => void; openDm: (dm: string) => void }) {
   const say = useToast((s) => s.say);
   const [key, setKey] = useState<string | null>(peer.key ?? null);
-  const [step, setStep] = useState<"actions" | "block" | "report">("actions");
+  const [step, setStep] = useState<"actions" | "block" | "report" | "remove">("actions");
   const [busy, setBusy] = useState(false);
   const waved = useVibes((s) => !!s.waved[peer.id]);
   const isCrew = useSocial((s) => !!s.crewIds[peer.id]);
@@ -415,6 +418,15 @@ function ProfileSheet({ crewId, peer, onClose, openDm }: { crewId: string; peer:
       openDm(r.dm);
     } else say(r.text ?? "COULD NOT OPEN THE CHAT", "error");
   };
+  const removeCrew = async () => {
+    setBusy(true);
+    const r = await removeFromCrew(peer.id);
+    setBusy(false);
+    if (r.ok) useVibes.getState().clearWaved(peer.id);
+    say(r.ok ? `Removed ${peer.name} from your crew.` : sentence(r.text), r.ok ? "ok" : "error");
+    if (r.ok) onClose();
+    else setStep("actions");
+  };
   const block = async () => {
     if (!key) return;
     setBusy(true);
@@ -470,6 +482,18 @@ function ProfileSheet({ crewId, peer, onClose, openDm }: { crewId: string; peer:
                 Report
               </button>
             </div>
+            {isCrew && (
+              <div className="flex justify-center">
+                <button type="button" className="min-h-[44px] px-4 font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-dim disabled:opacity-50" onClick={() => setStep("remove")} disabled={busy}>
+                  Remove from crew
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {step === "remove" && (
+          <div className="mt-4">
+            <RemoveConfirm name={peer.name} busy={busy} onRemove={removeCrew} onCancel={() => setStep("actions")} />
           </div>
         )}
         {step === "block" && (

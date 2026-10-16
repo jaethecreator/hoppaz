@@ -260,6 +260,27 @@ export async function pokeCrew(userId: string): Promise<{ ok: boolean; text: str
   return { ok: false, text: POKE_TEXT[r] ?? "COULD NOT POKE" };
 }
 
+/**
+ * REMOVE FROM CREW (crew_friend_remove): the crew rows go, both ways, and the person leaves `crew` and `crewIds` at once. Nothing
+ * else is taken back: their name stays, and the chat stays in the list as history (no longer marked crew). SAY HI is a fresh
+ * request again. Someone who is not crew any more (they removed me first) is gone from the list the same way.
+ */
+export async function removeFromCrew(userId: string): Promise<{ ok: boolean; text: string }> {
+  const sb = getSupabase();
+  if (!sb) return { ok: false, text: "NOT CONNECTED" };
+  const { data, error } = await sb.rpc("crew_friend_remove", { p_peer: userId });
+  if (error) return { ok: false, text: isMissing(error) ? "NOT AVAILABLE YET" : "COULD NOT REMOVE" };
+  const r = String(data);
+  if (r !== "removed" && r !== "not_crew") return { ok: false, text: r === "no_session" ? "NOT SIGNED IN YET" : "COULD NOT REMOVE" };
+  useSocial.setState((s) => ({
+    crew: s.crew.filter((c) => c.id !== userId),
+    crewIds: Object.fromEntries(Object.entries(s.crewIds).filter(([id]) => id !== userId)),
+    dms: s.dms.map((d) => (d.other_id === userId ? { ...d, crew: false, other_id: null } : d)),
+  }));
+  void loadInbox();
+  return { ok: true, text: "REMOVED" };
+}
+
 /** I have seen these tags (the toast was tapped, the list was, or I walked into that room). Gone from the badge at once. */
 export async function markMentionsSeen(ids: string[]): Promise<void> {
   if (!ids.length) return;
