@@ -656,17 +656,27 @@ For members in the room at the opening: from 10 s before `opens_at` the world di
 
 Behind one flag: `NEXT_PUBLIC_ROOM_VOICE=1` and the server answering `GET /api/crew/rooms/voice` with `{ enabled: true }` (that needs the `LIVEKIT_*` env, not set locally). With either missing, nothing about voice renders: no mic, no tip, no mention in the welcome card.
 
-### 14.1 The mic control
+### 14.1 The voice control
 
-Top right under the sound icon, 36 px visible, 44 hit. Three presses, never automatic:
+**Voice is on by default, the mic is not.** Walking into a crew room joins voice by itself as a listener, once the room's enter call has answered (the server then knows the Hopper is walking): you hear the people near you and the stage straight away. Nothing is sent and no permission is asked on the way in. The first tap on the control is when the phone is asked for the microphone, and nothing asks again by itself. Hotspot rooms never mount voice. `NEXT_PUBLIC_ROOM_VOICE_AUTO=0` turns only the automatic join off (back to tap to join).
+
+Top right under the sound icon, 36 px visible, 44 hit, with a small speaker toggle (28 px, 44 by 32 hit) under it. Rules live in `src/lib/crew-room/voiceFlow.ts` and are checked by `scripts/crew-room/check-voice-flow.mjs`.
 
 | State | Icon | Meaning |
 |---|---|---|
-| off | `Headphones` | not in voice yet. First press joins as a listener (lazy `import("livekit-client")`, `webAudioMix`), nothing is sent |
-| listening | `Headphones` with a `keke` dot | I hear people near me. Second press asks for the microphone |
-| mic on | `Mic` with a pulsing `keke` ring | people near me hear me. Third press mutes (`MicOff`) |
+| off | `Headphones` | not in voice (not joined yet, or left). A tap joins as a listener |
+| listening | `Headphones` with a `keke` dot | I hear the room. A tap asks for the microphone |
+| mic on | `Mic`, face lit `keke`, pulsing ring | people near me hear me. A tap mutes (`MicOff`) and another tap unmutes |
+| muted | `MicOff` | in voice, mic closed |
+| blocked | `MicOff` with a red dot and the chip "Mic blocked. Tap to allow" | the phone said no: listen-only. A tap asks again; a second no says "MIC BLOCKED. CHECK YOUR PHONE SETTINGS." |
 
-A 1 s label shows on each change: "VOICE ON", "MIC ON", "MIC OFF". **The mic starts off every time**, and joining never turns it on. Watchers can listen and cannot be heard (the route gives them no publish right): the icon shows `Headphones` only, labelled "LISTEN ONLY". First join shows one line, "Voice uses data.", once per device. Denied: "MIC BLOCKED. CHECK YOUR PHONE SETTINGS."; dropped: "VOICE LOST. TRYING AGAIN."
+**Speaker toggle.** `Volume2` / `VolumeX`: the room's voices off means nobody is heard, the stage included (no subscriptions, no speaking dots, no music dip). Remembered per room on the phone (`hz:voice-speaker:<crew>`). The mic is never remembered as on: every visit starts closed.
+
+**One-time tip** on the control, once per device: "You can hear the room. Tap to talk." (7 s, not shown when the voices are off or the Hopper cannot talk).
+
+**Safety.** The app going to the background or the screen locking (`visibilitychange` hidden) closes a live mic, lets go of the phone's microphone and ends a stage broadcast; on return nothing turns on, a label says "MIC IS OFF. TAP TO TALK.", and the mic opens again only on a tap. Leaving the room (or the page) hangs up. The speaking ring shows over my own head when I talk. Blocked people are never heard (they are not in the walkers list or the stage list, and a phone subscribes only to people it hears).
+
+**Audio unlock.** Browsers hold audio back until a tap. A walk in from the ENTER button on the same page keeps the page's tap (Chrome and Android play at once); an iPhone plays after the first tap in the room, which unlocks it (a join never waits for the browser's answer). A label shows on each change: "VOICE ON" (a tap join), "MIC ON", "MIC OFF", "ROOM VOICES ON/OFF". Watchers can listen and cannot be heard (the route gives them no publish right): the icon shows `Headphones` only, labelled "LISTEN ONLY" on a tap join. First tap join shows one line, "Voice uses data.", once per device. Dropped: "VOICE LOST. TRYING AGAIN."
 
 ### 14.2 What I hear (the rules, in tiles)
 
@@ -686,7 +696,7 @@ Two modes behind two flags. **Off (default):** the owner-only GO LIVE below. **O
 **The rule.** The database decides, never the phone. A staff member is "on the stage" when their walker has a live heartbeat and the server-checked tile is inside the layout's stage zone (`stage`; `booth` and `deck` in event rooms). At most three speak at once: the owner first, then admins by join date. A fourth sees STAGE FULL.
 
 **Who talks.**
-- Staff on the stage with the mic already on start by themselves.
+- Staff on the stage with the mic already on (they tapped it) start by themselves.
 - Staff with the mic off get the **SPEAK TO ALL** pill (priority 60). One tap joins voice, asks the server for the stage, then opens the mic (the browser asks the first time). A mic never opens without that tap.
 - Leaving the stage ends it after 1.5 s. The mic stays on for the people near them; in a stage-only room the server takes the right to publish away.
 

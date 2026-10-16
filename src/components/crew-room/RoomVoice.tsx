@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Headphones, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { HeadphoneOff, Headphones, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { FaceDisc } from "@/components/Avatar";
 import { stageZoneId, type CampaignLayout } from "@/lib/campaign/layout";
 import { useFeatured } from "@/lib/crew-room/featured";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { STAGE_FLAG, useStagePoll, useStageStore } from "@/lib/crew-room/stage";
-import { VoiceSession, voiceDataNoteSeen, voiceServerEnabled, type VoiceView } from "@/lib/crew-room/voice";
+import { VOICE_AUTO, VoiceSession, voiceDataNoteSeen, voiceServerEnabled, type VoiceView } from "@/lib/crew-room/voice";
+import { TEXT, tipDue } from "@/lib/crew-room/voiceFlow";
 import { useSession } from "@/lib/useSession";
 import css from "./Places.module.css";
 
@@ -21,11 +22,18 @@ import css from "./Places.module.css";
  * DARK: NEXT_PUBLIC_ROOM_VOICE=1 and GET /api/crew/rooms/voice answering { enabled: true } (the LIVEKIT_* env). With
  * either missing this renders null and loads nothing: no mic, no tip, no LiveKit code.
  *
+ * VOICE IS ON BY DEFAULT, THE MIC IS NOT (rules in lib/crew-room/voiceFlow.ts). Walking into the room joins as a LISTENER by
+ * itself (VoiceSession.enter(): no mic, no permission prompt); the first tap on the control is when the phone is asked for
+ * the mic, a "no" is listen-only with "Mic blocked. Tap to allow", and the app going to the background or a locked screen
+ * closes the mic until the Hopper is back AND taps. A small speaker toggle under the control turns the room's voices off
+ * (remembered per room). Audio the browser holds back is unlocked by the first tap anywhere in the room. The room is a crew
+ * room only: hotspot rooms never mount this, so they stay voice-free. NEXT_PUBLIC_ROOM_VOICE_AUTO=0 goes back to tap-to-join.
+ *
  * What it draws: one mic control under the shell's HUD pill at the top right of the stage (top: var(--room-hud-bottom);
- * Headphones, then Mic, then MicOff),
- * a one second label for each change, a "<NAME> IS LIVE" chip with a mute toggle while the crew owner is live, and the
- * owner's GO LIVE / END LIVE pill on the stage (roomStore action id "go-live", priority 60). The mic starts off every
- * time. With NEXT_PUBLIC_ROOM_STAGE_VOICE=1 (stage voice, design 14.4) the owner-only GO LIVE is replaced: staff (owner and
+ * Headphones while listening, a lit Mic while talking, MicOff when muted or blocked), the speaker toggle under it,
+ * a one second label for each change, a one-time tip, a "<NAME> IS LIVE" chip with a mute toggle while the crew owner is
+ * live, and the owner's GO LIVE / END LIVE pill on the stage (roomStore action id "go-live", priority 60). The mic starts
+ * off every time. With NEXT_PUBLIC_ROOM_STAGE_VOICE=1 (stage voice, design 14.4) the owner-only GO LIVE is replaced: staff (owner and
  * admins) on the stage get SPEAK TO ALL (action id "stage-voice", priority 60), everyone else joins listen-only by
  * themselves when the stage goes live and sees one LIVE ON STAGE pill (the speakers' faces, the first name, the head
  * count, a mute toggle, and TAP TO LISTEN while the browser holds the audio back). Leaving the stage ends the
@@ -68,6 +76,15 @@ const decline = () => {
   }
 };
 
+const TIP_MS = 7000;
+const localKV = (): Storage | null => {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+};
+
 const HINT_KEY = "hz:voice-hint";
 /** "PEOPLE NEAR YOU CAN HEAR YOU", once per visit, the first time the mic goes on. */
 function hintDue(): boolean {
@@ -100,6 +117,9 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
   const inStageList = !!userId && stage.includes(userId);
   const [retry, setRetry] = useState(0);
   const lastAuto = useRef(0);
+  const [tip, setTip] = useState(false);
+  const tipShown = useRef(false);
+  const entered = useRef(false);
 
   const ensure = useCallback((): VoiceSession | null => {
     if (session.current) return session.current;
@@ -122,6 +142,32 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
     };
   }, []);
 
+  // Leaving the room is the cleanup above. The app going to the background or the screen locking closes the mic and lets go of
+  // it; coming back turns nothing on, it only says the mic is off (the Hopper taps to talk again).
+  useEffect(() => {
+    const onVisibility = () => {
+      const s = session.current;
+      if (!s) return;
+      if (document.visibilityState === "hidden") void s.away();
+      else s.returned();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  // VOICE ON BY DEFAULT: walking in joins as a listener, once per visit to the room. No mic, no prompt. It waits for my walker
+  // (the room's enter call has answered, so the server knows I am walking and the token can let me talk later). If it fails, or
+  // the Hopper left voice themselves, the control is how they come back; nothing retries by itself (the stage effect below aside).
+  const placed = !!me;
+  useEffect(() => () => void (entered.current = false), []); // a development re-mount starts again
+  useEffect(() => {
+    if (!VOICE_AUTO || entered.current || !userId || !placed || phase !== "off" || declined()) return;
+    const s = ensure();
+    if (!s) return;
+    entered.current = true;
+    void s.enter();
+  }, [userId, placed, phase, ensure]);
+
   // Where everyone stands decides who I hear.
   useEffect(() => {
     if (phase === "off" || phase === "joining") return;
@@ -137,6 +183,20 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
     const t = setTimeout(() => setLabel(""), text.length > 24 ? 3200 : 1600);
     return () => clearTimeout(t);
   }, [view?.noticeId, view?.notice]);
+
+  // The one-time tip on the control, once per device: the first time someone who can talk is in the room listening.
+  const canTalk = !!view?.canPublish;
+  const voicesOff = !!view?.speakerOff;
+  useEffect(() => {
+    if (phase !== "listening" || !canTalk || voicesOff || tipShown.current || !tipDue(localKV())) return;
+    tipShown.current = true;
+    setTip(true);
+  }, [phase, canTalk, voicesOff]);
+  useEffect(() => {
+    if (!tip) return;
+    const t = setTimeout(() => setTip(false), TIP_MS);
+    return () => clearTimeout(t);
+  }, [tip]);
 
   // The owner's pill on the stage; END LIVE stays until pressed, even off the stage. (Flag off only: stage voice has its own.)
   const live = !!view?.iAmLive;
@@ -185,13 +245,14 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
     return () => clearTimeout(t);
   }, [stage.length, auto, phase]);
 
-  // Browsers hold audio back until a tap. Walking is tapping, so the first touch anywhere in the room lets it play. On a
+  // Browsers hold audio back until a tap (voice now joins by itself, so this is for every room, not just the stage). Walking is
+  // tapping, so the first touch anywhere in the room lets it play. On a
   // touch screen a pointerdown is NOT a gesture that unlocks audio (iPhones ignore it): the lift of the finger is. So it
   // listens for pointerup, with touchend and click as the fallback for a browser that only counts one of them, takes the
   // first of the three, and lets go of all of them. TAP TO LISTEN on the pill stays as the visible way if none of them took.
   const canPlay = view?.canPlay ?? true;
   useEffect(() => {
-    if (!STAGE_FLAG || phase === "off" || phase === "joining" || canPlay) return;
+    if (phase === "off" || phase === "joining" || canPlay) return;
     const gestures = ["pointerup", "touchend", "click"] as const;
     const stop = () => gestures.forEach((g) => window.removeEventListener(g, unlock, true));
     const unlock = () => {
@@ -243,45 +304,86 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
   const press = () => {
     const s = ensure();
     if (!s) return;
-    if (phase === "off") {
-      if (!voiceDataNoteSeen()) {
-        setLabel("Voice uses data.");
-        setTimeout(() => setLabel(""), 2400);
-      }
-      void s.join();
-    } else if (phase === "joining") {
-      return;
-    } else if (!view?.canPublish) {
-      decline();
-      s.leave(); // a watcher only listens: pressing again stops
-    } else {
-      void s.setMic(phase !== "mic");
+    s.unlockAudio(); // a tap is a gesture: audio the browser held back plays now
+    if (phase === "off" && !voiceDataNoteSeen()) {
+      setLabel("Voice uses data.");
+      setTimeout(() => setLabel(""), 2400);
     }
+    // Not in voice: join. A watcher: stop (and the stage must not pull them back). Listening or muted: ask for the mic. Talking: mute.
+    void s.tap().then((did) => did === "leave" && decline());
   };
 
-  const Icon = phase === "mic" ? Mic : phase === "muted" ? MicOff : Headphones;
+  const speakerOff = !!view?.speakerOff;
+  const connected = phase !== "off" && phase !== "joining";
+  const showTip = tip && phase === "listening";
+  const blocked = phase === "blocked";
+
+  const Icon = phase === "mic" ? Mic : phase === "muted" || blocked ? MicOff : speakerOff ? HeadphoneOff : Headphones;
   const name =
-    phase === "off" ? "Join voice. Your microphone stays off." : phase === "joining" ? "Joining voice" : !view?.canPublish ? "Listening only. Tap to stop." : phase === "mic" ? "Mute microphone" : "Turn on microphone";
+    phase === "off"
+      ? "Join voice. Your microphone stays off."
+      : phase === "joining"
+        ? "Joining voice"
+        : !view?.canPublish
+          ? "Listening only. Tap to stop."
+          : phase === "mic"
+            ? "Mute microphone"
+            : blocked
+              ? TEXT.blocked
+              : "Tap to talk. Turn on your microphone";
 
   return (
     <>
       <div ref={host} className="sr-only" aria-hidden />
-      <button type="button" className={css.micButton} onClick={press} aria-label={name} aria-pressed={phase === "mic"} disabled={!userId} title={name}>
-        <span className={css.micFace} style={phase === "mic" ? { borderColor: "rgb(var(--keke))" } : undefined}>
+      <button type="button" className={css.micButton} onClick={press} aria-label={name} aria-pressed={phase === "mic"} disabled={!userId} title={name} data-voice-control data-voice-phase={phase}>
+        <span className={`${css.micFace} ${phase === "mic" ? css.micLive : ""}`}>
           {phase === "mic" && <span className={css.micRing} aria-hidden />}
           <Icon size={18} strokeWidth={2.2} aria-hidden />
-          {(phase === "listening" || phase === "muted") && <span className="absolute right-[3px] top-[3px] h-1.5 w-1.5 rounded-full bg-keke" aria-hidden />}
+          {(phase === "listening" || phase === "muted") && !speakerOff && <span className="absolute right-[3px] top-[3px] h-1.5 w-1.5 rounded-full bg-keke" aria-hidden />}
+          {blocked && <span className="absolute right-[3px] top-[3px] h-1.5 w-1.5 rounded-full bg-fireant" aria-hidden />}
         </span>
       </button>
-      {label && (
+      {connected && (
+        <button
+          type="button"
+          className={css.speakerButton}
+          onClick={() => session.current?.setSpeaker(speakerOff)}
+          aria-label={speakerOff ? "Turn the room's voices on" : "Turn the room's voices off"}
+          aria-pressed={speakerOff}
+          title={speakerOff ? "Room voices are off. Tap to hear the room." : "Room voices are on. Tap for silence."}
+          data-voice-speaker
+        >
+          <span className={`${css.speakerFace} ${speakerOff ? css.speakerOff : ""}`}>{speakerOff ? <VolumeX size={14} strokeWidth={2.2} aria-hidden /> : <Volume2 size={14} strokeWidth={2.2} aria-hidden />}</span>
+        </button>
+      )}
+      {label ? (
         <p
           role="status"
-          style={{ top: "calc(var(--room-hud-bottom, 56px) + 6px)" }}
-          className="pointer-events-none absolute right-[56px] max-w-[70%] rounded-[4px] border border-line bg-ink/90 px-2 py-1 font-mono text-[10px] font-medium uppercase leading-[13px] tracking-[0.08em] text-cream"
+          style={{ top: "calc(var(--room-hud-bottom, 56px) + 6px)", right: "calc(56px + var(--room-dock, 0px))" }}
+          className="pointer-events-none absolute max-w-[70%] rounded-[4px] border border-line bg-ink/90 px-2 py-1 font-mono text-[10px] font-medium uppercase leading-[13px] tracking-[0.08em] text-cream"
         >
           {label}
         </p>
-      )}
+      ) : blocked ? (
+        <button
+          type="button"
+          onClick={press}
+          style={{ top: "calc(var(--room-hud-bottom, 56px) + 6px)", right: "calc(56px + var(--room-dock, 0px))" }}
+          className="pointer-events-auto absolute max-w-[70%] rounded-[4px] border border-line bg-ink/90 px-2.5 py-1.5 text-left text-[12px] font-medium leading-[16px] text-cream"
+          data-voice-blocked
+        >
+          {TEXT.blocked}
+        </button>
+      ) : showTip ? (
+        <p
+          role="status"
+          style={{ top: "calc(var(--room-hud-bottom, 56px) + 6px)", right: "calc(56px + var(--room-dock, 0px))" }}
+          className="pointer-events-none absolute max-w-[min(220px,70%)] rounded-[4px] border border-line bg-ink/90 px-2.5 py-1.5 text-[12px] font-medium leading-[16px] text-cream"
+          data-voice-tip
+        >
+          {TEXT.tip}
+        </p>
+      ) : null}
       {STAGE_FLAG && view?.liveBy && (
         <div className="pointer-events-auto absolute left-2 right-[60px] top-2 flex min-h-[44px] items-center gap-2 rounded-hz border border-line bg-ink-2/90 pl-3" role="status" data-voice-stage>
           <span className="h-2 w-2 flex-none rounded-full bg-fireant" aria-hidden />

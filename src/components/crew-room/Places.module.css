@@ -380,6 +380,37 @@
   background: rgb(var(--raised) / 0.9);
   color: rgb(var(--text));
 }
+/* Talking: the whole face is lit, so it reads at a glance that the mic is open. */
+.micLive {
+  border-color: rgb(var(--keke));
+  background: rgb(var(--keke));
+  color: rgb(var(--ground));
+}
+/* The small speaker toggle under the mic control: the room's voices on or off on this phone. */
+.speakerButton {
+  position: absolute;
+  top: calc(var(--room-hud-bottom, 56px) + 44px);
+  right: calc(8px + var(--room-dock, 0px));
+  display: grid;
+  width: 44px;
+  height: 32px;
+  place-items: center;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+.speakerFace {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 50%;
+  background: rgb(var(--raised) / 0.9);
+  color: rgb(var(--text));
+}
+.speakerOff {
+  color: rgb(var(--dim));
+}
 .micRing {
   position: absolute;
   inset: -4px;

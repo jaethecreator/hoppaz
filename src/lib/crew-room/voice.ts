@@ -10,6 +10,7 @@ import { useRoomStore } from "./roomStore";
 import { STAGE_FLAG } from "./stageRights";
 import { stageMix } from "./stageMix";
 import { createStageSender, type StageAnswer } from "./stageSend";
+import { IDLE_FLOW, TEXT, cameBack, joined, micAnswer, rememberSpeaker, silence, speaker, speakerWasOff, tap as tapStep, wentAway, type Do, type Flow, type Step, type VoicePhase } from "./voiceFlow";
 
 /**
  * Area voice for the crew room, on Ola's LiveKit pattern (components/queer/AudioRoom.tsx). DARK by default: nothing
@@ -24,6 +25,12 @@ import { createStageSender, type StageAnswer } from "./stageSend";
  * Only the people I can hear are subscribed to, so a room of 60 does not cost 60 audio streams on mobile data (at most
  * MAX_HEARD at once, nearest first). The microphone starts OFF every time and joining never turns it on.
  *
+ * ON BY DEFAULT, AS A LISTENER (voiceFlow.ts has the rules): walking into a crew room joins by itself (enter()), so the room's
+ * voices play without a tap. The mic is NOT touched on the way in and no permission is asked: the first tap on the control
+ * asks (setMic), a "no" is listen-only with "Mic blocked. Tap to allow", and nothing here ever asks again by itself. A
+ * backgrounded app or a locked screen closes the mic and lets go of it (away()); it stays closed until a tap. The speaker
+ * can be turned off (setSpeaker), remembered per room. Hotspot rooms never mount RoomVoice, so they stay voice-free.
+ *
  * Area privacy is as honest as the client: LiveKit does not know the room's areas (the route's comment says so).
  *
  * STAGE VOICE (NEXT_PUBLIC_ROOM_STAGE_VOICE=1, docs/ROOM-GAME-DESIGN.md 14.4) replaces the owner's "live" attribute: staff
@@ -36,6 +43,8 @@ import { createStageSender, type StageAnswer } from "./stageSend";
 type StageMode = "mixed" | "stage";
 
 export const VOICE_FLAG = process.env.NEXT_PUBLIC_ROOM_VOICE === "1";
+/** Voice on by default (join as a listener when you walk in). NEXT_PUBLIC_ROOM_VOICE_AUTO=0 turns only this off: back to tap-to-join. */
+export const VOICE_AUTO = process.env.NEXT_PUBLIC_ROOM_VOICE_AUTO !== "0";
 
 export const VOICE = {
   /** A walker this close starts being heard. */
@@ -99,7 +108,7 @@ export const useLiveStore = create<{ liveBy: string | null; setLiveBy: (id: stri
   setLiveBy: (liveBy) => set((s) => (s.liveBy === liveBy ? s : { liveBy })),
 }));
 
-export type VoicePhase = "off" | "joining" | "listening" | "mic" | "muted";
+export type { VoicePhase };
 
 export type VoiceView = {
   phase: VoicePhase;
@@ -120,12 +129,33 @@ export type VoiceView = {
   auto: boolean;
   /** I silenced the live owner on this phone. */
   liveMuted: boolean;
+  /** I turned the room's voices off on this phone: nobody is heard, the stage included. Remembered per room. */
+  speakerOff: boolean;
+  /** The mic was closed because the app went to the background. It stays closed until a tap. */
+  away: boolean;
   /** A one-line label for a moment ("VOICE ON", "MIC BLOCKED. ..."), or "". RoomVoice shows it for a second or two. */
   notice: string;
   noticeId: number;
 };
 
-const IDLE: VoiceView = { phase: "off", canPublish: false, reconnecting: false, liveBy: null, liveName: "", listening: 0, iAmLive: false, stageBy: [], canPlay: true, auto: false, liveMuted: false, notice: "", noticeId: 0 };
+const IDLE: VoiceView = { ...IDLE_FLOW, reconnecting: false, liveBy: null, liveName: "", listening: 0, iAmLive: false, stageBy: [], canPlay: true, auto: false, liveMuted: false, notice: "", noticeId: 0 };
+
+const storage = (): Storage | null => {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+};
+
+/** A permission prompt unanswered for this long no longer blocks the next tap. */
+const MIC_ASK_STALE_MS = 30_000;
+
+/** The longest a join waits for the browser to say audio may play. */
+const AUDIO_WAIT_MS = 1200;
+
+/** How a connection started: a tap on the control, the stage going live, or walking into the room. */
+type How = "tap" | "stage" | "enter";
 
 /** Does this phone's server speak voice? Asked once. False for any error, so nothing about voice shows. */
 let enabledAsk: Promise<boolean> | null = null;
@@ -164,12 +194,31 @@ export class VoiceSession {
   private applyTimer: ReturnType<typeof setTimeout> | null = null;
   private joining: Promise<void> | null = null;
   private lk: typeof import("livekit-client") | null = null;
+  /** Bumped by leave(): a join that was still on its way when I left sees it changed and drops what it built. */
+  private epoch = 0;
+  /** When the phone's permission prompt was put up (0: none). A tap while it is up does not ask twice; a prompt that never answers goes stale. */
+  private micAskedAt = 0;
 
   constructor(
     private readonly crewId: string,
     private readonly userId: string,
     private readonly audioHost: HTMLElement,
-  ) {}
+  ) {
+    // The room's voices are on unless this Hopper turned them off here last time.
+    this.view = { ...IDLE, speakerOff: speakerWasOff(storage(), crewId) };
+  }
+
+  /** The part of the view that voiceFlow.ts decides. */
+  private flow(): Flow {
+    const { phase, canPublish, speakerOff, away } = this.view;
+    return { phase, canPublish, speakerOff, away };
+  }
+
+  /** Show what a step decided (and its one-second label, if it has one). */
+  private adopt(step: Step) {
+    this.set(step.flow);
+    if (step.note) this.say(TEXT.notes[step.note]);
+  }
 
   get(): VoiceView {
     return this.view;
@@ -195,7 +244,7 @@ export class VoiceSession {
       if (this.view.auto) this.set({ auto: false }); // a tap on an automatic join keeps the connection
       return Promise.resolve();
     }
-    this.joining ??= this.connect(false).finally(() => {
+    this.joining ??= this.connect("tap").finally(() => {
       this.joining = null;
     });
     return this.joining;
@@ -204,7 +253,20 @@ export class VoiceSession {
   /** Stage voice: join by myself, listen-only, because the stage went live. No label, no mic, no prompt. */
   joinListen(): Promise<void> {
     if (!STAGE_FLAG || this.room) return Promise.resolve();
-    this.joining ??= this.connect(true).finally(() => {
+    this.joining ??= this.connect("stage").finally(() => {
+      this.joining = null;
+    });
+    return this.joining;
+  }
+
+  /**
+   * Voice on by default: walking into the room joins as a LISTENER. Nothing is said, no microphone is opened and no
+   * permission is asked (that waits for the first tap on the control). The audio is unlocked here when the browser allows it
+   * (a same-page walk in from the ENTER button keeps the page's tap), and otherwise by the first tap in the room (RoomVoice).
+   */
+  enter(): Promise<void> {
+    if (!VOICE_AUTO || this.room) return Promise.resolve();
+    this.joining ??= this.connect("enter").finally(() => {
       this.joining = null;
     });
     return this.joining;
@@ -218,7 +280,9 @@ export class VoiceSession {
     return bearer;
   }
 
-  private async connect(auto: boolean) {
+  private async connect(how: How) {
+    const epoch = this.epoch;
+    const auto = how === "stage";
     this.set({ phase: "joining" });
     try {
       const bearer = await this.bearer();
@@ -228,11 +292,13 @@ export class VoiceSession {
         body: JSON.stringify({ crewId: this.crewId }),
       });
       const body = (await res.json().catch(() => ({}))) as { serverUrl?: string; token?: string; canPublish?: boolean; owners?: string[]; mode?: string; error?: string };
+      if (epoch !== this.epoch) return; // I left while it was out
       if (!res.ok || !body.serverUrl || !body.token) throw new VoiceError(errorLine(res.status, body.error), res.status);
       this.owners = body.owners ?? [];
       this.mode = body.mode === "stage" ? "stage" : "mixed";
 
       const lk = (this.lk ??= await import("livekit-client"));
+      if (epoch !== this.epoch) return;
       const room = new lk.Room({ webAudioMix: true, dynacast: true, adaptiveStream: false });
       this.room = room;
       const { RoomEvent, Track } = lk;
@@ -263,19 +329,27 @@ export class VoiceSession {
           if (this.room === room) this.reset();
         });
       await room.connect(body.serverUrl, body.token, { autoSubscribe: false });
-      // The join came from a tap, so the browser lets the audio start now.
-      await room.startAudio().catch(() => undefined);
-      await room.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
+      if (epoch !== this.epoch) {
+        room.disconnect();
+        return;
+      }
+      // Let the audio start. After a tap (or a same-page walk in from one) the browser allows it now. With no tap yet it can
+      // stay pending until one, so the join never waits for it: canPlay says whether audio plays, and the first tap in the
+      // room unlocks it (RoomVoice). The microphone is NOT touched here: no prompt.
+      await Promise.race([room.startAudio().catch(() => undefined), new Promise<void>((done) => setTimeout(done, AUDIO_WAIT_MS))]);
+      if (epoch !== this.epoch) return;
       const walker = !!body.canPublish;
-      this.set({ phase: "listening", canPublish: walker, reconnecting: false, auto, canPlay: room.canPlaybackAudio });
-      if (!auto) this.say(walker ? "VOICE ON" : "LISTEN ONLY");
+      this.adopt(joined(this.flow(), walker));
+      this.set({ reconnecting: false, auto, canPlay: room.canPlaybackAudio });
+      if (how === "tap") this.say(walker ? "VOICE ON" : "LISTEN ONLY");
       this.roster();
       this.queueApply(0);
     } catch (e) {
+      if (epoch !== this.epoch) return; // a newer join owns the state now
       this.room?.disconnect();
       this.room = null;
       this.set({ phase: "off" });
-      if (!auto) this.say(e instanceof VoiceError ? e.message : "Voice isn't working right now.");
+      if (how === "tap") this.say(e instanceof VoiceError ? e.message : "Voice isn't working right now.");
     }
   }
 
@@ -286,20 +360,82 @@ export class VoiceSession {
     void room.startAudio().then(() => this.set({ canPlay: room.canPlaybackAudio }), () => undefined);
   }
 
-  /** The microphone: on, or off. Only a walker has one. Returns false when it could not be turned on. */
+  /**
+   * The microphone: on, or off. Only a walker has one. Turning it ON is the only place the phone is asked for it, and only a
+   * tap gets here (the control, GO LIVE, SPEAK TO ALL): a "no" leaves me listening with the control saying blocked, and
+   * nothing asks again until the next tap. Returns false when it could not be turned on.
+   */
   async setMic(on: boolean): Promise<boolean> {
     const room = this.room;
     if (!room || !this.view.canPublish) return false;
+    if (this.micAskedAt && Date.now() - this.micAskedAt < MIC_ASK_STALE_MS) return false;
+    this.micAskedAt = Date.now();
     try {
       await room.localParticipant.setMicrophoneEnabled(on);
-      this.set({ phase: on ? "mic" : "muted", ...(on ? { auto: false } : {}) });
-      this.say(on ? "MIC ON" : "MIC OFF");
-      if (!on && this.view.iAmLive) await this.endLive();
-      return true;
     } catch {
-      this.say("MIC BLOCKED. CHECK YOUR PHONE SETTINGS.");
+      this.micAskedAt = 0;
+      if (this.room === room && on) this.adopt(micAnswer(this.flow(), false));
       return false;
     }
+    this.micAskedAt = 0;
+    if (this.room !== room) return false; // I hung up while the phone was asking
+    if (on) {
+      this.adopt(micAnswer(this.flow(), true));
+      this.set({ auto: false });
+      this.say("MIC ON");
+      // The app went to the background while the prompt was up: do not leave a live mic behind it.
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") await this.away();
+    } else {
+      this.set({ phase: "muted" });
+      this.say("MIC OFF");
+      if (this.view.iAmLive) await this.endLive();
+    }
+    return true;
+  }
+
+  /** The tap on the voice control: join, leave, ask for the mic, or mute (voiceFlow.ts tap). Returns what it did. */
+  async tap(): Promise<Do | undefined> {
+    const step = tapStep(this.flow());
+    if (step.do === "join") await this.join();
+    else if (step.do === "leave") this.leave();
+    else if (step.do === "mic-off") await this.setMic(false);
+    else if (step.do === "ask-mic") await this.setMic(true);
+    return step.do;
+  }
+
+  /**
+   * The app went to the background or the screen locked: close the mic and let go of the phone's microphone (the light goes
+   * out), and end a broadcast from the stage. It stays closed until the Hopper is back AND taps.
+   */
+  async away() {
+    const room = this.room;
+    const lk = this.lk;
+    const step = wentAway(this.flow());
+    if (!room || !lk || step.do !== "release-mic") return;
+    this.adopt(step); // the control shows the muted mic at once
+    const me = room.localParticipant;
+    try {
+      await me.setMicrophoneEnabled(false);
+      const pub = me.getTrackPublication(lk.Track.Source.Microphone);
+      if (pub?.track) await me.unpublishTrack(pub.track, true);
+    } catch {
+      /* the track is muted at the least */
+    }
+    if (this.view.iAmLive) await this.endLive();
+  }
+
+  /** Back in the app: nothing turns on by itself. If the mic was closed because the app went away, say so. */
+  returned() {
+    this.adopt(cameBack(this.flow()));
+  }
+
+  /** The room's voices on or off on this phone (remembered per room). Off: nobody is heard, the stage included. */
+  setSpeaker(on: boolean) {
+    this.adopt(speaker(this.flow(), on));
+    rememberSpeaker(storage(), this.crewId, on);
+    this.say(on ? TEXT.speakerOn : TEXT.speakerOff);
+    this.queueApply(0);
+    this.speakers();
   }
 
   /** The owner goes live to the whole room from the stage: mic on, the "live" attribute up. The route only lets an owner set it. */
@@ -388,7 +524,7 @@ export class VoiceSession {
       iAmLive: answer.ok,
       canPublish: can,
       // The server took my microphone right away (a stage-only room, off the stage): the button goes back to listening.
-      ...(!can && (this.view.phase === "mic" || this.view.phase === "muted") ? { phase: "listening" as VoicePhase } : {}),
+      ...(!can && (this.view.phase === "mic" || this.view.phase === "muted" || this.view.phase === "blocked") ? { phase: "listening" as VoicePhase } : {}),
     });
     if (on && answer.full) this.say("STAGE FULL");
     this.roster();
@@ -447,6 +583,8 @@ export class VoiceSession {
 
   leave() {
     const room = this.room;
+    this.epoch++;
+    this.micAskedAt = 0;
     this.room = null;
     if (room) {
       room.disconnect();
@@ -464,7 +602,8 @@ export class VoiceSession {
     useRoomStore.getState().setSpeaking([]);
     useLiveStore.getState().setLiveBy(null);
     music.duckVoice(false);
-    this.set({ ...IDLE, noticeId: this.view.noticeId, notice: this.view.notice });
+    // The speaker choice is the Hopper's, not the connection's: it survives a hang up.
+    this.set({ ...IDLE, speakerOff: this.view.speakerOff, noticeId: this.view.noticeId, notice: this.view.notice });
   }
 
   /** The owner who is live (believed only from a crew owner's identity), the head count, and my own live state. */
@@ -516,11 +655,11 @@ export class VoiceSession {
       this.applyStage(room, lk);
       return;
     }
-    const { liveBy, liveMuted } = this.view;
+    const { liveBy, liveMuted, speakerOff } = this.view;
     for (const p of room.remoteParticipants.values()) {
       const live = p.identity === liveBy;
-      const volume = live ? (liveMuted ? 0 : 1) : (this.heard.get(p.identity) ?? 0);
-      const want = live ? !liveMuted : volume > 0;
+      const volume = speakerOff ? 0 : live ? (liveMuted ? 0 : 1) : (this.heard.get(p.identity) ?? 0);
+      const want = speakerOff ? false : live ? !liveMuted : volume > 0;
       for (const pub of p.audioTrackPublications.values()) {
         if (pub.isSubscribed !== want) pub.setSubscribed(want);
       }
@@ -541,7 +680,7 @@ export class VoiceSession {
   /** The stage leads (stageMix.ts): stage voices at full volume, the people near me capped, nobody by distance in a stage-only room. */
   private applyStage(room: Room, lk: typeof import("livekit-client")) {
     this.stageHeard = this.stageSpeakers(room);
-    const mix = stageMix({ stage: this.stageHeard, heard: this.heard, me: this.userId, mode: this.mode, stageMuted: this.view.liveMuted });
+    const mix = silence(stageMix({ stage: this.stageHeard, heard: this.heard, me: this.userId, mode: this.mode, stageMuted: this.view.liveMuted }), this.view.speakerOff);
     for (const p of room.remoteParticipants.values()) {
       const volume = mix.get(p.identity) ?? 0;
       const want = volume > 0;
@@ -564,6 +703,7 @@ export class VoiceSession {
         ids.push(s.identity);
         continue;
       }
+      if (this.view.speakerOff) continue; // voices off: no dots over heads I cannot hear, no music dip
       const staged = this.stageHeard.includes(s.identity);
       if ((this.mode === "stage" && STAGE_FLAG ? staged : this.heard.has(s.identity) || staged) || s.identity === this.view.liveBy) {
         if (this.view.liveMuted && (s.identity === this.view.liveBy || staged)) continue;
