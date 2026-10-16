@@ -14,9 +14,9 @@ type Tab = { href: string; label: string; Icon: LucideIcon };
 const TABS: ReadonlyArray<Tab> = [
   { href: "/", label: "MAP", Icon: Map },
   { href: "/discover", label: "EVENTS", Icon: CalendarDays },
-  // The tab still says CREW (Jae, 15 Oct): the 360Playlist campaign asks people to join the crew. The page inside shows your
-  // roomz, event rooms and a search for a room; ROOMZ on the tab comes later. People are on CHAT (CHATS and CREW). Route: /crew.
-  { href: "/crew", label: "CREW", Icon: Users },
+  // ROOMZ (Jae, 16 Oct): the page inside shows your roomz, event rooms and a search for a room. CREW means your friends,
+  // and they are on CHAT (CHATS and CREW). Route: /crew.
+  { href: "/crew", label: "ROOMZ", Icon: Users },
   { href: "/chat", label: "CHAT", Icon: MessageSquare },
   { href: "/me", label: "ME", Icon: CircleUserRound },
 ];
