@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { requireAccount } from "@/lib/accountGate";
 import { haptics } from "@/lib/haptics";
+import { backoff, jitter } from "@/lib/idle";
 import { sfx } from "@/lib/sound/sfx";
 import { getSupabase } from "@/lib/supabase/client";
 import { useToast } from "@/lib/store";
 import { useSession } from "@/lib/useSession";
-import { claimDaily, enterHotspot, leaveHotspot, myHotspot, pulseHotspot, readRoom, POLL_MS, PULSE_MS, type Entered, type RoomState } from "./api";
+import { claimDaily, enterHotspot, leaveHotspot, myHotspot, pulseHotspot, readRoom, PULSE_MS, type Entered, type RoomState } from "./api";
 import { demoEntered, demoRoom } from "./demo";
 import type { Reward } from "./RewardMoment";
 
@@ -198,17 +199,29 @@ export function useHotspotRoom(slug: string) {
       else if (r.reason === "not_in_hotspot" && !(await movedOn())) await rejoin();
     };
     const a = setInterval(() => showing() && void pulse(), PULSE_MS);
-    const b = setInterval(() => showing() && void poll(), POLL_MS);
+    // The room is read every 20 s (up to 45 s for a phone nobody is touching), spread 20% so a full room does not knock
+    // together. The pulse above stays at 30 s: it is what keeps the visit alive.
+    let b: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      clearTimeout(b);
+      b = setTimeout(() => {
+        if (dead) return;
+        if (showing()) void poll();
+        arm();
+      }, jitter(backoff(20_000, { max: 45_000 })));
+    };
+    arm();
     const onShow = () => {
       if (!showing()) return;
       void pulse();
       void poll();
+      arm();
     };
     document.addEventListener("visibilitychange", onShow);
     return () => {
       dead = true;
       clearInterval(a);
-      clearInterval(b);
+      clearTimeout(b);
       document.removeEventListener("visibilitychange", onShow);
     };
   }, [phase.t, entered, slug, rejoin, movedOn]);

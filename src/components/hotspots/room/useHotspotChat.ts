@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabase } from "@/lib/supabase/client";
+import { jitter } from "@/lib/idle";
 import type { Message } from "@/lib/types";
-import { POLL_MS } from "./api";
 import { demoMessages } from "./demo";
 
 /**
@@ -17,8 +17,12 @@ import { demoMessages } from "./demo";
  *
  * The Realtime feed only brings new messages. Staff can delete the last N minutes of a room that is open (and the 24 hour
  * window moves on its own), and a feed of INSERTs never hears that, so the list is read again every POLL_MS and
- * REPLACES what is on screen: whatever the server no longer returns goes.
+ * REPLACES what is on screen: whatever the server no longer returns goes. That safety read is every 30 s while the feed is
+ * connected and every 15 s while it is not.
  */
+
+const RESYNC_LIVE_MS = 30_000;
+const RESYNC_DOWN_MS = 15_000;
 
 const COLS = "id, channel, body, created_at, author_key, author_name, author_look, author_handle, anon";
 const KEEP = 120;
@@ -38,6 +42,7 @@ export function useHotspotChat(channel: string | null, youKey: string | null) {
     if (!channel) return;
     if (!sb) return void setMsgs(demoMessages(channel));
     let dead = false;
+    let subscribed = false;
 
     const byTime = (a: Message, b: Message) => Date.parse(a.created_at) - Date.parse(b.created_at);
 
@@ -70,17 +75,28 @@ export function useHotspotChat(channel: string | null, youKey: string | null) {
         merge([p.new as Message]);
       })
       .subscribe((s) => {
-        setLive(s === "SUBSCRIBED");
+        subscribed = s === "SUBSCRIBED";
+        setLive(subscribed);
         // The first time, and back after a gap: fetch what was said meanwhile.
-        if (s === "SUBSCRIBED") void resync();
+        if (subscribed) void resync();
+        arm();
       });
     const showing = () => document.visibilityState === "visible";
-    const timer = setInterval(() => showing() && void resync(), POLL_MS);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    function arm() {
+      clearTimeout(timer);
+      if (dead) return;
+      timer = setTimeout(() => {
+        if (showing()) void resync();
+        arm();
+      }, jitter(subscribed ? RESYNC_LIVE_MS : RESYNC_DOWN_MS, 0.1));
+    }
+    arm();
     const onShow = () => showing() && void resync();
     document.addEventListener("visibilitychange", onShow);
     return () => {
       dead = true;
-      clearInterval(timer);
+      clearTimeout(timer);
       document.removeEventListener("visibilitychange", onShow);
       void sb.removeChannel(ch);
     };
