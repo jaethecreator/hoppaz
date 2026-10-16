@@ -337,7 +337,7 @@ clearAction(id: string): void
 | Event | next to the fountain | `Ticket` | SEE THE DAVE NIGHT | opens the fountain sheet (11.3) |
 | Exit | next to the door | `DoorOpen` | EXIT TO MAP | goes to `/` (asks first while a Game Time is live) |
 | Search | next to a Game Time object | `Search` | SEARCH | one search (13.4) |
-| Go live | owner, on the stage | `Mic` | GO LIVE (END LIVE while live) | starts the stage voice (14.4) |
+| Go live | owner, on the stage | `Mic` | GO LIVE (END LIVE while live) | starts the stage voice (14.4). With stage voice on: staff on the stage, SPEAK TO ALL |
 
 The event label is `SEE THE <HEADLINE> NIGHT`, where HEADLINE is the text before the first ":" of `eventTitle(event)` in caps, so "LEAD · DAVE: The Boy Who Played the Harp" gives DAVE. If it is longer than 14 characters or has no colon the label is "SEE THE EVENT".
 
@@ -656,17 +656,27 @@ For members in the room at the opening: from 10 s before `opens_at` the world di
 
 Behind one flag: `NEXT_PUBLIC_ROOM_VOICE=1` and the server answering `GET /api/crew/rooms/voice` with `{ enabled: true }` (that needs the `LIVEKIT_*` env, not set locally). With either missing, nothing about voice renders: no mic, no tip, no mention in the welcome card.
 
-### 14.1 The mic control
+### 14.1 The voice control
 
-Top right under the sound icon, 36 px visible, 44 hit. Three presses, never automatic:
+**Voice is on by default, the mic is not.** Walking into a crew room joins voice by itself as a listener, once the room's enter call has answered (the server then knows the Hopper is walking): you hear the people near you and the stage straight away. Nothing is sent and no permission is asked on the way in. The first tap on the control is when the phone is asked for the microphone, and nothing asks again by itself. Hotspot rooms never mount voice. `NEXT_PUBLIC_ROOM_VOICE_AUTO=0` turns only the automatic join off (back to tap to join).
+
+Top right under the sound icon, 36 px visible, 44 hit, with a small speaker toggle (28 px, 44 by 32 hit) under it. Rules live in `src/lib/crew-room/voiceFlow.ts` and are checked by `scripts/crew-room/check-voice-flow.mjs`.
 
 | State | Icon | Meaning |
 |---|---|---|
-| off | `Headphones` | not in voice yet. First press joins as a listener (lazy `import("livekit-client")`, `webAudioMix`), nothing is sent |
-| listening | `Headphones` with a `keke` dot | I hear people near me. Second press asks for the microphone |
-| mic on | `Mic` with a pulsing `keke` ring | people near me hear me. Third press mutes (`MicOff`) |
+| off | `Headphones` | not in voice (not joined yet, or left). A tap joins as a listener |
+| listening | `Headphones` with a `keke` dot | I hear the room. A tap asks for the microphone |
+| mic on | `Mic`, face lit `keke`, pulsing ring | people near me hear me. A tap mutes (`MicOff`) and another tap unmutes |
+| muted | `MicOff` | in voice, mic closed |
+| blocked | `MicOff` with a red dot and the chip "Mic blocked. Tap to allow" | the phone said no: listen-only. A tap asks again; a second no says "MIC BLOCKED. CHECK YOUR PHONE SETTINGS." |
 
-A 1 s label shows on each change: "VOICE ON", "MIC ON", "MIC OFF". **The mic starts off every time**, and joining never turns it on. Watchers can listen and cannot be heard (the route gives them no publish right): the icon shows `Headphones` only, labelled "LISTEN ONLY". First join shows one line, "Voice uses data.", once per device. Denied: "MIC BLOCKED. CHECK YOUR PHONE SETTINGS."; dropped: "VOICE LOST. TRYING AGAIN."
+**Speaker toggle.** `Volume2` / `VolumeX`: the room's voices off means nobody is heard, the stage included (no subscriptions, no speaking dots, no music dip). Remembered per room on the phone (`hz:voice-speaker:<crew>`). The mic is never remembered as on: every visit starts closed.
+
+**One-time tip** on the control, once per device: "You can hear the room. Tap to talk." (7 s, not shown when the voices are off or the Hopper cannot talk).
+
+**Safety.** The app going to the background or the screen locking (`visibilitychange` hidden) closes a live mic, lets go of the phone's microphone and ends a stage broadcast; on return nothing turns on, a label says "MIC IS OFF. TAP TO TALK.", and the mic opens again only on a tap. Leaving the room (or the page) hangs up. The speaking ring shows over my own head when I talk. Blocked people are never heard (they are not in the walkers list or the stage list, and a phone subscribes only to people it hears).
+
+**Audio unlock.** Browsers hold audio back until a tap. A walk in from the ENTER button on the same page keeps the page's tap (Chrome and Android play at once); an iPhone plays after the first tap in the room, which unlocks it (a join never waits for the browser's answer). A label shows on each change: "VOICE ON" (a tap join), "MIC ON", "MIC OFF", "ROOM VOICES ON/OFF". Watchers can listen and cannot be heard (the route gives them no publish right): the icon shows `Headphones` only, labelled "LISTEN ONLY" on a tap join. First tap join shows one line, "Voice uses data.", once per device. Dropped: "VOICE LOST. TRYING AGAIN."
 
 ### 14.2 What I hear (the rules, in tiles)
 
@@ -679,7 +689,29 @@ A 1 s label shows on each change: "VOICE ON", "MIC ON", "MIC OFF". **The mic sta
 - A speaking ring under the talker: 2 px `keke` ellipse, a little wider than the avatar, scaled 1.0 to 1.25 by volume in three steps (`--v`), plus a 10 px `Mic` dot beside their name tag. At most 8 rings, nearest first. Mine shows too.
 - When I turn my mic on, a faint dashed circle of 6 tiles around me shows for 1.5 s, and once per session the hint "PEOPLE NEAR YOU CAN HEAR YOU".
 
-### 14.4 GO LIVE: the owner's spotlight
+### 14.4 Staff on the stage talk to the whole room
+
+Two modes behind two flags. **Off (default):** the owner-only GO LIVE below. **On** (`NEXT_PUBLIC_ROOM_STAGE_VOICE=1`, with the voice flag of 14 and the `LIVEKIT_*` env): staff on the stage speak to everyone, like a general voice channel. The owner is staff, and so is every **admin**, a role the owner gives with MAKE ADMIN in a member's profile sheet (`crew_set_role`, `supabase/crew_stage_voice.sql`).
+
+**The rule.** The database decides, never the phone. A staff member is "on the stage" when their walker has a live heartbeat and the server-checked tile is inside the layout's stage zone (`stage`; `booth` and `deck` in event rooms). At most three speak at once: the owner first, then admins by join date. A fourth sees STAGE FULL.
+
+**Who talks.**
+- Staff on the stage with the mic already on (they tapped it) start by themselves.
+- Staff with the mic off get the **SPEAK TO ALL** pill (priority 60). One tap joins voice, asks the server for the stage, then opens the mic (the browser asks the first time). A mic never opens without that tap.
+- Leaving the stage ends it after 1.5 s. The mic stays on for the people near them; in a stage-only room the server takes the right to publish away.
+
+**Who hears.**
+- When the stage goes live every crew member in the room, walker or watcher, joins listen-only by themselves. A phone that left voice itself this visit stays out. 30 s after the stage empties, an automatic listener who never pressed the mic hangs up.
+- Browsers hold audio back until a tap. The first touch anywhere in the room unlocks it; while it is still held the pill reads **TAP TO LISTEN**.
+- One pill replaces the live chip: the speakers' faces (up to three), `LIVE ON STAGE`, the first name and `N LISTENING`, and a 44 px mute toggle. The stage lights come on and the music ducks.
+- Mixed (default): stage voices at full volume wherever I stand; the people near me capped at half while the stage is live; at most 8 voices, stage first. Stage-only (`ROOM_VOICE_STAGE_ONLY=1`, for a concert night): only the stage is heard, and only staff on the stage may publish at all.
+- Blocked people are left out of the stage list for the person who blocked them.
+
+**Enforcement.** (1) Each phone subscribes to a stage voice only if the database's list (`crew_room_stage`, polled every 2 s) and the voice room's `stage` attribute both name them. (2) The attribute and the publish right are set only by the server (`POST /api/crew/rooms/voice/stage`, after it re-asks the database), which also clears any attribute the database no longer backs. Nobody can set their own attributes any more. A phone that cheats changes what that one phone hears.
+
+**Where.** Crew rooms (the 360 Stage) now. Event rooms later (`stageZoneId`). Never hotspot rooms (strangers behind an 18+ gate, no voice). The Private Circle is Ola's separate product and is left alone.
+
+#### The owner-only GO LIVE (flag off)
 
 The crew owner, standing inside the 360 Stage zone, gets the **GO LIVE** pill (priority 60, `Mic`). Pressing it turns their mic on and:
 
