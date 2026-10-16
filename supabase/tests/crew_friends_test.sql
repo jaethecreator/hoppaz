@@ -1,4 +1,5 @@
--- Crew = friends (supabase/crew_friends.sql): the mutual wave, MESSAGE, POKE and unread. LOCAL ONLY: every fixture rolls back.
+-- Crew = friends (supabase/crew_friends.sql): the mutual wave, MESSAGE, POKE and unread, the backfill of room waves answered
+-- the old way (launch night). LOCAL ONLY: every fixture rolls back.
 -- Needs schema.sql, chat_accounts.sql, crew_rooms.sql, crew_rails.sql and crew_friends.sql loaded. Ends with ALL CREW FRIENDS TESTS PASSED.
 --   docker exec -i supabase_db_hoppaz-local psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 < supabase/tests/crew_friends_test.sql
 begin;
@@ -293,6 +294,99 @@ begin
   j := pg_temp.inbox(a);
   perform pg_temp.ok(jsonb_array_length(j -> 'dms') = 1 and not (j -> 'dms' -> 0 ->> 'crew')::boolean, 'an old chat with no crew rows is still listed, not marked crew');
   perform pg_temp.ok(jsonb_array_length(j -> 'crew') = 0, 'and there is no crew face for it');
+end $$;
+
+-- ---------------------------------------------------------------------------------------------------------------------
+-- Launch night: room waves answered the old way (crew_room_wave) wrote an accepted wave and a chat, and no crew rows. The
+-- backfill (public._cf_backfill_room_waves, run at the end of crew_friends.sql) makes crew of them.
+-- The file itself is not run again here (it has its own begin and commit); the backfill function is what it calls.
+create function pg_temp.old_wave(u uuid, room uuid, target uuid) returns text language plpgsql as $$
+declare r text;
+begin
+  perform pg_temp.actor(u);
+  r := public.crew_room_wave(room, target);
+  perform pg_temp.admin();
+  return r;
+end $$;
+-- Launch night's two taps: SAY HI, then the other one's SAY HI back. Returns the chat id.
+create function pg_temp.old_match(a uuid, b uuid, room uuid) returns uuid language plpgsql as $$
+declare r text;
+begin
+  if pg_temp.old_wave(a, room, b) <> 'sent' then raise exception 'FAILED: old wave not sent'; end if;
+  r := pg_temp.old_wave(b, room, a);
+  if r not like 'matched:%' then raise exception 'FAILED: old wave back answered %', r; end if;
+  return substr(r, 9)::uuid;
+end $$;
+create function pg_temp.crew_rows(x uuid, y uuid) returns int language sql as $$
+  select count(*)::int from public.crew where (user_id = x and friend_id = y) or (user_id = y and friend_id = x);
+$$;
+-- Is `other` among the crew faces u reads in the Chat tab?
+create function pg_temp.listed(u uuid, other uuid) returns boolean language plpgsql as $$
+declare j jsonb;
+begin
+  j := pg_temp.inbox(u);
+  return exists (select 1 from jsonb_array_elements(j -> 'crew') f where (f ->> 'id')::uuid = other);
+end $$;
+
+do $$
+declare
+  ada uuid := pg_temp.newuser(false, 'Bf Ada'); ben uuid := pg_temp.newuser(false, 'Bf Ben');     -- launch night pair
+  chi uuid := pg_temp.newuser(false, 'Bf Chi'); dayo uuid := pg_temp.newuser(false, 'Bf Dayo');   -- accepted event wave
+  efe uuid := pg_temp.newuser(false, 'Bf Efe'); femi uuid := pg_temp.newuser(false, 'Bf Femi');   -- efe blocked femi
+  gio uuid := pg_temp.newuser(false, 'Bf Gio'); hana uuid := pg_temp.newuser(false, 'Bf Hana');   -- hana blocked gio
+  lola uuid := pg_temp.newuser(false, 'Bf Lola');                                                  -- no one's friend
+  room uuid := gen_random_uuid(); ev uuid;
+  n int; n_rows int; j jsonb; dm_ab uuid; who uuid;
+begin
+  insert into public.crews (id, name, created_by) values (room, 'Backfill test crew', ada);
+  insert into public.crew_members (crew_id, user_id, role)
+  select room, u, case when u = ada then 'owner' else 'member' end
+    from unnest(array[ada, ben, chi, dayo, efe, femi, gio, hana, lola]) u;
+  for who in select unnest(array[ada, ben, chi, dayo, efe, femi, gio, hana, lola]) loop
+    perform pg_temp.actor(who); perform public.crew_room_enter(room, gen_random_uuid()); perform pg_temp.admin();
+  end loop;
+
+  -- (1) A room wave answered BEFORE crew_friends.sql: accepted, a chat, no crew rows. That is the state launch night left.
+  dm_ab := pg_temp.old_match(ada, ben, room);
+  perform pg_temp.ok((select status from public.waves where from_user = ada and to_user = ben) = 'accepted'
+                     and (select event_id from public.waves where from_user = ada and to_user = ben) is null, 'the old wave is accepted, with no event');
+  perform pg_temp.ok(pg_temp.dms_between(ada, ben) = 1 and not pg_temp.mutual(ada, ben) and pg_temp.crew_rows(ada, ben) = 0,
+                     'and left a chat and no crew rows (launch night)');
+  perform pg_temp.ok(not pg_temp.listed(ada, ben) and not pg_temp.listed(ben, ada), 'so neither lists the other in the Chat tab crew');
+
+  -- (2) An accepted event wave between two people who share a crew stays a chat.
+  insert into public.events (title, venue_name, geog, starts_at) values ('Bf event', 'Bf venue', st_point(3.40, 6.50)::geography, now() + interval '1 day')
+  returning id into ev;
+  insert into public.waves (from_user, to_user, event_id, from_alias, to_alias, status, responded_at)
+  values (chi, dayo, ev, 'chi', 'dayo', 'accepted', now());
+  -- (3) A blocked pair does not become crew, whichever of them blocked.
+  perform pg_temp.old_match(efe, femi, room);
+  perform pg_temp.old_match(gio, hana, room);
+  insert into public.blocks (blocker, blocked, label) values (efe, femi, 'F'), (hana, gio, 'G');
+
+  n := public._cf_backfill_room_waves();
+  perform pg_temp.ok(n >= 1, 'the backfill reports the pairs it made crew');
+  perform pg_temp.ok(pg_temp.mutual(ada, ben), 'the room wave from before the file is crew both ways now');
+  perform pg_temp.ok(pg_temp.listed(ada, ben) and pg_temp.listed(ben, ada), 'and each lists the other in crew_friend_inbox');
+  j := pg_temp.inbox(ada);
+  perform pg_temp.ok((j -> 'crew' -> 0 ->> 'dm')::uuid = dm_ab and j -> 'crew' -> 0 ->> 'name' = 'Bf Ben', 'with the chat they already had, under the room name');
+  perform pg_temp.ok(pg_temp.dms_between(ada, ben) = 1, 'and no second chat');
+  perform pg_temp.ok(not pg_temp.mutual(chi, dayo) and pg_temp.crew_rows(chi, dayo) = 0, 'an accepted event wave does not become crew');
+  perform pg_temp.ok(pg_temp.crew_rows(efe, femi) = 0, 'a pair where the first blocked the second does not');
+  perform pg_temp.ok(pg_temp.crew_rows(gio, hana) = 0, 'nor one where the second blocked the first');
+  perform pg_temp.ok(not pg_temp.listed(efe, femi) and not pg_temp.listed(femi, efe), 'and neither lists the other');
+
+  -- (4) Run again: nothing new, no duplicates.
+  select count(*) into n_rows from public.crew;
+  perform pg_temp.ok(public._cf_backfill_room_waves() = 0, 'a second run makes nobody new');
+  perform pg_temp.ok(public._cf_backfill_room_waves() = 0 and (select count(*) from public.crew) = n_rows, 'a third run neither: the crew rows are the same');
+  perform pg_temp.ok(pg_temp.crew_rows(ada, ben) = 2, 'a pair is one row each way, never more');
+  -- A one-way old row is left alone, and a pair that is crew both ways already is skipped.
+  insert into public.crew (user_id, friend_id) values (chi, lola);
+  perform pg_temp.ok(public._cf_backfill_room_waves() = 0 and pg_temp.crew_rows(chi, lola) = 1, 'a one-way ADD TO CREW row is not touched');
+  delete from public.crew where user_id = chi;
+  perform pg_temp.ok(not has_function_privilege('anon', 'public._cf_backfill_room_waves()', 'execute')
+                     and not has_function_privilege('authenticated', 'public._cf_backfill_room_waves()', 'execute'), 'the backfill is not callable from the app');
 end $$;
 
 -- ---------------------------------------------------------------------------------------------------------------------

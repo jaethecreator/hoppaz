@@ -6,6 +6,7 @@
 --            Safe to run again, in one transaction. Run it after any later re-run of crew_rails.sql or
 --            chat_accounts.sql too, although nothing here is undone by those two: every function below has a NEW
 --            name (crew_friend_*), so the old wave, DM and crew calls are left exactly as they were.
+--            Each run also makes crew of the room waves that were answered the old way (see the end of the file).
 --
 -- THE MODEL
 --   * A crew room is a place. Your crew is your friends.
@@ -45,8 +46,10 @@
 --   * Hotspot rooms keep their aliases and never come near any function here (a hotspot key has no user id on it and
 --     has no crew room).
 --   * The old crew_room_wave still works for people on an older app. To make crew the ONLY way into a room chat once
---     the new app is live, run the one line at the bottom of this file (it is commented out).
---   * A one-way crew row (the old ADD TO CREW) stays. It shows in the list, but it unlocks nothing: crew means both ways.
+--     the new app is live, run the one line at the bottom of this file (it is commented out). What it wrote before this
+--     file (launch night: an accepted wave and a chat, no crew rows) is made crew by the backfill at the end of the file.
+--   * A one-way crew row (the old ADD TO CREW) stays. It does not show in the crew list and it unlocks nothing: crew means
+--     both ways (crew_friend_inbox lists only people who have you too).
 --
 -- LIMITS
 --   waves   30 a day per person (same count as the old wave: one waves table, one count)
@@ -193,8 +196,32 @@ language sql security definer set search_path = public as $$
   update dms set a_revealed = true, b_revealed = true where id = p_dm;
 $$;
 
+-- Launch night (15 Oct) ran the older crew_room_wave: SAY HI plus a wave back set the wave to accepted (no event) and opened
+-- a chat, but wrote no crew rows, so those people never showed as crew. In this model that IS crew, both ways. This makes it
+-- so, for every accepted wave with no event between two people who share a crew and have no block between them. Event waves
+-- (event_id set) stay chats only. A row that is already there is left alone, so it is safe to run again; returns how many
+-- pairs were new. The same rule crew_friend_respond uses for a wave answered from the Chat tab.
+create or replace function public._cf_backfill_room_waves() returns int
+language plpgsql security definer set search_path = public as $$
+declare w record; n int := 0;
+begin
+  for w in
+    select distinct least(x.from_user, x.to_user) as a, greatest(x.from_user, x.to_user) as b
+      from waves x
+     where x.status = 'accepted' and x.event_id is null
+       and public._cf_shared_crew(x.from_user, x.to_user) is not null
+       and not public.is_blocked(x.from_user, x.to_user)
+       and not public._cf_mutual(x.from_user, x.to_user)
+  loop
+    perform public._cf_make_crew(w.a, w.b);
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+
 revoke all on function public._cf_mutual(uuid, uuid), public._cf_name(uuid), public._cf_shared_crew(uuid, uuid),
-  public._cf_make_crew(uuid, uuid), public._cf_dm(uuid, uuid), public._cf_hs_block(uuid, uuid), public._cf_reveal(uuid)
+  public._cf_make_crew(uuid, uuid), public._cf_dm(uuid, uuid), public._cf_hs_block(uuid, uuid), public._cf_reveal(uuid),
+  public._cf_backfill_room_waves()
   from public, anon, authenticated;
 revoke all on function public._cf_visible(uuid, uuid) from public, anon;
 grant execute on function public._cf_visible(uuid, uuid) to authenticated;
@@ -689,6 +716,15 @@ grant execute on function public.crew_friend_wave(uuid, uuid), public.crew_frien
   public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_read(uuid),
   public.crew_friend_inbox(), public.crew_friend_map(boolean), public.crew_friend_staff(uuid),
   public.crew_friend_hotspot_wave(text) to authenticated;
+
+-- ---------------------------------------------------------- ONE-TIME BACKFILL ---
+-- Room waves answered before this file (launch night) become crew now. Nothing doubles on a run again: pairs that are
+-- crew already are skipped, and a pair with a block between them stays apart.
+do $do$
+declare n int := public._cf_backfill_room_waves();
+begin
+  raise notice 'crew_friends: % room wave pair(s) made crew (answered the old way, before this file)', n;
+end $do$;
 
 -- ------------------------------------------------------------ OPTIONAL, LATER ---
 -- Once the new app is live for everyone, close the old way into a room chat, so a chat from a crew room can only come
