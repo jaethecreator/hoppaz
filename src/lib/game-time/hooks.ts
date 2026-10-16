@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { backoff, hidden, jitter, useMapShown } from "@/lib/idle";
-import { fetchPublicGameTimeList, type PublicGameTimeGame } from "@/lib/publicApi";
+import { fetchPublicGameTimeList } from "@/lib/publicApi";
 import { useSession } from "@/lib/useSession";
 import { fetchList, fetchState, fetchTickets } from "./api";
 import { noteServerTime, serverNow } from "./clock";
@@ -155,7 +155,7 @@ function publish(games: GtListGame[]) {
 }
 
 /** The list to show: the per-user answer when it is young, otherwise the public games with the flags last known for them. */
-function merged(pub: { ok: boolean; games: PublicGameTimeGame[] }): GtListGame[] | null {
+function merged(pub: { ok: boolean; games: GtListGame[] }): GtListGame[] | null {
   const now = Date.now();
   const user = ping.lastUser;
   if (user && now - user.at < USER_FRESH) return user.games;
@@ -182,10 +182,11 @@ async function readOnce() {
   ping.inflight = true;
   try {
     const pub = await fetchPublicGameTimeList();
+    const pubGames = pub.ok ? pub.data.games : [];
     const now = Date.now();
     // The person's own list is needed when there is something to be in (a public game), when the public list could not be
     // read, every 10 minutes for an account (private crews), and after a long time away.
-    const own = !pub.ok || pub.games.length > 0 || ping.forceUser || (ping.account && now - ping.lastUserAt >= USER_EVERY);
+    const own = !pub.ok || pubGames.length > 0 || ping.forceUser || (ping.account && now - ping.lastUserAt >= USER_EVERY);
     if (own) {
       ping.forceUser = false;
       ping.lastUserAt = now;
@@ -197,7 +198,7 @@ async function readOnce() {
         ping.lastUser = { at: Date.now(), games: r.games };
       }
     }
-    const games = merged(pub);
+    const games = merged({ ok: pub.ok, games: pubGames });
     if (games) publish(games);
     ping.lastReadAt = Date.now();
   } finally {
