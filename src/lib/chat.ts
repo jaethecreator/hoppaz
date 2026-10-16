@@ -242,6 +242,27 @@ export async function blockPerson(target: { key?: string; dm?: string }, label: 
   return !!data;
 }
 
+/** One block you made: the name or alias you saw when you blocked them (never who is behind it), and when. */
+export type MyBlock = { id: string; label: string; created_at: string };
+
+/** The people you blocked, newest first: global blocks and hotspot blocks (my_blocks). null when it could not be read. */
+export async function myBlocks(): Promise<MyBlock[] | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data, error } = await sb.rpc("my_blocks");
+  return error ? null : ((data ?? []) as MyBlock[]);
+}
+
+/** Lift a block by its id from myBlocks(). Their waves and chats come back, so the inbox is read again. */
+export async function unblock(id: string) {
+  const sb = getSupabase();
+  if (!sb) return false;
+  const { error } = await sb.rpc("unblock", { p_block: id });
+  if (error) return false;
+  void loadInbox();
+  return true;
+}
+
 export async function reportThing(kind: "room" | "dm" | "person", ref: string, reason: string) {
   const sb = getSupabase();
   if (!sb) return false;

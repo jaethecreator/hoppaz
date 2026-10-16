@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import clsx from "clsx";
 import { ChevronDown, FileText, Lock, Settings, ShieldCheck, Trash2, UserRound } from "lucide-react";
-import { RowButton, RowLink, RowValue } from "./Rows";
+import { RowButton, RowGroup, RowLink, RowValue } from "./Rows";
+import { shortDate } from "./dropTime";
+import Sheet from "@/components/Sheet";
 import { setThemePref, themePref, type ThemePref } from "@/lib/theme";
 import {
   ALERT_LEVELS,
@@ -20,6 +22,8 @@ import {
   type EnableResult,
   type PushState,
 } from "@/lib/push";
+import { myBlocks, unblock, type MyBlock } from "@/lib/chat";
+import { useToast } from "@/lib/store";
 import { supabaseConfigured } from "@/lib/supabase/client";
 import { sfx } from "@/lib/sound/sfx";
 import { music } from "@/lib/sound/music";
@@ -126,6 +130,93 @@ function SoundRows() {
         onToggle={() => vibeMute.setMuted(!vibesMuted)}
       />
     </>
+  );
+}
+
+/**
+ * BLOCKED: the people you blocked, and the way back. The row says how many ("None" when nobody); SEE opens a sheet with each one
+ * under the name you saw when you blocked them, the day, and UNBLOCK. Global blocks and hotspot blocks are one list (my_blocks).
+ * An unblock brings their waves and chats back (lib/chat.ts reads the inbox again). Hidden in demo mode (no database).
+ */
+function BlockedRow() {
+  const say = useToast((s) => s.say);
+  const [list, setList] = useState<MyBlock[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const r = await myBlocks();
+    setFailed(!r);
+    if (r) setList(r);
+  }, []);
+  // The Settings card mounts its rows when it opens, so the list is read once each time it does.
+  useEffect(() => {
+    if (supabaseConfigured()) void load();
+  }, [load]);
+  if (!supabaseConfigured()) return null;
+
+  const lift = async (id: string) => {
+    if (busy) return;
+    setBusy(id);
+    const ok = await unblock(id);
+    setBusy(null);
+    if (!ok) {
+      say("Couldn't unblock them. Try again.", "error");
+      return;
+    }
+    setList((l) => (l ? l.filter((b) => b.id !== id) : l));
+    say("Unblocked.", "ok");
+  };
+
+  const value = list ? (list.length ? `${list.length} ${list.length === 1 ? "person" : "people"}` : "None") : failed ? "Not available" : "Loading";
+  return (
+    <div>
+      <RowValue
+        label="BLOCKED"
+        value={value}
+        action="SEE"
+        onAction={() => {
+          setOpen(true);
+          void load();
+        }}
+      />
+      {open && (
+        <>
+          <div className="absolute inset-0 z-[39] bg-ink/60" onClick={() => setOpen(false)} aria-hidden />
+          <Sheet open onClose={() => setOpen(false)} label="Blocked people">
+            <div className="mx-auto w-full max-w-[480px]">
+              <p className="pr-10 font-display text-base font-black leading-tight">Blocked</p>
+              <p className="hint mt-0.5">While someone is blocked you don&apos;t see each other in rooms, waves or chats. Unblock to undo that.</p>
+              {list === null ? (
+                <>
+                  <p className="hint mt-3">{failed ? "Couldn't load your list. Check your connection." : "Loading."}</p>
+                  {failed && (
+                    <RowGroup className="mt-2">
+                      <RowButton title="Try again" chevron={false} onClick={() => void load()} />
+                    </RowGroup>
+                  )}
+                </>
+              ) : list.length === 0 ? (
+                <p className="hint mt-3">You haven&apos;t blocked anyone.</p>
+              ) : (
+                <RowGroup className="mt-3">
+                  {list.map((b) => (
+                    <RowValue
+                      key={b.id}
+                      label={`BLOCKED ${shortDate(b.created_at)}`}
+                      value={b.label}
+                      action={busy === b.id ? "UNBLOCKING" : "UNBLOCK"}
+                      onAction={() => void lift(b.id)}
+                    />
+                  ))}
+                </RowGroup>
+              )}
+            </div>
+          </Sheet>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -371,6 +462,7 @@ export default function SettingsGroup({
               ))}
             <RowLink href="/privacy" icon={Lock} title="Privacy" />
             <RowLink href="/community" icon={FileText} title="Community rules" />
+            {accountReady && hasAccount && <BlockedRow />}
             {isAdmin && <RowLink href="/admin" icon={ShieldCheck} title="Staff" />}
             {sure ? (
               <div className="px-4 py-4">

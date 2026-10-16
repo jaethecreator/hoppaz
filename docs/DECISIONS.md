@@ -8,6 +8,7 @@ Jae's calls, newest first, so the team (and Ola) build to the same thing.
 |---|---|
 | The middle tab says ROOMZ; crew is your friends | Jae, 16 Oct 2026. The tab (route still `/crew`) is the rooms: YOUR ROOMZ, a search for a room and the orange +. "Crew" now means your friends and lives in Chat, under CREW. The campaign line "join the crew", crew room names and the Chat CREW tab keep the word. |
 | Chat, under CREW, shows your friends: a SAY HI plus a wave back is crew, launch night included | Jae, 16 Oct 2026. A SAY HI in a crew room and a wave back is crew both ways. Launch night (15 Oct) ran the older `crew_room_wave`, which opened a chat and wrote no crew rows, so those people never showed as crew. `supabase/crew_friends.sql` now makes them crew when it runs (`_cf_backfill_room_waves`: accepted room waves with no event, between two people who share a crew and have no block between them). Event waves stay chats. Safe to run again. |
+| Unblock | Jae, 16 Oct 2026. There was no way back after a block. Me, Settings, BLOCKED shows how many people you blocked ("None" when nobody) and opens a list: the name you saw when you blocked them, the day, and UNBLOCK. It says "Unblocked." and the Chat tab reads again. The same list holds hotspot blocks. Server side it is `my_blocks()` and `unblock(id)`, which were already there. |
 
 ## 15 Oct 2026
 
