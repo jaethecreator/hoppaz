@@ -14,8 +14,9 @@ type Tab = { href: string; label: string; Icon: LucideIcon };
 const TABS: ReadonlyArray<Tab> = [
   { href: "/", label: "MAP", Icon: Map },
   { href: "/discover", label: "EVENTS", Icon: CalendarDays },
-  // ROOMZ (brand spelling): places (your roomz, event rooms, a search for a room). People are on CHAT (CHATS and CREW). The route stays /crew.
-  { href: "/crew", label: "ROOMZ", Icon: Users },
+  // The tab still says CREW (Jae, 15 Oct): the 360Playlist campaign asks people to join the crew. The page inside shows your
+  // roomz, event rooms and a search for a room; ROOMZ on the tab comes later. People are on CHAT (CHATS and CREW). Route: /crew.
+  { href: "/crew", label: "CREW", Icon: Users },
   { href: "/chat", label: "CHAT", Icon: MessageSquare },
   { href: "/me", label: "ME", Icon: CircleUserRound },
 ];
@@ -30,7 +31,7 @@ const PARENT: Array<[string, string]> = [
   ["/privacy", "/me"],
   ["/community", "/me"],
   ["/account", "/me"],
-  // A hotspot's room (/room/<slug>) is a place, so ROOMZ stays lit inside it.
+  // A hotspot's room (/room/<slug>) is a place, so this tab stays lit inside it.
   ["/room", "/crew"],
 ];
 
