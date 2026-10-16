@@ -214,7 +214,7 @@ export function startGameTime(crewId: string): () => void {
     // Live with the feed connected, every find arrives by Realtime (and the last one, a search refusal or an answer with
     // an unseen feed line asks at once), and closes_at has its own kick: the poll is only a safety net. Without the feed
     // it is the only news, so it stays quick.
-    if (game.status === "live") return jitter(c.feedLive ? 30_000 : 3000);
+    if (game.status === "live") return jitter(c.feedLive ? 15_000 : 3000);
     if (game.status === "upcoming") {
       const ms = Date.parse(game.opens_at) - serverNow();
       if (ms <= 20_000) return 1500 + Math.round(Math.random() * 1000);
@@ -359,7 +359,8 @@ const REFUSED: Record<GtReason, { text: string; tone: GtChip["tone"]; refresh?: 
   not_in_room: { text: "GET CLOSER", tone: "warn" },
   too_far: { text: "GET CLOSER", tone: "warn" },
   slow_down: { text: "SLOW DOWN", tone: "warn" },
-  // Offline and busy ask the database at once: a search that reached it may have won, and the poll brings the code back.
+  // Offline and busy ask the database again soon (1 to 3 s, spread, so a busy database is not asked by every phone at
+  // once): a search that reached it may have won, and the poll brings the code back.
   busy: { text: "BUSY. TRY AGAIN.", tone: "warn", refresh: true },
   offline: { text: "NO SIGNAL. TRY AGAIN.", tone: "warn", refresh: true },
   unknown: { text: "CAN'T SEARCH HERE", tone: "info" },
@@ -488,7 +489,8 @@ function reveal(c: Ctl, object: string, a: GtAnswer) {
   const r = REFUSED[a.reason] ?? REFUSED.unknown;
   showChip(object, r.tone, r.text, a.reason === "slow_down" ? 1500 : CHIP_MS);
   if (a.reason === "too_far" || a.reason === "not_in_room") haptics.buzz("refused");
-  if (r.refresh) c.poll();
+  if (r.refresh && (a.reason === "busy" || a.reason === "offline")) c.timers.add(setTimeout(() => c.poll(), 1000 + Math.random() * 2000));
+  else if (r.refresh) c.poll();
 }
 
 /** Close the win sheet. */

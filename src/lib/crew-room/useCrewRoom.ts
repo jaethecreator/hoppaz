@@ -19,7 +19,9 @@ import type { CrewRoomConnection, PositionReset, RoomMessage, RoomPeer, RoomSnap
  * once: the same session carries on, or (gone too long) the room is entered again with nothing lost. Closing the page
  * leaves straight away (a keepalive request), so nobody is left standing in the room. A second tab takes the walker
  * over: this one is told ("replaced") and can take it back with one tap. A full room is entered to watch: the room
- * stays live and General works, and a spot is tried for every 15 s.
+ * stays live and General works, and a spot is tried for when the room has one (every 15 to 45 s). A call that fails is
+ * tried again after 2, 4, 8, 16, then 30 s, each spread 0.5x to 1.5x, so a slow database is not asked again by every
+ * phone at once.
  *
  * The room. crew_room_tick answers only what changed since this phone's last read: the walkers who moved, names and
  * looks for new arrivals, the walker list when someone left, the owner's content when it changed. It is read every
@@ -62,13 +64,17 @@ function readGap(peers: number, lastStepAt: number) {
   const touched = Math.min(idleMs(), Date.now() - lastStepAt);
   return touched < 30_000 ? 2_500 : touched < 180_000 ? 5_000 : 10_000;
 }
-/** Someone watching a full room tries for a walking spot this often (ms). */
-const WATCH_RETRY = 15_000;
+/** Someone watching a full room tries for a walking spot only when the room has one, and at most every 15 to 45 s. */
+const watchGap = () => 15_000 + Math.random() * 30_000;
 /** Newer messages are read this often (ms), in case Realtime dropped one: rarely while the channel is up, soon when it is not. */
 const CATCH_UP = 30_000;
 const CATCH_UP_DOWN = 10_000;
-/** After a failed request, wait this long (ms). */
+/** After a failed request, wait this long (ms), doubling with each failure in a row up to 30 s. */
 const BACKOFF = 2_000;
+/** Each wait is spread 0.5x to 1.5x, so phones that failed together (a slow database) do not all ask again together. */
+const backoff = (fails: number) => Math.min(30_000, BACKOFF * 2 ** Math.max(0, fails - 1)) * (0.5 + Math.random());
+/** The whole room is read again about this often (ms), so a block, a new look or anything missed cannot stay wrong for long. */
+const FULL_READ = 120_000;
 
 /** A walker in a crew_room_tick answer: [id, x, y, circle_id], with [name, look] added for someone new to this phone. */
 type TickPeer = [string, number, number, string | null, string?, unknown?];
@@ -192,8 +198,16 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
     /** Spread on the read gap, drawn again after each read (+/-20%). */
     let spread = 1;
     let lastBeat = 0;
-    let lastTry = 0;
+    /** Failures in a row and the time before which nobody asks again: reads, steps, walking back in. */
+    let readFails = 0;
+    let readAfter = 0;
+    let flushFails = 0;
     let retryAt = 0;
+    let rejoinFails = 0;
+    let rejoinAt = 0;
+    /** A watcher's next try for a walking spot; the next whole-room read. */
+    let watchNext = 0;
+    let fullAt = 0;
     /** Where the server last said this walker stands. Steps I have taken but it has not heard of yet are ahead of it. */
     let ack: Tile | null = null;
     /** The steps in hand were thrown away (the server refused them): the next answer says where I stand, whatever it is. */
@@ -249,10 +263,11 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
     /** Where the server says I stand. False when that ended this session (gone too long, or another tab took over). */
     const placeSelf = (self: RoomSnapshot["self"], force: boolean) => {
       if (session && !self) {
-        // Gone too long (a locked phone): walk back in. Drafts and threads are untouched.
+        // Gone too long (a locked phone): walk back in. Drafts and threads are untouched. A stall that timed out a whole
+        // room brings everyone back in the same moment, so each phone waits up to 2 s.
         session = "";
         walking.current = false;
-        void enter();
+        rejoinAt = Date.now() + Math.random() * 2000;
         return false;
       }
       if (session && self && self.session_id !== session) {
@@ -325,6 +340,7 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
       walkers = t.walkers;
       version.current = t.version;
       since = unknown ? null : t.at;
+      if (t.full) fullAt = Date.now() + FULL_READ * (0.75 + Math.random() * 0.5);
       // A read that left before my last batch was taken knows an older tile of mine: keep mine. A sequence back at 0 is
       // the owner sending everyone to the entrance, which counts.
       const behind = !force && !!session && !!t.self && t.self.seq < sequence.current && t.self.seq !== 0;
@@ -337,7 +353,7 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
     const enter = async () => {
       if (stopped || entering) return;
       entering = true;
-      lastTry = Date.now();
+      const wasWatching = watch;
       const next = crypto.randomUUID();
       try {
         const { data, error: problem } = await sb.rpc("crew_room_enter", { p_crew: crewId, p_session: next });
@@ -350,7 +366,7 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
           // A first entry that fails shows the gate; a rejoin keeps the room on screen and tries again.
           if (!current.current || /not_in_crew|need_account|PGRST202|does not exist/.test(why)) stop("error", why);
           else {
-            retryAt = Date.now() + BACKOFF;
+            if (!watch) rejoinAt = Date.now() + backoff(++rejoinFails);
             setConnected(false);
           }
           return;
@@ -362,9 +378,15 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
         lastBeat = Date.now();
         entering = false;
         fromSnapshot(snap, true);
-        // The first read brings the room again with a watermark; every read after it brings only what changed.
-        since = null;
-        lastSnap = 0;
+        rejoinFails = 0;
+        rejoinAt = 0;
+        if (watch) watchNext = Date.now() + watchGap();
+        // The first read brings the room again with a watermark; every read after it brings only what changed. A watcher
+        // still waiting for a spot keeps the watermark it has.
+        if (!(wasWatching && watch)) {
+          since = null;
+          lastSnap = 0;
+        }
         setWatching(watch);
         if (snap.took_over) setNotice("You had this room open somewhere else. It's here now, and the other one has paused.");
         setConnected(true);
@@ -374,7 +396,7 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
       } catch {
         if (stopped) return;
         if (!current.current) stop("error", "");
-        else retryAt = Date.now() + BACKOFF;
+        else if (!watch) rejoinAt = Date.now() + backoff(++rejoinFails);
       } finally {
         entering = false;
       }
@@ -400,13 +422,19 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
     const read = async () => {
       if (stopped || reading || entering || !current.current) return;
       reading = true;
+      let ok = false;
       try {
+        if (Date.now() > fullAt) since = null;
         const r = await ask(false);
+        ok = r.ok;
         if (!stopped && r.why && /not_in_crew|need_account/.test(r.why)) stop("error", r.why);
       } catch {
         /* the next read catches up; the heartbeat decides whether we are connected */
       } finally {
         reading = false;
+        // A failed read waits (longer each time, spread) instead of going again on the next tick.
+        readFails = ok ? 0 : readFails + 1;
+        readAfter = ok ? 0 : Date.now() + backoff(readFails);
       }
     };
     // The owner changed the room: the Realtime payload has the new row, so nobody needs to read for it. A new width or
@@ -455,7 +483,7 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
             batch.current = null;
             session = "";
             walking.current = false;
-            void enter();
+            rejoinAt = Date.now() + Math.random() * 2000;
           } else if (/room_session_replaced/.test(problem.message)) stop("replaced", problem.message);
           else if (/not_in_crew|need_account/.test(problem.message)) stop("error", problem.message);
           else if (/invalid_movement|invalid_sequence|moving_too_fast/.test(problem.message)) {
@@ -469,16 +497,17 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
             if (!stopped && mine === session && fresh.ok) walking.current = !!session;
             else {
               // No answer: the next beat asks again.
-              retryAt = Date.now() + BACKOFF;
+              retryAt = Date.now() + backoff(++flushFails);
               lastBeat = 0;
             }
           } else {
             walking.current = false;
             setConnected(false);
-            retryAt = Date.now() + BACKOFF;
+            retryAt = Date.now() + backoff(++flushFails);
           }
           return;
         }
+        flushFails = 0;
         if (batch.current === request) {
           queue.current.splice(0, request.steps.length);
           batch.current = null;
@@ -507,7 +536,7 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
       } catch {
         walking.current = false;
         setConnected(false);
-        retryAt = Date.now() + BACKOFF;
+        retryAt = Date.now() + backoff(++flushFails);
       } finally {
         flushing = false;
       }
@@ -521,9 +550,19 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
     });
 
     const clock = setInterval(() => {
+      const now = Date.now();
       void flush();
-      if (!document.hidden && Date.now() - lastSnap > readGap(walkers, lastStepAt.current) * spread) void read();
-      if (watch && !entering && Date.now() - lastTry > WATCH_RETRY) void enter();
+      if (!document.hidden && now >= readAfter && now - lastSnap > readGap(walkers, lastStepAt.current) * spread) void read();
+      // Out of the room (timed out, or a rejoin that failed): walk back in when the wait is over.
+      if (!session && !watch && !entering && rejoinAt && now >= rejoinAt) {
+        rejoinAt = 0;
+        void enter();
+      }
+      // Watching a full room: ask for a spot only when the room has one (a locked entry is the dearest call there is).
+      if (watch && !entering && now >= watchNext && walkers < (roomInfo?.capacity ?? Infinity)) {
+        watchNext = now + watchGap();
+        void enter();
+      }
     }, TICK);
 
     // Back from a locked phone or another app: beat and read now. The beat carries on the same session, or finds it
@@ -533,6 +572,8 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
       lastBeat = 0;
       lastSnap = 0;
       retryAt = 0;
+      readAfter = 0;
+      if (rejoinAt) rejoinAt = Date.now();
     };
     // Closing the page or leaving the site: leave now (keepalive outlives the page), so no avatar is left behind.
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
