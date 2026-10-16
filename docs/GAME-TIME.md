@@ -357,6 +357,7 @@ The Hopper side of all of the above, in the room, on the hub, in the global ping
 | Chrome layer | `src/components/game-time/GameTimeChrome.tsx` | runs the controller, registers the SEARCH pill (`gt-search`, priority 100, shown after 450 ms standing still within one tile, gone at two tiles), sets `huntActive` (live, or opening within 10 minutes) so the exits ask "Leave the hunt?", one tip card per Game Time per device: in the banner column for the first 20 s (or until the first search), so no zone card covers it, and it says what HOT and COLD mean |
 | Banner, countdown, sheet | `Banner.tsx`, `Hype.tsx`, `WinSheet.tsx` | the HUD banner, the last ten seconds and GO, the full win sheet with COPY and confetti |
 | Hub, ping, Me | `HubGameTime.tsx`, `GameTimePing.tsx` (mounted in `layout.tsx`), `YourTickets.tsx` | the hub card, the dismissible ping (once per Game Time per device, ENTER ROOM or the one-tap JOIN AND HUNT; none for a member who cannot hunt or a newcomer who would be too late), "Your tickets" |
+| Practice hunt | `src/components/game-time/HuntDemo.tsx`, `src/lib/game-time/huntDemo.ts`, `timing.ts` | the 20 second "How to hunt" lesson, see "The practice hunt" below |
 | Staff desk | `src/components/admin/GameTimeSection.tsx` (mounted in `src/app/admin/page.tsx`) | the list (live first, then coming up, then ended), create (opens on SCHEDULE; START NOW asks twice; members-for-at-least minutes; the win limit on the form with how many Hoppers already used it; a REHEARSAL tick: own key, no push, any member), edit, CLOSE NOW, live status (every box, its code and where it hides, room cap, minute tick, push) and winner cards with the facts above, CSV export |
 
 Where it differs from the design: the room store's action has no cooldown field, so the pill reads SEARCHING for the 2 s
@@ -367,6 +368,47 @@ world layer is raised one step so the star draws over the sticker.
 Rehearse it on this Mac: make a Game Time on the local crew (section 8) with `relocate_minutes: 0`, `silent: true` and a `campaign_key` of its
 own (so test wins do not use up an account's real limit; on the desk that is the REHEARSAL tick), open the room as two crew members and walk
 next to an object with the arrow keys. The finder's code and the box on each object are in `game_time_boxes` (service role).
+
+### The practice hunt
+
+Hoppers in the live 360Playlist hunts did not know how to search, so the room can teach it by doing it. It is a practice of
+three short beats played in the real room, **on the phone only**: no server call, no box, no code, no win recorded, and it
+never writes the real Game Time store (`store.ts`) or the room's other state. Its two objects are props of the room, named in
+a small store of its own (`useHuntDemo`), so nobody else sees them.
+
+1. One object near the Hopper glows (the real star and outline). "Boxes hide in things. Tap a glowing object." The avatar
+   walks there; after 450 ms standing still SEARCH appears (the room's one pill, `gt-demo-search`, priority 101, so it only
+   beats a real SEARCH while the Hopper stands at a practice object). "Now press Search."
+2. The search plays for the real 2 seconds (`timing.ts` holds the beats the real hunt uses too). The real hint chip, in
+   sentence case, says "Warm. A box is close." and a second object glows. "Warm means close. Tap the other glowing object."
+3. The same again on the second object: "Found it!", the real win burst, then "That's how Game Time works. Real boxes hide like
+   this when a hunt is live." and DONE.
+
+The two objects are chosen together (`pickPractice`): solid props, never the door or the fountain, both on the phone's screen
+when they glow, a short walk apart with no wall between, and about warm (5 to 10 tiles) from each other. While a real hunt is
+live the practice never glows one of its objects.
+
+**When it shows**
+
+| When | What |
+|---|---|
+| The first time a member is in a room where a Game Time is coming up, has never pressed SEARCH on this phone and has not seen the practice, and the opening is more than 2 minutes away | it starts by itself, once (after the room has opened and the chat is closed) |
+| A hunt is live, or a mystery drop could fall at any moment, or the opening is within 2 minutes | a one-line nudge under the banner for 20 seconds, once per Game Time: "New here? Try a 20-second practice". It plays nothing until it is tapped |
+| Always, for a member who can hunt this Game Time | "How to hunt" on the banner, and on the hub card (it opens the room with `?hunt=practice`, which starts it and is then removed from the address) |
+
+SKIP is on the card at every beat until the last, where DONE takes its place. SKIP and DONE both write `hz-gt-demo-seen` on the phone; `hz-gt-searched` is written by a real
+SEARCH (`pressSearch`); `hz-gt-demo-nudge-<game id>` says the nudge was shown. If a real hunt opens while a practice that began
+before it is running, the practice ends on the spot and is not marked seen. A watcher, a blocked member and a winner get none of it.
+
+**The flag.** `NEXT_PUBLIC_HUNT_DEMO`: unset is ON in development and OFF in production; `1` or `true` is on; `0`, `false` or
+`off` is off (every part above goes, and the room is as it was). It is inlined at build time, so redeploy after changing it.
+`.env.example` has the line.
+
+**Look at it.** `/dev/hunt-demo` (development only, production answers 404) plays it in a room template over a made-up Game
+Time, with no server and no controller: `?room=clubhouse|event-indoor|...`, `mode=upcoming|live|mystery`, `mins=<minutes to the
+opening>` (default 45), `keep=1` (keep what the phone remembers; by default the page forgets it, like a first-timer's phone),
+`chrome=0` (no picker, for phone screenshots), `peers=<n>`. GO LIVE in the picker rings the opening, to check that a running
+practice ends.
 
 ## 11. The Friday drop, for staff
 

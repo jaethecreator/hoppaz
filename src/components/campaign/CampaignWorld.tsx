@@ -836,6 +836,7 @@ export default function CampaignWorld({
                   <GameTimeLayer crewId={crewId} roomId={crewId} layout={layout} me={watching ? null : player} isMember isWatcher={watching} walkTo={walkToTile} worldLayer />
                 </div>
               )}
+              {social && storeId && <div className={css.gameTimeWorld} style={{ zIndex: 3 }} data-hunt-demo-world />}
               {props}
             </div>
             <div className={css.walkers}>

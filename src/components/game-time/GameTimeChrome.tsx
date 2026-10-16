@@ -8,8 +8,10 @@ import { isMystery } from "@/lib/game-time/drops";
 import { pressSearch, showChip, startGameTime } from "@/lib/game-time/controller";
 import { nearestSpot, spotRects, tilesFrom } from "@/lib/game-time/proximity";
 import { useGameTime } from "@/lib/game-time/store";
+import { LEAVE_TILES, SETTLE_MS } from "@/lib/game-time/timing";
 import Banner from "./Banner";
 import HintLayer from "./HintLayer";
+import { HuntDemoCard, HuntDemoStage } from "./HuntDemo";
 import Hype from "./Hype";
 import WinSheet from "./WinSheet";
 import css from "./GameTime.module.css";
@@ -19,26 +21,38 @@ import css from "./GameTime.module.css";
  * Realtime channel, for both mounts. What it draws: the banner and the feed lines, the opening countdown, the win sheet.
  * What it wires: the SEARCH pill (the room store's action, priority 100), the "Leave the hunt?" flag, and one tip card.
  */
-export type GameTimeChromeProps = { crewId: string; layout: CampaignLayout; isWatcher: boolean };
+export type GameTimeChromeProps = {
+  crewId: string;
+  layout: CampaignLayout;
+  isWatcher: boolean;
+  /** The room has finished opening (the whole-room moment is over): the practice hunt may start. Default true. */
+  ready?: boolean;
+};
 
-/** Standing still this long before SEARCH appears: the room sends my steps every 200 ms and the server checks its own copy. */
-const SETTLE_MS = 450;
-/** The pill stays while I am within this many tiles, so it does not flicker at the edge. */
-const LEAVE_TILES = 2;
 const PILL = "gt-search";
 
-export default function GameTimeChrome({ crewId, layout, isWatcher }: GameTimeChromeProps) {
+export default function GameTimeChrome({ crewId, layout, isWatcher, ready = true }: GameTimeChromeProps) {
   useEffect(() => startGameTime(crewId), [crewId]);
+  return <ChromeBody layout={layout} isWatcher={isWatcher} ready={ready} />;
+}
+
+/**
+ * Everything the chrome draws, without starting the controller. The room uses it through GameTimeChrome; the dev page
+ * (/dev/hunt-demo) uses it on its own, over a Game Time it writes into the store itself, so it never touches the server.
+ */
+export function ChromeBody({ layout, isWatcher, ready = true }: { layout: CampaignLayout; isWatcher: boolean; ready?: boolean }) {
   return (
     <>
       <HuntFlag isWatcher={isWatcher} />
       <SearchPill layout={layout} isWatcher={isWatcher} />
       <Hype isWatcher={isWatcher} />
       <HintLayer layout={layout} />
+      <HuntDemoStage layout={layout} isWatcher={isWatcher} ready={ready} />
       <div className={css.top} data-below={isWatcher || undefined} data-gt-top>
         <Banner isWatcher={isWatcher} />
         <Feed />
         <TipCard isWatcher={isWatcher} />
+        <HuntDemoCard />
       </div>
       <WinSheet />
     </>

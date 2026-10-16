@@ -52,13 +52,13 @@ export type CrewCampaign = {
 };
 
 /** Game Time's chrome mount: over the room, outside the scaled world (banner, countdown, win sheet). Screen pixels. */
-function GameTimeChrome({ crewId, layout, watching }: { crewId: string; layout: CampaignLayout; watching: boolean }) {
+function GameTimeChrome({ crewId, layout, watching, ready }: { crewId: string; layout: CampaignLayout; watching: boolean; ready: boolean }) {
   const me = useRoomStore((state) => state.me);
   const walkTo = useRoomStore((state) => state.walkTo);
   const none = useCallback(() => {}, []);
   return (
     <div className={css.gameTimeChrome} data-game-time-layer="chrome">
-      <GameTimeLayer crewId={crewId} roomId={crewId} layout={layout} me={me} isMember isWatcher={watching} walkTo={walkTo ?? none} worldLayer={false} />
+      <GameTimeLayer crewId={crewId} roomId={crewId} layout={layout} me={me} isMember isWatcher={watching} walkTo={walkTo ?? none} worldLayer={false} ready={ready} />
     </div>
   );
 }
@@ -295,7 +295,7 @@ export default function CampaignExperience({ crew }: { crew: CrewCampaign }) {
           <EventSheet crewId={crew.id} layout={layout} />
           <RoomVoice crewId={crew.id} layout={layout} />
         </div>
-        <GameTimeChrome crewId={crew.id} layout={layout} watching={watching} />
+        <GameTimeChrome crewId={crew.id} layout={layout} watching={watching} ready={phase === "done"} />
         {sheetKind && <ZoneSheet kind={sheetKind} content={content} link={validCampaignUrl(content.musicUrl)} onClose={closeSheet} />}
       </div>
 

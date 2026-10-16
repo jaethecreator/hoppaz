@@ -27,13 +27,18 @@ function ChipIcon({ tone }: { tone: GtChip["tone"] }) {
 const GAP = 6;
 const EDGE = 8;
 
-function Hint({ chip, layout }: { chip: GtChip; layout: CampaignLayout }) {
+/**
+ * `soft` is the practice hunt's sentence case ("Warm. A box is close."): the same chip, the same place and the same
+ * icon, without the capitals. The real hunt's chips are not soft.
+ */
+export function Hint({ chip, layout, soft }: { chip: GtChip; layout: CampaignLayout; soft?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     const el = ref.current;
     const host = el?.closest<HTMLElement>('[data-game-time-layer="chrome"]');
-    const world = document.querySelector<HTMLElement>('[data-game-time-layer="world"]');
+    // The real hunt's world layer, or the practice hunt's own (CampaignWorld draws both at the same size).
+    const world = document.querySelector<HTMLElement>('[data-game-time-layer="world"], [data-hunt-demo-world]');
     const prop = layout.props.find((p) => p.id === chip.object);
     if (!el || !host || !world || !prop) {
       if (el) el.style.visibility = "hidden";
@@ -72,7 +77,7 @@ function Hint({ chip, layout }: { chip: GtChip; layout: CampaignLayout }) {
 
   return (
     <div ref={ref} className={css.hintAt} style={{ visibility: "hidden" }}>
-      <div className={`${css.chip} ${TONE_CLASS[chip.tone]}`} role="status" data-gt-chip={chip.tone}>
+      <div className={`${css.chip} ${TONE_CLASS[chip.tone]} ${soft ? css.chipSoft : ""}`} role="status" data-gt-chip={chip.tone}>
         <ChipIcon tone={chip.tone} />
         {chip.text}
       </div>

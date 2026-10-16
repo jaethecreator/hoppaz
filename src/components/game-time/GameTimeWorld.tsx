@@ -43,7 +43,7 @@ const Star = () => (
   </svg>
 );
 
-const Spot = memo(function Spot({ id, x, y, level, twinkle, dot, pop, onGo }: { id: string; x: number; y: number; level: Level; twinkle: boolean; dot: boolean; pop: boolean; onGo: ((id: string) => void) | null }) {
+export const Spot = memo(function Spot({ id, x, y, level, twinkle, dot, pop, onGo }: { id: string; x: number; y: number; level: Level; twinkle: boolean; dot: boolean; pop: boolean; onGo: ((id: string) => void) | null }) {
   const style = { left: x, top: y, "--d": `-${(hash(id) / 1000) * 2.4}s` } as React.CSSProperties;
   const cls = [css.spot, level === "near" ? css.near : "", twinkle && level !== "in" ? css.twinkle : "", pop ? css.popStar : ""].join(" ");
   return (
@@ -77,8 +77,36 @@ const Spot = memo(function Spot({ id, x, y, level, twinkle, dot, pop, onGo }: { 
   );
 });
 
+/** The soft pulsing outline round a whole object (the full view has none). Lit and steady when SEARCH would pick it. */
+export function Outline({ id, rect, tile, lit }: { id: string; rect: Rect; tile: number; lit: boolean }) {
+  return (
+    <i
+      className={`${css.outline} ${lit ? css.outlineIn : ""}`}
+      style={{ left: rect.x * tile, top: rect.y * tile, width: rect.w * tile, height: rect.h * tile, "--d": `-${(hash(id) / 1000) * 2.4}s` } as React.CSSProperties}
+      data-gt-outline={id}
+      aria-hidden
+    />
+  );
+}
+
+/** The search: a dashed frame that shakes 2 px and a gleam that sweeps the object, with dust lifting, for the 2 seconds. */
+export function SearchFx({ rect, tile }: { rect: Rect; tile: number }) {
+  return (
+    <>
+      <div className={css.rummage} style={{ left: rect.x * tile - 2, top: rect.y * tile - 2, width: rect.w * tile + 4, height: rect.h * tile + 4 }} aria-hidden />
+      <div className={css.dustRow} style={{ left: (rect.x + rect.w / 2) * tile, top: (rect.y + rect.h) * tile - 4 }} aria-hidden>
+        <div className={css.dustBody}>
+          {[-10, 0, 10].map((x, i) => (
+            <i key={x} className={css.dust} style={{ "--x": `${x}px`, "--d": `${i * 0.18}s` } as React.CSSProperties} />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 /** Squares fly out of the object: my win. */
-function Burst({ k, rect, tile }: { k: number; rect: Rect; tile: number }) {
+export function Burst({ k, rect, tile }: { k: number; rect: Rect; tile: number }) {
   const bits = useMemo(() => {
     const n = 14;
     return Array.from({ length: n }, (_, i) => {
@@ -200,31 +228,12 @@ export default function GameTimeWorld({ layout, me, isWatcher, walkTo }: GameTim
       <i ref={marker} hidden />
       {!full &&
         levels.map(({ s, level, outline }) =>
-          outline || level === "in" ? (
-            <i
-              key={`o-${s.id}`}
-              className={`${css.outline} ${level === "in" ? css.outlineIn : ""}`}
-              style={{ left: s.rect.x * tile, top: s.rect.y * tile, width: s.rect.w * tile, height: s.rect.h * tile, "--d": `-${(hash(s.id) / 1000) * 2.4}s` } as React.CSSProperties}
-              data-gt-outline={s.id}
-              aria-hidden
-            />
-          ) : null,
+          outline || level === "in" ? <Outline key={`o-${s.id}`} id={s.id} rect={s.rect} tile={tile} lit={level === "in"} /> : null,
         )}
       {levels.map(({ s, level, twinkle }) => (
         <Spot key={s.id} id={s.id} x={(s.rect.x + s.rect.w) * tile - 4} y={s.rect.y * tile + 4} level={level} twinkle={twinkle} dot={full} pop={pop} onGo={here ? goNear : null} />
       ))}
-      {searching && searched && (
-        <>
-          <div className={css.rummage} style={{ left: searched.x * tile - 2, top: searched.y * tile - 2, width: searched.w * tile + 4, height: searched.h * tile + 4 }} aria-hidden />
-          <div className={css.dustRow} style={{ left: (searched.x + searched.w / 2) * tile, top: (searched.y + searched.h) * tile - 4 }} aria-hidden>
-            <div className={css.dustBody}>
-              {[-10, 0, 10].map((x, i) => (
-                <i key={x} className={css.dust} style={{ "--x": `${x}px`, "--d": `${i * 0.18}s` } as React.CSSProperties} />
-              ))}
-            </div>
-          </div>
-        </>
-      )}
+      {searching && searched && <SearchFx rect={searched} tile={tile} />}
       {burst && burstRect && <Burst key={burst.k} k={burst.k} rect={burstRect} tile={tile} />}
       {poofs.map((p) => {
         const r = rectOf(p.object);
@@ -239,7 +248,7 @@ export default function GameTimeWorld({ layout, me, isWatcher, walkTo }: GameTim
  * where another object would be the one SEARCH picks does not count (two objects side by side), so the pill searches what I
  * tapped; if no tile is clean it takes the nearest one anyway.
  */
-function approachTile(layout: CampaignLayout, from: { x: number; y: number }, id: string, r: Rect, spots: readonly SpotRect[]): { x: number; y: number } | null {
+export function approachTile(layout: CampaignLayout, from: { x: number; y: number }, id: string, r: Rect, spots: readonly SpotRect[]): { x: number; y: number } | null {
   let best: { x: number; y: number } | null = null;
   let bestLen = Infinity;
   let loose: { x: number; y: number } | null = null;
@@ -269,7 +278,7 @@ function approachTile(layout: CampaignLayout, from: { x: number; y: number }, id
 }
 
 /** An object's rectangle by id. A chip or a puff outlives the shimmer list (a game that just ended), so it asks the layout. */
-function layoutRect(layout: CampaignLayout, id: string): SpotRect | null {
+export function layoutRect(layout: CampaignLayout, id: string): SpotRect | null {
   const p = layout.props.find((x) => x.id === id);
   return p ? { id, rect: { x: p.x, y: p.y, w: p.w, h: p.h } } : null;
 }

@@ -50,7 +50,7 @@ function seeded(seed: number) {
  * Demo people for the dev page only: real avatars (the same drawing the app uses for a Hopper), wandering one tile at a
  * time. Nothing here is a person and nothing leaves the page.
  */
-function useDemoPeers(layout: CampaignLayout, count: number, alias: boolean) {
+export function useDemoPeers(layout: CampaignLayout, count: number, alias: boolean) {
   const [peers, setPeers] = useState<RoomPeer[]>([]);
   const [observedAt, setObservedAt] = useState(() => new Date().toISOString());
   const state = useRef<{ id: string; name: string; look: unknown; x: number; y: number }[]>([]);

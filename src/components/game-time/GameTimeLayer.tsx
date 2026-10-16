@@ -42,6 +42,8 @@ export type GameTimeLayerProps = {
   walkTo: (x: number, y: number) => void;
   /** True when mounted inside the world container, so absolutely positioned children line up with tiles. */
   worldLayer: boolean;
+  /** Chrome mount only: the room has finished opening, so the practice hunt (HuntDemo.tsx) may start. Default true. */
+  ready?: boolean;
 };
 
 export default function GameTimeLayer(props: GameTimeLayerProps) {
@@ -49,6 +51,6 @@ export default function GameTimeLayer(props: GameTimeLayerProps) {
   return props.worldLayer ? (
     <GameTimeWorld layout={props.layout} me={props.me} isWatcher={props.isWatcher} walkTo={props.walkTo} />
   ) : (
-    <GameTimeChrome crewId={props.crewId} layout={props.layout} isWatcher={props.isWatcher} />
+    <GameTimeChrome crewId={props.crewId} layout={props.layout} isWatcher={props.isWatcher} ready={props.ready} />
   );
 }
