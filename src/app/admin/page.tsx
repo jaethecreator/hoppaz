@@ -1,60 +1,331 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { LockKeyhole, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
-import QRCode from "qrcode";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import clsx from "clsx";
+import { Lock, LockKeyhole, RefreshCw, Search, X } from "lucide-react";
 import { useToast } from "@/lib/store";
-import Hunt3D from "@/components/Hunt3D";
-import SpawnerSection, { emptySpawner, type Spawner } from "@/components/admin/SpawnerSection";
+import { emptySpawner } from "@/components/admin/SpawnerSection";
 import HotspotsSection, { emptyHotspots } from "@/components/admin/HotspotsSection";
-import GameTimeSection from "@/components/admin/GameTimeSection";
-import type { HotspotsAdmin } from "@/app/api/admin/game/hotspots";
-import { HUNT_ITEMS, HUNT_KEYS, RARITY, type HuntKey } from "@/lib/huntItems";
+import DeskSearch from "@/components/admin/desk/DeskSearch";
+import DropsSection from "@/components/admin/desk/DropsSection";
+import RoomsSection from "@/components/admin/desk/RoomsSection";
+import EventsSection from "@/components/admin/desk/sections/EventsSection";
+import MoreSection from "@/components/admin/desk/sections/MoreSection";
+import QuestsSection from "@/components/admin/desk/sections/QuestsSection";
+import SafetySection from "@/components/admin/desk/sections/SafetySection";
+import { SECTIONS, isSection } from "@/components/admin/desk/sections/nav";
+import { SectionHead, type Act, type Queue } from "@/components/admin/desk/sections/parts";
+import { useGameTimeDesk } from "@/components/admin/desk/useDesk";
+import type { RoomRef, SectionKey } from "@/components/admin/desk/types";
 
-type Queue={events:{id:string;title:string;venue_name:string;area:string|null;starts_at:string;ig_url:string|null}[];liveEvents:{id:string;title:string;venue_name:string;area:string|null}[];rules:{key:string;score:number}[];photos:{id:string;event_id:string;url:string|null;events:unknown}[];claims:{id:string;event_id:string|null;evidence:string|null;quests:unknown}[];reports:{id:string;kind:string;excerpt:string|null;reason:string;created_at:string}[];drops:{id:string;title:string;active:boolean;claimed_count:number;max_claims:number|null}[];partners:{id:string;name:string;active:boolean}[];spawner:Spawner;hotspots:HotspotsAdmin};
-const empty:Queue={events:[],liveEvents:[],rules:[],photos:[],claims:[],reports:[],drops:[],partners:[],spawner:emptySpawner,hotspots:emptyHotspots};
-export default function AdminPage(){const [token,setToken]=useState("");const [draft,setDraft]=useState("");const [queue,setQueue]=useState<Queue>(empty);const [loaded,setLoaded]=useState(false);const [busy,setBusy]=useState(false);const [eventId,setEventId]=useState("");const [partnerId,setPartnerId]=useState("");const [qr,setQr]=useState<{value:string;dataUrl:string}|null>(null);const [huntKey,setHuntKey]=useState<HuntKey>("jollof-pot");const [huntQr,setHuntQr]=useState<{value:string;dataUrl:string;event:string}|null>(null);const say=useToast(s=>s.say);
-  // A token kept from earlier in this tab unlocks straight away, and the queues load with it.
-  useEffect(()=>{setToken(sessionStorage.getItem("hoppaz-admin-token")??"")},[]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- load reads the token it is given
-  useEffect(()=>{if(token)void load(token)},[token]);
-  const load=async(t=token)=>{if(!t)return;setBusy(true);const r=await fetch("/api/admin/game",{headers:{authorization:`Bearer ${t}`},cache:"no-store"});setBusy(false);if(!r.ok){const err=await r.json().catch(()=>({})) as {error?:string};if(r.status===401){sessionStorage.removeItem("hoppaz-admin-token");setToken("");}say(r.status===401?"ADMIN ACCESS DENIED":String(err.error??"ADMIN DATA FAILED TO LOAD").toUpperCase());return;}setQueue(await r.json() as Queue);setLoaded(true)};
-  const act=async(body:Record<string,unknown>)=>{setBusy(true);const r=await fetch("/api/admin/game",{method:"POST",headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},body:JSON.stringify(body)});const data=await r.json().catch(()=>({}));setBusy(false);if(!r.ok){say(String(data.error??"ACTION FAILED"));return null;}await load();return data as Record<string,unknown>};
-  if(!token)return <div className="grid h-full place-items-center px-6"><div className="card w-full max-w-sm"><LockKeyhole className="mb-3 text-orange"/><h1 className="font-display text-xl font-black">Hoppaz staff</h1><p className="hint mt-1">Enter the server’s HOPPAZ_ADMIN_TOKEN. It is kept in this tab only.</p><form onSubmit={e=>{e.preventDefault();const t=draft.trim();if(!t)return;sessionStorage.setItem("hoppaz-admin-token",t);setToken(t)}}><input className="mt-4" type="password" value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Staff token" autoComplete="off"/><button className="btn mt-3 w-full" disabled={!draft.trim()}>UNLOCK STAFF TOOLS</button></form></div></div>;
-  return <div className="h-full overflow-y-auto px-4 pb-6"><header className="pad-top flex items-start justify-between pb-4"><div><h1 className="font-display text-2xl font-black">Launch desk</h1><p className="seclabel mt-1.5">Events · safety · quests · partner drops · hotspots · game time</p></div><div className="flex gap-2"><button className="btn btn-ghost px-3 py-2" onClick={()=>void load()}><RefreshCw size={14}/></button><button className="btn btn-ghost px-3 py-2" onClick={()=>{sessionStorage.removeItem("hoppaz-admin-token");setToken("")}}>LOCK</button></div></header>
-    <Section title="Event queue">{queue.events.map(e=><PendingEventRow key={e.id} event={e} review={act}/>)}{!queue.events.length&&<p className="hint">No pending events.</p>}</Section>
-    <Section title="Photo review">{queue.photos.map(p=><Row key={p.id} title={`Photo · ${p.event_id.slice(0,8)}`} sub="Hidden until approved">{p.url&&<a href={p.url} target="_blank" rel="noreferrer" className="tag">PREVIEW</a>}<button className="btn px-3 py-2" onClick={()=>void act({action:"review_photo",id:p.id,status:"approved"})}><ShieldCheck size={13}/> APPROVE</button><button className="btn btn-ghost px-3 py-2" onClick={()=>void act({action:"review_photo",id:p.id,status:"rejected"})}><XCircle size={13}/> REJECT</button></Row>)}{!queue.photos.length&&<p className="hint">No photos awaiting review.</p>}</Section>
-    <Section title="Quest evidence">{queue.claims.map(c=><Row key={c.id} title={`Quest claim · ${c.id.slice(0,8)}`} sub={c.evidence??"Evidence attached to claim"}><button className="btn px-3 py-2" onClick={()=>void act({action:"review_quest",id:c.id,approve:true})}>APPROVE</button><button className="btn btn-ghost px-3 py-2" onClick={()=>void act({action:"review_quest",id:c.id,approve:false})}>REJECT</button></Row>)}{!queue.claims.length&&<p className="hint">No evidence awaiting review.</p>}</Section>
-    <Section title="Create a quest"><form className="grid gap-2" onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);const r=await act({action:"save_quest",key:f.get("key"),title:f.get("title"),description:f.get("description"),quest_type:f.get("type"),event_id:f.get("event_id"),repeat_period:f.get("period"),xp_reward:f.get("xp"),group_size:f.get("group_size"),code:f.get("code")});if(r){say("QUEST SAVED","violet");const code=String(r.verification_code??"");if(code)setQr({value:code,dataUrl:await QRCode.toDataURL(code,{width:220,margin:1})})}}}><input name="key" required placeholder="quest-key"/><input name="title" required placeholder="Quest title"/><textarea name="description" placeholder="What players do"/><div className="grid grid-cols-2 gap-2"><select name="type"><option value="checkin">Verified check-in</option><option value="photo">Approved event photo</option><option value="qr">Venue QR code</option><option value="insight">Talk insight + QR</option><option value="group">Group check-in</option></select><select name="period"><option value="once">One time</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></div><select name="event_id"><option value="">Any event</option>{queue.liveEvents.map(e=><option key={e.id} value={e.id}>{e.title}</option>)}</select><div className="grid grid-cols-2 gap-2"><input name="xp" type="number" min="0" max="10000" defaultValue="50" placeholder="XP reward"/><input name="group_size" type="number" min="2" max="100" defaultValue="2" placeholder="Crew size"/></div><input name="code" placeholder="Optional one-time venue code"/><button className="btn" disabled={busy}>SAVE QUEST</button></form></Section>
-    <Section title="Partner setup"><form className="grid gap-2" onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);const r=await act({action:"save_partner",name:f.get("name"),description:f.get("description"),website:f.get("website")});if(r){setPartnerId(String((r.partner as {id:string}).id));say("PARTNER ADDED","violet")}}}><input name="name" required placeholder="Partner name"/><input name="description" placeholder="Partner details"/><input name="website" type="url" placeholder="Website"/><button className="btn" disabled={busy}>ADD PARTNER</button></form><div className="mt-3 flex flex-wrap gap-1">{queue.partners.map(p=><button key={p.id} className={`tag ${partnerId===p.id?"tag-o":""}`} onClick={()=>setPartnerId(p.id)}>{p.name}</button>)}</div></Section>
-    <Section title="Hide a 3D collectible"><form className="grid gap-2" onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);const r=await act({action:"place_hunt",hunt_item:huntKey,event_id:f.get("event_id"),radius_m:f.get("radius"),xp_amount:f.get("xp"),max_claims:f.get("max_claims")||null,partner_id:f.get("partner_id")||null});if(r){const value=String(r.qr_code??"");setHuntQr({value,event:String(r.event??""),dataUrl:await QRCode.toDataURL(value,{width:220,margin:1})});say(`${HUNT_ITEMS[huntKey].name.toUpperCase()} HIDDEN`,"violet")}}}>
-      <p className="hint">Hoppers at the event find it through their camera and claim it on location. Print the QR as a fallback for phones without a compass.</p>
-      <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="Item to hide">{HUNT_KEYS.map(k=><button key={k} type="button" role="radio" aria-checked={huntKey===k} onClick={()=>setHuntKey(k)} className={`rounded border p-1 text-center ${huntKey===k?"border-orange bg-orange/10":"border-line"}`}><span className="block text-2xl">{HUNT_ITEMS[k].emoji}</span><span className="block font-mono text-[7px] font-bold" style={{color:RARITY[HUNT_ITEMS[k].rarity].color}}>{RARITY[HUNT_ITEMS[k].rarity].label}</span></button>)}</div>
-      <div className="flex items-center gap-3"><Hunt3D item={huntKey} className="h-24 w-24 flex-none"/><div><b className="font-display">{HUNT_ITEMS[huntKey].name}</b><p className="hint">{HUNT_ITEMS[huntKey].blurb}</p></div></div>
-      <select name="event_id" required defaultValue=""><option value="" disabled>Event to hide it at</option>{queue.liveEvents.map(e=><option key={e.id} value={e.id}>{e.title}</option>)}</select>
-      <select name="partner_id" defaultValue=""><option value="">Hoppaz hunt</option>{queue.partners.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
-      <div className="grid grid-cols-3 gap-2"><input key={huntKey} name="xp" type="number" min="0" defaultValue={HUNT_ITEMS[huntKey].xp} placeholder="XP" aria-label="XP reward"/><input name="radius" type="number" min="25" defaultValue="150" placeholder="Radius m" aria-label="Claim radius in metres"/><input name="max_claims" type="number" min="1" placeholder="Claims cap" aria-label="Claims cap"/></div>
-      <p className="hint">Opens an hour before the event, closes an hour after. Add vouchers to its reward pool under Active drops.</p>
-      <button className="btn" disabled={busy}>HIDE IT AT THIS EVENT</button>
-    </form>{huntQr&&<div className="mt-3 rounded border border-line p-3"><p className="seclabel">FALLBACK QR · {huntQr.event}</p><img src={huntQr.dataUrl} alt="Hunt claim QR code" className="mx-auto mt-2 h-44 w-44"/><p className="break-all text-center font-mono text-[10px]">{huntQr.value}</p><button className="btn btn-ghost mt-2 w-full" onClick={()=>setHuntQr(null)}>HIDE CODE</button></div>}</Section>
-    <Section title="Schedule a drop"><form className="grid gap-2" onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);const codes=String(f.get("codes")??"").split(/[,\n]/).map(x=>x.trim()).filter(Boolean);const r=await act({action:"create_drop",title:f.get("title"),description:f.get("description"),partner_id:partnerId||null,event_id:eventId||null,area:f.get("area"),lat:f.get("lat"),lng:f.get("lng"),opens_at:f.get("opens_at"),closes_at:f.get("closes_at"),radius_m:f.get("radius"),claim_method:f.get("claim_method"),max_claims:f.get("max_claims"),reward_model:f.get("reward_model"),reward:{type:f.get("reward_type"),title:f.get("reward_title"),description:f.get("reward_description"),quantity:f.get("quantity")||null,weight:f.get("weight"),xp_amount:f.get("xp"),codes}});if(r){const value=String(r.qr_code??"");if(value){await navigator.clipboard.writeText(value).catch(()=>{});setQr({value,dataUrl:await QRCode.toDataURL(value,{width:220,margin:1})});say("DROP CREATED · CLAIM CODE COPIED","violet")}else say("DROP CREATED","violet")}}}><input name="title" required placeholder="Mystery drop title"/><textarea name="description" placeholder="Where and how to claim"/><select value={partnerId} onChange={e=>setPartnerId(e.target.value)}><option value="">Hoppaz drop</option>{queue.partners.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><select value={eventId} onChange={e=>setEventId(e.target.value)}><option value="">Neighborhood drop</option>{queue.liveEvents.map(e=><option key={e.id} value={e.id}>{e.title}</option>)}</select><div className="grid grid-cols-2 gap-2"><input name="area" placeholder="Lagos area"/><input name="radius" type="number" defaultValue="250" placeholder="Radius m"/></div><div className="grid grid-cols-2 gap-2"><input name="lat" type="number" step="any" placeholder="Latitude if neighborhood drop"/><input name="lng" type="number" step="any" placeholder="Longitude"/></div><div className="grid grid-cols-2 gap-2"><label className="label">Opens<input name="opens_at" required type="datetime-local"/></label><label className="label">Closes<input name="closes_at" required type="datetime-local"/></label></div><div className="grid grid-cols-2 gap-2"><select name="claim_method"><option value="either">Location or QR</option><option value="proximity">Location</option><option value="qr">QR only</option></select><select name="reward_model"><option value="fixed">Fixed reward</option><option value="random">Random reward pool</option></select></div><div className="grid grid-cols-2 gap-2"><input name="max_claims" type="number" min="1" placeholder="Total claims cap"/><select name="reward_type"><option value="discount">Discount</option><option value="ticket">Ticket</option><option value="upgrade">Upgrade</option><option value="xp">XP</option><option value="badge">Badge</option><option value="collectible">Collectible</option></select></div><input name="reward_title" required placeholder="Reward reveal title"/><input name="reward_description" placeholder="Reward details"/><div className="grid grid-cols-3 gap-2"><input name="quantity" type="number" min="1" placeholder="Stock"/><input name="weight" type="number" step="any" min="0.01" defaultValue="1" placeholder="Random weight"/><input name="xp" type="number" min="0" defaultValue="0" placeholder="XP amount"/></div><textarea name="codes" placeholder="Reward codes, one per line (discount/tickets)"/><button className="btn" disabled={busy}>CREATE LIVE DROP</button></form>{qr&&<div className="mt-3 rounded border border-line p-3"><p className="seclabel">PRINT THIS CLAIM QR</p><img src={qr.dataUrl} alt="Drop claim QR code" className="mx-auto mt-2 h-44 w-44"/><p className="break-all text-center font-mono text-[10px]">{qr.value}</p><button className="btn btn-ghost mt-2 w-full" onClick={()=>setQr(null)}>HIDE CODE</button></div>}</Section>
-    <SpawnerSection spawner={queue.spawner} act={act} busy={busy} loading={!loaded}/>
-    <HotspotsSection hotspots={queue.hotspots} act={act} busy={busy} loading={!loaded}/>
-    <GameTimeSection token={token} onLock={()=>{sessionStorage.removeItem("hoppaz-admin-token");setToken("")}}/>
-    <Section title="Outside Score rules">{queue.rules.map(rule=><form key={rule.key} className="mb-2 flex items-center gap-2" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void act({action:"set_score_rule",key:rule.key,score:f.get("score")})}}><span className="flex-1 font-mono text-[10px] uppercase">{rule.key}</span><input name="score" type="number" min="0" max="10000" defaultValue={rule.score} className="max-w-24"/><button className="btn px-3 py-2">SAVE</button></form>)}</Section>
-    <Section title="Active drops">{queue.drops.map(d=><div key={d.id} className="border-t border-line py-2 first:border-0"><Row title={d.title} sub={`${d.claimed_count}${d.max_claims?` / ${d.max_claims}`:""} claims`}><span className="tag">{d.active?"ACTIVE":"PAUSED"}</span></Row><details className="mt-2"><summary className="font-mono text-[9px] font-bold text-orange">ADD REWARD POOL ITEM</summary><form className="mt-2 grid gap-2" onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);const codes=String(f.get("codes")??"").split(/[,\n]/).map(x=>x.trim()).filter(Boolean);const r=await act({action:"add_drop_reward",drop_id:d.id,type:f.get("type"),title:f.get("title"),description:f.get("description"),quantity:f.get("quantity")||null,weight:f.get("weight"),xp_amount:f.get("xp"),codes});if(r)say("REWARD POOL UPDATED","violet")}}><div className="grid grid-cols-2 gap-2"><select name="type"><option value="discount">Discount</option><option value="ticket">Ticket</option><option value="upgrade">Upgrade</option><option value="xp">XP</option><option value="badge">Badge</option></select><input name="title" required placeholder="Reward title"/></div><input name="description" placeholder="Reward details"/><div className="grid grid-cols-3 gap-2"><input name="quantity" type="number" min="1" placeholder="Stock"/><input name="weight" type="number" min="0.01" step="any" defaultValue="1" placeholder="Weight"/><input name="xp" type="number" min="0" defaultValue="0" placeholder="XP"/></div><textarea name="codes" placeholder="Unique voucher codes (one per line)"/><button className="btn px-3 py-2">ADD TO POOL</button></form></details></div>)}</Section>
-    <Section title="Reports">{queue.reports.map(r=><Row key={r.id} title={`${r.kind.toUpperCase()} · ${r.reason}`} sub={r.excerpt??"No excerpt"}><span className="hint">{new Date(r.created_at).toLocaleDateString("en-NG")}</span><button className="btn btn-ghost px-3 py-2" onClick={()=>void act({action:"resolve_report",id:r.id})}>CLOSE</button></Row>)}{!queue.reports.length&&<p className="hint">No open reports.</p>}</Section>
-  </div>
+/**
+ * The staff desk. A token gate (the server's HOPPAZ_ADMIN_TOKEN, kept in this tab only), then a desk with sections: a rail
+ * on the left from 1024 px up, chips under the header on a phone. The section and the room that are open live in the address
+ * (?s=quests, ?s=rooms&room=crew:<id>), so a reload or a shared link lands in the same place.
+ *
+ * Two feeds: /api/admin/game (events, reports, photos, quests, partners, hotspots: the queue, below) and
+ * /api/admin/game-time (drops, crews: useGameTimeDesk). Rooms and Drops read the second; the other sections read the first.
+ */
+
+const TOKEN_KEY = "hoppaz-admin-token";
+const empty: Queue = { events: [], liveEvents: [], rules: [], photos: [], claims: [], reports: [], drops: [], partners: [], spawner: emptySpawner, hotspots: emptyHotspots };
+
+/** ?s=<section>&room=<kind>:<id> from the address. Either can be missing or wrong; the desk then keeps its defaults. */
+function readAddress(): { section: SectionKey | null; room: RoomRef | null } {
+  const q = new URLSearchParams(window.location.search);
+  const s = q.get("s");
+  const r = /^(crew|event|hotspot):(.+)$/.exec(q.get("room") ?? "");
+  return { section: isSection(s) ? s : null, room: r ? { kind: r[1] as RoomRef["kind"], id: r[2] } : null };
 }
-function Section({title,children}:{title:string;children:React.ReactNode}){return <section className="card mb-4 p-3"><h2 className="seclabel mb-3 text-orange">{title}</h2>{children}</section>}
-function Row({title,sub,children}:{title:string;sub:string;children:React.ReactNode}){return <div className="flex flex-wrap items-center gap-2 border-t border-line py-2 first:border-0"><div className="min-w-0 flex-1"><p className="font-display text-sm font-bold">{title}</p><p className="hint truncate">{sub}</p></div>{children}</div>}
-function PendingEventRow({event,review}:{event:Queue["events"][number];review:(body:Record<string,unknown>)=>Promise<unknown>}){
-  const [lat,setLat]=useState("");const [lng,setLng]=useState("");
-  const coords=Number.isFinite(Number(lat))&&Number.isFinite(Number(lng))&&lat!==""&&lng!==""&&Number(lat)>=6.3&&Number(lat)<=6.8&&Number(lng)>=3.05&&Number(lng)<=3.95;
-  return <Row title={event.title} sub={`${event.venue_name} · ${event.area??"area not set"} · ${new Date(event.starts_at).toLocaleString("en-NG",{timeZone:"Africa/Lagos",dateStyle:"medium",timeStyle:"short"})}`}>
-    <div className="flex gap-1"><input aria-label="Venue latitude" className="w-24" inputMode="decimal" placeholder="Latitude" value={lat} onChange={e=>setLat(e.target.value)}/><input aria-label="Venue longitude" className="w-24" inputMode="decimal" placeholder="Longitude" value={lng} onChange={e=>setLng(e.target.value)}/></div>
-    {event.ig_url&&<a href={event.ig_url} target="_blank" rel="noreferrer noopener" className="tag">SOURCE ↗</a>}
-    <button className="btn px-3 py-2" disabled={!coords} title="Set the verified venue coordinates first" onClick={()=>void review({action:"review_event",id:event.id,status:"live",lat:Number(lat),lng:Number(lng)})}>APPROVE</button>
-    <button className="btn btn-ghost px-3 py-2" onClick={()=>void review({action:"review_event",id:event.id,status:"rejected"})}>REJECT</button>
-  </Row>
+
+/**
+ * A section that scrolls on its own, in a centred column. Rooms is not one of these: it fills the space and scrolls its own
+ * columns. `mounted` false draws nothing; `on` false keeps what was drawn but hides it (so a form half typed is still there).
+ */
+function Page({ on, mounted, wide, children }: { on: boolean; mounted: boolean; wide?: boolean; children: ReactNode }) {
+  if (!mounted) return null;
+  return (
+    <div className={clsx("min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4 lg:px-8 lg:pt-6", !on && "hidden")}>
+      <div className={clsx("mx-auto w-full", wide ? "max-w-[900px]" : "max-w-[760px]")}>{children}</div>
+    </div>
+  );
+}
+
+export default function AdminPage() {
+  const [token, setToken] = useState("");
+  const [draft, setDraft] = useState("");
+  const [queue, setQueue] = useState<Queue>(empty);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [section, setSection] = useState<SectionKey>("rooms");
+  const [room, setRoom] = useState<RoomRef | null>(null);
+  // Sections the staff member has opened. Those below the Rooms and Drops pair stay mounted (hidden) after the first visit, so a
+  // half-typed form or a QR that was just made is still there when they come back.
+  const [visited, setVisited] = useState<SectionKey[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  // False until the address has been read, so the first write to it cannot wipe what it said.
+  const [ready, setReady] = useState(false);
+  const chips = useRef<HTMLElement>(null);
+  const say = useToast((s) => s.say);
+
+  const lock = useCallback(() => {
+    sessionStorage.removeItem(TOKEN_KEY);
+    setToken("");
+  }, []);
+  const gt = useGameTimeDesk(token, lock);
+
+  const go = useCallback((s: SectionKey) => {
+    setSection(s);
+    setVisited((v) => (v.includes(s) ? v : [...v, s]));
+  }, []);
+  /** Open a room in the Rooms section. */
+  const openRoom = useCallback(
+    (r: RoomRef | null) => {
+      go("rooms");
+      setRoom(r);
+    },
+    [go],
+  );
+
+  // A token kept from earlier in this tab unlocks straight away, and the queues load with it.
+  useEffect(() => {
+    setToken(sessionStorage.getItem(TOKEN_KEY) ?? "");
+    const at = readAddress();
+    if (at.section) go(at.section);
+    if (at.room) setRoom(at.room);
+    setReady(true);
+  }, [go]);
+  useEffect(() => {
+    if (!ready || !token) return;
+    const rest = new URLSearchParams(window.location.search);
+    rest.delete("s");
+    rest.delete("room");
+    const more = rest.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}?s=${section}${room ? `&room=${room.kind}:${encodeURIComponent(room.id)}` : ""}${more ? `&${more}` : ""}`);
+  }, [ready, token, section, room]);
+  const games = gt.desk?.games ?? [];
+  const live = games.filter((g) => g.phase === "live");
+  const comingUp = games.filter((g) => g.phase === "upcoming").length;
+  /** The number beside a section: nothing when there is nothing to do. Drops reads "N LIVE" while a drop is live. */
+  const counts: Partial<Record<SectionKey, { text: string; n: number; live?: boolean }>> = {};
+  const count = (k: SectionKey, n: number, text = String(n), isLive = false) => {
+    if (n > 0) counts[k] = { text, n, live: isLive };
+  };
+  if (live.length) count("drops", live.length, `${live.length} LIVE`, true);
+  else count("drops", comingUp);
+  count("events", queue.events.length);
+  count("safety", queue.reports.length + queue.photos.length);
+  count("quests", queue.claims.length);
+  const liveCrews = [...new Map(live.map((g) => [g.crew_id, g.crew_name])).entries()].map(([id, name]) => ({ id, name }));
+
+  // The chip row scrolls sideways on a phone; the open section's chip stays in sight (also when a count arrives and widens a chip).
+  const chipWidths = Object.values(counts).map((c) => c.text).join();
+  useEffect(() => {
+    chips.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [section, token, chipWidths]);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    setBusy(true);
+    const r = await fetch("/api/admin/game", { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+    setBusy(false);
+    if (!r.ok) {
+      const err = (await r.json().catch(() => ({}))) as { error?: string };
+      if (r.status === 401) lock();
+      say(r.status === 401 ? "ADMIN ACCESS DENIED" : String(err.error ?? "ADMIN DATA FAILED TO LOAD").toUpperCase());
+      return;
+    }
+    setQueue((await r.json()) as Queue);
+    setLoaded(true);
+  }, [token, lock, say]);
+  useEffect(() => {
+    if (token) void load();
+  }, [token, load]);
+
+  const act: Act = async (body) => {
+    setBusy(true);
+    const r = await fetch("/api/admin/game", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+    const data = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok) {
+      say(String(data.error ?? "ACTION FAILED"));
+      return null;
+    }
+    await load();
+    return data as Record<string, unknown>;
+  };
+  const refresh = () => void Promise.allSettled([load(), gt.load()]);
+
+  if (!token)
+    return (
+      <div className="grid h-full place-items-center px-6">
+        <div className="card w-full max-w-sm">
+          <LockKeyhole className="mb-3 text-orange" />
+          <h1 className="font-display text-xl font-black">Hoppaz staff</h1>
+          <p className="hint mt-1">Enter the server’s HOPPAZ_ADMIN_TOKEN. It is kept in this tab only.</p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const t = draft.trim();
+              if (!t) return;
+              sessionStorage.setItem(TOKEN_KEY, t);
+              setToken(t);
+            }}
+          >
+            <input className="mt-4" type="password" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Staff token" autoComplete="off" />
+            <button className="btn mt-3 w-full" disabled={!draft.trim()}>
+              UNLOCK STAFF TOOLS
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+
+  return (
+    <div className="flex h-full">
+      <aside className="hidden w-[232px] flex-none flex-col border-r border-line bg-ink-2 lg:flex">
+        <div className="px-5 pb-4 pt-6">
+          <p className="font-display text-xl font-black">Hoppaz</p>
+          <p className="seclabel mt-1">Staff desk</p>
+        </div>
+        <nav aria-label="Staff desk sections" className="flex-1 space-y-1 overflow-y-auto px-3 py-1">
+          {SECTIONS.map(({ key, title, Icon }) => {
+            const on = section === key;
+            const c = counts[key];
+            return (
+              <button
+                key={key}
+                aria-current={on ? "page" : undefined}
+                onClick={() => go(key)}
+                className={clsx("flex min-h-[44px] w-full items-center gap-3 rounded-hz px-3 text-left font-display text-[15px] font-bold transition-colors", on ? "bg-orange/15 text-cream" : "text-dim hover:bg-ink-3 hover:text-cream")}
+              >
+                <Icon size={18} className={clsx("flex-none", on && "text-orange")} aria-hidden />
+                <span className="min-w-0 flex-1 truncate">{title}</span>
+                {c && <span className={clsx("pill", c.live && "pill-keke")}>{c.text}</span>}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="border-t border-line p-3">
+          <button className="btn btn-ghost w-full" onClick={lock}>
+            <Lock size={14} aria-hidden /> LOCK THE DESK
+          </button>
+        </div>
+      </aside>
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="hidden h-[60px] flex-none items-center gap-3 border-b border-line px-4 lg:flex">
+          <div className="w-[440px] max-w-full">
+            <DeskSearch gt={gt} liveEvents={queue.liveEvents} hotspots={queue.hotspots.rooms} onRoom={openRoom} onSection={go} />
+          </div>
+          <div className="flex-1" />
+          {liveCrews.length === 1 ? (
+            <button className="pill pill-keke min-h-[32px] px-3 text-[11px]" onClick={() => openRoom({ kind: "crew", id: liveCrews[0].id })}>
+              ● {live.length} DROP{live.length > 1 ? "S" : ""} LIVE · {liveCrews[0].name.toUpperCase()}
+            </button>
+          ) : (
+            liveCrews.length > 1 && (
+              <span className="pill pill-keke min-h-[32px] px-3 text-[11px]">
+                ● {live.length} DROPS LIVE ·
+                {liveCrews.map((c) => (
+                  <button key={c.id} className="underline-offset-2 hover:underline" onClick={() => openRoom({ kind: "crew", id: c.id })}>
+                    {c.name.toUpperCase()}
+                  </button>
+                ))}
+              </span>
+            )
+          )}
+          <button className="btn btn-ghost w-11 flex-none px-0" aria-label="Refresh" title="Refresh" onClick={refresh}>
+            <RefreshCw size={16} className={clsx(busy && "animate-spin")} aria-hidden />
+          </button>
+        </div>
+
+        <header className="pad-top flex-none border-b border-line lg:hidden">
+          <div className="flex items-center justify-between gap-3 px-4 pb-3">
+            <p className="font-display text-lg font-black">Staff desk</p>
+            <div className="flex gap-2">
+              <button className="btn btn-ghost w-11 px-0" aria-label={searchOpen ? "Close search" : "Search"} aria-expanded={searchOpen} onClick={() => setSearchOpen((o) => !o)}>
+                {searchOpen ? <X size={18} aria-hidden /> : <Search size={18} aria-hidden />}
+              </button>
+              <button className="btn btn-ghost w-11 px-0" aria-label="Lock the desk" onClick={lock}>
+                <Lock size={18} aria-hidden />
+              </button>
+            </div>
+          </div>
+          {searchOpen && (
+            <div className="px-4 pb-3">
+              <DeskSearch
+                autoFocus
+                gt={gt}
+                liveEvents={queue.liveEvents}
+                hotspots={queue.hotspots.rooms}
+                onRoom={(r) => {
+                  openRoom(r);
+                  setSearchOpen(false);
+                }}
+                onSection={(s) => {
+                  go(s);
+                  setSearchOpen(false);
+                }}
+              />
+            </div>
+          )}
+          <nav ref={chips} aria-label="Staff desk sections" className="flex gap-2 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {SECTIONS.map(({ key, short }) => {
+              const on = section === key;
+              const c = counts[key];
+              return (
+                <button
+                  key={key}
+                  aria-current={on ? "page" : undefined}
+                  // Tapping Rooms while a room is open goes back to the list.
+                  onClick={() => (key === "rooms" && on ? setRoom(null) : go(key))}
+                  className={clsx("chip flex-none", on && "chip-on")}
+                >
+                  {short}
+                  {c && <span className={clsx(!on && (c.live ? "text-keke" : "text-orange"))}>{c.n}</span>}
+                </button>
+              );
+            })}
+          </nav>
+        </header>
+
+        <div className="flex min-h-0 flex-1 flex-col">
+          {section === "rooms" && (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <RoomsSection gt={gt} liveEvents={queue.liveEvents} hotspots={queue.hotspots.rooms} room={room} onRoom={setRoom} onSection={go} />
+            </div>
+          )}
+          {/* Drops draws its own centred column and padding, so it only needs a container that scrolls. */}
+          {section === "drops" && (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <DropsSection
+                gt={gt}
+                onOpenRoom={(id) => {
+                  go("rooms");
+                  setRoom({ kind: "crew", id });
+                }}
+              />
+            </div>
+          )}
+          <Page on={section === "events"} mounted={section === "events" || visited.includes("events")}>
+            <EventsSection queue={queue} act={act} />
+          </Page>
+          <Page on={section === "hotspots"} mounted={section === "hotspots" || visited.includes("hotspots")} wide>
+            <SectionHead title="Hotspots" hint="Hotspot rooms also show under Rooms." />
+            <HotspotsSection hotspots={queue.hotspots} act={act} busy={busy} loading={!loaded} />
+          </Page>
+          <Page on={section === "safety"} mounted={section === "safety" || visited.includes("safety")}>
+            <SafetySection queue={queue} act={act} />
+          </Page>
+          <Page on={section === "quests"} mounted={section === "quests" || visited.includes("quests")}>
+            <QuestsSection queue={queue} act={act} busy={busy} />
+          </Page>
+          <Page on={section === "more"} mounted={section === "more" || visited.includes("more")} wide>
+            <MoreSection queue={queue} act={act} busy={busy} loaded={loaded} token={token} onLock={lock} />
+          </Page>
+        </div>
+      </div>
+    </div>
+  );
 }
