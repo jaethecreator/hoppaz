@@ -47,9 +47,12 @@ Every level runs `seed.sql` first (150 users `load-NNN@load.invalid`, "Load Test
 the database statistics. `cleanup.sql` removes all of it.
 
 - `--mode=before` is the app on `jae/perf-all` (crew_room_step and crew_room_state, the whole room in every answer).
-- `--mode=after` is this branch (crew_room_move, crew_room_tick, Game Time every 30 s with the feed up). At the end it stops
+- `--mode=after` is this branch (crew_room_move, crew_room_tick, Game Time every 15 s with the feed up). At the end it stops
   every walker, reads once more and checks that every phone's room matches the server's (`view`).
-- `--chat=0.6` messages per phone per minute; `--hunt=0` for a room with no hunt; `--out=file.json` keeps everything.
+- `--capacity=100` with more phones than that: the rest watch a full room and try for a spot (before: every 15 s; after:
+  only when the room has one).
+- `--chat=0.6` messages per phone per minute (half go to the area chat when the phone stands in one); `--hunt=0` for a room
+  with no hunt; `--out=file.json` keeps everything.
 
 ### A slow disk
 

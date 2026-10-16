@@ -7,10 +7,12 @@
  * (supabase_db_hoppaz-local) unless --shared-ok. Set-up, the throwaway copy and the numbers: scripts/load/README.md.
  *
  *   node scripts/load/crew-room-load.mjs --levels=20,50,100 --duration=60 --mode=before --out=/tmp/before.json
+ *   --capacity=100 with more phones than that: the rest watch, and try for a spot as the app does
  *
  * Modes:
  *   before  today's client (src/lib/crew-room/useCrewRoom.ts on jae/perf-all): steps and reads return the full room.
- *   after   the load-hardened client: slim steps, the shared room tick with deltas, Game Time on change.
+ *   after   this branch: crew_room_move (small answers), crew_room_tick (what changed), Game Time every 15 s with the
+ *           live feed up, watchers that ask for a spot only when there is one.
  *
  * Measures, per call: count, errors, p50/p95/p99 and bytes; per second: DB CPU (docker stats), transactions,
  * connections active / waiting on a lock. At the end: the top statements (pg_stat_statements) and functions.
@@ -37,6 +39,8 @@ const HUNT = arg("hunt", "1") === "1";
 /** Messages per phone per minute, General chat. */
 const CHAT = Number(arg("chat", "0.6"));
 const SEED = arg("seed", "scripts/load/seed.sql");
+/** Walking spots in the room (the rest watch). The seed's 200 means nobody watches. */
+const CAPACITY = Number(arg("capacity", "200"));
 const OUT = arg("out", "");
 const CREW = "10ad0000-0000-4000-8000-c00000000001";
 const GAME = "10ad0000-0000-4000-8000-a00000000001";
@@ -69,6 +73,7 @@ function runSeed() {
     input: readFileSync(SEED),
     stdio: ["pipe", "ignore", "inherit"],
   });
+  psql(`update crew_rooms set capacity = ${CAPACITY} where crew_id = '${CREW}'`);
 }
 const pct = (sorted, p) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))] : 0);
 
@@ -226,6 +231,12 @@ class Phone {
     this.version = 0;
     this.view = new Map();
     this.frozen = false;
+    /** Watching a full room: no walker; tries for a spot (before: every 15 s; after: when the room has one). */
+    this.watching = false;
+    this.watchNext = 0;
+    this.capacity = CAPACITY;
+    /** The area session I stand in (area chat). */
+    this.circle = null;
     const now = Date.now();
     this.chatAt = now + (CHAT > 0 ? Math.random() * (60_000 / CHAT) : Infinity);
     this.catchUpAt = now + Math.random() * 30_000;
@@ -248,9 +259,24 @@ class Phone {
 
   async enter() {
     const session = randomUUID();
+    const wasWatching = this.watching;
     const r = await this.rpc("crew_room_enter", { p_crew: CREW, p_session: session });
-    if (!r.ok || !r.data?.self) return false;
+    if (!r.ok) return false;
+    if (r.data?.watching) {
+      this.watching = true;
+      this.capacity = r.data.room?.capacity ?? this.capacity;
+      this.watchNext = Date.now() + (MODE === "before" ? 15_000 : 15_000 + Math.random() * 30_000);
+      if (!wasWatching) {
+        this.since = null;
+        this.applySnap(r.data);
+        if (MODE === "after") this.lastSnap = 0;
+      }
+      return true;
+    }
+    if (!r.data?.self) return false;
+    this.watching = false;
     this.session = session;
+    this.circle = r.data.self.circle_id ?? null;
     this.pos = { x: r.data.self.x, y: r.data.self.y };
     this.seq = r.data.self.seq;
     this.lastBeat = Date.now();
@@ -263,6 +289,14 @@ class Phone {
   async leave() {
     this.stopped = true;
     if (this.session) await this.rpc("crew_room_leave", { p_crew: CREW, p_session: this.session });
+  }
+
+  /** A watcher tries for a spot: before, every 15 s; after, only when the last read says the room has one. */
+  async watch() {
+    if (!this.watching || Date.now() < this.watchNext) return;
+    if (MODE === "after" && this.peers >= this.capacity) return;
+    this.watchNext = Date.now() + (MODE === "before" ? 15_000 : 15_000 + Math.random() * 30_000);
+    await this.enter();
   }
 
   readGap() {
@@ -292,6 +326,7 @@ class Phone {
     }
     this.version = t.version;
     this.since = unknown ? null : t.at;
+    if (t.room?.capacity) this.capacity = t.room.capacity;
     this.applySnap(t);
     return r;
   }
@@ -299,11 +334,17 @@ class Phone {
   /** What to do next: hunt an object (70%) or wander. */
   plan() {
     const now = Date.now();
-    if (this.frozen || now < this.restUntil || this.walk.length) return;
-    if (HUNT && !this.won && Math.random() < 0.7) {
-      const s = huntable[Math.floor(Math.random() * huntable.length)];
+    if (this.frozen || this.watching || !this.pos || now < this.restUntil || this.walk.length || this.target) return;
+    if (HUNT && !this.won && Math.random() < 0.8) {
+      // Hunters go object to object: mostly one nearby (within 8 tiles), sometimes across the room.
+      const near = huntable.filter((s) => s.stand.some((t) => Math.abs(t.x - this.pos.x) + Math.abs(t.y - this.pos.y) <= 8));
+      const pool = near.length && Math.random() < 0.7 ? near : huntable;
+      const s = pool[Math.floor(Math.random() * pool.length)];
       const stand = s.stand[Math.floor(Math.random() * s.stand.length)];
-      this.walk = path(this.pos, stand);
+      const route = path(this.pos, stand);
+      // An object whose sides cannot be reached from here is skipped.
+      if (!route.length && (this.pos.x !== stand.x || this.pos.y !== stand.y)) return;
+      this.walk = route;
       this.target = s.id;
     } else {
       const t = tiles[Math.floor(Math.random() * tiles.length)];
@@ -369,9 +410,15 @@ class Phone {
     }
     this.lastBeat = Date.now();
     if (MODE === "before") {
-      if (s?.self) this.seq = s.self.seq;
+      if (s?.self) {
+        this.seq = s.self.seq;
+        this.circle = s.self.circle_id ?? null;
+      }
       this.applySnap(s);
-    } else if (typeof s?.seq === "number") this.seq = s.seq;
+    } else if (typeof s?.seq === "number") {
+      this.seq = s.seq;
+      this.circle = s.circle_id ?? null;
+    }
   }
 
   async resync() {
@@ -384,7 +431,7 @@ class Phone {
   }
 
   async read() {
-    if (this.reading || !this.session) return;
+    if (this.reading || (!this.session && !this.watching)) return;
     if (Date.now() - this.lastSnap <= this.readGap() * this.spread) return;
     this.reading = true;
     if (MODE === "before") {
@@ -404,15 +451,25 @@ class Phone {
     const r = await this.rpc("game_time_search", { p_crew: CREW, p_object: object });
     if (r.ok && r.data?.result === "win") this.won = true;
     if (!r.ok && /already_won|all_found|game_closed/.test(r.error)) this.won = true;
-    this.restUntil = Date.now() + 500 + Math.random() * 1500;
+    // The app's own gap: the next search is 3 s after this one.
+    this.restUntil = Math.max(this.searchAt, Date.now() + 300 + Math.random() * 700);
   }
 
   async chat() {
     const now = Date.now();
     if (now < this.chatAt) return;
     this.chatAt = now + jitter(60_000 / CHAT, 0.5);
-    const r = await this.rpc("crew_room_send", { p_crew: CREW, p_scope: "general", p_body: `load ${this.n} ${now}`, p_request: randomUUID(), p_circle: null });
-    if (r.ok) await this.catchUp(true);
+    // Standing in an area (a booth, the courtyard corner), half the messages go to the area, as the app sends them: once
+    // the walk has reached the server.
+    const area = this.circle && this.session && !this.queue.length && !this.batch && Math.random() < 0.5;
+    const r = await this.rpc("crew_room_send", {
+      p_crew: CREW,
+      p_scope: area ? "nearby" : "general",
+      p_body: `load ${this.n} ${now}`,
+      p_request: randomUUID(),
+      p_circle: area ? this.circle : null,
+    });
+    if (r.ok && !area) await this.catchUp(true);
   }
 
   /** The 30 s safety read of General (and the read after a send): what is newer than the newest message held. */
@@ -433,7 +490,7 @@ class Phone {
     if (!HUNT) return;
     const now = Date.now();
     if (now < this.gtAt) return;
-    this.gtAt = now + (MODE === "before" ? jitter(3500) : jitter(30_000));
+    this.gtAt = now + (MODE === "before" ? jitter(3500) : jitter(15_000));
     await this.rpc("game_time_state", { p_crew: CREW });
   }
 
@@ -455,6 +512,7 @@ class Phone {
       if (!(await this.enter())) return;
     }
     while (!this.stopped) {
+      void this.watch();
       this.plan();
       this.advance();
       void this.flush();
