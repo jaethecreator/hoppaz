@@ -9,6 +9,7 @@ import { getSupabase } from "@/lib/supabase/client";
 import { useRoomStore } from "./roomStore";
 import { STAGE_FLAG } from "./stageRights";
 import { stageMix } from "./stageMix";
+import { createStageSender, type StageAnswer } from "./stageSend";
 
 /**
  * Area voice for the crew room, on Ola's LiveKit pattern (components/queer/AudioRoom.tsx). DARK by default: nothing
@@ -159,7 +160,6 @@ export class VoiceSession {
   /** The database's stage list (setStage). A stage voice is heard only if it is in here AND carries the server's attribute. */
   private stageIds: string[] = [];
   private stageHeard: string[] = [];
-  private stageBusy: Promise<{ ok: boolean; full: boolean }> | null = null;
   private heard = new Map<string, number>();
   private applyTimer: ReturnType<typeof setTimeout> | null = null;
   private joining: Promise<void> | null = null;
@@ -340,16 +340,23 @@ export class VoiceSession {
    * Stage voice: ask the server to put me on the stage for the whole room (on) or take me off (off). The server checks
    * that I am staff and that the database has my walker on the stage; the answer is the only thing that sets iAmLive.
    * Returns { ok, full }: full means three others are already speaking.
+   *
+   * One request at a time and the LATEST wish wins (stageSend.ts): an "off" asked while an "on" (a start, the 20 s
+   * keep-alive, a SPEAK TO ALL retry) is on its way is sent as soon as that one returns, so leaving the stage always ends
+   * in a server stop and a not-live pill. The answer is the last request's.
    */
-  stageCall(on: boolean): Promise<{ ok: boolean; full: boolean }> {
+  stageCall(on: boolean): Promise<StageAnswer> {
     if (!STAGE_FLAG) return Promise.resolve({ ok: false, full: false });
-    this.stageBusy ??= this.callStage(on).finally(() => {
-      this.stageBusy = null;
-    });
-    return this.stageBusy;
+    return this.stageSend(on);
   }
 
-  private async callStage(on: boolean): Promise<{ ok: boolean; full: boolean }> {
+  private readonly stageSend = createStageSender<StageAnswer & { canPublish?: boolean }>(
+    (on) => this.askStage(on),
+    (on, answer) => this.settleStage(on, answer),
+  );
+
+  /** One request to the stage route. Never throws: a request that got no real answer is `failed`. */
+  private async askStage(on: boolean): Promise<StageAnswer & { canPublish?: boolean }> {
     const none = { ok: false, full: false };
     if (!this.room) return none;
     try {
@@ -359,21 +366,32 @@ export class VoiceSession {
         body: JSON.stringify({ crewId: this.crewId, on }),
       });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; full?: boolean; canPublish?: boolean };
-      if (!res.ok) return none;
-      const ok = body.ok === true;
-      const can = body.canPublish === true;
-      this.set({
-        iAmLive: ok,
-        canPublish: can,
-        // The server took my microphone right away (a stage-only room, off the stage): the button goes back to listening.
-        ...(!can && (this.view.phase === "mic" || this.view.phase === "muted") ? { phase: "listening" as VoicePhase } : {}),
-      });
-      if (on && body.full === true) this.say("STAGE FULL");
-      this.roster();
-      return { ok, full: body.full === true };
+      if (!res.ok) return { ...none, failed: true };
+      return { ok: body.ok === true, full: body.full === true, canPublish: body.canPublish === true };
     } catch {
-      return none;
+      return { ...none, failed: true };
     }
+  }
+
+  /** Show the answer to the last wish. An "off" is shown even if it never got through: someone who left the stage is not LIVE. */
+  private settleStage(on: boolean, answer: StageAnswer & { canPublish?: boolean }) {
+    if (!this.room) return; // I hung up while it was out
+    if (answer.failed) {
+      if (!on && this.view.iAmLive) {
+        this.set({ iAmLive: false });
+        this.roster();
+      }
+      return;
+    }
+    const can = answer.canPublish === true;
+    this.set({
+      iAmLive: answer.ok,
+      canPublish: can,
+      // The server took my microphone right away (a stage-only room, off the stage): the button goes back to listening.
+      ...(!can && (this.view.phase === "mic" || this.view.phase === "muted") ? { phase: "listening" as VoicePhase } : {}),
+    });
+    if (on && answer.full) this.say("STAGE FULL");
+    this.roster();
   }
 
   /** Wait until LiveKit has told this phone it may publish (the server grants it a moment after stageCall). */

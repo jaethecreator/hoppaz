@@ -327,6 +327,63 @@
     transform: scale(2.2);
   }
 }
+.talk {
+  /* Someone here is talking (roomStore.speaking): a small speech bubble over the head with one pulsing dot. It keeps its size on
+     screen like the name tag (--cam-inv) but never grows past twice its size, so a whole room of walkers does not get fat bubbles.
+     The pulse moves transform and opacity only, on at most a handful of nodes, so the compositor does it and React does nothing. */
+  position: absolute;
+  left: 0;
+  top: -64px;
+  box-sizing: border-box;
+  width: 18px;
+  height: 14px;
+  border: 1.5px solid #0E0B0A;
+  border-radius: 7px;
+  background: #F5EBDD;
+  pointer-events: none;
+  transform: translate(-50%, -100%) scale(min(var(--cam-inv, 1), 2));
+  transform-origin: 50% calc(100% + 4px);
+}
+.talk::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-right: 1.5px solid #0E0B0A;
+  border-bottom: 1.5px solid #0E0B0A;
+  background: #F5EBDD;
+  transform: rotate(45deg);
+}
+.talk::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #1FA847;
+  transform: translate(-50%, -50%);
+  animation: talkPulse 0.9s ease-in-out infinite;
+}
+/* A phone short of memory (deviceTier "low") gets the bubble and the dot, held still. */
+.talkStill::after {
+  animation: none;
+}
+@keyframes talkPulse {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: translate(-50%, -50%) scale(0.7);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.25);
+  }
+}
 .nameTag {
   position: absolute;
   left: 0;
@@ -941,6 +998,7 @@
   .nudge,
   .zoneTag,
   .ring,
+  .talk::after,
   .destination,
   .popover,
   .sheet,

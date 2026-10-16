@@ -4,10 +4,16 @@
 import assert from "node:assert/strict";
 import { stageMix, MAX_HEARD, HUSH } from "../../src/lib/crew-room/stageMix.ts";
 import { tokenCanPublish, stageDecision, staleStage, parseStage, isStaffRole, MAX_STAGE } from "../../src/lib/crew-room/stageRights.ts";
+import { createStageSender, STOP_RETRIES } from "../../src/lib/crew-room/stageSend.ts";
 
 let n = 0;
 const ok = (label, fn) => {
   fn();
+  n++;
+  console.log("PASS:", label);
+};
+const okAsync = async (label, fn) => {
+  await fn();
   n++;
   console.log("PASS:", label);
 };
@@ -119,6 +125,129 @@ ok("an odd answer from the database is 'nobody, not staff'", () => {
 });
 ok("the answer is cut to three on the stage", () => {
   assert.equal(parseStage({ stage: ["a", "b", "c", "d"], is_staff: true, is_owner: true, admins: ["b"] }).stage.length, 3);
+});
+
+
+// ---- the stage sender: one request at a time, the latest wish wins (a "stop" is never lost)
+// A fake server: every request waits until the test lets it answer, so the test decides what is "in flight".
+const rig = (answer = (on) => ({ ok: on, full: false })) => {
+  const sent = []; // what the server saw, in order
+  const open = []; // requests waiting for an answer
+  const settled = []; // what the phone showed
+  const send = (on) =>
+    new Promise((resolve) => {
+      sent.push(on);
+      open.push(() => resolve(answer(on, sent.length)));
+    });
+  const call = createStageSender(send, (on, a) => settled.push([on, a.ok]), { pause: async () => {} });
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const reply = async () => {
+    await tick();
+    open.shift()?.();
+    await tick();
+  };
+  return { call, sent, settled, reply, tick };
+};
+
+await okAsync("a stop asked while a start is in flight is sent after it, and the pill ends not-live", async () => {
+  const r = rig();
+  const start = r.call(true);
+  await r.tick();
+  const stop = r.call(false); // the speaker walked off
+  await r.reply(); // the start comes back
+  assert.deepEqual(r.sent, [true, false]);
+  assert.deepEqual(r.settled, []); // the start's answer is not shown: it is already out of date
+  await r.reply(); // the stop comes back
+  assert.deepEqual(r.sent, [true, false]);
+  assert.deepEqual(r.settled, [[false, false]]);
+  assert.equal((await stop).ok, false);
+  assert.equal((await start).ok, false); // both callers get the answer to the last wish
+});
+await okAsync("a stop asked while the 20 s keep-alive is in flight is not lost either", async () => {
+  const r = rig();
+  r.call(true);
+  await r.reply();
+  assert.deepEqual(r.settled, [[true, true]]); // I am live
+  r.call(true); // keep-alive
+  await r.tick();
+  r.call(false); // 1.5 s after walking off
+  await r.reply();
+  await r.reply();
+  assert.deepEqual(r.sent, [true, true, false]);
+  assert.deepEqual(r.settled.at(-1), [false, false]);
+});
+await okAsync("a start asked while a stop is in flight is sent after it (the newest wish wins)", async () => {
+  const r = rig();
+  r.call(false);
+  await r.tick();
+  r.call(true);
+  await r.reply();
+  await r.reply();
+  assert.deepEqual(r.sent, [false, true]);
+  assert.deepEqual(r.settled, [[true, true]]);
+});
+await okAsync("the same wish asked again while in flight shares the request (no pile-up)", async () => {
+  const r = rig();
+  r.call(true);
+  await r.tick();
+  r.call(true);
+  r.call(true);
+  await r.reply();
+  assert.deepEqual(r.sent, [true]);
+  assert.deepEqual(r.settled, [[true, true]]);
+});
+await okAsync("on, off, on while one request is out sends nothing extra: the last wish is the one in flight", async () => {
+  const r = rig();
+  r.call(true);
+  await r.tick();
+  r.call(false);
+  r.call(true);
+  await r.reply();
+  assert.deepEqual(r.sent, [true]);
+  assert.deepEqual(r.settled, [[true, true]]);
+});
+await okAsync("the sender is free again afterwards: a later stop is a new request", async () => {
+  const r = rig();
+  r.call(true);
+  await r.reply();
+  r.call(false);
+  await r.reply();
+  assert.deepEqual(r.sent, [true, false]);
+  assert.deepEqual(r.settled, [[true, true], [false, false]]);
+});
+await okAsync("a stop that never reaches the server is tried again, then shown as off", async () => {
+  const r = rig((on) => (on ? { ok: true, full: false } : { ok: false, full: false, failed: true }));
+  r.call(false);
+  for (let i = 0; i < STOP_RETRIES + 1; i++) await r.reply();
+  assert.deepEqual(r.sent, [false, false, false]);
+  assert.equal(r.sent.length, STOP_RETRIES + 1);
+  assert.deepEqual(r.settled, [[false, false]]); // not live, even though the server never answered
+});
+await okAsync("a stop that fails once and then gets through stops retrying", async () => {
+  const r = rig((on, k) => (!on && k === 1 ? { ok: false, full: false, failed: true } : { ok: on, full: false }));
+  r.call(false);
+  await r.reply();
+  await r.reply();
+  await r.tick();
+  assert.deepEqual(r.sent, [false, false]);
+  assert.deepEqual(r.settled, [[false, false]]);
+});
+await okAsync("a start that fails is not retried by the sender and shows nothing new", async () => {
+  const r = rig(() => ({ ok: false, full: false, failed: true }));
+  r.call(true);
+  await r.reply();
+  assert.deepEqual(r.sent, [true]);
+  assert.deepEqual(r.settled, [[true, false]]); // the session ignores a failed start; the sender only reports it
+});
+await okAsync("a start wished while a failed stop waits to retry goes out instead of the retry", async () => {
+  const r = rig((on) => (on ? { ok: true, full: false } : { ok: false, full: false, failed: true }));
+  r.call(false);
+  await r.reply(); // the stop failed; the sender is about to retry it
+  r.call(true);
+  await r.reply();
+  await r.reply();
+  assert.equal(r.sent.at(-1), true);
+  assert.deepEqual(r.settled.at(-1), [true, true]);
 });
 
 console.log(`ALL ${n} STAGE CHECKS PASSED`);

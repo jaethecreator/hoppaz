@@ -29,7 +29,8 @@ import css from "./Places.module.css";
  * admins) on the stage get SPEAK TO ALL (action id "stage-voice", priority 60), everyone else joins listen-only by
  * themselves when the stage goes live and sees one LIVE ON STAGE pill (the speakers' faces, the first name, the head
  * count, a mute toggle, and TAP TO LISTEN while the browser holds the audio back). Leaving the stage ends the
- * broadcast. The speaking rings are the world's: this sets roomStore.speaking, and the music ducks (music.duckVoice).
+ * broadcast. The speaking dot over a head is the world's (CampaignWorld, Campaign.module.css .talk): this sets
+ * roomStore.speaking (with or without the stage flag), and the music ducks (music.duckVoice).
  * The audio logic is in src/lib/crew-room/voice.ts.
  */
 export type RoomVoiceProps = { crewId: string; layout: CampaignLayout };
@@ -184,13 +185,21 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
     return () => clearTimeout(t);
   }, [stage.length, auto, phase]);
 
-  // Browsers hold audio back until a tap. Walking is tapping, so the first touch anywhere in the room lets it play.
+  // Browsers hold audio back until a tap. Walking is tapping, so the first touch anywhere in the room lets it play. On a
+  // touch screen a pointerdown is NOT a gesture that unlocks audio (iPhones ignore it): the lift of the finger is. So it
+  // listens for pointerup, with touchend and click as the fallback for a browser that only counts one of them, takes the
+  // first of the three, and lets go of all of them. TAP TO LISTEN on the pill stays as the visible way if none of them took.
   const canPlay = view?.canPlay ?? true;
   useEffect(() => {
     if (!STAGE_FLAG || phase === "off" || phase === "joining" || canPlay) return;
-    const unlock = () => session.current?.unlockAudio();
-    window.addEventListener("pointerdown", unlock);
-    return () => window.removeEventListener("pointerdown", unlock);
+    const gestures = ["pointerup", "touchend", "click"] as const;
+    const stop = () => gestures.forEach((g) => window.removeEventListener(g, unlock, true));
+    const unlock = () => {
+      stop();
+      session.current?.unlockAudio();
+    };
+    gestures.forEach((g) => window.addEventListener(g, unlock, { capture: true, passive: true }));
+    return stop;
   }, [phase, canPlay]);
 
   // Staff on the stage: SPEAK TO ALL. Their mic is never opened without this tap.

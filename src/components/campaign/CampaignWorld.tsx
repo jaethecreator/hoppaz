@@ -60,9 +60,23 @@ type WalkerProps = {
   walking?: boolean;
   ring?: number;
   nudge?: number;
+  /** My user id, for my own walker (its `id` is "me"); a peer's `id` already is theirs. The voice room names speakers by it. */
+  voiceId?: string;
   /** Hands the node to the motion loop (walkMotion.ts). */
   attach: (id: string, el: HTMLElement | null) => void;
 };
+
+/**
+ * The speaking dot: a small speech bubble with a pulsing dot over the head of a walker whose voice is live (roomStore.speaking,
+ * set by RoomVoice for normal proximity voice and for stage speakers alike). Each walker asks only "is my id in the list?",
+ * so a change re-renders the one or two dots that flipped, never the 60 walkers, and nothing here runs per frame: the pulse is
+ * a CSS animation on transform and opacity. A phone short of memory gets the dot without the pulse.
+ */
+function Talk({ who }: { who?: string }) {
+  const speaking = useRoomStore((s) => !!who && s.speaking.includes(who));
+  if (!speaking) return null;
+  return <i className={`${css.talk} ${deviceTier() === "low" ? css.talkStill : ""}`} data-speaking aria-hidden />;
+}
 
 /**
  * One walker: one positioned node, one sprite, and a name tag that keeps its size on screen at every zoom (it scales by
@@ -71,12 +85,12 @@ type WalkerProps = {
  * those two style values never change after that, so a re-render never puts the node back on a tile.
  */
 const Walker = memo(WalkerView, (a, b) => {
-  for (const k of ["id", "x", "y", "name", "tile", "tag", "away", "me", "walking", "ring", "nudge"] as const) if (a[k] !== b[k]) return false;
+  for (const k of ["id", "x", "y", "name", "tile", "tag", "away", "me", "walking", "ring", "nudge", "voiceId"] as const) if (a[k] !== b[k]) return false;
   // A look arrives as a new object with every snapshot (about every 1.5 s); only a different drawing redraws the Hopper.
   return a.look === b.look || JSON.stringify(a.look) === JSON.stringify(b.look);
 });
 
-function WalkerView({ id, x, y, look, name, tile, tag, away, me, walking, ring, nudge, attach }: WalkerProps) {
+function WalkerView({ id, x, y, look, name, tile, tag, away, me, walking, ring, nudge, voiceId, attach }: WalkerProps) {
   const [first] = useState(() => ({ transform: `translate3d(${(x + 0.5) * tile}px,${(y + 0.6) * tile}px,0)`, zIndex: 10 + y }));
   const hold = useCallback((el: HTMLDivElement | null) => attach(id, el), [attach, id]);
   const attrs = me ? { "data-player-tile": `${x},${y}` } : { "data-room-peer": id, "data-peer-tile": `${x},${y}`, "data-away": away || undefined };
@@ -86,6 +100,7 @@ function WalkerView({ id, x, y, look, name, tile, tag, away, me, walking, ring, 
       <span className={`${css.sprite} ${walking ? css.walking : ""} ${nudge ? css.nudge : ""}`} style={nudge ? ({ "--nx": `${nudge}px` } as React.CSSProperties) : undefined}>
         <AvatarSprite look={look} label={me ? "Your character" : away ? `${name}'s character, away` : `${name}'s character`} />
       </span>
+      <Talk who={me ? voiceId : id} />
       {tag && <b className={css.nameTag}>{me ? "You" : away ? `${name} · away` : name}</b>}
     </div>
   );
@@ -843,7 +858,7 @@ export default function CampaignWorld({
                 const away = !!social && isAway(peer, observedAt);
                 return <Walker key={peer.id} id={peer.id} x={peer.x} y={peer.y} look={peer.look} name={peer.name} tile={tile} tag={tagged.has(peer.id)} away={away} attach={motion.attach} />;
               })}
-              {!watching && <Walker id="me" me x={player.x} y={player.y} look={look} name="You" tile={tile} tag={lod >= 1} walking={walking} ring={ring} nudge={nudge} attach={motion.attach} />}
+              {!watching && <Walker id="me" me x={player.x} y={player.y} look={look} name="You" tile={tile} tag={lod >= 1} walking={walking} ring={ring} nudge={nudge} voiceId={userId} attach={motion.attach} />}
             </div>
             <div className={css.tags}>
               {layout.zones.filter((zone) => shownZones.has(zone.id)).map((zone) => {
