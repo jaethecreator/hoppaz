@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { anonLook, normalizeLook, randomLook, type Look } from "@/lib/avatar";
+import { backoff, hidden, jitter } from "@/lib/idle";
 import { getSupabase } from "@/lib/supabase/client";
 import { readLooks } from "./api";
 
@@ -28,7 +29,8 @@ const seeded = (s: string) => {
 /**
  * The look to draw for each key in the room. `keys` are the heads' keys (and any chat authors you want covered);
  * a key with no real look is simply absent, and the caller falls back to anonLook(alias). Asked again when the people
- * change and about once a minute, only while the room is open on this screen.
+ * change and about once a minute (less when nobody touches the phone, never while the page is hidden), only while the
+ * room is open on this screen.
  */
 export function useRoomLooks(slug: string, active: boolean, people: { key: string; alias: string }[]): Record<string, Look> {
   const [real, setReal] = useState<Record<string, Look>>({});
@@ -54,11 +56,18 @@ export function useRoomLooks(slug: string, active: boolean, people: { key: strin
       for (const [k, v] of Object.entries(r.looks ?? {})) out[k] = normalizeLook(v);
       setReal(out);
     };
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const next = () => {
+      t = setTimeout(() => {
+        if (!hidden()) void ask();
+        next();
+      }, jitter(backoff(LOOKS_MS)));
+    };
     void ask();
-    const t = setInterval(() => document.visibilityState === "visible" && void ask(), LOOKS_MS);
+    next();
     return () => {
       dead = true;
-      clearInterval(t);
+      clearTimeout(t);
     };
     // sig: ask again as soon as someone new is in the room
   }, [slug, active, sig]);
