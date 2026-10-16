@@ -1,5 +1,6 @@
 "use client";
 
+import { appNavigate } from "./appNav";
 import { getSupabase } from "./supabase/client";
 import { useSessionStore } from "./useSession";
 
@@ -18,8 +19,12 @@ import { useSessionStore } from "./useSession";
 export const NEED_ACCOUNT = "need_account";
 export const isNeedAccount = (msg: string | null | undefined) => msg === NEED_ACCOUNT;
 
-/** Send a guest to the account page and return them to this screen afterwards. */
-export function goToAccount(reason: string, mode: "create" | "login" = "create", detail?: string): void {
+/**
+ * Send a guest to the account page and return them to this screen afterwards. It is a move inside the app, not a page load
+ * (a reload would start the whole app over: the first run, the music, the session). `replace`: for a page that sends a guest
+ * away the moment it opens (RequireAccount), so the back button goes to where they came from and not into the same redirect.
+ */
+export function goToAccount(reason: string, mode: "create" | "login" = "create", detail?: string, opts?: { replace?: boolean }): void {
   if (typeof window === "undefined") return;
   const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   const target = new URL("/account", window.location.origin);
@@ -27,7 +32,7 @@ export function goToAccount(reason: string, mode: "create" | "login" = "create",
   target.searchParams.set("reason", reason);
   if (detail) target.searchParams.set("detail", detail);
   target.searchParams.set("next", next.startsWith("/account") ? "/me" : next);
-  window.location.assign(`${target.pathname}${target.search}${target.hash}`);
+  appNavigate(`${target.pathname}${target.search}${target.hash}`, opts);
 }
 
 /**

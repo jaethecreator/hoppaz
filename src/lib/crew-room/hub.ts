@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { backoff, hidden, jitter } from "@/lib/idle";
 import { getSupabase } from "@/lib/supabase/client";
 
 /**
@@ -39,13 +40,16 @@ export type CrewCard = {
 /** A crew's event, as the hub tiles and the Stage show it. */
 export type CrewEvent = { id: string; title: string; venue_name: string; area: string | null; starts_at: string; flyer_url: string | null };
 
-/** Live updates of the card ("N in the room now") while the hub is open. */
-const REFRESH = 15_000;
+/** Live updates of the card ("N in the room now") while the hub is open: every 30 s, less as the person goes idle (to 2 minutes). */
+const REFRESH = 30_000;
+const REFRESH_MAX = 120_000;
+/** Back to the page: the card is read again at once when the last read is older than this. */
+const STALE = 30_000;
 
 /** The invite link for a code, on this site. */
 export const inviteLink = (code: string) => `${typeof window === "undefined" ? "" : window.location.origin}/crew/join/${code}`;
 
-/** One crew's card, by id or by invite code, kept fresh every 15 s while the page is visible. */
+/** One crew's card, by id or by invite code, kept fresh every 30 s (or slower) while the page is visible. */
 export function useCrewCard({ crewId, code }: { crewId?: string; code?: string }) {
   const [card, setCard] = useState<CrewCard | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "missing" | "offline">("loading");
@@ -61,9 +65,32 @@ export function useCrewCard({ crewId, code }: { crewId?: string; code?: string }
 
   useEffect(() => {
     setState("loading");
-    void load();
-    const t = setInterval(() => document.visibilityState === "visible" && void load(), REFRESH);
-    return () => clearInterval(t);
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let lastAt = 0;
+    const read = async () => {
+      lastAt = Date.now();
+      await load();
+    };
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        if (stopped) return;
+        if (!hidden()) await read();
+        if (!stopped) arm();
+      }, jitter(backoff(REFRESH, { max: REFRESH_MAX })));
+    };
+    const onVisible = () => {
+      if (!hidden() && Date.now() - lastAt > STALE) void read();
+    };
+    void read();
+    arm();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load]);
 
   return { card, state, reload: load };

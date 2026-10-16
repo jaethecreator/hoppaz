@@ -2,6 +2,7 @@
 
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { haptics } from "@/lib/haptics";
+import { backoff, jitter } from "@/lib/idle";
 import { sfx } from "@/lib/sound/sfx";
 import { getSupabase } from "@/lib/supabase/client";
 import { fetchState, searchObject, type StateResult } from "./api";
@@ -12,9 +13,11 @@ import type { GtAnswer, GtFound, GtGame, GtMe, GtReason } from "./types";
 /**
  * The Game Time controller: keeps the store (store.ts) true to the database for one room.
  *
- *   POLL       game_time_state about every 2 s while live, every 12 s before it opens (5 s in the last two minutes, and once
- *              at opens_at minus half a second and once just after, so GO and the server agree), every 15 s with no game.
- *              Each phone adds a little jitter, so 60 of them do not knock together. Nothing polls in a hidden tab.
+ *   POLL       game_time_state about every 3.5 s while live and the feed is connected (2.5 s when it is not), about every 15 s
+ *              before it opens (6 s in the last two minutes, 1.5 to 2.5 s in the last 20 s, and once at opens_at minus half a
+ *              second and once just after, so GO and the server agree), every 45 s with no game. Each phone adds jitter, and
+ *              the opening kicks add a spread of their own per phone, so 60 of them do not knock together. Nothing polls in
+ *              a hidden tab, and a search answer (which already carries the count) pushes the next poll 3 s out.
  *   REALTIME   game_time_feed INSERT for this game: "Ada found a box" and the count drops at once. Polling is the net
  *              under it: a find missed by Realtime shows within a poll.
  *   SEARCH     one at a time; the answer is held for the 2 second animation; the gap is the server's retry_ms (3 s).
@@ -47,6 +50,14 @@ type Ctl = {
   held: GtFound[];
   channel: RealtimeChannel | null;
   channelGame: string | null;
+  /** The feed channel is SUBSCRIBED: finds arrive by themselves, so polling can be slower. */
+  feedLive: boolean;
+  /** When the poll timer is due (phone clock), so an answer that already carries the count can push it out. */
+  nextAt: number;
+  /** A search answer carried the count and the feed tail: no scheduled poll before this (phone clock). */
+  holdUntil: number;
+  /** Where this phone lands in the 1.2 s after an opening or closing moment, set once per session. */
+  spread: number;
   coolTimer: ReturnType<typeof setTimeout> | undefined;
   poll: () => void;
   /** Tell the room about the finds that waited for my answer (all but mine, which the caller has marked seen). */
@@ -82,7 +93,6 @@ function markSheetSeen(gameId: string, code: string) {
 
 /** Change the store without holding on to it. */
 const patch = (p: Parameters<ReturnType<typeof useGameTime.getState>["patch"]>[0]) => useGameTime.getState().patch(p);
-const jitter = (ms: number) => Math.round(ms * (0.85 + Math.random() * 0.3));
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export function startGameTime(crewId: string): () => void {
@@ -105,6 +115,10 @@ export function startGameTime(crewId: string): () => void {
     held: [],
     channel: null,
     channelGame: null,
+    feedLive: false,
+    nextAt: 0,
+    holdUntil: 0,
+    spread: Math.random() * 1200,
     coolTimer: undefined,
     poll: () => void poll(),
     release: () => {},
@@ -176,6 +190,7 @@ export function startGameTime(crewId: string): () => void {
     const sb = getSupabase();
     if (c.channel && sb) void sb.removeChannel(c.channel);
     c.channel = null;
+    c.feedLive = false;
     c.channelGame = gameId;
     if (!sb || !gameId) return;
     c.channel = sb
@@ -185,22 +200,33 @@ export function startGameTime(crewId: string): () => void {
         if (!row || typeof row.id !== "number" || c.stopped) return;
         announce({ id: row.id, at: row.at ?? new Date().toISOString(), name: row.name ?? "", object: row.object_id ?? "", boxes_left: Number(row.boxes_left) || 0 });
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (c.stopped) return;
+        c.feedLive = status === "SUBSCRIBED";
+      });
   };
 
   /* ---------------------------------------------------------------- poll -- */
 
   const nextDelay = () => {
     const game = store.getState().game;
-    if (!game) return jitter(15_000);
-    if (game.status === "live") return 1800 + Math.round(Math.random() * 500);
+    if (!game) return jitter(45_000);
+    if (game.status === "live") return jitter(c.feedLive ? 3500 : 3000);
     if (game.status === "upcoming") {
       const ms = Date.parse(game.opens_at) - serverNow();
-      if (ms <= 20_000) return 1500;
-      if (ms <= 120_000) return jitter(5000);
-      return jitter(12_000);
+      if (ms <= 20_000) return 1500 + Math.round(Math.random() * 1000);
+      if (ms <= 120_000) return jitter(6000);
+      // Far from opening, a phone nobody has touched for a while asks less.
+      return jitter(backoff(15_000, { max: 30_000 }));
     }
-    return jitter(20_000);
+    return jitter(60_000);
+  };
+
+  /** Run the next poll after `ms` (not sooner than a later call says). */
+  const arm = (ms: number) => {
+    clearTimeout(c.timer);
+    c.nextAt = Date.now() + ms;
+    c.timer = setTimeout(poll, ms);
   };
 
   const kick = (game: GtGame | null) => {
@@ -210,11 +236,12 @@ export function startGameTime(crewId: string): () => void {
     const at = (iso: string) => Date.parse(iso) - serverNow();
     if (game.status === "upcoming") {
       const ms = at(game.opens_at);
-      if (ms > 700) c.kicks.push(setTimeout(c.poll, ms - 500));
-      if (ms > -300) c.kicks.push(setTimeout(c.poll, Math.max(0, ms + 300)));
+      // Every phone adds its own spread, so 60 of them do not ask in the same 100 ms at opens_at.
+      if (ms > 700) c.kicks.push(setTimeout(c.poll, ms - 500 + c.spread));
+      if (ms > -300) c.kicks.push(setTimeout(c.poll, Math.max(0, ms + 300 + c.spread)));
     } else if (game.status === "live") {
       const ms = at(game.closes_at);
-      if (ms > 0) c.kicks.push(setTimeout(c.poll, ms + 250));
+      if (ms > 0) c.kicks.push(setTimeout(c.poll, ms + 250 + c.spread));
     }
   };
 
@@ -268,17 +295,18 @@ export function startGameTime(crewId: string): () => void {
     if (!r.ok) {
       c.failures += 1;
       patch({ offline: true });
-      c.timer = setTimeout(poll, Math.min(20_000, 3000 * 2 ** Math.min(c.failures - 1, 3)));
+      arm(Math.min(30_000, 3000 * 2 ** Math.min(c.failures - 1, 4)));
       return;
     }
     c.failures = 0;
     apply(r);
     if (c.again) {
       c.again = false;
-      c.timer = setTimeout(poll, 100);
+      arm(100);
       return;
     }
-    c.timer = setTimeout(poll, nextDelay());
+    // A search answered a moment ago already told this phone the count: that poll is not due before its 3 s are up.
+    arm(Math.max(nextDelay(), c.holdUntil - Date.now()));
   }
 
   const onVisible = () => {
@@ -401,6 +429,16 @@ function reveal(c: Ctl, object: string, a: GtAnswer) {
   // My win is the newest feed row when the answer was made; it is mine, not news. Everything else waiting is news.
   if (a.kind === "win") c.seen.add(a.tail);
   c.release();
+
+  // A counted search answer carries boxes_left and the feed tail, so the poll that was about to ask the same thing can wait.
+  if (a.kind !== "refused") {
+    c.holdUntil = Date.now() + 3000;
+    if (c.timer && c.nextAt < c.holdUntil) {
+      clearTimeout(c.timer);
+      c.nextAt = c.holdUntil;
+      c.timer = setTimeout(c.poll, 3000);
+    }
+  }
 
   if (a.kind === "nothing") {
     const h = HINT[a.hint];

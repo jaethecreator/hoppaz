@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { idleMs } from "@/lib/idle";
 import { getSupabase } from "@/lib/supabase/client";
 import { useNamedPeers } from "./chatNames";
 import type { CampaignContent } from "@/lib/campaign/layout";
@@ -11,8 +12,8 @@ import type { CrewRoomConnection, PositionReset, RoomMessage, RoomSnapshot, Room
  * One crew room, live: the walker, everyone else in the room, and its conversations. The server decides every
  * position, area and audience (supabase/crew_rooms.sql); nothing private travels by client broadcast.
  *
- * Presence. Steps go up in batches of up to 8 tiles; a walker standing still beats every 10 s and the server keeps
- * them 45 s, so a phone screen lock or a quick look at another app keeps the avatar. Coming back to the page beats at
+ * Presence. Steps go up in batches of up to 8 tiles, sent when 5 are waiting or the oldest has waited 450 ms; a walker
+ * standing still beats every 15 s and the server keeps them 45 s, so a phone screen lock or a quick look at another app keeps the avatar. Coming back to the page beats at
  * once: the same session carries on, or (gone too long) the room is entered again with nothing lost. Closing the page
  * leaves straight away (a keepalive request), so nobody is left standing in the room. A second tab takes the walker
  * over: this one is told ("replaced") and can take it back with one tap. A full room is entered to watch: the room
@@ -20,7 +21,10 @@ import type { CrewRoomConnection, PositionReset, RoomMessage, RoomSnapshot, Room
  *
  * Conversations. General and each area session are separate threads, each read a page at a time (older pages on
  * request). New messages arrive in the Realtime payload (RLS decides who gets an area message) and are added to their
- * thread; a small catch-up read every 20 s, and after every send, covers a dropped event.
+ * thread; a small catch-up read every 30 s (10 s while the channel is down), and after every send, covers a dropped event.
+ *
+ * The room is read again when nothing has brought a snapshot for a while: every 2.5 s with company and a hand on the screen,
+ * 5 s then 10 s as the person goes idle, 10 s alone. Every gap is spread 20% either way so a full room does not knock together.
  */
 
 const MESSAGE_COLUMNS = "id,crew_id,author_id,author_name,author_look,body,scope,circle_id,created_at";
@@ -29,13 +33,25 @@ const PAGE = 40;
 /** The movement queue is looked at this often (ms). */
 const TICK = 200;
 /** A walker standing still beats this often (ms). The server keeps a walker 45 s after the last one (_crew_room_ttl). */
-const BEAT = 10_000;
-/** The room is read when nothing has brought a snapshot for this long (ms). Not while the page is hidden. */
-const READ = 1_500;
+const BEAT = 15_000;
+/** Steps go up when this many tiles are waiting, or the oldest has waited FLUSH_AGE (ms). The walker makes about 11 a second. */
+const FLUSH_TILES = 5;
+const FLUSH_AGE = 450;
+
+/**
+ * The room is read when nothing has brought a snapshot for this long (ms). Not while the page is hidden. Alone in the room
+ * there is nothing to see move; with company, how fast depends on whether the person is doing anything.
+ */
+function readGap(peers: number, lastStepAt: number) {
+  if (peers <= 1) return 10_000;
+  const touched = Math.min(idleMs(), Date.now() - lastStepAt);
+  return touched < 30_000 ? 2_500 : touched < 180_000 ? 5_000 : 10_000;
+}
 /** Someone watching a full room tries for a walking spot this often (ms). */
 const WATCH_RETRY = 15_000;
-/** Newer messages are read this often (ms), in case Realtime dropped one. */
-const CATCH_UP = 20_000;
+/** Newer messages are read this often (ms), in case Realtime dropped one: rarely while the channel is up, soon when it is not. */
+const CATCH_UP = 30_000;
+const CATCH_UP_DOWN = 10_000;
 /** After a failed request, wait this long (ms). */
 const BACKOFF = 2_000;
 
@@ -106,7 +122,11 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
   const version = useRef(0);
   const current = useRef<RoomSnapshot | null>(null);
   const threadsRef = useRef(threads);
-  const readRoom = useRef<() => void>(() => {});
+  const readSoon = useRef<() => void>(() => {});
+  /** When the walker last took a step (phone clock): a walker is not idle. */
+  const lastStepAt = useRef(0);
+  /** When the oldest tile in the queue was added (phone clock). */
+  const queuedAt = useRef(0);
   const applySnapshot = useRef<(data: RoomSnapshot) => void>(() => {});
   const pendingSend = useRef<{ scope: string; text: string; circle: string | null; id: string } | null>(null);
   threadsRef.current = threads;
@@ -128,6 +148,8 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
     let flushing = false;
     let reading = false;
     let lastSnap = 0;
+    /** Spread on the read gap, drawn again after each snapshot (+/-20%). */
+    let spread = 1;
     let lastBeat = 0;
     let lastTry = 0;
     let retryAt = 0;
@@ -191,6 +213,7 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
       version.current = data.room.version;
       current.current = data;
       lastSnap = Date.now();
+      spread = 0.8 + Math.random() * 0.4;
       setSnapshot(data);
     };
     applySnapshot.current = (data) => apply(data);
@@ -255,11 +278,22 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
         reading = false;
       }
     };
-    readRoom.current = () => void read();
+    // The owner changed the room: every member reads, but not all in the same moment, and not if a snapshot just came.
+    readSoon.current = () => {
+      setTimeout(() => {
+        if (stopped || Date.now() - lastSnap < 1000) return;
+        void read();
+      }, Math.random() * 2000);
+    };
 
     const flush = async () => {
       if (stopped || flushing || entering || !session || Date.now() < retryAt) return;
-      if (!batch.current && !queue.current.length && Date.now() - lastBeat < BEAT) return;
+      if (!batch.current) {
+        const waiting = queue.current.length;
+        const beatDue = Date.now() - lastBeat >= BEAT;
+        // A few tiles at a time: 5 waiting, or the oldest has waited 450 ms, or the beat is due.
+        if (!beatDue && (!waiting || (waiting < FLUSH_TILES && Date.now() - queuedAt.current < FLUSH_AGE))) return;
+      }
       flushing = true;
       if (!batch.current) batch.current = { steps: queue.current.slice(0, 8), seq: sequence.current + (queue.current.length ? 1 : 0) };
       const request = batch.current;
@@ -310,6 +344,7 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
         if (batch.current === request) {
           queue.current.splice(0, request.steps.length);
           batch.current = null;
+          if (queue.current.length) queuedAt.current = Date.now();
         }
         if (snap.room.version >= version.current && snap.self) sequence.current = snap.self.seq;
         lastBeat = Date.now();
@@ -334,7 +369,7 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
 
     const clock = setInterval(() => {
       void flush();
-      if (!document.hidden && Date.now() - lastSnap > READ) void read();
+      if (!document.hidden && Date.now() - lastSnap > readGap(current.current?.peers.length ?? 0, lastStepAt.current) * spread) void read();
       if (watch && !entering && Date.now() - lastTry > WATCH_RETRY) void enter();
     }, TICK);
 
@@ -449,10 +484,21 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
     const sb = getSupabase();
     if (!sb) return;
     let stopped = false;
+    let subscribed = false;
     const catchUp = () => {
       if (stopped || document.hidden) return;
       const area = current.current?.self?.circle_id;
       [...new Set(["general", ...(area ? [area] : [])])].forEach((key) => void fetchThread(key, threadsRef.current[key]?.loaded ? "newer" : "first"));
+    };
+    // The safety read: 30 s while Realtime is up, 10 s while it is not.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      clearTimeout(timer);
+      if (stopped) return;
+      timer = setTimeout(() => {
+        catchUp();
+        arm();
+      }, subscribed ? CATCH_UP : CATCH_UP_DOWN);
     };
     const channel = sb
       .channel(`crew-room:${crewId}:${crypto.randomUUID()}`)
@@ -462,20 +508,22 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
         if (!stopped && key) setThreads((all) => merge(all, key, [m]));
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "crew_rooms", filter: `crew_id=eq.${crewId}` }, () =>
-        readRoom.current()
+        readSoon.current()
       )
       // Subscribed, or back after a dropped connection: read what may have been missed.
       .subscribe((state) => {
-        if (state === "SUBSCRIBED") catchUp();
+        subscribed = state === "SUBSCRIBED";
+        if (subscribed) catchUp();
+        arm();
       });
-    const timer = setInterval(catchUp, CATCH_UP);
+    arm();
     const onVisible = () => {
       if (!document.hidden) catchUp();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       stopped = true;
-      clearInterval(timer);
+      clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
       void sb.removeChannel(channel);
     };
@@ -489,6 +537,8 @@ export function useCrewRoom(crewId: string, userId: string | null): CrewRoomConn
   // ----------------------------------------------------------- the calls --
   const onStep = useCallback((tile: Tile) => {
     if (!walking.current || queue.current.length >= 8) return false;
+    if (!queue.current.length) queuedAt.current = Date.now();
+    lastStepAt.current = Date.now();
     queue.current.push(tile);
     return true;
   }, []);

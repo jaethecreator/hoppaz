@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { create } from "zustand";
+import { backoff, hidden, jitter } from "@/lib/idle";
 import { getSupabase } from "@/lib/supabase/client";
 import { isMissing } from "@/lib/social";
 
@@ -10,7 +11,8 @@ import { isMissing } from "@/lib/social";
  * Nobody is interrupted: the owner's logo in the room pulses with a small orange "!" while there is one this member has not
  * seen, and the owner and admins panel (OwnerPanel.tsx) lists them, latest first. Opening the panel marks them seen.
  *
- * Read once when the room opens and again each minute while the page is visible. Without the file on the server there is
+ * Read once when the room opens and again every 2 minutes (5 at the slowest, for a phone nobody is touching) while the page is
+ * visible, and when the page comes back to the front after a minute or more. Without the file on the server there is
  * no pulse and no section (`supported` false): nothing is drawn for what does not exist.
  */
 export type Announcement = { id: string; body: string; at: string; edited: boolean; by: string; mine: boolean; fresh: boolean };
@@ -47,14 +49,35 @@ export function useAnnouncements(crewId: string): Entry {
   return useStore((s) => s.rooms[crewId]) ?? EMPTY;
 }
 
-/** Keep the room's announcements fresh while the room is open: now, then each minute while the page is in front. */
+/** Keep the room's announcements fresh while the room is open: now, then every 2 minutes or so while the page is in front. */
 export function useAnnouncementFeed(crewId: string) {
   useEffect(() => {
-    void loadAnnouncements(crewId);
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") void loadAnnouncements(crewId);
-    }, 60_000);
-    return () => clearInterval(t);
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let lastAt = 0;
+    const read = async () => {
+      lastAt = Date.now();
+      await loadAnnouncements(crewId);
+    };
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        if (stopped) return;
+        if (!hidden()) await read();
+        if (!stopped) arm();
+      }, jitter(backoff(120_000, { max: 300_000 })));
+    };
+    const onVisible = () => {
+      if (!hidden() && Date.now() - lastAt > 60_000) void read();
+    };
+    void read();
+    arm();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [crewId]);
 }
 

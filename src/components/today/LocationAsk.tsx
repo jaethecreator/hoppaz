@@ -5,6 +5,7 @@ import { MapPin, X } from "lucide-react";
 import Mascot from "@/components/Mascot";
 import { nearestArea } from "@/lib/geo";
 import { useHoppaz, useToast } from "@/lib/store";
+import { markLocationAsked } from "@/lib/firstRun";
 import { useGeoPermission } from "@/lib/useLivePosition";
 
 /**
@@ -72,7 +73,11 @@ export default function LocationAsk({ paused = false }: { paused?: boolean }) {
       return;
     }
     if (answered()) return;
-    const t = setTimeout(() => setOpen(true), DELAY_MS);
+    const t = setTimeout(() => {
+      setOpen(true);
+      // Put to them once: moving to another tab with it open is "not now", it does not come back on every visit to this page.
+      markLocationAsked();
+    }, DELAY_MS);
     return () => clearTimeout(t);
   }, [hasGps, paused, permission, locate]);
 
