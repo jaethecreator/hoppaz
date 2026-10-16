@@ -39,8 +39,9 @@ export async function fetchEventById(id: string, fix: Fix): Promise<EventRow | n
   const sb = getSupabase();
   if (!sb) return sample();
   if (!UUID.test(id)) return null;
-  // The Lagos list the phone already holds has it: no calls.
-  const held = read<EventRow[]>(LAGOS_KEY)?.data?.find((e) => e.id === id);
+  // The Lagos list the phone already holds has it: no calls. Only a copy under a day old, and only while the event is
+  // inside the list's window (heldLagos checks both); otherwise this falls through and reads the row.
+  const held = heldLagos()?.find((e) => e.id === id);
   if (held) return withDistance([held], fix)[0];
   const { data, error } = await sb
     .from("events")
