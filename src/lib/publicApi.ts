@@ -1,7 +1,7 @@
 import { withDrop } from "./game-time/drops";
 import type { GtListGame } from "./game-time/types";
 import { LAGOS_CENTER } from "./geo";
-import { getSupabase } from "./supabase/client";
+import { getSupabase, supabaseConfigured } from "./supabase/client";
 import type { EventRow } from "./types";
 
 /**
@@ -18,8 +18,41 @@ const fail = (error: string): PublicResult<never> => ({ ok: false, error });
 const NO_DB = "no database";
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** After the edge failed, go straight to the database for this long, so a broken route does not double every wait. */
+const EDGE_COOLDOWN_MS = 60_000;
+const EDGE_TIMEOUT_MS = 8000;
+let edgeDownUntil = 0;
+
+/**
+ * One read from the CDN-cached routes. The path and the credentials mode must stay exactly what the preload links in
+ * src/app/layout.tsx say (same path, no query, same-origin), or the browser fetches twice. Undefined on any failure (null is a real answer: no Hop).
+ */
+async function getJSON<T>(path: string, valid: (data: unknown) => data is T): Promise<T | undefined> {
+  if (typeof window === "undefined" || Date.now() < edgeDownUntil) return undefined;
+  try {
+    const res = await fetch(path, { credentials: "same-origin", signal: AbortSignal.timeout(EDGE_TIMEOUT_MS) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = (await res.json()) as { data?: unknown } | null;
+    if (!body || !valid(body.data)) throw new Error("unexpected body");
+    return body.data;
+  } catch {
+    edgeDownUntil = Date.now() + EDGE_COOLDOWN_MS;
+    return undefined;
+  }
+}
+
+const isArray = (d: unknown): d is unknown[] => Array.isArray(d);
+const isRowOrNull = (d: unknown): d is Record<string, unknown> | null => d === null || (typeof d === "object" && !Array.isArray(d));
+const hasGames = (d: unknown): d is { games: GtListGame[] } =>
+  !!d && typeof d === "object" && Array.isArray((d as { games?: unknown }).games);
+
+const viaEdge = <T,>(data: T): PublicResult<T> => ({ ok: true, data, via: "edge" });
+
 /** Live events within 110 km of LAGOS_CENTER (6.5, 3.42), now-4h .. now+45d, heat desc. distance_m is from LAGOS_CENTER; callers recompute it. */
 export async function fetchLagosEvents(): Promise<PublicResult<EventRow[]>> {
+  if (!supabaseConfigured()) return fail(NO_DB);
+  const rows = await getJSON("/api/public/events", isArray);
+  if (rows) return viaEdge((rows as EventRow[]).slice().sort((a, b) => b.heat - a.heat));
   return fetchEventsNearDirect(LAGOS_CENTER.lat, LAGOS_CENTER.lng, 110_000);
 }
 
@@ -53,6 +86,9 @@ export async function fetchEventsNearDirect(lat: number, lng: number, radiusM: n
 
 /** hotspot_list() rows, unmapped. */
 export async function fetchHotspotRows(): Promise<PublicResult<unknown[]>> {
+  if (!supabaseConfigured()) return fail(NO_DB);
+  const rows = await getJSON("/api/public/hotspots", isArray);
+  if (rows) return viaEdge(rows);
   const sb = getSupabase();
   if (!sb) return fail(NO_DB);
   try {
@@ -66,6 +102,9 @@ export async function fetchHotspotRows(): Promise<PublicResult<unknown[]>> {
 
 /** Next announced/selling Hop with hop_stops(*), unmapped, or null. */
 export async function fetchNextHopRow(): Promise<PublicResult<Record<string, unknown> | null>> {
+  if (!supabaseConfigured()) return fail(NO_DB);
+  const row = await getJSON("/api/public/hop", isRowOrNull);
+  if (row !== undefined) return viaEdge(row);
   const sb = getSupabase();
   if (!sb) return fail(NO_DB);
   try {
@@ -85,6 +124,9 @@ export async function fetchNextHopRow(): Promise<PublicResult<Record<string, unk
 
 /** Every event id that has a collectible drop or a live public game drop. */
 export async function fetchDropEventIds(): Promise<PublicResult<string[]>> {
+  if (!supabaseConfigured()) return fail(NO_DB);
+  const ids = await getJSON("/api/public/drop-events", isArray);
+  if (ids) return viaEdge(ids.filter((id): id is string => typeof id === "string"));
   const sb = getSupabase();
   if (!sb) return fail(NO_DB);
   try {
@@ -103,6 +145,10 @@ export async function fetchDropEventIds(): Promise<PublicResult<string[]>> {
 
 /** game_time_list() as an anonymous caller sees it: open crews only, is_member=false, won=false, blocked=null. */
 export async function fetchPublicGameTimeList(): Promise<PublicResult<{ games: GtListGame[] }>> {
+  if (!supabaseConfigured()) return fail(NO_DB);
+  const list = await getJSON("/api/public/game-time", hasGames);
+  // The routes' copy is the anonymous one; if the edge is down the direct rpc answers per Hopper, which is still right for the ping.
+  if (list) return viaEdge({ games: list.games.map(withDrop) });
   const sb = getSupabase();
   if (!sb) return fail(NO_DB);
   try {
