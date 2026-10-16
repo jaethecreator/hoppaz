@@ -222,7 +222,10 @@ begin
   perform pg_temp.actor(d); res := public.crew_card(null, lower(code)); perform pg_temp.admin();
   perform pg_temp.ok(res->>'name' = 'Room test crew' and (res->>'members')::int = 3 and res->>'is_member' = 'false',
     'the invite code shows the crew, its members and that you are not in it');
-  perform pg_temp.ok((res->>'in_room')::int = 1 and jsonb_array_length(res->'heads') = 1, 'the invite shows who is in the room now');
+  -- The one walker left is b, just removed from the crew: crew_rooms_scale.sql takes them out of the room at once
+  -- (before it, the next sweep did).
+  perform pg_temp.ok((res->>'in_room')::int = case when to_regprocedure('public._crew_room_member_left()') is null then 1 else 0 end
+                     and jsonb_array_length(res->'heads') = (res->>'in_room')::int, 'the invite shows who is in the room now');
   perform pg_temp.ok(res->'invite_code' = 'null'::jsonb and res->'recent' = '[]'::jsonb, 'outsiders get neither the code nor the chat');
   perform pg_temp.actor(a); res := public.crew_card(crew, null); perform pg_temp.admin();
   perform pg_temp.ok(res->>'is_owner' = 'true' and res->>'invite_code' = code and jsonb_array_length(res->'recent') = 2, 'the owner sees the code and recent General chat');
