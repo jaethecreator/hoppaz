@@ -7,7 +7,9 @@ import { sfx } from "@/lib/sound/sfx";
 import { getSupabase } from "@/lib/supabase/client";
 import { fetchState, searchObject, type StateResult } from "./api";
 import { noteServerTime, serverNow } from "./clock";
+import { markSearched } from "./huntDemo";
 import { NO_ME, useGameTime, type GtChip } from "./store";
+import { CHIP_MS, SEARCH_ANIMATION_MS } from "./timing";
 import type { GtAnswer, GtFound, GtGame, GtMe, GtReason } from "./types";
 
 /**
@@ -25,8 +27,6 @@ import type { GtAnswer, GtFound, GtGame, GtMe, GtReason } from "./types";
  * One controller at a time: the room's chrome mount starts it and stops it. Everything else reads the store.
  */
 
-const SEARCH_ANIMATION_MS = 2000;
-const CHIP_MS = 2500;
 const FEED_MS = 2500;
 /** After my win the sheet rises when the burst has played. */
 const WIN_SHEET_AT = 700;
@@ -387,6 +387,8 @@ export function pressSearch(object: string) {
     showChip(object, "warn", "SLOW DOWN", 1500);
     return;
   }
+  // The practice hunt (huntDemo.ts) only teaches a Hopper who has never searched: this phone has now.
+  markSearched();
   void run(c, object);
 }
 

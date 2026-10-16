@@ -343,6 +343,11 @@
   flex: none;
   color: var(--tone, rgb(var(--dim)));
 }
+/* The practice hunt's chip: the same chip in sentence case, so it reads as a lesson and not a shout. */
+.chipSoft {
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
 .tCold {
   --tone: rgb(var(--lagoon));
 }
@@ -626,6 +631,120 @@ button.banner:focus-visible {
 }
 .tip span {
   color: rgb(var(--dim));
+}
+
+/*
+ * The practice hunt (HuntDemo.tsx). One card in the banner column, one line at a time, sentence case, with SKIP always
+ * there. Violet border, so it is never mistaken for the amber tip or for a real hunt. "How to hunt" is the quiet link in the
+ * banner's top row. The nudge is one line offered while a real hunt is live; it plays nothing until it is tapped.
+ */
+.demo {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 6px 6px 9px 10px;
+  border: 1px solid rgb(var(--violet));
+  border-radius: 6px;
+  background: rgb(var(--raised) / 0.94);
+  color: rgb(var(--text));
+  pointer-events: auto;
+  animation: chipIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.demoHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+}
+.demoLabel {
+  color: rgb(var(--violet));
+  font: 500 11px/14px var(--font-mono);
+  letter-spacing: 0.04em;
+}
+.demoSkip {
+  position: relative;
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: rgb(var(--dim));
+  font: 500 11px/14px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+/* A 44 px target round a 14 px word. */
+.demoSkip::after,
+.how::after {
+  content: "";
+  position: absolute;
+  inset: -14px -8px;
+}
+.demoSkip:focus-visible,
+.how:focus-visible,
+.demoNudge:focus-visible {
+  outline: 2px solid #ff4d00;
+  outline-offset: 2px;
+}
+.demoLine {
+  margin: 0;
+  padding-right: 4px;
+  font: 500 14px/19px var(--font-body);
+}
+.demoLine b {
+  font-weight: 800;
+}
+.demoDone {
+  align-self: flex-start;
+  margin: 6px 0 0;
+  min-height: 40px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.how {
+  position: relative;
+  margin: 0 0 0 auto;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: rgb(var(--violet));
+  font: 500 11px/12px var(--font-mono);
+  letter-spacing: 0.02em;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.demoNudge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 0 12px 0 10px;
+  border: 1px solid rgb(var(--violet));
+  border-radius: 6px;
+  background: rgb(var(--raised) / 0.94);
+  color: rgb(var(--text));
+  font: 500 13px/17px var(--font-body);
+  text-align: left;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  animation: chipIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.demoNudge svg {
+  flex: none;
+  color: rgb(var(--violet));
 }
 
 /* The last ten seconds before it opens: the room dims, big numbers stamp, then GO. */
@@ -923,6 +1042,8 @@ button.banner:focus-visible {
   .chip,
   .feedChip,
   .tip,
+  .demo,
+  .demoNudge,
   .win,
   .ticket,
   .piece {
