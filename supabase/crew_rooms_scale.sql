@@ -36,8 +36,14 @@
 --                answers for app versions still open during a deploy, made cheaper:
 --                no lock unless an area edge is crossed, the grids, one block list per
 --                read instead of a function call per walker.
+--   waits        a wait for the room lock gives up after 1 s (a move) or 2 s (entering,
+--                leaving, an area message) instead of holding one of the API's few
+--                connections; the app tries again later, spread. Entering and leaving
+--                do not wait for the disk either.
 -- Anti-cheat is unchanged: the server checks every tile, the speed and the sequence;
--- searches, wins, tickets and area audiences read the server's position only.
+-- searches, wins, tickets and area audiences read the server's position only. An
+-- area message's audience is decided on the server's position, which trails the
+-- phone by up to about a second while walking (the app sends what is queued first).
 -- ============================================================================
 begin;
 
@@ -248,7 +254,7 @@ $$;
 -- Answer: {seq, x, y, circle_id}. Refusals as crew_room_step: room_session_expired (enter again), room_session_replaced
 -- (another tab or phone), invalid_movement / invalid_sequence / moving_too_fast (read the room, stand where it says).
 create or replace function public.crew_room_move(p_crew uuid, p_session uuid, p_seq int, p_steps jsonb default '[]')
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public set lock_timeout = '1s' as $$
 declare
   me     uuid := auth.uid();
   p      crew_room_presence;
@@ -309,7 +315,7 @@ end $$;
 
 -- The step of earlier app versions: same checks, same full answer, cheaper inside (see the header).
 create or replace function public.crew_room_step(p_crew uuid, p_session uuid, p_seq int, p_steps jsonb default '[]')
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public set lock_timeout = '1s' as $$
 declare
   me     uuid := auth.uid();
   p      crew_room_presence;
@@ -351,6 +357,75 @@ begin
   if sweep then perform _crew_room_reconcile(p_crew); end if;
   return _crew_room_snapshot(p_crew);
 end $$;
+
+-- ------------------------------------------------------- entering, leaving ---
+-- crew_rooms.sql's versions, unchanged but for two things: they do not wait for the disk (presence is worth less than the
+-- disk's time; the room lock is held to the commit), and a wait for the room lock gives up after 2 s instead of holding
+-- one of the API's few connections (the app tries again later, spread).
+create or replace function public.crew_room_enter(p_crew uuid, p_session uuid) returns jsonb
+language plpgsql security definer set search_path = public set lock_timeout = '2s' as $$
+declare
+  room  crew_rooms;
+  mine  crew_room_presence;
+  spawn jsonb;
+  door  jsonb;
+  sx    int;
+  sy    int;
+  took  boolean := false;
+  t     timestamptz := clock_timestamp();
+begin
+  perform _crew_room_require(p_crew);
+  if p_session is null then raise exception 'invalid_session'; end if;
+  perform set_config('synchronous_commit', 'off', true);
+  perform _crew_room_lock(p_crew);
+  perform _crew_room_ensure(p_crew);
+  select * into room from crew_rooms where crew_id = p_crew;
+  -- Sweep first, so a stale walker frees their spot and their own old row is gone.
+  perform _crew_room_reconcile(p_crew);
+  select * into mine from crew_room_presence where crew_id = p_crew and user_id = auth.uid();
+  if found then
+    took := mine.session_id <> p_session;
+    update crew_room_presence
+       set session_id = p_session, last_seen = t, seq = 0, move_credit = 3, credit_at = t
+     where crew_id = p_crew and user_id = auth.uid();
+  else
+    if (select count(*) from crew_room_presence where crew_id = p_crew) >= room.capacity then
+      return _crew_room_snapshot(p_crew) || jsonb_build_object('watching', true);
+    end if;
+    select data->'spawn', (select b from jsonb_array_elements(data->'blocks') b where b->>'id' = 'entry-map-table')
+      into spawn, door from crew_room_layouts where template = room.template and width = room.width;
+    -- Arrive around the entrance without stacking every new avatar on one tile: the nearest free tile to the spawn,
+    -- out to four tiles, and never one touching the exit door (standing against it is how the exit pill shows).
+    select tx, ty into sx, sy
+      from generate_series((spawn->>'x')::int - 4, (spawn->>'x')::int + 4) tx
+     cross join generate_series((spawn->>'y')::int - 4, (spawn->>'y')::int + 4) ty
+     where _crew_room_walkable(room.template, room.width, tx, ty)
+       and not exists (select 1 from crew_room_presence p where p.crew_id = p_crew and p.x = tx and p.y = ty)
+       and (door is null
+            or greatest((door->>'x')::int - tx, 0, tx - ((door->>'x')::int + (door->>'w')::int - 1))
+             + greatest((door->>'y')::int - ty, 0, ty - ((door->>'y')::int + (door->>'h')::int - 1)) > 1)
+     order by (tx - (spawn->>'x')::int) ^ 2 + (ty - (spawn->>'y')::int) ^ 2, ty, tx
+     limit 1;
+    insert into crew_room_presence (crew_id, user_id, session_id, x, y)
+    values (p_crew, auth.uid(), p_session, coalesce(sx, (spawn->>'x')::int), coalesce(sy, (spawn->>'y')::int));
+  end if;
+  perform _crew_room_reconcile(p_crew);
+  return _crew_room_snapshot(p_crew) || jsonb_build_object('took_over', took);
+end $$;
+
+create or replace function public.crew_room_leave(p_crew uuid, p_session uuid) returns void
+language plpgsql security definer set search_path = public set lock_timeout = '2s' as $$
+begin
+  perform _crew_room_require(p_crew);
+  perform set_config('synchronous_commit', 'off', true);
+  perform _crew_room_lock(p_crew);
+  delete from crew_room_presence where crew_id = p_crew and user_id = auth.uid() and session_id = p_session;
+  perform _crew_room_reconcile(p_crew);
+end $$;
+
+-- An area message decides its audience under the room lock: wait at most 2 s for it (the app keeps the message and sends
+-- it again). Messages are content, so they still wait for the disk.
+alter function public.crew_room_send(uuid, text, text, uuid, uuid) set lock_timeout = '2s';
 
 -- ----------------------------------------------------------------- reading ---
 -- The room for the app from this release on: what changed since the phone's last read.

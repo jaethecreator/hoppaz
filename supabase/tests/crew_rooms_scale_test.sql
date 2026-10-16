@@ -68,7 +68,9 @@ begin
 
   -- Moves.
   perform pg_temp.place(crew, a, 15, 15);
+  perform set_config('synchronous_commit', 'on', true);
   res := pg_temp.mv(a, crew, sa, 1, '[{"x":15,"y":14}]');
+  perform pg_temp.ok(current_setting('synchronous_commit') = 'off', 'a move does not wait for the disk (to the end of its transaction)');
   perform pg_temp.ok(res->>'x' = '15' and res->>'y' = '14' and res->>'seq' = '1' and pg_column_size(res) < 200,
                      'a move answers with where I stand, in a few bytes');
   perform pg_temp.fail_as(a, format('select public.crew_room_move(%L,%L,2,%L)', crew, sa, '[{"x":16,"y":13}]'), 'invalid_movement');
