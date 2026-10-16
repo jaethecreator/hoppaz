@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabase } from "./supabase/client";
+import { fetchDropEventIds } from "./publicApi";
+import { read, revalidate, subscribe } from "./phoneCache";
 import { NEED_ACCOUNT, requireAccount } from "./accountGate";
 
 export type Collectible = { id: string; key: string; name: string; description: string; emoji: string; art_url: string | null };
@@ -49,21 +51,40 @@ export async function loadCollection(userId: string | null) {
   return ((data ?? []) as unknown as { drop_id: string; collected_at: string; drop: { event: { title: string }; collectible: Collectible } }[]).map((r): CollectionEntry => ({ drop_id: r.drop_id, collected_at: r.collected_at, event_title: r.drop.event.title, collectible: r.drop.collectible }));
 }
 
-/** Event IDs with at least one configured collectible, for map discovery markers. */
+const DROP_KEY = "dropEvents";
+async function dropIds(): Promise<string[] | null> {
+  const r = await fetchDropEventIds();
+  return r.ok ? r.data : null;
+}
+const DROP_FRESH_MS = 60_000;
+const DROP_KEEP_MS = 6 * 3.6e6;
+
+/** The phone's copy of the ids that have a drop, or null when there is none or it is over 6 hours old. */
+function heldDropIds(): string[] | null {
+  const c = read<string[]>(DROP_KEY);
+  return c && Array.isArray(c.data) && Date.now() - c.at <= DROP_KEEP_MS ? c.data : null;
+}
+
+/**
+ * Event IDs with at least one configured collectible, for map discovery markers. The ids of every event with a drop are
+ * one shared, public list kept on the phone; this hook returns the ones among `eventIds`. A change in `eventIds` no
+ * longer fetches anything.
+ */
 export function useCollectibleEventIds(eventIds: string[]) {
-  const [ids, setIds] = useState<string[]>([]);
+  const [held, setHeld] = useState<string[]>([]);
   const key = eventIds.join(",");
   useEffect(() => {
-    const currentEventIds = key ? key.split(",") : [];
-    const sb = getSupabase();
-    if (!sb || !currentEventIds.length || currentEventIds.every((id) => id.startsWith("demo-"))) { setIds([]); return; }
-    let cancelled = false;
-    void Promise.all([sb.from("collectible_drops").select("event_id").in("event_id", currentEventIds),sb.from("game_drops").select("event_id").in("event_id", currentEventIds).eq("active",true).gt("closes_at",new Date().toISOString())]).then(([legacy,live]) => {
-      if (!cancelled) setIds([...new Set([...(legacy.data??[]),...(live.data??[])].map((row) => row.event_id).filter((id):id is string=>!!id))]);
-    });
-    return () => { cancelled = true; };
-  }, [key]);
-  return ids;
+    if (!getSupabase()) return;
+    const apply = () => setHeld(heldDropIds() ?? []);
+    apply();
+    const off = subscribe(DROP_KEY, apply);
+    void revalidate(DROP_KEY, dropIds, { freshMs: DROP_FRESH_MS });
+    return off;
+  }, []);
+  return useMemo(() => {
+    const wanted = new Set(key ? key.split(",") : []);
+    return held.filter((id) => wanted.has(id) && !id.startsWith("demo-"));
+  }, [held, key]);
 }
 
 export type DropReceipt = { drop_id: string; title: string; partner: string | null; reward: string; description: string; code: string | null; claimed_at: string; hunt_item?: string | null; event_title?: string | null };

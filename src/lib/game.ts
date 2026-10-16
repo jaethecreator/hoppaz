@@ -4,6 +4,8 @@ import { NEED_ACCOUNT, requireAccount } from "./accountGate";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabase } from "./supabase/client";
 import { loadDropCards } from "./cards";
+import { lagosDate, read, revalidate, write } from "./phoneCache";
+import { useSessionStore } from "./useSession";
 
 export type Quest = {
   id: string;
@@ -189,6 +191,8 @@ const DROP_COLS =
 const SPAWN_COLS = ",kind,owner_id,max_claims,claimed_count";
 /** The boxes list re-reads this often while the tab is visible, so new street boxes and sold-out ones show up on their own. */
 const DROPS_REFRESH_MS = 60_000;
+/** Returning to the tab re-reads the boxes only when the last read is older than this. */
+const DROPS_VISIBLE_MIN_MS = 30_000;
 
 /**
  * `staffOnly` keeps only desk drops (venue rewards): street boxes and welcome boxes belong on the
@@ -201,6 +205,8 @@ export function useGameDrops(eventId?: string, opts: { staffOnly?: boolean } = {
   const [ready, setReady] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const latest = useRef(0);
+  /** When the last read started, so a quick tab flip does not ask again. */
+  const lastRead = useRef(0);
   const drops = useMemo(() => (staffOnly ? all.filter((d) => !d.kind || d.kind === "staff") : all), [all, staffOnly]);
   const reload = useCallback(async () => {
     const sb = getSupabase();
@@ -209,6 +215,7 @@ export function useGameDrops(eventId?: string, opts: { staffOnly?: boolean } = {
       return;
     }
     const mine = ++latest.current;
+    lastRead.current = Date.now();
     const read = (cols: string) => {
       let q = sb
         .from("game_drops")
@@ -235,11 +242,15 @@ export function useGameDrops(eventId?: string, opts: { staffOnly?: boolean } = {
     const tick = () => {
       if (document.visibilityState === "visible") void reload();
     };
+    // Coming back to the tab reads again only if the last read is over 30 seconds old.
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastRead.current > DROPS_VISIBLE_MIN_MS) void reload();
+    };
     const timer = setInterval(tick, DROPS_REFRESH_MS);
-    document.addEventListener("visibilitychange", tick);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(timer);
-      document.removeEventListener("visibilitychange", tick);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [reload]);
   const claim = useCallback(
@@ -305,6 +316,17 @@ export function useGameDrops(eventId?: string, opts: { staffOnly?: boolean } = {
   };
 }
 
+/** The lite stats are kept on the phone for the Lagos day they were read, and asked for again after 10 minutes. */
+const STATS_FRESH_MS = 10 * 60 * 1000;
+const statsKey = (userId: string) => `u.${userId}.stats.${lagosDate()}`;
+
+async function fetchStats(userId: string): Promise<Record<string, unknown> | null> {
+  const sb = getSupabase();
+  if (!sb || !userId) return null;
+  const { data, error } = await sb.rpc("my_game_stats");
+  return error || !data ? null : (data as Record<string, unknown>);
+}
+
 /**
  * Game stats for the signed-in Hopper. Pass `{ lite: true }` when you only need
  * the stats (Me): it skips the monthly board and the score-rule table.
@@ -318,6 +340,7 @@ export function useGameDashboard(userId: string | null, opts: { lite?: boolean }
   );
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
+  /** The explicit ask (Me, a box opened): always the network, and the phone's copy follows. */
   const reload = useCallback(async () => {
     const sb = getSupabase();
     if (!sb) {
@@ -325,6 +348,12 @@ export function useGameDashboard(userId: string | null, opts: { lite?: boolean }
       return;
     }
     if (lite && !userId) return;
+    if (lite && userId) {
+      const s = await revalidate(statsKey(userId), () => fetchStats(userId), { freshMs: 0, force: true });
+      if (s) setStats(s);
+      setReady(true);
+      return;
+    }
     const [{ data: s }, { data: b }, { data: r }] = await Promise.all([
       userId ? sb.rpc("my_game_stats") : Promise.resolve({ data: null } as { data: null }),
       lite ? Promise.resolve({ data: null } as { data: null }) : sb.rpc("monthly_leaderboard"),
@@ -336,8 +365,38 @@ export function useGameDashboard(userId: string | null, opts: { lite?: boolean }
     setReady(true);
   }, [userId, lite]);
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    if (!(lite && userId)) {
+      void reload();
+      return;
+    }
+    // Lite: today's stats from the phone at once, a new guest has none to ask for, and anyone else is asked at most every 10 minutes.
+    if (!getSupabase()) {
+      setReady(true);
+      return;
+    }
+    const gate = useSessionStore.getState();
+    if (gate.freshGuest && gate.userId === userId) {
+      setStats({ daily_streak: 0 });
+      setReady(true);
+      // Kept as the answer for a reload (a check-in clears it: see rememberCheckin).
+      if (!read(statsKey(userId))) write(statsKey(userId), { daily_streak: 0 });
+      return;
+    }
+    const held = read<Record<string, unknown>>(statsKey(userId));
+    if (held) {
+      setStats(held.data);
+      setReady(true);
+    }
+    let cancelled = false;
+    void revalidate(statsKey(userId), () => fetchStats(userId), { freshMs: STATS_FRESH_MS }).then((s) => {
+      if (cancelled) return;
+      if (s) setStats(s);
+      setReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [reload, lite, userId]);
   const makeReport = useCallback(async (month?: string) => {
     const sb = getSupabase();
     if (!sb) return null;

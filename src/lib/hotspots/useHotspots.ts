@@ -1,11 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { DEMO } from "@/components/me/demo";
 import { getSupabase } from "@/lib/supabase/client";
+import { fetchHotspotRows } from "@/lib/publicApi";
+import { read, write } from "@/lib/phoneCache";
 import { DEMO_HOTSPOTS } from "./demo";
 import { metresApart, nearestOthers, pinsFor, yoursOf } from "./geometry";
 import type { Band, Hotspot, HotspotStatus, Pt, ZoneShape } from "./types";
+
+/** The phone keeps the raw rows for a week: the zone shapes rarely change, and the counts refresh in the background. */
+const KEY = "hotspots";
+const KEEP_MS = 7 * 24 * 3.6e6;
 
 /** How soon a sheet that is opened may ask for fresh counts. The list itself is fetched once per visit (see `cached`). */
 const SHEET_REFRESH_MS = 60_000;
@@ -59,29 +65,45 @@ function toHotspot(r: Raw): Hotspot | null {
   };
 }
 
+/** Rows from the server (or the phone's copy) as the list the app uses: wave order, with Yaba, where the events are, leading. */
+function toList(data: Raw[]): Hotspot[] {
+  return data
+    .map(toHotspot)
+    .filter((h): h is Hotspot => !!h)
+    .sort((a, b) => Number(b.slug === "yaba") - Number(a.slug === "yaba") || a.wave - b.wave);
+}
+
 /**
  * The list is the same for everyone and carries about 40 KB of zone shapes, so it is fetched once per visit: the map, the
  * crew hub and every sheet share this copy, and nothing polls. A sheet that opens may ask again for fresh counts, no more
- * than once a minute (see SHEET_REFRESH_MS).
+ * than once a minute (see SHEET_REFRESH_MS). The phone also keeps the rows between visits, so the pins are there at once
+ * on the next open while a fresh copy is fetched quietly (see phoneCache).
  */
 let cached: { list: Hotspot[]; at: number } | null = null;
 let inFlight: Promise<Hotspot[] | null> | null = null;
 /** Every hook that is mounted hears a new list, whoever asked for it (the map, the first run's home base card, the crew hub). */
 const listeners = new Set<(list: Hotspot[]) => void>();
 
-/** One call to hotspot_list(), shared by whoever asks while it is out. Null when it failed (an old database, a flaky network). */
+/** Seed from the phone's own copy, once per page load. */
+function seedFromPhone() {
+  if (cached) return;
+  const c = read<Raw[]>(KEY);
+  if (!c || !Array.isArray(c.data) || Date.now() - c.at > KEEP_MS) return;
+  const list = toList(c.data);
+  if (list.length) cached = { list, at: c.at };
+}
+seedFromPhone();
+
+/** One call for the list, shared by whoever asks while it is out. Null when it failed (an old database, a flaky network). */
 function fetchList(): Promise<Hotspot[] | null> {
-  const sb = getSupabase();
-  if (!sb) return Promise.resolve(null);
+  if (!getSupabase()) return Promise.resolve(null);
   inFlight ??= (async () => {
     try {
-      const { data, error } = await sb.rpc("hotspot_list");
-      if (error || !Array.isArray(data)) return null;
-      // The server sends wave order; Yaba, where the events are, leads it.
-      const rows = (data as Raw[])
-        .map(toHotspot)
-        .filter((h): h is Hotspot => !!h)
-        .sort((a, b) => Number(b.slug === "yaba") - Number(a.slug === "yaba") || a.wave - b.wave);
+      const res = await fetchHotspotRows();
+      if (!res.ok) return null;
+      const data = res.data as Raw[];
+      const rows = toList(data);
+      write(KEY, data);
       cached = { list: rows, at: Date.now() };
       listeners.forEach((f) => f(rows));
       return rows;
@@ -93,6 +115,8 @@ function fetchList(): Promise<Hotspot[] | null> {
   })();
   return inFlight;
 }
+
+const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /**
  * The hotspots (hotspot_list(), public even signed out) and what "near you" means for one Hopper. Everything about the
@@ -106,9 +130,16 @@ function fetchList(): Promise<Hotspot[] | null> {
  * with nothing to show says "Hotspots could not load" and offers `reload(true)`.
  */
 export function useHotspots({ active, at }: { active: boolean; at: Pt | null }) {
-  const [list, setList] = useState<Hotspot[]>(() => (DEMO ? DEMO_HOTSPOTS : (cached?.list ?? [])));
-  const [loaded, setLoaded] = useState(DEMO || !!cached);
+  const [list, setList] = useState<Hotspot[]>(() => (DEMO ? DEMO_HOTSPOTS : []));
+  const [loaded, setLoaded] = useState(DEMO);
   const [failed, setFailed] = useState(false);
+
+  // The pins from the phone's own copy land before the first paint (and after hydration, so the server HTML still agrees).
+  useIsoLayoutEffect(() => {
+    if (DEMO || !cached) return;
+    setList(cached.list);
+    setLoaded(true);
+  }, []);
 
   /** `force` asks now; without it, a copy under a minute old is kept. Whatever is on the map stays when the call fails. */
   const reload = useCallback(async (force = false) => {
@@ -134,13 +165,14 @@ export function useHotspots({ active, at }: { active: boolean; at: Pt | null }) 
     return () => void listeners.delete(on);
   }, []);
 
-  // Once per visit: a copy already in hand (the crew hub, an earlier visit to the map) is not fetched again; this hook
-  // takes it from there if it mounted before the copy came in.
+  // A copy under a minute old (from the crew hub, an earlier visit, or the phone) is used as it is. An older one is shown
+  // and refreshed in the background; with none, ask now.
   useEffect(() => {
     if (!active || DEMO) return;
     if (cached) {
       setList(cached.list);
       setLoaded(true);
+      if (Date.now() - cached.at >= SHEET_REFRESH_MS) void reload(true);
     } else void reload(true);
   }, [active, reload]);
 

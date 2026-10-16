@@ -7,6 +7,7 @@ import { areaByName } from "./geo";
 import { useToast } from "./store";
 import { requireAccount } from "./accountGate";
 import { useSessionStore } from "./useSession";
+import { read, remove, revalidate, write } from "./phoneCache";
 import { sfx } from "./sound/sfx";
 import { haptics } from "./haptics";
 import type { CheckinClaim, EventRow } from "./types";
@@ -72,6 +73,41 @@ function demoBadges(event: EventRow) {
   return out;
 }
 
+/** The Hopper's own check-ins, kept on the phone. Private to them: it is wiped on sign-out (see phoneCache.clearUser). */
+type MineRow = { event_id: string; created_at: string | null };
+const mineKey = (id: string) => `u.${id}.checkins`;
+const MINE_FRESH_MS = 10 * 60 * 1000;
+const MINE_KEEP_MS = 30 * 24 * 3.6e6;
+
+async function fetchMine(userId: string): Promise<MineRow[] | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data, error } = await sb.from("checkins").select("event_id, created_at").eq("user_id", userId);
+  if (error || !data) return null;
+  return data.map((r) => ({ event_id: String(r.event_id), created_at: r.created_at ? String(r.created_at) : null }));
+}
+
+/** After a claim (or an "already"): keep the phone's list true without a read. A list too old to trust is read again instead. */
+function rememberCheckin(userId: string, eventId: string, at: string | null) {
+  const held = read<MineRow[]>(mineKey(userId));
+  const fresh = !!held && Date.now() - held.at < MINE_FRESH_MS;
+  const fresher = useSessionStore.getState();
+  if (fresh || (fresher.freshGuest && fresher.userId === userId)) {
+    const rows = held?.data ?? [];
+    const had = rows.find((r) => r.event_id === eventId);
+    write(mineKey(userId), [
+      ...rows.filter((r) => r.event_id !== eventId),
+      { event_id: eventId, created_at: at ?? had?.created_at ?? null },
+    ]);
+  } else {
+    void revalidate(mineKey(userId), () => fetchMine(userId), { freshMs: 0, force: true });
+  }
+  // A check-in moves the streak: the next read of the stats goes to the network.
+  remove(`u.${userId}.stats.`);
+  // This user now has history: the "new guest has nothing" shortcuts no longer hold.
+  if (fresher.freshGuest) fresher.set({ freshGuest: false });
+}
+
 export function useCheckin(userId: string | null, onDone?: () => void) {
   const [done, setDone] = useState<Set<string>>(new Set());
   /** When each check-in landed (ISO), for the events we know it for. */
@@ -82,13 +118,27 @@ export function useCheckin(userId: string | null, onDone?: () => void) {
   useEffect(() => {
     const sb = getSupabase();
     if (!sb || !userId) return;
+    // Merged into what is on screen, so a check-in made while the read was out is never lost.
+    const apply = (rows: MineRow[]) => {
+      setDone((d) => new Set([...d, ...rows.map((r) => r.event_id)]));
+      setCheckedAt((m) => ({
+        ...Object.fromEntries(rows.filter((r) => r.created_at).map((r) => [r.event_id, r.created_at as string])),
+        ...m,
+      }));
+    };
+    // The phone's list shows at once. A Hopper created in this page load has no check-ins, so there is nothing to ask.
+    const held = read<MineRow[]>(mineKey(userId));
+    if (held && Date.now() - held.at <= MINE_KEEP_MS) apply(held.data);
+    if (useSessionStore.getState().freshGuest && useSessionStore.getState().userId === userId) {
+      // True today and kept, so a reload of this guest does not ask either. A check-in rewrites it (rememberCheckin).
+      if (!held) write(mineKey(userId), []);
+      return;
+    }
     let cancelled = false;
-    (async () => {
-      const { data } = await sb.from("checkins").select("event_id, created_at").eq("user_id", userId);
-      if (cancelled || !data) return;
-      setDone(new Set(data.map((r) => String(r.event_id))));
-      setCheckedAt(Object.fromEntries(data.filter((r) => r.created_at).map((r) => [String(r.event_id), String(r.created_at)])));
-    })();
+    void revalidate(mineKey(userId), () => fetchMine(userId), { freshMs: MINE_FRESH_MS }).then((rows) => {
+      // Only when it is news: the claim in this tab has already updated the screen.
+      if (!cancelled && rows) apply(rows);
+    });
     return () => {
       cancelled = true;
     };
@@ -137,6 +187,7 @@ export function useCheckin(userId: string | null, onDone?: () => void) {
         }
         if (res.reason === "already") {
           setDone((s) => new Set(s).add(event.id));
+          rememberCheckin(uid, event.id, null);
           say("You're already checked in here.");
           return { ok: false, reason: "already" };
         }
@@ -146,6 +197,7 @@ export function useCheckin(userId: string | null, onDone?: () => void) {
       const at = new Date().toISOString();
       setDone((s) => new Set(s).add(event.id));
       setCheckedAt((m) => ({ ...m, [event.id]: at }));
+      rememberCheckin(uid, event.id, at);
       onDone?.();
       markFirstCheckin();
       landed();
