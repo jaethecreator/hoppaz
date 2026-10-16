@@ -851,7 +851,7 @@ function CreateForm({ desk, busy, act }: { desk: Desk; busy: boolean; act: (body
   );
 }
 
-function EditForm({
+export function EditForm({
   id,
   desk,
   headers,
