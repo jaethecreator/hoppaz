@@ -73,14 +73,16 @@ function heldDropIds(): string[] | null {
 export function useCollectibleEventIds(eventIds: string[]) {
   const [held, setHeld] = useState<string[]>([]);
   const key = eventIds.join(",");
+  // The drop list waits for the map: nothing is read or fetched while there are no event ids to match it against.
+  const hasKey = !!key;
   useEffect(() => {
-    if (!getSupabase()) return;
+    if (!hasKey || !getSupabase()) return;
     const apply = () => setHeld(heldDropIds() ?? []);
     apply();
     const off = subscribe(DROP_KEY, apply);
     void revalidate(DROP_KEY, dropIds, { freshMs: DROP_FRESH_MS });
     return off;
-  }, []);
+  }, [hasKey]);
   return useMemo(() => {
     const wanted = new Set(key ? key.split(",") : []);
     return held.filter((id) => wanted.has(id) && !id.startsWith("demo-"));
