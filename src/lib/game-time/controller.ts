@@ -211,7 +211,10 @@ export function startGameTime(crewId: string): () => void {
   const nextDelay = () => {
     const game = store.getState().game;
     if (!game) return jitter(45_000);
-    if (game.status === "live") return jitter(c.feedLive ? 3500 : 3000);
+    // Live with the feed connected, every find arrives by Realtime (and the last one, a search refusal or an answer with
+    // an unseen feed line asks at once), and closes_at has its own kick: the poll is only a safety net. Without the feed
+    // it is the only news, so it stays quick.
+    if (game.status === "live") return jitter(c.feedLive ? 30_000 : 3000);
     if (game.status === "upcoming") {
       const ms = Date.parse(game.opens_at) - serverNow();
       if (ms <= 20_000) return 1500 + Math.round(Math.random() * 1000);
