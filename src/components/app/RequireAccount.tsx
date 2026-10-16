@@ -7,7 +7,7 @@ import { useSession } from "@/lib/useSession";
 import { goToAccount } from "@/lib/accountGate";
 
 /**
- * Wraps a page that needs an account (Crew, Me, the avatar editor). Anonymous
+ * Wraps a page that needs an account (Roomz, Me, the avatar editor). Anonymous
  * Hoppers are sent to the account page and come back to this screen once they
  * are in; the moment they are, the page itself renders. Without a database
  * (local demo) nothing is gated.

@@ -2,6 +2,12 @@
 
 Jae's calls, newest first, so the team (and Ola) build to the same thing.
 
+## 16 Oct 2026
+
+| Topic | Decision |
+|---|---|
+| The middle tab says ROOMZ; crew is your friends | Jae, 16 Oct 2026. The tab (route still `/crew`) is the rooms: YOUR ROOMZ, a search for a room and the orange +. "Crew" now means your friends and lives in Chat, under CREW. The campaign line "join the crew", crew room names and the Chat CREW tab keep the word. |
+
 ## 15 Oct 2026
 
 | Topic | Decision |

@@ -14,8 +14,8 @@ type Tab = { href: string; label: string; Icon: LucideIcon };
 const TABS: ReadonlyArray<Tab> = [
   { href: "/", label: "MAP", Icon: Map },
   { href: "/discover", label: "EVENTS", Icon: CalendarDays },
-  // ROOMZ (Jae, 16 Oct): the page inside shows your roomz, event rooms and a search for a room. CREW means your friends,
-  // and they are on CHAT (CHATS and CREW). Route: /crew.
+  // ROOMZ (Jae, 16 Oct): crew means your friends and lives in CHAT (CHATS and CREW). This tab is the rooms: YOUR ROOMZ, event rooms,
+  // a search for a room and the orange +. The route is still /crew, so every link and the invite pages keep working.
   { href: "/crew", label: "ROOMZ", Icon: Users },
   { href: "/chat", label: "CHAT", Icon: MessageSquare },
   { href: "/me", label: "ME", Icon: CircleUserRound },
@@ -37,7 +37,7 @@ const PARENT: Array<[string, string]> = [
 
 /**
  * Full-screen tasks hide the tab bar, the way a chat hides WhatsApp's tabs. A crew room (/crew/<id>/room) is NOT one:
- * the room is a place inside the app, so the tabs stay under it with CREW lit (the path starts with /crew).
+ * the room is a place inside the app, so the tabs stay under it with ROOMZ lit (the path starts with /crew).
  */
 const ROOM = /^\/crew\/[^/]+\/room(?:\/|$)/;
 const FULL_SCREEN = [/^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/];

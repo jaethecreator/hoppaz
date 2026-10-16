@@ -82,7 +82,7 @@ export async function fetchEventById(id: string, fix: Fix): Promise<EventRow | n
   };
 }
 
-/** The phone keeps the whole Lagos list; one copy serves the map, Today, Crew, Chat and the event page. */
+/** The phone keeps the whole Lagos list; one copy serves the map, Today, Roomz, Chat and the event page. */
 const LAGOS_KEY = "events.lagos";
 /** A copy this young is used as it is, with no network. */
 const LAGOS_FRESH_MS = 60_000;

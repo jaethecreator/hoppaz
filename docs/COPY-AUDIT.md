@@ -7,7 +7,7 @@ against how Hoppaz works today.
 
 ## The truth the copy has to match
 
-- Tabs: MAP, EVENTS (was TODAY), CREW, CHAT, ME. Events is a swipe deck: right is WE OUTSIDE (you're going),
+- Tabs: MAP, EVENTS (was TODAY), ROOMZ (was CREW), CHAT, ME. Events is a swipe deck: right is WE OUTSIDE (you're going),
   left is pass. I'M GOING and WE OUTSIDE both mean going.
 - The map has a NEXT 20 chip (it reads TODAY or a day once one is picked) and an orange calendar button beside it.
   The day chip rail and the "NEXT 20 / Tap your avatar to play" card are gone.

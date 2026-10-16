@@ -18,7 +18,7 @@ export const MUSIC = {
   play_day: { file: "play_day.mp3", samples: 1512025, rate: 44100 },
   /** Play after dark. Same 112 BPM, so day and night crossfade on the beat. */
   play_night: { file: "play_night.mp3", samples: 1512016, rate: 44100 },
-  /** Today, Me and Crew, and Play on a low-tier phone. 92 BPM, D major, 16 bars, mastered 3 dB lower. */
+  /** Today, Me and Roomz, and Play on a low-tier phone. 92 BPM, D major, 16 bars, mastered 3 dB lower. */
   menu: { file: "menu.mp3", samples: 1840712, rate: 44100 },
 } satisfies Record<string, { file: string; samples: number; rate: number }>;
 

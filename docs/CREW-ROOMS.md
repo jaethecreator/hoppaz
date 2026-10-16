@@ -27,7 +27,7 @@ Tiles that lead out into the app. A crew's own featured event is not a tile: it 
 
 ## The hub (`/crew/<id>`)
 
-Mobile first, built for a phone on Lagos data, and inside the app: the bottom nav stays and the CREW tab stays lit. On a wide screen the page is one column, 760 px wide, centred. `CrewHub.tsx` holds the page, `HubHeader.tsx` the top of it (the invite page uses the same header).
+Mobile first, built for a phone on Lagos data, and inside the app: the bottom nav stays and the ROOMZ tab stays lit. On a wide screen the page is one column, 760 px wide, centred. `CrewHub.tsx` holds the page, `HubHeader.tsx` the top of it (the invite page uses the same header).
 
 - **Header carousel.** Up to 5 pictures from `crews.header_images`, swiped with the finger (scroll snap, so it is the phone's own scrolling), with dots under them (each dot is 44 x 44 to tap). It plays itself every 6 s (`AUTOPLAY_MS`), holds while a finger is on it and for one more turn after, holds when the page is hidden or the header is scrolled away, never plays with reduced motion, and a single picture is a still with no dots and no timer. With no pictures, or one that will not load, it shows the room's own art (`public/templates/clubhouse.jpg`). Only the first picture loads eagerly; the rest are lazy.
 - **Name row.** Kicker (BRAND CREW, OPEN CREW or PRIVATE CREW), the name up to two lines (never cut to "360 Play..."), the verified tick, the member count, and the round logo (`crews.logo_url`) at the right end, half over the picture. A crew with no logo gets its first letter on the card colour.

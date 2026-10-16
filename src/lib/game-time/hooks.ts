@@ -128,7 +128,7 @@ type Ping = {
   off: (() => void) | null;
 };
 
-/** One loop for the whole app: GameTimePing (every page) and the Crew tab used to run one each. */
+/** One loop for the whole app: GameTimePing (every page) and the Roomz tab used to run one each. */
 const ping: Ping = {
   refs: 0,
   account: false,
@@ -264,7 +264,7 @@ const subscribe = (fn: () => void) => {
 };
 
 /**
- * The global ping's feed, and the Crew tab's: Game Times that are about to open or live. One loop for the whole app (a
+ * The global ping's feed, and the Roomz tab's: Game Times that are about to open or live. One loop for the whole app (a
  * reference count), started only when the map has shown. Each turn reads the public list (a cached copy, no database);
  * the person's own game_time_list is asked only when a public game is listed, every 10 minutes for an account (private
  * crews), and after 5 minutes away. `enabled` gates it: nothing is asked before the Hopper has a session.

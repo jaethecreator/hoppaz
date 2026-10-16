@@ -2,7 +2,7 @@
 
 AI candidates for Jae to audition (ElevenLabs Music), made into seamless loops. A Lagos producer makes the finals later, so nothing here is meant to ship as is.
 
-Slots: `play_day`, `play_night`, `menu` (Today, Me, Crew). All instrumental, D major pentatonic world, the Hoppaz three (D5 F#5 A5, short short long) as the hook where the prompt asks for one.
+Slots: `play_day`, `play_night`, `menu` (Today, Me, Roomz). All instrumental, D major pentatonic world, the Hoppaz three (D5 F#5 A5, short short long) as the hook where the prompt asks for one.
 
 ## Where things stand
 

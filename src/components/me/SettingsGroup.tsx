@@ -106,7 +106,7 @@ function SoundRows() {
             ? muted ? "No music, and Sound is off too." : "No music. You still hear the sounds."
             : muted
               ? "Music is on, but Sound is off, so you hear none."
-              : "You hear soft music in Events, Crew, Me and crew rooms. Quieter from 11pm to 7am."
+              : "You hear soft music in Events, Roomz, Me and crew rooms. Quieter from 11pm to 7am."
         }
         onToggle={() => music.setOn(!tunes)}
       />

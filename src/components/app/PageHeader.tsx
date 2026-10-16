@@ -9,7 +9,7 @@ import type { MouseEvent, ReactNode } from "react";
 /**
  * The one header pattern.
  *
- *   Tab page (Map, Today, Crew, Chat, Me): no `back`. A big Poppins Black title
+ *   Tab page (Map, Today, Roomz, Chat, Me): no `back`. A big Poppins Black title
  *   and an optional DM Mono caption.
  *
  *   Sub-page (Privacy, Rules, Account...): pass `back`. A 44px chevron that

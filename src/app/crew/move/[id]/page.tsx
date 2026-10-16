@@ -60,7 +60,7 @@ export default function MoveChatPage() {
   return (
     <div className="flex h-full flex-col overflow-hidden px-4">
       <header className="pad-top flex flex-none items-center gap-1 pb-4">
-        <button onClick={() => router.push("/crew")} aria-label="Back to crew" className="-ml-3 grid h-11 w-11 flex-none place-items-center text-cream">
+        <button onClick={() => router.push("/crew")} aria-label="Back to ROOMZ" className="-ml-3 grid h-11 w-11 flex-none place-items-center text-cream">
           <ChevronLeft size={26} strokeWidth={2.2} aria-hidden />
         </button>
         <div className="min-w-0 flex-1">

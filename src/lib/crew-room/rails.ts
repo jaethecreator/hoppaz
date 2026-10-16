@@ -17,7 +17,7 @@ export type { RailCrew, RailEvent } from "./hub";
  *   useGoOut()                  every way out of the room goes through this one call. Outside a Game Time it just goes.
  *                               While one is scheduled or live (roomStore.huntActive) it asks "Leave the hunt?" first.
  *                               The door, the pill, the Explore rows and the event sheet use it; so should the header's
- *                               back arrow and the tab bar's tabs other than CREW.
+ *                               back arrow and the tab bar's tabs other than ROOMZ.
  *   useExploreStore             whether the Explore popover is open. The logo badge in the header opens it.
  */
 
