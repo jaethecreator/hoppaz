@@ -26,10 +26,19 @@
 -- Nothing else is returned: no handle, no display name, no user id. Names stay
 -- aliases everywhere (heads, chat, cards).
 --
--- The privacy trade, for the record: the look is the Hopper's own body, and
--- profiles are readable by everyone. Someone who looks hard can match a distinctive
--- look to a profile. That is Jae's call (15 Oct 2026); an opt-out switch on the
--- profile is the follow-up if it is wanted.
+-- THE PRIVACY TRADE, plainly. The look is the Hopper's own body, and profiles are
+-- readable by everyone, avatar included. A look has many fields, so almost every
+-- customised look is one of a kind. One query on profiles (avatar equal to a look
+-- this returns) gives that Hopper's id, handle and display name, and with them
+-- everything the alias said in this room in the last 24 hours. Entering a hotspot
+-- room needs no position, so anyone with an account can do it from anywhere. This is
+-- not a face someone has to look hard at: it is an exact match for nearly everyone.
+-- Jae chose real looks on 15 Oct 2026 on a softer description of the risk.
+--
+-- HELD FOR LAUNCH: do not run this file on production until Jae has said yes to the
+-- paragraph above. Until then the app shows alias faces (it falls back, see below).
+-- To close the risk and keep real looks, return a look only for Hoppers who switched
+-- it on (a new profile switch, off by default), or only between crew.
 --
 -- The app falls back to the alias face when this function is missing, so deploying
 -- the app before this file is run is safe.
@@ -55,25 +64,31 @@ begin
   if not found then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
   if not in_room(me, 'hotspot:' || h.id::text) then return jsonb_build_object('ok', false, 'reason', 'not_in_hotspot'); end if;
 
+  -- At most 200 looks. The people in the room now come first, in the order hotspot_room lists its heads (a hash of the
+  -- key), so every head on screen is inside the cut and only old chat authors are dropped when there are more than 200.
   select coalesce(jsonb_object_agg(x.key::text, x.avatar), '{}'::jsonb)
     into looks
     from (
       select k.key, p.avatar
         from (
-          select v.key, v.user_id
-            from hotspot_visits v
-           where v.hotspot_id = h.id and v.fades_at > now()
-          union
-          select ri.id, ri.user_id
-            from messages m
-            join room_identities ri on ri.id = m.author_key
-           where m.channel = 'hotspot:' || h.id::text and m.created_at > now() - interval '24 hours' and not ri.anon
+          select u.key, u.user_id, bool_or(u.here) as here
+            from (
+              select v.key, v.user_id, true as here
+                from hotspot_visits v
+               where v.hotspot_id = h.id and v.fades_at > now()
+              union all
+              select ri.id, ri.user_id, false
+                from messages m
+                join room_identities ri on ri.id = m.author_key
+               where m.channel = 'hotspot:' || h.id::text and m.created_at > now() - interval '24 hours' and not ri.anon
+            ) u
+           group by u.key, u.user_id
         ) k
         join profiles p on p.id = k.user_id
        where k.user_id <> me and p.avatar is not null and not hotspot_blocked(me, k.user_id)
          -- a global block either way: an alias face, so a look never points a blocked Hopper at the one who blocked them
          and not exists (select 1 from blocks b where (b.blocker = me and b.blocked = k.user_id) or (b.blocker = k.user_id and b.blocked = me))
-       order by k.key
+       order by k.here desc, md5(k.key::text)
        limit 200
     ) x;
   return jsonb_build_object('ok', true, 'looks', looks);

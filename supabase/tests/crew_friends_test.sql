@@ -298,8 +298,9 @@ end $$;
 
 -- ---------------------------------------------------------------------------------------------------------------------
 -- Launch night: room waves answered the old way (crew_room_wave) wrote an accepted wave and a chat, and no crew rows. The
--- backfill (public._cf_backfill_room_waves, run at the end of crew_friends.sql) makes crew of them; REMOVE FROM CREW undoes crew.
--- The file itself is not run again here (it has its own begin and commit); the backfill function is what it calls.
+-- backfill (public._cf_backfill_room_waves, run at the end of crew_friends.sql with the launch-night window) makes crew of
+-- them; REMOVE FROM CREW undoes crew. The file itself is not run again here (it has its own begin and commit); the backfill
+-- function is what it calls, with a window of its own around the fixtures. A wave outside the window is never read as a room wave.
 create function pg_temp.old_wave(u uuid, room uuid, target uuid) returns text language plpgsql as $$
 declare r text;
 begin
@@ -344,14 +345,17 @@ declare
   gio uuid := pg_temp.newuser(false, 'Bf Gio'); hana uuid := pg_temp.newuser(false, 'Bf Hana');   -- hana blocked gio
   ife uuid := pg_temp.newuser(false, 'Bf Ife'); jide uuid := pg_temp.newuser(false, 'Bf Jide');   -- remove
   kemi uuid := pg_temp.newuser(false, 'Bf Kemi'); lola uuid := pg_temp.newuser(false, 'Bf Lola'); -- kemi: a third friend; lola: no one
+  mimi uuid := pg_temp.newuser(false, 'Bf Mimi'); nina uuid := pg_temp.newuser(false, 'Bf Nina'); -- an old wave outside the window
+  olu uuid := pg_temp.newuser(false, 'Bf Olu'); pat uuid := pg_temp.newuser(false, 'Bf Pat');     -- crew with an old declined wave
   room uuid := gen_random_uuid(); ev uuid;
+  win_a timestamptz := now() - interval '1 hour'; win_b timestamptz := now() + interval '1 hour';   -- launch night, for the fixtures
   r text; n int; n_rows int; j jsonb; dm_ab uuid; dm_ij uuid; who uuid;
 begin
   insert into public.crews (id, name, created_by) values (room, 'Backfill test crew', ada);
   insert into public.crew_members (crew_id, user_id, role)
   select room, u, case when u = ada then 'owner' else 'member' end
-    from unnest(array[ada, ben, chi, dayo, efe, femi, gio, hana, ife, jide, kemi, lola]) u;
-  for who in select unnest(array[ada, ben, chi, dayo, efe, femi, gio, hana, ife, jide, kemi, lola]) loop
+    from unnest(array[ada, ben, chi, dayo, efe, femi, gio, hana, ife, jide, kemi, lola, mimi, nina, olu, pat]) u;
+  for who in select unnest(array[ada, ben, chi, dayo, efe, femi, gio, hana, ife, jide, kemi, lola, mimi, nina, olu, pat]) loop
     perform pg_temp.actor(who); perform public.crew_room_enter(room, gen_random_uuid()); perform pg_temp.admin();
   end loop;
 
@@ -373,7 +377,12 @@ begin
   perform pg_temp.old_match(gio, hana, room);
   insert into public.blocks (blocker, blocked, label) values (efe, femi, 'F'), (hana, gio, 'G');
 
-  n := public._cf_backfill_room_waves();
+  -- (3b) An accepted wave with no event from days before the window: it can be from a group chat, a move chat or the Hop, so it is
+  -- not read as a room wave, even though the two share a crew.
+  insert into public.waves (from_user, to_user, event_id, from_alias, to_alias, status, created_at, responded_at)
+  values (mimi, nina, null, 'mimi', 'nina', 'accepted', now() - interval '5 days', now() - interval '5 days');
+
+  n := public._cf_backfill_room_waves(win_a, win_b);
   perform pg_temp.ok(n >= 1, 'the backfill reports the pairs it made crew');
   perform pg_temp.ok(pg_temp.mutual(ada, ben), 'the room wave from before the file is crew both ways now');
   perform pg_temp.ok(pg_temp.listed(ada, ben) and pg_temp.listed(ben, ada), 'and each lists the other in crew_friend_inbox');
@@ -381,21 +390,25 @@ begin
   perform pg_temp.ok((j -> 'crew' -> 0 ->> 'dm')::uuid = dm_ab and j -> 'crew' -> 0 ->> 'name' = 'Bf Ben', 'with the chat they already had, under the room name');
   perform pg_temp.ok(pg_temp.dms_between(ada, ben) = 1, 'and no second chat');
   perform pg_temp.ok(not pg_temp.mutual(chi, dayo) and pg_temp.crew_rows(chi, dayo) = 0, 'an accepted event wave does not become crew');
+  perform pg_temp.ok(pg_temp.crew_rows(mimi, nina) = 0 and not pg_temp.listed(mimi, nina), 'an accepted wave from before the window does not become crew');
   perform pg_temp.ok(pg_temp.crew_rows(efe, femi) = 0, 'a pair where the first blocked the second does not');
   perform pg_temp.ok(pg_temp.crew_rows(gio, hana) = 0, 'nor one where the second blocked the first');
   perform pg_temp.ok(not pg_temp.listed(efe, femi) and not pg_temp.listed(femi, efe), 'and neither lists the other');
 
   -- (4) Run again: nothing new, no duplicates.
   select count(*) into n_rows from public.crew;
-  perform pg_temp.ok(public._cf_backfill_room_waves() = 0, 'a second run makes nobody new');
-  perform pg_temp.ok(public._cf_backfill_room_waves() = 0 and (select count(*) from public.crew) = n_rows, 'a third run neither: the crew rows are the same');
+  perform pg_temp.ok(public._cf_backfill_room_waves(win_a, win_b) = 0, 'a second run makes nobody new');
+  perform pg_temp.ok(public._cf_backfill_room_waves(win_a, win_b) = 0 and (select count(*) from public.crew) = n_rows, 'a third run neither: the crew rows are the same');
   perform pg_temp.ok(pg_temp.crew_rows(ada, ben) = 2, 'a pair is one row each way, never more');
   -- A one-way old row is left alone, and a pair that is crew both ways already is skipped.
   insert into public.crew (user_id, friend_id) values (chi, lola);
-  perform pg_temp.ok(public._cf_backfill_room_waves() = 0 and pg_temp.crew_rows(chi, lola) = 1, 'a one-way ADD TO CREW row is not touched');
+  perform pg_temp.ok(public._cf_backfill_room_waves(win_a, win_b) = 0 and pg_temp.crew_rows(chi, lola) = 1, 'a one-way ADD TO CREW row is not touched');
   delete from public.crew where user_id = chi;
-  perform pg_temp.ok(not has_function_privilege('anon', 'public._cf_backfill_room_waves()', 'execute')
-                     and not has_function_privilege('authenticated', 'public._cf_backfill_room_waves()', 'execute'), 'the backfill is not callable from the app');
+  perform pg_temp.ok(not has_function_privilege('anon', 'public._cf_backfill_room_waves(timestamptz, timestamptz)', 'execute')
+                     and not has_function_privilege('authenticated', 'public._cf_backfill_room_waves(timestamptz, timestamptz)', 'execute'), 'the backfill is not callable from the app');
+  -- The window is the only thing that kept mimi and nina apart: a window that covers their wave does make them crew.
+  perform pg_temp.ok(public._cf_backfill_room_waves(now() - interval '10 days', win_b) = 1 and pg_temp.mutual(mimi, nina), 'the same wave inside a window that covers it is crew');
+  perform pg_temp.ok(not exists (select 1 from pg_proc where proname = '_cf_backfill_room_waves' and pronargs = 0), 'and the old call without a window is gone');
 
   -- (5) REMOVE FROM CREW. A new crew through the new way, then the removal.
   perform pg_temp.ok(pg_temp.hi(ife, room, jide) = 'sent', 'ife says hi to jide');
@@ -432,6 +445,27 @@ begin
   -- Either of the two can remove.
   perform pg_temp.ok(pg_temp.rm(jide, ife) = 'removed' and pg_temp.crew_rows(ife, jide) = 0, 'the other one can remove too');
 
+  -- (5b) A declined wave between two people who are crew (an old PASS, then the old ADD TO CREW both ways) goes with the removal, so
+  -- SAY HI is a fresh request. Left behind it would answer 'already' to both of them for good.
+  insert into public.waves (from_user, to_user, event_id, from_alias, to_alias, status, created_at, responded_at)
+  values (olu, pat, null, 'olu', 'pat', 'declined', now() - interval '2 days', now() - interval '2 days');
+  insert into public.crew (user_id, friend_id) values (olu, pat), (pat, olu);
+  perform pg_temp.ok(pg_temp.hi(olu, room, pat) like 'crew:%', 'crew both ways: SAY HI answers with the chat');
+  perform pg_temp.ok(pg_temp.rm(olu, pat) = 'removed', 'olu removes pat');
+  perform pg_temp.ok(not exists (select 1 from public.waves where least(from_user, to_user) = least(olu, pat) and greatest(from_user, to_user) = greatest(olu, pat)),
+                     'the declined wave went with the crew rows');
+  perform pg_temp.ok(pg_temp.hi(olu, room, pat) = 'sent', 'so SAY HI is a fresh request (sent), not already');
+  perform pg_temp.ok(pg_temp.hi(pat, room, olu) like 'crew:%', 'and pat waving back makes crew again');
+  if to_regclass('public.crew_hotspot_waves') is not null then
+    delete from public.crew where user_id in (olu, pat);
+    insert into public.crew_hotspot_waves (from_user, to_user, place, from_alias, status, responded_at)
+    values (pat, olu, 'Yaba', 'an alias', 'declined', now() - interval '2 days');
+    insert into public.crew (user_id, friend_id) values (olu, pat), (pat, olu);
+    perform pg_temp.ok(pg_temp.rm(pat, olu) = 'removed', 'pat removes olu');
+    perform pg_temp.ok(not exists (select 1 from public.crew_hotspot_waves where least(from_user, to_user) = least(olu, pat) and greatest(from_user, to_user) = greatest(olu, pat)),
+                       'a declined hotspot wave between the two goes too');
+  end if;
+
   -- (6) Nothing to remove.
   perform pg_temp.ok(pg_temp.rm(ife, jide) = 'not_crew', 'removing someone who is no longer crew answers not_crew');
   perform pg_temp.ok(pg_temp.rm(ife, lola) = 'not_crew', 'removing someone who was never crew answers not_crew');
@@ -445,6 +479,77 @@ begin
   perform pg_temp.ok(pg_temp.mutual(ife, kemi), 'which removes nothing');
   perform pg_temp.ok(not has_function_privilege('anon', 'public.crew_friend_remove(uuid)', 'execute')
                      and has_function_privilege('authenticated', 'public.crew_friend_remove(uuid)', 'execute'), 'the app calls it as authenticated only');
+end $$;
+
+-- ---------------------------------------------------------------------------------------------------------------------
+-- UNBLOCK (crew_friend_unblock): lifts a block and clears the waves the block declined, so the two can SAY HI again. Ola's
+-- unblock() only deletes the block row, and a declined wave answers 'already' to both people for good.
+create function pg_temp.unblock_as(u uuid, id uuid) returns text language plpgsql as $$
+declare r text;
+begin
+  perform pg_temp.actor(u);
+  r := public.crew_friend_unblock(id);
+  perform pg_temp.admin();
+  return r;
+end $$;
+create function pg_temp.block_dm(u uuid, dm uuid) returns void language plpgsql as $$
+begin
+  perform pg_temp.actor(u);
+  perform public.block_person(null, dm, 'Someone');
+  perform pg_temp.admin();
+end $$;
+
+do $$
+declare
+  ula uuid := pg_temp.newuser(false, 'Ub Ula'); vic uuid := pg_temp.newuser(false, 'Ub Vic');
+  wen uuid := pg_temp.newuser(false, 'Ub Wen'); xia uuid := pg_temp.newuser(false, 'Ub Xia');
+  room uuid := gen_random_uuid(); who uuid; dm uuid; blk uuid; blk2 uuid;
+begin
+  insert into public.crews (id, name, created_by) values (room, 'Unblock test crew', ula);
+  insert into public.crew_members (crew_id, user_id, role)
+  select room, u, case when u = ula then 'owner' else 'member' end from unnest(array[ula, vic, wen, xia]) u;
+  for who in select unnest(array[ula, vic, wen, xia]) loop
+    perform pg_temp.actor(who); perform public.crew_room_enter(room, gen_random_uuid()); perform pg_temp.admin();
+  end loop;
+
+  -- A wave waiting, then a block: block_person declines the wave. The block is on vic's list.
+  perform pg_temp.ok(pg_temp.hi(ula, room, vic) = 'sent', 'ula says hi to vic');
+  dm := public._cf_dm(ula, vic);
+  perform pg_temp.block_dm(vic, dm);
+  select id into blk from public.blocks where blocker = vic and blocked = ula;
+  perform pg_temp.ok(blk is not null, 'vic blocked ula');
+  perform pg_temp.ok((select status from public.waves where from_user = ula and to_user = vic) = 'declined', 'and the block declined the wave');
+  perform pg_temp.ok(pg_temp.hi(vic, room, ula) = 'blocked', 'vic cannot say hi while the block stands');
+
+  perform pg_temp.ok(pg_temp.unblock_as(ula, blk) = 'gone' and exists (select 1 from public.blocks where id = blk), 'only the blocker can lift it: for ula it is gone, and the block stays');
+  perform pg_temp.ok(pg_temp.unblock_as(vic, blk) = 'unblocked', 'vic unblocks');
+  perform pg_temp.ok(not exists (select 1 from public.blocks where id = blk), 'the block is gone');
+  perform pg_temp.ok(not exists (select 1 from public.waves where least(from_user, to_user) = least(ula, vic) and greatest(from_user, to_user) = greatest(ula, vic)),
+                     'and so is the wave it declined');
+  perform pg_temp.ok(pg_temp.hi(vic, room, ula) = 'sent', 'SAY HI is a fresh request again (not already)');
+  perform pg_temp.ok(pg_temp.hi(ula, room, vic) like 'crew:%' and pg_temp.mutual(ula, vic), 'and a wave back makes crew');
+  perform pg_temp.ok(pg_temp.unblock_as(vic, blk) = 'gone', 'lifting it again says gone');
+
+  -- A wave passed long before the block stays passed: only the block's own declines are cleared.
+  insert into public.waves (from_user, to_user, event_id, from_alias, to_alias, status, created_at, responded_at)
+  values (wen, xia, null, 'wen', 'xia', 'declined', now() - interval '3 days', now() - interval '2 days');
+  insert into public.blocks (blocker, blocked, label) values (xia, wen, 'W') returning id into blk2;
+  perform pg_temp.ok(pg_temp.unblock_as(xia, blk2) = 'unblocked', 'xia unblocks wen');
+  perform pg_temp.ok((select status from public.waves where from_user = wen and to_user = xia) = 'declined', 'a wave passed before the block stays passed');
+  perform pg_temp.ok(pg_temp.hi(xia, room, wen) = 'already', 'which is the old answer');
+
+  -- A hotspot block declines nothing, so it is only lifted.
+  if to_regclass('public.hotspot_blocks') is not null then
+    insert into public.hotspot_blocks (blocker, blocked, label) values (xia, wen, 'an alias') returning id into blk2;
+    perform pg_temp.ok(pg_temp.unblock_as(xia, blk2) = 'unblocked', 'xia lifts a hotspot block');
+    perform pg_temp.ok(not exists (select 1 from public.hotspot_blocks where id = blk2), 'and it is gone');
+    perform pg_temp.ok((select status from public.waves where from_user = wen and to_user = xia) = 'declined', 'and no wave is touched');
+  end if;
+
+  perform set_config('request.jwt.claims', '', true);
+  perform pg_temp.ok(public.crew_friend_unblock(gen_random_uuid()) = 'no_session', 'without a session: no_session');
+  perform pg_temp.ok(not has_function_privilege('anon', 'public.crew_friend_unblock(uuid)', 'execute')
+                     and has_function_privilege('authenticated', 'public.crew_friend_unblock(uuid)', 'execute'), 'the app calls it as authenticated only');
 end $$;
 
 -- ---------------------------------------------------------------------------------------------------------------------

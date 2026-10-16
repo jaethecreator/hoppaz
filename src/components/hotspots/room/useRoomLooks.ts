@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { anonLook, normalizeLook, randomLook, type Look } from "@/lib/avatar";
 import { backoff, hidden, jitter } from "@/lib/idle";
 import { getSupabase } from "@/lib/supabase/client";
@@ -14,6 +14,8 @@ import { readLooks } from "./api";
 export const REAL_LOOKS_IN_ROOM = true;
 
 const LOOKS_MS = 60_000;
+/** Someone new in the room is asked about at once, but never more often than this. People leaving ask for nothing. */
+const NEW_FACE_GAP = 15_000;
 
 /** A small seeded generator for the demo room: the same alias is always the same Hopper. */
 const seeded = (s: string) => {
@@ -28,13 +30,19 @@ const seeded = (s: string) => {
 
 /**
  * The look to draw for each key in the room. `keys` are the heads' keys (and any chat authors you want covered);
- * a key with no real look is simply absent, and the caller falls back to anonLook(alias). Asked again when the people
- * change and about once a minute (less when nobody touches the phone, never while the page is hidden), only while the
- * room is open on this screen.
+ * a key with no real look is simply absent, and the caller falls back to anonLook(alias). Asked again when a key turns up
+ * that was not in the last ask, and about once a minute (less when nobody touches the phone, never while the page is
+ * hidden), only while the room is open on this screen.
  */
 export function useRoomLooks(slug: string, active: boolean, people: { key: string; alias: string }[]): Record<string, Look> {
   const [real, setReal] = useState<Record<string, Look>>({});
-  const sig = useMemo(() => people.map((p) => p.key).sort().join("|"), [people]);
+  const keys = useMemo(() => people.map((p) => p.key).sort(), [people]);
+  const sig = keys.join("|");
+  // The keys the last ask carried, when it went, the keys now, and the ask of the running timer effect.
+  const asked = useRef(new Set<string>());
+  const askedAt = useRef(0);
+  const keysNow = useRef<string[]>([]);
+  const askNow = useRef<(() => void) | null>(null);
 
   // No database (the local demo): a made-up Hopper per alias, so the room can be looked at with real bodies in it.
   const demo = useMemo(() => {
@@ -47,15 +55,23 @@ export function useRoomLooks(slug: string, active: boolean, people: { key: strin
   }, [active, sig]);
 
   useEffect(() => {
+    keysNow.current = keys;
+  }, [keys]);
+
+  useEffect(() => {
     if (!REAL_LOOKS_IN_ROOM || !active || !getSupabase()) return;
     let dead = false;
+    asked.current = new Set();
     const ask = async () => {
+      asked.current = new Set(keysNow.current);
+      askedAt.current = Date.now();
       const r = await readLooks(slug);
       if (dead || !r.ok) return;
       const out: Record<string, Look> = {};
       for (const [k, v] of Object.entries(r.looks ?? {})) out[k] = normalizeLook(v);
       setReal(out);
     };
+    askNow.current = () => void ask();
     let t: ReturnType<typeof setTimeout> | undefined;
     const next = () => {
       t = setTimeout(() => {
@@ -67,10 +83,22 @@ export function useRoomLooks(slug: string, active: boolean, people: { key: strin
     next();
     return () => {
       dead = true;
+      askNow.current = null;
       clearTimeout(t);
     };
-    // sig: ask again as soon as someone new is in the room
-  }, [slug, active, sig]);
+  }, [slug, active]);
+
+  // Someone new in the room: ask soon. A change that only takes people away leaves the steady poll alone.
+  useEffect(() => {
+    if (!askNow.current || !keys.some((k) => !asked.current.has(k))) return;
+    const t = setTimeout(() => {
+      // The steady poll may have covered them by now.
+      if (!hidden() && keysNow.current.some((k) => !asked.current.has(k))) askNow.current?.();
+    }, Math.max(0, NEW_FACE_GAP - (Date.now() - askedAt.current)));
+    return () => clearTimeout(t);
+    // keys is covered by sig
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
 
   return demo ?? real;
 }

@@ -55,7 +55,7 @@ for (const room of rooms) {
     const walls = layout.walls.map((w) => `<rect x="${w.x * t}" y="${w.y * t}" width="${w.w * t}" height="${w.h * t}" fill="rgba(255,255,0,.18)" stroke="#ff0" stroke-width="1"/>`).join("");
     const zones = layout.zones.map((z) => `<circle cx="${(z.stop.x + 0.5) * t}" cy="${(z.stop.y + 0.5) * t}" r="6" fill="#0f0" stroke="#000"/><text x="${z.plaque.x * t}" y="${z.plaque.y * t + 10}" font-size="9" fill="#fff" stroke="#000" stroke-width=".5">${z.name}</text>`).join("");
     const spawn = `<circle cx="${(layout.spawn.x + 0.5) * t}" cy="${(layout.spawn.y + 0.5) * t}" r="7" fill="#f0f" stroke="#000"/>`;
-    svg = art.replace(/<\/svg>\s*$/, `${walls}${boxes}${zones}${spawn}</svg>`);
+    svg = svg.replace(/<\/svg>\s*$/, `${walls}${boxes}${zones}${spawn}</svg>`);
   }
   const file = path.join(outDir, `${room.key}${withProps ? "-boxes" : ""}.png`);
   await sharp(Buffer.from(svg), { density: Number(process.env.ROOM_DENSITY) || 96 }).png().toFile(file);

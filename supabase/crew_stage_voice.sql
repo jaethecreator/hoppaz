@@ -5,6 +5,9 @@
 -- docs/ROOM-GAME-DESIGN.md section 14.4. Nothing in the app reads any of this unless the stage voice flag is on
 -- (NEXT_PUBLIC_ROOM_STAGE_VOICE=1), so running it early changes nothing people can see, except that an owner can
 -- make an admin.
+-- There is no begin or commit here: paste and run the whole file at once (the SQL editor runs it as one transaction),
+-- never a statement at a time. Run it before doors open: it waits for a lock on crew_members, which every room call reads,
+-- and gives up after 3 s (lock_timeout), rolling back whole; run it again then.
 --
 -- What it adds:
 --   crew_members.role   owner, admin or member (the check allowed owner and member only). An admin is staff: the
@@ -19,6 +22,8 @@
 --   crew_room_stage     what the room asks every couple of seconds while stage voice is on: { stage, is_staff,
 --                       is_owner, admins }. `admins` is filled for the owner only (it feeds MAKE / REMOVE ADMIN).
 -- ============================================================================
+
+set local lock_timeout = '3s';
 
 -- ----------------------------------------------------------------- the role ---
 do $$

@@ -6,7 +6,8 @@
 --            Safe to run again, in one transaction. Run it after any later re-run of crew_rails.sql or
 --            chat_accounts.sql too, although nothing here is undone by those two: every function below has a NEW
 --            name (crew_friend_*), so the old wave, DM and crew calls are left exactly as they were.
---            Each run also makes crew of the room waves that were answered the old way (see the end of the file).
+--            The run also makes crew of the room waves that launch night answered the old way, inside a fixed window of
+--            times (see the end of the file). A run again, on any later day, makes nobody new.
 --
 -- THE MODEL
 --   * A crew room is a place. Your crew is your friends.
@@ -25,6 +26,8 @@
 --     map. Nothing draws friends on the map yet; the day something does, it must read this and show only people who said yes.
 --   * REMOVE FROM CREW (crew_friend_remove) just removes the person: the crew rows go, both ways. Real names are NOT taken
 --     back, the chat stays in the list as history, and no new chat opens until you are crew again. SAY HI is a fresh request.
+--   * UNBLOCK (crew_friend_unblock) lifts a block and gives SAY HI back: the waves the block declined are cleared, so the two
+--     can ask each other again. Ola's unblock() lifts the block only.
 --
 -- WHAT THIS FILE ADDS (nothing existing is changed)
 --   tables     crew_pings (a poke, or "you are crew now", between two people; private, live)
@@ -37,6 +40,7 @@
 --              crew_friend_open_dm(peer)         MESSAGE: the chat with a crew friend (made if there is none yet)
 --              crew_friend_poke(peer)            POKE a crew friend
 --              crew_friend_remove(peer)          REMOVE FROM CREW: the crew rows go, both ways; names stay, the chat stays
+--              crew_friend_unblock(block)        UNBLOCK (Settings, BLOCKED): lifts the block and clears the waves it declined
 --              crew_friend_read(dm)              I have read this chat up to now
 --              crew_friend_inbox()               waves waiting, crew faces, chats with unread counts, in one read
 --              crew_friend_map(on)               SHOW ME ON THE MAP: my own switch, off until I turn it on
@@ -50,7 +54,8 @@
 --     has no crew room).
 --   * The old crew_room_wave still works for people on an older app. To make crew the ONLY way into a room chat once
 --     the new app is live, run the one line at the bottom of this file (it is commented out). What it wrote before this
---     file (launch night: an accepted wave and a chat, no crew rows) is made crew by the backfill at the end of the file.
+--     file (launch night: an accepted wave and a chat, no crew rows) is made crew by the backfill at the end of the file,
+--     for waves made inside the launch-night window only.
 --   * A one-way crew row (the old ADD TO CREW) stays. It does not show in the crew list and it unlocks nothing: crew means
 --     both ways (crew_friend_inbox lists only people who have you too).
 --
@@ -201,10 +206,14 @@ $$;
 
 -- Launch night (15 Oct) ran the older crew_room_wave: SAY HI plus a wave back set the wave to accepted (no event) and opened
 -- a chat, but wrote no crew rows, so those people never showed as crew. In this model that IS crew, both ways. This makes it
--- so, for every accepted wave with no event between two people who share a crew and have no block between them. Event waves
--- (event_id set) stay chats only. A row that is already there is left alone, so it is safe to run again; returns how many
--- pairs were new. The same rule crew_friend_respond uses for a wave answered from the Chat tab.
-create or replace function public._cf_backfill_room_waves() returns int
+-- so, for the accepted waves with no event that were made from p_from up to p_to, between two people who share a crew and
+-- have no block between them. Event waves (event_id set) stay chats. The window is the point: outside it a wave with no event
+-- is not a room wave. Before crew_room_wave existed it came from a group chat, a move chat or the Hop (send_wave stores no
+-- event for those), and once the new app is live crew_friend_wave makes crew itself, so a guess from "no event, shared crew"
+-- would make crew of people who only waved in a chat. A row that is already there is left alone, so it is safe to run again;
+-- returns how many pairs were new.
+drop function if exists public._cf_backfill_room_waves();
+create or replace function public._cf_backfill_room_waves(p_from timestamptz, p_to timestamptz) returns int
 language plpgsql security definer set search_path = public as $$
 declare w record; n int := 0;
 begin
@@ -212,6 +221,7 @@ begin
     select distinct least(x.from_user, x.to_user) as a, greatest(x.from_user, x.to_user) as b
       from waves x
      where x.status = 'accepted' and x.event_id is null
+       and x.created_at >= p_from and x.created_at < p_to
        and public._cf_shared_crew(x.from_user, x.to_user) is not null
        and not public.is_blocked(x.from_user, x.to_user)
        and not public._cf_mutual(x.from_user, x.to_user)
@@ -224,7 +234,7 @@ end $$;
 
 revoke all on function public._cf_mutual(uuid, uuid), public._cf_name(uuid), public._cf_shared_crew(uuid, uuid),
   public._cf_make_crew(uuid, uuid), public._cf_dm(uuid, uuid), public._cf_hs_block(uuid, uuid), public._cf_reveal(uuid),
-  public._cf_backfill_room_waves()
+  public._cf_backfill_room_waves(timestamptz, timestamptz)
   from public, anon, authenticated;
 revoke all on function public._cf_visible(uuid, uuid) from public, anon;
 grant execute on function public._cf_visible(uuid, uuid) to authenticated;
@@ -447,9 +457,10 @@ end $$;
 -- Take someone out of my crew: the crew rows between us go, both ways. Returns: removed | not_crew | no_session.
 --   * Real names are not taken back. A chat between us keeps showing both names (it is marked known, the old rule).
 --   * The chat stays in both lists as history. A new chat opens only when we are crew again (crew_friend_open_dm).
---   * The accepted waves between us go too, in both places (waves and crew_hotspot_waves). An accepted wave is what
---     crew_friend_wave and the backfill above read as "already crew", so left behind it would make us crew again on the next
---     SAY HI or the next run of this file. Without it, SAY HI is a fresh request, and a wave back is crew again.
+--   * The accepted and the declined waves between us go too, in both places (waves and crew_hotspot_waves). An accepted wave
+--     is what crew_friend_wave reads as "already crew", so left behind it would make us crew again on the next SAY HI. A
+--     declined one (an old PASS, or a wave a block declined) answers 'already' to both of us for good. We were crew both ways, so
+--     neither applies any more. Without them, SAY HI is a fresh request, and a wave back is crew again.
 --   * Someone who is not crew both ways (a one-way old ADD TO CREW row included) answers not_crew and nothing changes.
 create or replace function public.crew_friend_remove(p_peer uuid) returns text
 language plpgsql security definer set search_path = public as $$
@@ -460,11 +471,37 @@ begin
   delete from crew where (user_id = me and friend_id = p_peer) or (user_id = p_peer and friend_id = me);
   select id into dm from dms where least(a, b) = least(me, p_peer) and greatest(a, b) = greatest(me, p_peer);
   if dm is not null then perform public._cf_reveal(dm); end if;
-  delete from waves where status = 'accepted'
+  delete from waves where status in ('accepted', 'declined')
      and ((from_user = me and to_user = p_peer) or (from_user = p_peer and to_user = me));
-  delete from crew_hotspot_waves where status = 'accepted'
+  delete from crew_hotspot_waves where status in ('accepted', 'declined')
      and ((from_user = me and to_user = p_peer) or (from_user = p_peer and to_user = me));
   return 'removed';
+end $$;
+
+-- ---------------------------------------------------------------- UNBLOCK ---
+-- Lift one of my blocks (the id my_blocks() lists) and give SAY HI back. Returns: unblocked | gone | no_session.
+--   * Ola's unblock() deletes the block row and nothing else. block_person declined every wave waiting between the two when
+--     the block was made, and a declined wave answers 'already' to both of them for good (crew_friend_wave), so after an
+--     unblock neither could ever ask the other again. A global block (blocks) clears those waves here: the declined ones
+--     answered at or after the moment the block was made, which is the block's own doing. A wave passed before the block stays passed.
+--   * A hotspot block (hotspot_blocks) declines nothing, so it is only lifted.
+--   * gone: no such block of mine (already lifted). Nothing else changes.
+create or replace function public.crew_friend_unblock(p_block uuid) returns text
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); them uuid; made timestamptz;
+begin
+  if me is null then return 'no_session'; end if;
+  delete from blocks where id = p_block and blocker = me returning blocked, created_at into them, made;
+  if found then
+    delete from waves where status = 'declined' and responded_at >= made
+       and ((from_user = me and to_user = them) or (from_user = them and to_user = me));
+    return 'unblocked';
+  end if;
+  if to_regclass('public.hotspot_blocks') is not null then
+    delete from hotspot_blocks where id = p_block and blocker = me;
+    if found then return 'unblocked'; end if;
+  end if;
+  return 'gone';
 end $$;
 
 -- ----------------------------------------------------------------- unread ---
@@ -737,21 +774,25 @@ end $$;
 -- ------------------------------------------------------------------ grants ---
 revoke all on function public.crew_friend_wave(uuid, uuid), public.crew_friend_respond(uuid, boolean),
   public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_remove(uuid),
+  public.crew_friend_unblock(uuid),
   public.crew_friend_read(uuid), public.crew_friend_inbox(), public.crew_friend_map(boolean),
   public.crew_friend_staff(uuid), public.crew_friend_hotspot_wave(text) from public, anon;
 grant execute on function public.crew_friend_wave(uuid, uuid), public.crew_friend_respond(uuid, boolean),
   public.crew_friend_open_dm(uuid), public.crew_friend_poke(uuid), public.crew_friend_remove(uuid),
+  public.crew_friend_unblock(uuid),
   public.crew_friend_read(uuid), public.crew_friend_inbox(), public.crew_friend_map(boolean),
   public.crew_friend_staff(uuid), public.crew_friend_hotspot_wave(text) to authenticated;
 
 -- ---------------------------------------------------------- ONE-TIME BACKFILL ---
--- Room waves answered before this file (launch night) become crew now. Nothing doubles on a run again: pairs that are
--- crew already are skipped, a REMOVE FROM CREW took the accepted wave with it, and a pair with a block between them
--- stays apart.
+-- Room waves answered before this file (launch night) become crew now. The window is fixed: from 15 Oct 2026 00:00 to
+-- 16 Oct 2026 06:00 Lagos time (+01): launch night, with room to spare at the start (it can be moved to the time crew_rails.sql
+-- first ran on production). It ends before the new app is live: a wave after that is crew by crew_friend_wave, or waits for a
+-- SAY HI. A run again at any later date finds the same waves: pairs that are crew already are skipped, a REMOVE FROM CREW took
+-- the accepted wave with it, and a pair with a block between them stays apart.
 do $do$
-declare n int := public._cf_backfill_room_waves();
+declare n int := public._cf_backfill_room_waves(timestamptz '2026-10-15 00:00:00+01', timestamptz '2026-10-16 06:00:00+01');
 begin
-  raise notice 'crew_friends: % room wave pair(s) made crew (answered the old way, before this file)', n;
+  raise notice 'crew_friends: % room wave pair(s) made crew (answered the old way, launch night)', n;
 end $do$;
 
 -- ------------------------------------------------------------ OPTIONAL, LATER ---

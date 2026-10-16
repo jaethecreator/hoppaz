@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabase } from "./supabase/client";
 import { backoff, hidden } from "./idle";
 import { shrink } from "./image";
-import { answerWave, loadInbox, markRead, useSocial } from "./social";
+import { answerWave, isMissing, loadInbox, markRead, useSocial } from "./social";
 import type { DmMessage, Message, Person } from "./types";
 
 /**
@@ -253,12 +253,20 @@ export async function myBlocks(): Promise<MyBlock[] | null> {
   return error ? null : ((data ?? []) as MyBlock[]);
 }
 
-/** Lift a block by its id from myBlocks(). Their waves and chats come back, so the inbox is read again. */
+/**
+ * Lift a block by its id from myBlocks(). Their chats come back, so the inbox is read again. crew_friend_unblock (crew_friends.sql)
+ * also clears the waves the block declined, so the two can SAY HI again; before it is on the server the plain unblock is used.
+ */
 export async function unblock(id: string) {
   const sb = getSupabase();
   if (!sb) return false;
-  const { error } = await sb.rpc("unblock", { p_block: id });
-  if (error) return false;
+  const first = await sb.rpc("crew_friend_unblock", { p_block: id });
+  if (isMissing(first.error)) {
+    const { error } = await sb.rpc("unblock", { p_block: id });
+    if (error) return false;
+  } else if (first.error || first.data === "no_session") {
+    return false;
+  }
   void loadInbox();
   return true;
 }

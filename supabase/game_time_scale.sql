@@ -1,8 +1,10 @@
 -- ============================================================================
 -- Hoppaz: Game Time searches that do not queue behind the disk (16 Oct 2026)
--- Run order: after game_time.sql and xp_rewards.sql. Safe to run twice. Nothing
--- else changes: game_time_search keeps every check (account, crew, one win per
--- campaign, the server's tile next to the object, the 2.5 s gap, the game's lock).
+-- Run order: after game_time.sql (xp_rewards.sql, if it is loaded, may come before or after).
+-- Safe to run twice. Run it before doors open: it waits for a lock on two tables and gives up
+-- after 3 s (lock_timeout), rolling back whole; run it again then. Nothing else changes:
+-- game_time_search keeps every check (account, crew, one win per campaign, the server's tile
+-- next to the object, the 2.5 s gap, the game's lock).
 --
 -- Why: every search takes the game's lock and holds it until its commit is on disk.
 -- On a small plan whose disk budget is spent (tens of ms a commit) that is a few
@@ -20,6 +22,7 @@
 --                    feed line are on disk before the answer leaves the database.
 -- ============================================================================
 begin;
+set local lock_timeout = '3s';
 
 create or replace function public._gt_quick_commit() returns trigger
 language plpgsql set search_path = public as $$

@@ -221,5 +221,38 @@ begin
   raise notice 'ok: speakers';
 end $t$;
 
+-- ------------------------------ the cap of 200 drops old speakers, not the room ---
+-- More than 200 people spoke here in the last day and left. The people standing here now must all still have their look.
+do $t$
+declare
+  ch text := 'hotspot:' || (select id::text from public.hotspots where slug = 'yaba');
+  u uuid; i int; l jsonb; reader uuid := pg_temp.u('a');
+begin
+  for i in 1..260 loop
+    u := pg_temp.newuser();
+    update public.profiles set avatar = jsonb_build_object('hat', 'old', 'n', i) where id = u;
+    perform pg_temp.confirm(u);
+    perform pg_temp.ok((pg_temp.enter(u, 'yaba'))->>'ok' = 'true', 'old speaker ' || i || ' enters');
+    perform pg_temp.eq(pg_temp.say(u, ch, 'hello ' || i), 'ok', 'old speaker ' || i || ' speaks');
+    update public.hotspot_visits set fades_at = now() - interval '1 second' where user_id = u;
+  end loop;
+  for i in 1..12 loop
+    u := pg_temp.newuser();
+    update public.profiles set avatar = jsonb_build_object('hat', 'here', 'n', i) where id = u;
+    perform pg_temp.confirm(u);
+    perform pg_temp.ok((pg_temp.enter(u, 'yaba'))->>'ok' = 'true', 'head ' || i || ' enters');
+    insert into who values ('head' || i, u);
+  end loop;
+  l := pg_temp.looks(reader, 'yaba')->'looks';
+  perform pg_temp.eq((select count(*) from jsonb_object_keys(l))::text, '200', 'the map stops at 200 looks');
+  perform pg_temp.ok(
+    (select bool_and(l ? v.key::text)
+       from public.hotspot_visits v
+       join public.profiles p on p.id = v.user_id
+      where v.fades_at > now() and v.user_id <> reader and p.avatar is not null),
+    'every head in the room has a look, however many old speakers there are');
+  raise notice 'ok: the cap keeps the room first';
+end $t$;
+
 select 'ALL HOTSPOT LOOKS TESTS PASSED' as result;
 rollback;

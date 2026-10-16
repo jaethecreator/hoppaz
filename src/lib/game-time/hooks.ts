@@ -124,6 +124,9 @@ type Ping = {
   lastUser: { at: number; games: GtListGame[] } | null;
   lastUserAt: number;
   forceUser: boolean;
+  /** Whose list this is, and a count that moves on every change of person so a read still out for the last one is dropped. */
+  user: string | null;
+  gen: number;
   hiddenAt: number;
   off: (() => void) | null;
 };
@@ -141,6 +144,8 @@ const ping: Ping = {
   lastUser: null,
   lastUserAt: 0,
   forceUser: false,
+  user: null,
+  gen: 0,
   hiddenAt: 0,
   off: null,
 };
@@ -152,6 +157,18 @@ function publish(games: GtListGame[]) {
   ping.sig = sig;
   ping.games = games;
   ping.listeners.forEach((fn) => fn());
+}
+
+/** A different person is on this phone (a sign-out makes the tab a new guest): nothing of the last one's list is shown or reused. */
+function resetPing() {
+  ping.lastUser = null;
+  ping.lastUserAt = 0;
+  ping.lastReadAt = 0; // the 20 s rule below is for the same person
+  ping.forceUser = true;
+  ping.gen += 1;
+  publish([]);
+  // A read that is not out reads the new person's list now rather than at the next turn.
+  if (ping.refs > 0 && !hidden()) schedule(0);
 }
 
 /** The list to show: the per-user answer when it is young, otherwise the public games with the flags last known for them. */
@@ -180,6 +197,7 @@ function merged(pub: { ok: boolean; games: GtListGame[] }): GtListGame[] | null 
 async function readOnce() {
   if (ping.inflight) return;
   ping.inflight = true;
+  const gen = ping.gen;
   try {
     const pub = await fetchPublicGameTimeList();
     const pubGames = pub.ok ? pub.data.games : [];
@@ -192,6 +210,8 @@ async function readOnce() {
       ping.lastUserAt = now;
       const sent = Date.now();
       const r = await fetchList();
+      // The person changed while this was out: it is the last one's list.
+      if (gen !== ping.gen) return;
       // Only this answer knows the server's clock. The public copy can be a minute old.
       if (r.ok) {
         if (r.serverNow) noteServerTime(r.serverNow, sent, Date.now());
@@ -216,8 +236,10 @@ function schedule(ms: number) {
 async function cycle() {
   ping.timer = undefined;
   if (ping.refs <= 0 || hidden()) return; // the visibility handler wakes it
+  const gen = ping.gen;
   await readOnce();
-  if (ping.refs > 0 && !hidden()) schedule(gap());
+  // Another person came while that read was out: read again for them now.
+  if (ping.refs > 0 && !hidden()) schedule(ping.gen === gen ? gap() : 0);
 }
 
 function begin() {
@@ -271,7 +293,12 @@ const subscribe = (fn: () => void) => {
  */
 export function usePingGames(enabled: boolean): GtListGame[] {
   const shown = useMapShown();
-  const { hasAccount } = useSession();
+  const { hasAccount, userId } = useSession();
+  useEffect(() => {
+    if (userId === ping.user) return;
+    if (ping.user) resetPing();
+    ping.user = userId;
+  }, [userId]);
   useEffect(() => {
     if (!enabled || !shown) return;
     ping.account = hasAccount;

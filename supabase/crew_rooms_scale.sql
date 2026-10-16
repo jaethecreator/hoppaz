@@ -3,6 +3,8 @@
 -- Run order: after crew_rooms.sql (and after crew_rails.sql, crew_reactions.sql,
 -- game_time.sql, xp_rewards.sql if those are loaded). Run it again after any run
 -- of crew_rooms.sql, which puts the old helpers back. Additive and safe to run twice.
+-- Run it before doors open, not in the middle of an event: some statements below wait for a lock on the busiest room
+-- tables. It gives up after 3 s (lock_timeout) and rolls back whole; run it again then.
 --
 -- Why: the 360Playlist room fell over at about 20 people (16 Oct). Every step took
 -- the room's lock and held it while it built a snapshot of the whole room (about
@@ -28,7 +30,9 @@
 --                new arrivals, the walker list only when someone left), the room only
 --                when the owner changed it. p_since is the "at" of the last answer, a
 --                transaction watermark (pg_snapshot_xmin), so a move that committed
---                late is never missed. Blocked people are left out as before.
+--                late is never missed. Blocked people are left out as before, and for
+--                3 minutes after a new block the walker list is sent in full, so the phone
+--                of the other person drops them.
 --   heartbeat    a beat writes at most once every 3 s per walker.
 --   sweeps       stale walkers are swept by whoever reads first and gets the lock
 --                without waiting; leaving a crew removes the walker at once (trigger).
@@ -46,6 +50,7 @@
 -- phone by up to about a second while walking (the app sends what is queued first).
 -- ============================================================================
 begin;
+set local lock_timeout = '3s';
 
 do $guard$
 begin
@@ -281,8 +286,9 @@ begin
     if p.last_seen < t - interval '3 seconds' then
       update crew_room_presence set last_seen = t where crew_id = p_crew and user_id = me and session_id = p_session;
     end if;
-    if _crew_room_needs_sweep(p) then
-      perform _crew_room_lock(p_crew);
+    -- This walker's row is written above, so the room lock is only tried (as crew_room_step does): whoever holds it is
+    -- reconciling rows that include this one, and waiting here would wait for each other. They fix this row a moment later.
+    if _crew_room_needs_sweep(p) and pg_try_advisory_xact_lock(hashtextextended('crew-room:' || p_crew::text, 0)) then
       perform _crew_room_reconcile(p_crew);
       select * into p from crew_room_presence where crew_id = p_crew and user_id = me;
     end if;
@@ -465,7 +471,10 @@ begin
   -- Everything written by a transaction older than this has committed; anything newer is sent again next time.
   mark := pg_snapshot_xmin(pg_current_snapshot())::text::bigint;
   select * into r from crew_rooms where crew_id = p_crew;
-  left_ := every or exists (select 1 from crew_room_live v where v.crew_id = p_crew and v.roster_xid >= since);
+  -- The list is sent again after a roster change, and for 3 minutes after a block that involves me: a block changes who I
+  -- may see without changing the roster, and a phone only drops someone who is missing from the list.
+  left_ := every or exists (select 1 from crew_room_live v where v.crew_id = p_crew and v.roster_xid >= since)
+           or exists (select 1 from blocks b where (b.blocker = me or b.blocked = me) and b.created_at > t - interval '3 minutes');
   with live as (
     select p.user_id, p.x, p.y, p.circle_id, p.last_seen, p.rev_xid, p.entered_xid
       from crew_room_presence p
