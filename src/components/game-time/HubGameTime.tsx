@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDown, DoorOpen, Ticket } from "lucide-react";
+import { ArrowDown, CircleHelp, DoorOpen, Ticket } from "lucide-react";
 import { clockText, lagosWhen, useServerNow } from "@/lib/game-time/clock";
 import { isMystery, ticketsLeft, ticketsText } from "@/lib/game-time/drops";
 import { useHubGame } from "@/lib/game-time/hooks";
+import { HUNT_DEMO_ON } from "@/lib/game-time/huntDemo";
 import type { GtOverReason } from "@/lib/game-time/types";
+import { HUNT_DEMO_COPY } from "./HuntDemo";
 
 /**
  * The crew hub's Game Time card (design 13.1): GAME TIME and the countdown before it opens, LIVE NOW while it runs, and
@@ -64,6 +66,14 @@ export default function HubGameTime({ crewId, isMember }: { crewId: string; isMe
           <Link href={room} className="btn mt-3 w-full text-[14px]" data-gt-hub-enter>
             <DoorOpen size={18} aria-hidden /> {live && !me.won && !me.blocked ? "ENTER ROOM AND HUNT" : "ENTER ROOM"}
           </Link>
+          {HUNT_DEMO_ON && !me.blocked && !me.won && (
+            // Opens the room and starts the 20-second practice there (HuntDemo.tsx reads ?hunt=practice once).
+            <p className="mt-1 text-center">
+              <Link href={`${room}?hunt=practice`} className="inline-flex min-h-[44px] items-center gap-1.5 px-3 text-[13px] text-dim underline underline-offset-2" data-gt-hub-how>
+                <CircleHelp size={14} aria-hidden /> {HUNT_DEMO_COPY.link}
+              </Link>
+            </p>
+          )}
           {me.blocked && !me.won && (
             <p className="hint mt-2" data-gt-hub-blocked>
               {me.blocked === "need_confirmed" ? "Confirm your email to hunt. Check your inbox. You can still come watch." : "You joined too late to hunt this one. Come watch."}

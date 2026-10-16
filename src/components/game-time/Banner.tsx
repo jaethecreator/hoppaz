@@ -6,6 +6,7 @@ import { openTicket } from "@/lib/game-time/controller";
 import { isMystery, ticketsLeft } from "@/lib/game-time/drops";
 import { useGameTime } from "@/lib/game-time/store";
 import type { GtBlocked, GtGame, GtOverReason } from "@/lib/game-time/types";
+import { HowToHunt } from "./HuntDemo";
 import css from "./GameTime.module.css";
 
 /**
@@ -97,6 +98,7 @@ function BannerBody({ isWatcher }: { isWatcher: boolean }) {
         <span className={css.label}>
           <i className={`${css.dotLive} ${css.dotOff}`} />
           GAME TIME
+          <HowToHunt isWatcher={isWatcher} />
         </span>
         <span className={css.count}>
           <span className={css.countKicker}>CAN DROP</span>
@@ -115,6 +117,7 @@ function BannerBody({ isWatcher }: { isWatcher: boolean }) {
         <span className={css.label}>
           <i className={`${css.dotLive} ${soon ? css.dotSoon : css.dotOff}`} />
           {soon ? "STARTING SOON" : "GAME TIME"}
+          <HowToHunt isWatcher={isWatcher} />
         </span>
         <span className={css.count}>
           <span className={css.countKicker}>OPENS IN</span>
@@ -200,6 +203,7 @@ function BannerBody({ isWatcher }: { isWatcher: boolean }) {
       <span className={css.label}>
         <i className={`${css.dotLive} ${offline ? css.dotOff : ""}`} />
         GAME TIME
+        <HowToHunt isWatcher={isWatcher} />
       </span>
       {count}
       <b className={css.title}>{game.title}</b>
