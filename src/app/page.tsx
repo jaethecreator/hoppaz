@@ -28,6 +28,7 @@ import { useSession } from "@/lib/useSession";
 import { useEvents, useHop } from "@/lib/useEvents";
 import { useCheckin } from "@/lib/useCheckin";
 import { useGameDashboard } from "@/lib/game";
+import { markMapShown, useMapShown } from "@/lib/idle";
 import { haversineKm, hasVenue } from "@/lib/geo";
 import type { HopStop } from "@/lib/types";
 import { nearFirst, topThisWeek, useTopNear } from "@/lib/nearEvents";
@@ -53,6 +54,7 @@ const MainHotspots = dynamic(() => import("@/components/hotspots/MainHotspots"),
 // One stable empty list, so memo deps do not change on every render.
 const NO_TYPES: string[] = [];
 const NO_STOPS: HopStop[] = [];
+const NO_IDS: string[] = [];
 
 /** Open on a day with something on, once per page load, and never over a day the Hopper chose. */
 let firstDayChosen = false;
@@ -66,9 +68,12 @@ export default function MapPage() {
   const [map, setMap] = useState<MLMap | null>(null);
   const { events: allEvents, demo, ready, failed, reload } = useEvents(fix, radiusKm);
   const hop = useHop();
-  const { done, checkedAt, busy, checkIn } = useCheckin(userId, refresh);
+  // The pins come first. What is not on the map (my check-ins, the streak, which events have drops) waits for the map to draw
+  // (or 4 s), so the slow reads do not queue in front of the events and hotspots.
+  const shown = useMapShown();
+  const { done, checkedAt, busy, checkIn } = useCheckin(shown ? userId : null, refresh);
   // Only the streak is needed here, so ask for the lite read (one call, signed-in Hoppers only).
-  const { stats } = useGameDashboard(userId, { lite: true });
+  const { stats } = useGameDashboard(shown ? userId : null, { lite: true });
   const streak = Number(stats?.daily_streak ?? 0) || 0;
 
   const [picking, setPicking] = useState(false);
@@ -215,7 +220,7 @@ export default function MapPage() {
   );
 
   /* ----------------------------------------------------------- drops, bus -- */
-  const liveDropIds = useCollectibleEventIds(allEvents.map((e) => e.id));
+  const liveDropIds = useCollectibleEventIds(shown && ready ? allEvents.map((e) => e.id) : NO_IDS);
   // Development has no database, so a few sample events carry a drop flag.
   const dropIds = useMemo(
     () => (demo ? allEvents.filter((e) => DEMO_DROP_TITLES.includes(e.title)).map((e) => e.id) : liveDropIds),
@@ -246,6 +251,9 @@ export default function MapPage() {
 
   /* ------------------------------------------------------------ the map -- */
   const onMapReady = useCallback((m: MLMap) => setMap(m), []);
+  useEffect(() => {
+    if (map) markMapShown();
+  }, [map]);
   const onMapUnavailable = useCallback(() => setMap(null), []);
 
   /* ---------------------------------------------------------- hotspots -- */

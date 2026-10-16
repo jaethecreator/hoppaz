@@ -140,12 +140,22 @@ async function fetchOnce(): Promise<InboxDiff> {
 
 let running: Promise<void> | null = null;
 let again = false;
+/** When the last read finished (phone clock). A poll that passes `maxAgeMs` skips the read while this is younger. */
+let lastAt = 0;
 
 /**
  * Read the inbox now. A call that lands while a read is on its way asks for one more after it, so a change that happened
  * mid-read is never lost. What is new (nothing on the very first read) goes to the onInboxDiff listeners.
+ *
+ * `maxAgeMs` is for polls and page-back reads, which only want the inbox to be this fresh: they do nothing when a read
+ * finished more recently, and they do not ask for another one behind a read that is already out.
  */
-export function loadInbox(): Promise<void> {
+export function loadInbox(opts?: { maxAgeMs?: number }): Promise<void> {
+  const maxAge = opts?.maxAgeMs;
+  if (maxAge !== undefined) {
+    if (running) return running;
+    if (Date.now() - lastAt < maxAge) return Promise.resolve();
+  }
   if (running) {
     again = true;
     return running;
@@ -154,6 +164,7 @@ export function loadInbox(): Promise<void> {
     do {
       again = false;
       const d = await fetchOnce();
+      lastAt = Date.now();
       if (d.newWaves.length || d.newMessages.length || d.newMentions.length) listeners.forEach((fn) => fn(d));
     } while (again);
   })().finally(() => {

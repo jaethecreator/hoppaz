@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabase } from "./supabase/client";
+import { backoff, hidden } from "./idle";
 import { shrink } from "./image";
 import { answerWave, loadInbox, markRead, useSocial } from "./social";
 import type { DmMessage, Message, Person } from "./types";
@@ -266,9 +267,22 @@ export function usePeople(room: PeopleOf | null, userId: string | null) {
     setPeople((data ?? []) as Person[]);
   }, [kind, ref, userId]);
   useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Every minute while the page is in front, slower for a person who has not touched the screen (to 3 minutes).
+    const arm = () => {
+      timer = setTimeout(async () => {
+        if (stopped) return;
+        if (!hidden()) await load();
+        if (!stopped) arm();
+      }, backoff(60_000, { max: 180_000 }));
+    };
     void load();
-    const t = setInterval(load, 60_000);
-    return () => clearInterval(t);
+    arm();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
   }, [load]);
   return { people, reload: load };
 }
@@ -336,7 +350,8 @@ export function useDm(dmId: string, userId: string | null) {
       })
       .subscribe();
     // Reveal state can change on the other side.
-    const t = setInterval(() => void loadInbox(), 20_000);
+    // Every 30 s while the page is in front, and not if SocialPing or a Realtime nudge read the inbox in the last 15 s.
+    const t = setInterval(() => !hidden() && void loadInbox({ maxAgeMs: 15_000 }), 30_000);
     return () => {
       cancelled = true;
       clearInterval(t);
