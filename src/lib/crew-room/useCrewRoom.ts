@@ -62,7 +62,8 @@ const AWAY_MS = 30_000;
 function readGap(peers: number, lastStepAt: number) {
   if (peers <= 1) return 10_000;
   const touched = Math.min(idleMs(), Date.now() - lastStepAt);
-  return touched < 30_000 ? 2_500 : touched < 180_000 ? 5_000 : 10_000;
+  // 16 Oct 2026: 2.5 s for an active Hopper was too dear with a full room on a small database (the 360Playlist night).
+  return touched < 30_000 ? 4_000 : touched < 180_000 ? 8_000 : 15_000;
 }
 /** Someone watching a full room tries for a walking spot only when the room has one, and at most every 15 to 45 s. */
 const watchGap = () => 15_000 + Math.random() * 30_000;
