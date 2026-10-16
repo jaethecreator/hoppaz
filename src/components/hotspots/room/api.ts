@@ -26,8 +26,9 @@ export type Rules = {
   fade_max_s: number;
 };
 /**
- * Someone else in the room: an alias, and a look that is always null (the face is drawn from the alias). Nothing
- * says who you know: no crew flag, no wave flag. That would show which alias a known person is using.
+ * Someone else in the room: an alias, and a look that hotspot_room always sends as null (the face is drawn from the
+ * alias until readLooks answers with the real look, see supabase/hotspot_looks.sql). Nothing says who you know: no crew
+ * flag, no wave flag. That would show which alias a known person is using.
  */
 export type Head = { key: string; alias: string; look: unknown };
 
@@ -81,6 +82,30 @@ export const myHotspot = () => call<Mine>("my_hotspot");
 export const readRoom = (slug: string) => call<RoomState>("hotspot_room", { p_slug: slug });
 export const confirmAdult = () => call<{ already: boolean }>("confirm_adult");
 export const claimDaily = () => call<Daily>("claim_hotspot_daily");
+/**
+ * The real looks of the people in the room, by the same key the heads and the chat authors carry (hotspot_room_looks in
+ * supabase/hotspot_looks.sql). Names stay aliases. When the function is not in the database yet the answer is
+ * {ok: false, reason: "missing"} and the screen keeps drawing alias faces: shipping the app before the SQL is safe.
+ */
+let looksMissing = false;
+export async function readLooks(slug: string): Promise<Out<{ looks: Record<string, unknown> }>> {
+  if (looksMissing) return { ok: false, reason: "missing" };
+  const sb = getSupabase();
+  if (!sb) return { ok: false, reason: "offline" };
+  try {
+    const { data, error } = await sb.rpc("hotspot_room_looks", { p_slug: slug });
+    if (error) {
+      // PostgREST: PGRST202 / 404 is "no such function": stop asking for the rest of the visit.
+      if (error.code === "PGRST202" || /could not find the function|not found/i.test(error.message ?? "")) looksMissing = true;
+      return { ok: false, reason: looksMissing ? "missing" : "error" };
+    }
+    if (!data || typeof data !== "object") return { ok: false, reason: "error" };
+    return data as Out<{ looks: Record<string, unknown> }>;
+  } catch {
+    return { ok: false, reason: "error" };
+  }
+}
+
 /** ref is a message id or a head's key. */
 export const reportHotspot = (ref: string, reason: string) => call<Record<string, never>>("report_hotspot", { p_ref: ref, p_reason: reason });
 
