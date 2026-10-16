@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { gameTimeAction, gameTimeData, gameTimeGame, gameTimeWinners, winnersCsv, type Done } from "./gameTime";
+import { gameTimeAction, gameTimeCrew, gameTimeData, gameTimeGame, gameTimeWinners, winnersCsv, type Done } from "./gameTime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
  * only ever travel on this route, never to a Hopper.
  *
  *   GET  /api/admin/game-time                       the games (no codes), the crews with their room, each room's objects
+ *   GET  /api/admin/game-time?crew=<crew>           one crew room's facts: members, who joined today, who is in the room now, capacity, invite code, announcements
  *   GET  /api/admin/game-time?id=<game>             one game in full: live status, every box with its code and where it hides
  *   GET  /api/admin/game-time?winners=<game|all>    the winners: handle, name, email, code, object, time
  *   GET  /api/admin/game-time?winners=<game|all>&format=csv    the same as a spreadsheet download
@@ -58,6 +59,8 @@ export async function GET(req: Request) {
       },
     });
   }
+  const crew = q.get("crew");
+  if (crew !== null) return send(await gameTimeCrew(sb, crew));
   const id = q.get("id");
   if (id !== null) return send(await gameTimeGame(sb, id));
   return send(await gameTimeData(sb));

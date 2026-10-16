@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { roomTemplate, templateFor, type RoomWidth } from "@/lib/campaign/templates";
+import type { CrewInfo } from "@/components/admin/desk/types";
 
 /**
  * The staff side of Game Time (supabase/game_time.sql, docs/GAME-TIME.md) for the admin desk's route
@@ -283,7 +284,8 @@ export async function gameTimeData(sb: SupabaseClient): Promise<Done> {
   const list = await call(sb, "admin_game_time_list", {});
   if (list.status !== 200) return list;
   const [crews, rooms] = await Promise.all([
-    sb.from("crews").select("id,name,verified,visibility").order("name").limit(500),
+    // select("*"): logo_url and invite_code exist only on databases that ran crew_rooms.sql, so name no column that may be missing.
+    sb.from("crews").select("*").order("name").limit(500),
     sb.from("crew_rooms").select("crew_id,template,width").limit(2000),
   ]);
   const failed = [crews, rooms].find((r) => r.error);
@@ -294,12 +296,92 @@ export async function gameTimeData(sb: SupabaseClient): Promise<Done> {
     const r = roomOf.get(c.id as string);
     const info = roomInfo(r?.template, r?.width);
     keys.set(`${info.template}:${info.width}`, info);
-    return { id: c.id, name: c.name, verified: c.verified, visibility: c.visibility, template: info.template, width: info.width };
+    return {
+      id: c.id,
+      name: c.name,
+      verified: c.verified,
+      visibility: c.visibility,
+      template: info.template,
+      width: info.width,
+      logo_url: (c.logo_url as string | null | undefined) ?? null,
+      invite_code: (c.invite_code as string | null | undefined) ?? null,
+    };
   });
   return {
     status: 200,
     json: { ok: true, games: list.json.games, crews: crewRows, objects: Object.fromEntries([...keys].map(([k, v]) => [k, v.objects])) },
   };
+}
+
+/** Midnight at the start of today in Lagos (UTC+1, no daylight saving), as an ISO time. */
+const lagosMidnight = (now: number) => new Date(Math.floor((now + 3_600_000) / 86_400_000) * 86_400_000 - 3_600_000).toISOString();
+/** A crew room's presence record counts someone as in the room for this long after they were last seen (crew_room_presence). */
+const PRESENCE_TTL_MS = 45_000;
+
+/**
+ * The facts about one crew room the desk shows next to its drops: members, people who joined today, people in the room right
+ * now, the room's capacity, the invite code, the logo and the last announcements. Each fact comes from its own table and fails
+ * quietly to null (or an empty list) when that table is missing, so a database that has not run crew_rooms.sql or
+ * crew_announcements.sql still shows the rest. Only a crew that does not exist is an error.
+ */
+export async function gameTimeCrew(sb: SupabaseClient, id: string): Promise<Done> {
+  if (!isUuid(id)) return gameTimeError("bad_crew");
+  const { data: crew, error: crewError } = await sb.from("crews").select("*").eq("id", id).maybeSingle();
+  if (crewError || !crew) return gameTimeError("bad_crew");
+  const now = Date.now();
+  const count = async (q: PromiseLike<{ count: number | null; error: unknown }>): Promise<number | null> => {
+    try {
+      const r = await q;
+      return r.error || r.count === null ? null : r.count;
+    } catch {
+      return null;
+    }
+  };
+  const [members, joinedToday, inRoom, capacity, announcements] = await Promise.all([
+    count(sb.from("crew_members").select("*", { count: "exact", head: true }).eq("crew_id", id)),
+    count(sb.from("crew_members").select("*", { count: "exact", head: true }).eq("crew_id", id).gte("joined_at", lagosMidnight(now))),
+    count(sb.from("crew_room_presence").select("*", { count: "exact", head: true }).eq("crew_id", id).gt("last_seen", new Date(now - PRESENCE_TTL_MS).toISOString())),
+    (async () => {
+      try {
+        const r = await sb.from("crew_rooms").select("*").eq("crew_id", id).maybeSingle();
+        const c = (r.data as { capacity?: number | null } | null)?.capacity;
+        return r.error ? null : (c ?? null);
+      } catch {
+        return null;
+      }
+    })(),
+    (async () => {
+      try {
+        const r = await sb.from("crew_announcements").select("id,body,created_at,author_id").eq("crew_id", id).is("deleted_at", null).order("created_at", { ascending: false }).limit(5);
+        if (r.error) return [];
+        const rows = (r.data ?? []) as { id: string; body: string; created_at: string; author_id: string | null }[];
+        const ids = [...new Set(rows.map((a) => a.author_id).filter((a): a is string => !!a))];
+        const who = new Map<string, string | null>();
+        if (ids.length) {
+          const p = await sb.from("profiles").select("id,handle,display_name").in("id", ids);
+          for (const row of (p.error ? [] : (p.data ?? [])) as { id: string; handle: string | null; display_name: string | null }[]) {
+            who.set(row.id, row.handle ? `@${row.handle}` : (row.display_name ?? null));
+          }
+        }
+        return rows.map((a) => ({ id: a.id, body: a.body, created_at: a.created_at, author: a.author_id ? (who.get(a.author_id) ?? null) : null }));
+      } catch {
+        return [];
+      }
+    })(),
+  ]);
+  const c = crew as { id: string; name: string; invite_code?: string | null; logo_url?: string | null };
+  const info: CrewInfo = {
+    id: c.id,
+    name: c.name,
+    members,
+    joined_today: joinedToday,
+    in_room: inRoom,
+    capacity,
+    invite_code: c.invite_code ?? null,
+    logo_url: c.logo_url ?? null,
+    announcements,
+  };
+  return { status: 200, json: { ok: true, crew: info } };
 }
 
 export const gameTimeGame = (sb: SupabaseClient, id: string): Promise<Done> => (isUuid(id) ? call(sb, "admin_game_time_status", { p_id: id }) : Promise.resolve(gameTimeError("not_found")));
