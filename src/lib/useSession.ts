@@ -5,6 +5,8 @@ import { create } from "zustand";
 import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { getSupabase } from "./supabase/client";
 import { clearUser, clearUsersExcept, read, revalidate, write } from "./phoneCache";
+import { randomLook } from "./avatar";
+import { useHoppaz } from "./store";
 import type { Profile } from "./types";
 
 /**
@@ -57,6 +59,28 @@ async function loadProfile(id: string, force = false) {
   );
   // Only if still the same person: a log-in may have swapped users meanwhile.
   if (data && useSessionStore.getState().userId === id) useSessionStore.getState().set({ profile: data });
+  if (data && !data.avatar && useSessionStore.getState().userId === id) void dressOnce(id, data);
+}
+
+/** Hoppers already given a look this page load, so a slow save is not repeated by the next profile read. */
+const dressed = new Set<string>();
+
+/**
+ * A new Hopper has no look saved, and an empty look draws as the same default outfit for everyone. Give them their own:
+ * the one they made on this phone before saving it, or a random one. Written only while the profile still has none, so
+ * a look picked on another phone in the meantime is never overwritten.
+ */
+async function dressOnce(id: string, profile: Profile) {
+  const sb = getSupabase();
+  if (!sb || dressed.has(id)) return;
+  dressed.add(id);
+  const look = useHoppaz.getState().look ?? randomLook();
+  const { error } = await sb.from("profiles").update({ avatar: look }).eq("id", id).is("avatar", null);
+  if (error || useSessionStore.getState().userId !== id) return;
+  const next = { ...profile, avatar: look };
+  useSessionStore.getState().set({ profile: next });
+  write(profileKey(id), next);
+  if (!useHoppaz.getState().look) useHoppaz.getState().setLook(look);
 }
 
 /** True while `anonymous()` is making a new user: whoever is adopted then is a fresh guest. */

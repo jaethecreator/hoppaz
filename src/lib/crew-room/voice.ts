@@ -393,6 +393,19 @@ export class VoiceSession {
     return true;
   }
 
+  /**
+   * While muted, the phone's microphone track (muted means silenced, not released), so the room can notice someone talking
+   * into a muted mic and offer to unmute, as Google Meet does. Null when the mic is not muted or has been let go (the app
+   * went to the background). Nothing is sent: the caller listens to a local copy only.
+   */
+  mutedMicTrack(): MediaStreamTrack | null {
+    const room = this.room;
+    const lk = this.lk;
+    if (!room || !lk || this.view.phase !== "muted") return null;
+    const track = room.localParticipant.getTrackPublication(lk.Track.Source.Microphone)?.track?.mediaStreamTrack;
+    return track && track.readyState === "live" ? track : null;
+  }
+
   /** The tap on the voice control: join, leave, ask for the mic, or mute (voiceFlow.ts tap). Returns what it did. */
   async tap(): Promise<Do | undefined> {
     const step = tapStep(this.flow());

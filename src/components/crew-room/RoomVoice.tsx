@@ -77,6 +77,10 @@ const decline = () => {
 };
 
 const TIP_MS = 7000;
+/** Talking into a muted mic: the loudness that counts as speech, how long the note stays before it fades, and the rest after. */
+const MUTED_TALK_RMS = 0.03;
+const MUTED_TALK_SHOW_MS = 3500;
+const MUTED_TALK_AGAIN_MS = 20_000;
 const localKV = (): Storage | null => {
   try {
     return typeof localStorage === "undefined" ? null : localStorage;
@@ -301,6 +305,59 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
     return () => clearInterval(t);
   }, [live, onStageZone]);
 
+  // Talking into a muted mic (Google Meet's "You're muted"): a local copy of the silenced track is listened to on the phone
+  // only, and a small note fades in with a tap to unmute. At most once every 20 s; never while the app is in the background
+  // (the mic is let go then, so there is no track).
+  const [mutedTalk, setMutedTalk] = useState<"" | "on" | "fading">("");
+  useEffect(() => {
+    if (phase !== "muted") {
+      setMutedTalk("");
+      return;
+    }
+    const source = session.current?.mutedMicTrack();
+    const Ctx = typeof window === "undefined" ? undefined : window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!source || !Ctx) return;
+    const copy = source.clone();
+    copy.enabled = true;
+    let ctx: AudioContext;
+    try {
+      ctx = new Ctx();
+    } catch {
+      copy.stop();
+      return;
+    }
+    void ctx.resume().catch(() => undefined);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    ctx.createMediaStreamSource(new MediaStream([copy])).connect(analyser);
+    const samples = new Float32Array(analyser.fftSize);
+    let loud = 0;
+    let quietUntil = 0;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const tick = setInterval(() => {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const v of samples) sum += v * v;
+      // Speech near the phone sits well above 0.03 RMS; a quiet room and breathing stay under it.
+      loud = Math.sqrt(sum / samples.length) > MUTED_TALK_RMS ? loud + 1 : 0;
+      const now = Date.now();
+      // About half a second of sound in a row: someone is talking, not a door or a cough.
+      if (loud >= 3 && now >= quietUntil) {
+        quietUntil = now + MUTED_TALK_AGAIN_MS;
+        loud = 0;
+        setMutedTalk("on");
+        timers.push(setTimeout(() => setMutedTalk((v) => (v === "on" ? "fading" : v)), MUTED_TALK_SHOW_MS));
+        timers.push(setTimeout(() => setMutedTalk((v) => (v === "fading" ? "" : v)), MUTED_TALK_SHOW_MS + 900));
+      }
+    }, 150);
+    return () => {
+      clearInterval(tick);
+      timers.forEach(clearTimeout);
+      copy.stop();
+      void ctx.close().catch(() => undefined);
+    };
+  }, [phase]);
+
   const press = () => {
     const s = ensure();
     if (!s) return;
@@ -356,7 +413,26 @@ function Voice({ crewId, layout }: RoomVoiceProps) {
           <span className={`${css.speakerFace} ${speakerOff ? css.speakerOff : ""}`}>{speakerOff ? <VolumeX size={14} strokeWidth={2.2} aria-hidden /> : <Volume2 size={14} strokeWidth={2.2} aria-hidden />}</span>
         </button>
       )}
-      {label ? (
+      {mutedTalk && phase === "muted" && !label ? (
+        <button
+          type="button"
+          onClick={() => {
+            setMutedTalk("");
+            press();
+          }}
+          style={{ top: "calc(var(--room-hud-bottom, 56px) + 6px)", right: "calc(56px + var(--room-dock, 0px))" }}
+          className={`pointer-events-auto absolute flex max-w-[70%] animate-fade items-center gap-2 rounded-full border border-line bg-ink/90 py-1.5 pl-2.5 pr-3 text-left text-[12px] font-medium leading-[16px] text-cream shadow-lg transition-opacity duration-700 ${
+            mutedTalk === "fading" ? "opacity-0" : "opacity-100"
+          }`}
+          aria-label="You're muted. Tap to unmute"
+          data-voice-muted-talk
+        >
+          <MicOff size={14} strokeWidth={2.4} className="flex-none text-orange" aria-hidden />
+          <span>
+            You&apos;re muted. <span className="font-semibold text-orange">Tap to unmute</span>
+          </span>
+        </button>
+      ) : label ? (
         <p
           role="status"
           style={{ top: "calc(var(--room-hud-bottom, 56px) + 6px)", right: "calc(56px + var(--room-dock, 0px))" }}
