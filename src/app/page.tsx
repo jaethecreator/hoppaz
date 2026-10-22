@@ -37,6 +37,9 @@ import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
 import { closeHotspots, useHotspotNav } from "@/lib/hotspots/open";
 import YouMarker from "@/components/map/YouMarker";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import CreateButton from "@/components/events-r1/CreateButton";
+import EventsHeading from "@/components/events-r1/EventsHeading";
 
 // MapLibre touches window on import, so it stays out of the server bundle.
 const NightMap = dynamic(() => import("@/components/map/NightMap"), {
@@ -99,7 +102,8 @@ export default function MapPage() {
 
   // Calendar counts: everything loaded that has a real place, narrowed by type only (not by distance).
   // Leads with no venue yet stay off the map; Today still lists them.
-  const typed = useMemo(() => allEvents.filter((e) => hasVenue(e) && matchesType(e, shownTypes)), [allEvents, shownTypes]);
+  // Release 1: the lists also carry events with no place (online ones, with an "Online" label); only the pins need a place.
+  const typed = useMemo(() => allEvents.filter((e) => (EVENTS_R1 || hasVenue(e)) && matchesType(e, shownTypes)), [allEvents, shownTypes]);
   const counts = useMemo(() => countByDay(typed), [typed]);
   // NEXT 20: the next events from now, whatever night they fall on, so the map never opens empty.
   // With a location (the first run asks for one), the ones close by come first, topped up with the rest (src/lib/nearEvents.ts).
@@ -107,10 +111,12 @@ export default function MapPage() {
   const next = useMemo(() => nearFirst(typed, located, now), [typed, located, now]);
   // The first run's second layer shows this week's best near you.
   const setTopNear = useTopNear((s) => s.set);
-  useEffect(() => setTopNear(located ? topThisWeek(typed, now) : []), [typed, located, now, setTopNear]);
+  useEffect(() => setTopNear(located ? topThisWeek(EVENTS_R1 ? typed.filter((e) => hasVenue(e)) : typed, now) : []), [typed, located, now, setTopNear]);
   // Otherwise everything on the map (pins, heat, the scrubber) works off the one chosen day.
   const dayEvents = useMemo(() => typed.filter((e) => nightOf(Date.parse(e.starts_at)) === dayKey), [typed, dayKey]);
   const events = mode === "next" ? next.list : dayEvents;
+  // Only an event with a place has a pin. (With Release 1 off every listed event has one.)
+  const pinned = useMemo(() => (EVENTS_R1 ? events.filter((e) => hasVenue(e)) : events), [events]);
 
   const pickDay = useCallback(
     (f: DateFilter) => {
@@ -201,15 +207,15 @@ export default function MapPage() {
 
   /* ---------------------------------------------------------- the scrubber -- */
   const [chosen, setChosen] = useState<{ day: string; at: number; live: boolean } | null>(null);
-  const stops = useMemo(() => scrubStops(events, dayKey, now), [events, dayKey, now]);
+  const stops = useMemo(() => scrubStops(pinned, dayKey, now), [pinned, dayKey, now]);
   const stopIdx = useMemo(() => {
     if (chosen && chosen.day === dayKey) {
       return chosen.live && stops[0]?.live ? 0 : nearestStop(stops, chosen.at);
     }
-    return defaultStop(stops, events, now, today);
-  }, [chosen, dayKey, stops, events, now, today]);
+    return defaultStop(stops, pinned, now, today);
+  }, [chosen, dayKey, stops, pinned, now, today]);
   const slot = stops[Math.min(stopIdx, stops.length - 1)];
-  const strengths = useMemo(() => scrubStrengths(events, stops), [events, stops]);
+  const strengths = useMemo(() => scrubStrengths(pinned, stops), [pinned, stops]);
   const ticks = useMemo(() => scrubTicks(stops, today), [stops, today]);
   const onStop = useCallback(
     (i: number) => {
@@ -314,7 +320,7 @@ export default function MapPage() {
     ? "Checking what's on…"
     : noLiveEvents
       ? "Nothing to show yet."
-      : conductorLine({ events, dropEventIds: dropSet, dayKey, now });
+      : conductorLine({ events: pinned, dropEventIds: dropSet, dayKey, now });
   const showEmpty = mode === "day" && ready && !noLiveEvents && events.length === 0 && !filtering && !event;
 
   return (
@@ -326,7 +332,7 @@ export default function MapPage() {
       {/* The map is its own stacking context: its markers carry z-indexes of their own and must stay under the nav and the chrome. */}
       <div className="absolute inset-0 isolate">
         <NightMap
-          events={events}
+          events={pinned}
           collectibleEventIds={dropIds}
           hopStops={hop?.stops ?? NO_STOPS}
           fix={fix}
@@ -399,6 +405,7 @@ export default function MapPage() {
           showBus={hopActive && !!bus}
           onBus={() => setBusFocus((n) => n + 1)}
         >
+          {EVENTS_R1 && <EventsHeading mode={mode} date={dayKey} className="mt-0.5 px-0.5" />}
           {noLiveEvents && <ErrorLine onRetry={() => void reload()} />}
         </TopChrome>
       )}
@@ -415,13 +422,18 @@ export default function MapPage() {
       {/* The + (post a flyer) sits on the right: the hotspots and the desktop rail are on the left (Jae, 15 Oct). */}
       {mounted && !event && (
         <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3.5 pb-2.5">
-          <div className="mx-auto flex max-w-[560px] items-end gap-2">
-            <Link href="/drop" aria-label="Post a flyer" title="Post a flyer" className="btn pointer-events-auto order-last ml-auto grid h-11 w-11 flex-none place-items-center p-0">
-              <Plus size={16} strokeWidth={3} aria-hidden />
-            </Link>
+          <div className={EVENTS_R1 ? "mx-auto flex max-w-[560px] flex-col items-end gap-2 md:flex-row" : "mx-auto flex max-w-[560px] items-end gap-2"}>
+            {EVENTS_R1 ? (
+              // On a phone it sits above the day scrubber, bottom right; from 768 px up it goes to the right edge of the map.
+              <CreateButton className="md:absolute md:bottom-2.5 md:right-3.5" />
+            ) : (
+              <Link href="/drop" aria-label="Post a flyer" title="Post a flyer" className="btn pointer-events-auto order-last ml-auto grid h-11 w-11 flex-none place-items-center p-0">
+                <Plus size={16} strokeWidth={3} aria-hidden />
+              </Link>
+            )}
             {mode !== "next" && slot && (
               <TimeScrubber
-                className="pointer-events-auto min-w-0 flex-1"
+                className={EVENTS_R1 ? "pointer-events-auto w-full min-w-0 md:flex-1" : "pointer-events-auto min-w-0 flex-1"}
                 stops={stops}
                 index={stopIdx}
                 onIndex={onStop}
