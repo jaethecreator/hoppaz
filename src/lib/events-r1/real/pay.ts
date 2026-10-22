@@ -9,7 +9,7 @@ import { iso } from "./map";
 type Row = Record<string, unknown>;
 
 /** In a page the routes are on the same origin. A Node script sets EVENTS_R1_API_BASE (for example http://127.0.0.1:3420). */
-const base = () => (typeof window === "undefined" ? (process.env.EVENTS_R1_API_BASE ?? "") : "");
+const base = () => process.env.EVENTS_R1_API_BASE ?? "";
 
 /** POST to a route. The route answers { error, reason? } when it says no; the error text is already plain words. */
 async function post<T>(path: string, body: Record<string, unknown>, signedIn = true): Promise<T> {

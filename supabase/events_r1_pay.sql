@@ -29,6 +29,7 @@
 --  * Paid ticket types need the paid_tickets setting on AND a host whose can_sell is true (ev_create_event / ev_update_event answer payouts_not_ready).
 --    A paid type never needs approval. ev_register answers use_checkout for it.
 --  * Tickets are issued only by ev_pay_order_paid (the verified checkout.completed), never by the return page.
+--  * ev_pay_order_attach takes an https checkout link; a plain http link to 127.0.0.1 or localhost is also taken, so the local mock Bachs server works.
 --  * The platform fee must be above 0 and below the gross (Bachs INVALID_PLATFORM_FEE rule); the route computes it, the database checks it.
 --  * A late payment (after the order expired): the seats are taken again if they are free and the tickets issue; if not, needs_refund is set (and
 --    needs_manual_refund for a bank transfer: Bachs cannot refund those, the host pays the buyer by hand).
@@ -378,7 +379,7 @@ create or replace function public.ev_pay_order_attach(p_order uuid, p_checkout_i
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare o public.ev_orders;
 begin
-  if p_checkout_id is null or char_length(p_checkout_id) not between 3 and 200 or p_checkout_url is null or p_checkout_url !~ '^https://' or char_length(p_checkout_url) > 1000 then
+  if p_checkout_id is null or char_length(p_checkout_id) not between 3 and 200 or p_checkout_url is null or (p_checkout_url !~ '^https://' and p_checkout_url !~ '^http://(127\.0\.0\.1|localhost)[:/]') or char_length(p_checkout_url) > 1000 then
     return 'bad_input';
   end if;
   select * into o from public.ev_orders where id = p_order for update;

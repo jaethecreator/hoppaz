@@ -216,7 +216,7 @@ begin
   perform pg_temp.ok(pg_temp.left_of(e1, vip) = 1, 'past the margin: the seat is free again');
   update public.ev_orders set expires_at = now() + interval '10 minutes' where id = o2;
   -- Attach and release.
-  perform pg_temp.ok(public.ev_pay_order_attach(o1, 'chk_one', 'http://insecure', null) = 'bad_input', 'a checkout link must be https');
+  perform pg_temp.ok(public.ev_pay_order_attach(o1, 'chk_one', 'http://insecure', null) = 'bad_input' and public.ev_pay_order_attach(o1, 'chk_one', 'http://127.0.0.1.evil.example/c', null) = 'bad_input', 'a checkout link must be https (only a plain http link to this machine passes, for the mock Bachs server)');
   perform pg_temp.ok(public.ev_pay_order_attach(o1, 'chk_one', 'https://checkout.bachs.io/c/one', now() + interval '15 minutes') = 'ok', 'attach');
   perform pg_temp.ok(public.ev_pay_order_attach(o2, 'chk_one', 'https://checkout.bachs.io/c/two', null) = 'duplicate', 'a checkout id cannot be on two orders');
   perform pg_temp.ok(public.ev_pay_order_attach(o2, 'chk_two', 'https://checkout.bachs.io/c/two', null) = 'ok', 'attach the other');

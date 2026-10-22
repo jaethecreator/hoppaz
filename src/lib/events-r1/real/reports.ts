@@ -22,7 +22,7 @@ function staffToken(): string {
 async function desk<T>(init: RequestInit & { json?: unknown } = {}): Promise<T> {
   const token = staffToken();
   if (!token) throw new Error("Sign in first");
-  const base = typeof window === "undefined" ? (process.env.EVENTS_R1_API_BASE ?? "") : "";
+  const base = process.env.EVENTS_R1_API_BASE ?? "";
   const { json, ...rest } = init;
   const res = await fetch(`${base}/api/admin/event-reports`, {
     ...rest,

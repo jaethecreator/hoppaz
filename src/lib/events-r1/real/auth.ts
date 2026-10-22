@@ -10,7 +10,7 @@ import { client, emit, isAnonymous, ready, setMyName, watchSession, who } from "
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 /** Which kind of code is out for this email: the verify step must name it. */
-let pending: { email: string; type: "email" | "email_change" } | null = null;
+let pending: { email: string; type: "email" | "email_change" | "done" } | null = null;
 
 const clean = (email: string) => email.trim().toLowerCase();
 
@@ -36,9 +36,12 @@ export const auth: AuthApi = {
     const sb = client();
     if (isAnonymous()) {
       // A guest becomes this email, keeping everything they did as a guest. An email with an account already is a log in.
-      const { error } = await sb.auth.updateUser({ email: e });
+      const { data, error } = await sb.auth.updateUser({ email: e });
       if (!error) {
-        pending = { email: e, type: "email_change" };
+        // With email confirmation off on the server the email is attached at once and no mail is sent (nothing to confirm):
+        // the next step then takes any six digits. With it on, new_email is pending and the code from the mail is checked.
+        const attached = !data.user?.new_email && data.user?.email === e;
+        pending = { email: e, type: attached ? "done" : "email_change" };
         return;
       }
       if (!/already|registered|exists|taken/i.test(error.message)) throw new Error(authText(error.message));
@@ -56,16 +59,22 @@ export const auth: AuthApi = {
     watchSession();
     await ready();
     const sb = client();
-    const type = pending && pending.email === e ? pending.type : isAnonymous() ? "email_change" : "email";
-    let { data, error } = await sb.auth.verifyOtp({ email: e, token: digits, type });
-    // A page that was reloaded between the two steps has forgotten which code it sent: try the other kind once.
-    if (error && !(pending && pending.email === e)) {
-      const other = await sb.auth.verifyOtp({ email: e, token: digits, type: type === "email" ? "email_change" : "email" });
-      if (!other.error) ({ data, error } = other);
+    const kind = pending && pending.email === e ? pending.type : isAnonymous() ? "email_change" : "email";
+    let id: string;
+    if (kind === "done") {
+      id = (await sb.auth.getUser()).data.user?.id ?? "";
+      if (!id) throw new Error("That did not work. Try again");
+    } else {
+      let { data, error } = await sb.auth.verifyOtp({ email: e, token: digits, type: kind });
+      // A page that was reloaded between the two steps has forgotten which code it sent: try the other kind once.
+      if (error && !(pending && pending.email === e)) {
+        const other = await sb.auth.verifyOtp({ email: e, token: digits, type: kind === "email" ? "email_change" : "email" });
+        if (!other.error) ({ data, error } = other);
+      }
+      if (error || !data.user) throw new Error(authText(error?.message ?? ""));
+      id = data.user.id;
     }
-    if (error || !data.user) throw new Error(authText(error?.message ?? ""));
     pending = null;
-    const id = data.user.id;
     const given = (name ?? "").trim();
     if (given) {
       // The name goes to the profile, like the app's own sign-up and the Google callback.
