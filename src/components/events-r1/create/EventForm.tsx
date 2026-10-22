@@ -6,7 +6,11 @@ import SignInSheet from "@/components/events-r1/SignInSheet";
 import { AREAS, areaByName } from "@/lib/geo";
 import { useR1Api, useR1Auth, useR1Now, useR1Query } from "@/lib/events-r1/hooks";
 import type { EventDraft, EventKind, LinkType, Visibility } from "@/lib/events-r1/types";
+import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
+import { PAID_TICKETS } from "@/lib/events-r1/flags";
 import { Choice, Row, Toggle } from "./Fields";
+import Tickets, { newTicket, ticketsDraft, ticketsError, ticketsSummary } from "./Tickets";
+import type { TicketForm } from "./Tickets";
 import { cleanLink, DEFAULT_LENGTH, defaultStart, detectLinkType, fromLagosInput, LINK_LABEL, TIMEZONE, toLagosInput } from "./helpers";
 
 const KINDS: Array<{ value: EventKind; label: string }> = [
@@ -44,6 +48,8 @@ export default function EventForm({ cover }: { cover: string | null }) {
   const [capacity, setCapacity] = useState("");
   const capAuto = useRef(false);
   const [waitlist, setWaitlist] = useState(false);
+  const [paid, setPaid] = useState(false);
+  const [tickets, setTickets] = useState<TicketForm[]>(() => [newTicket("General")]);
   const [visibility, setVisibility] = useState<Visibility>("public");
   const [addToRoom, setAddToRoom] = useState(true);
   const [open, setOpen] = useState<"tickets" | "approval" | "who" | null>(null);
@@ -138,6 +144,7 @@ export default function EventForm({ cover }: { cover: string | null }) {
       requires_approval: approval,
       waitlist_on: waitlist,
       visibility,
+      tickets: ticketsDraft(paid, tickets),
       cover_url: cover,
     };
     if (inPerson) {
@@ -169,8 +176,17 @@ export default function EventForm({ cover }: { cover: string | null }) {
     }
   };
 
+  /** Paid with the paid flag off: nothing can be made. The button says so. */
+  const blocked = paid && !PAID_TICKETS;
+
   const submit = () => {
-    if (!api || busy || !title.trim()) return;
+    if (!api || busy || !title.trim() || blocked) return;
+    const bad = ticketsError(paid, tickets);
+    if (bad) {
+      setOpen("tickets");
+      setError(bad);
+      return;
+    }
     if (!api.auth.current()) {
       setSheet(true);
       return;
@@ -231,12 +247,8 @@ export default function EventForm({ cover }: { cover: string | null }) {
       <textarea value={about} onChange={(e) => setAbout(e.target.value)} rows={3} placeholder="Description" aria-label="Description" maxLength={2000} />
 
       <div className="flex flex-col gap-2">
-        <Row label="Tickets" value="Free" open={open === "tickets"} onToggle={() => setOpen(open === "tickets" ? null : "tickets")}>
-          <div className="flex min-h-[44px] items-center justify-between font-body text-[15px]">
-            <span>General</span>
-            <span className="text-cream">Free</span>
-          </div>
-          <p className="hint">Paid tickets come later.</p>
+        <Row label="Tickets" value={ticketsSummary(paid, tickets)} open={open === "tickets"} onToggle={() => setOpen(open === "tickets" ? null : "tickets")}>
+          <Tickets paid={paid} onPaid={setPaid} types={tickets} onTypes={setTickets} />
         </Row>
 
         <Row
@@ -292,8 +304,8 @@ export default function EventForm({ cover }: { cover: string | null }) {
       {room && roomName && <Toggle on={addToRoom} onChange={changeAddToRoom} label={`Add to ${roomName}`} />}
 
       <div className="flex flex-col gap-2 pb-2">
-        <button type="button" className="btn w-full normal-case" onClick={submit} disabled={busy || !title.trim() || !api}>
-          {busy ? "Creating" : "Create event"}
+        <button type="button" className="btn w-full normal-case" onClick={submit} disabled={busy || !title.trim() || !api || blocked}>
+          {blocked ? PAID_UNAVAILABLE : busy ? "Creating" : "Create event"}
         </button>
         {error && (
           <p ref={errorRef} role="alert" className="px-1 font-body text-[14px] text-fireant">

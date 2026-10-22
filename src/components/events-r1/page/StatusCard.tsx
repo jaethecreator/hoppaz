@@ -37,6 +37,8 @@ export default function StatusCard({ event, viewer }: { event: R1Event; viewer: 
   if (!reg) return null;
   const going = reg.status === "going" || reg.status === "checked_in";
   const online = hasOnline(event);
+  // With more than one ticket type the card says which one this is.
+  const typeName = event.ticket_types?.length > 1 ? reg.ticket_name : "";
   // An online-only event has no door, so no ticket to scan.
   const ticket = going && event.kind !== "online";
 
@@ -88,8 +90,10 @@ export default function StatusCard({ event, viewer }: { event: R1Event; viewer: 
             <p className="font-body text-[14px] text-dim" aria-live="polite">
               {reg.status === "checked_in" ? "Checked in" : startsIn(event, now)}
               {online && " · Online"}
+              {typeName && ` · ${typeName}`}
             </p>
           )}
+          {!going && typeName && <p className="font-body text-[14px] text-dim">{typeName}</p>}
           {note && <p className="mt-1 font-body text-[14px] leading-snug text-dim">{note}</p>}
         </div>
       </div>

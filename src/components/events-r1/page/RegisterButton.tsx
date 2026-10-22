@@ -4,10 +4,12 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { Settings2 } from "lucide-react";
+import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
 import type { R1Event } from "@/lib/events-r1/types";
 import SignInSheet from "../SignInSheet";
 import HostStrip from "./HostStrip";
 import QuestionsForm from "./QuestionsForm";
+import TicketPicker from "./TicketPicker";
 import StatusCard from "./StatusCard";
 import { useFreshEvent } from "./useFreshEvent";
 import { useRegisterFlow } from "./useRegisterFlow";
@@ -98,11 +100,14 @@ export default function RegisterButton({
     }
     body = (
       <>
+        {flow.multi && !host && !label.status && (
+          <TicketPicker event={event} value={flow.selected?.id ?? null} onChange={flow.selectType} disabled={busy} />
+        )}
         <div className={clsx("gap-2", side ? "grid" : "flex")}>
           {main}
           {trailing}
         </div>
-        {label.kind === "get_ticket" && !host && <p className="hint mt-2">Paid tickets come later</p>}
+        {label.kind === "get_ticket" && !host && <p className="hint mt-2">{PAID_UNAVAILABLE}</p>}
       </>
     );
   }

@@ -3,7 +3,7 @@
  * With a viewer state (useViewerState) the label follows what the person has done; without one (not loaded yet, or a
  * build with no data layer) it is worked out from the event alone, as if nobody had registered.
  */
-import type { R1Event, ViewerState } from "@/lib/events-r1/types";
+import type { R1Event, TicketType, ViewerState } from "@/lib/events-r1/types";
 
 export type ButtonKind = ViewerState["button"];
 
@@ -29,10 +29,14 @@ const TEXT: Record<ButtonKind, string> = {
 };
 
 /** What the button would be with no viewer state: the event's own rules. */
-export function buttonFromEvent(e: Pick<R1Event, "status" | "price_naira" | "capacity" | "spots_left" | "waitlist_on" | "requires_approval">): ButtonKind {
+export function buttonFromEvent(
+  e: Pick<R1Event, "status" | "price_naira" | "capacity" | "spots_left" | "waitlist_on" | "requires_approval"> & { ticket_types?: Pick<TicketType, "price_naira" | "spots_left">[] }
+): ButtonKind {
   if (e.status !== "live") return "closed";
-  if (e.price_naira > 0) return "get_ticket";
-  if (e.capacity !== null && e.spots_left === 0) return e.waitlist_on ? "waitlist" : "closed";
+  // With ticket types, only the free ones can be taken: every one paid is Get ticket, every free one full is the waitlist or closed.
+  const free = e.ticket_types?.filter((t) => t.price_naira === 0);
+  if (free ? free.length === 0 : e.price_naira > 0) return "get_ticket";
+  if (free ? free.every((t) => t.spots_left === 0) : e.capacity !== null && e.spots_left === 0) return e.waitlist_on ? "waitlist" : "closed";
   return e.requires_approval ? "request" : "register";
 }
 
