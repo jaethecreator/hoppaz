@@ -100,6 +100,12 @@ export interface RoomsApi {
   setThreeD(roomId: string, on: boolean): Promise<void>;
   /** The /admin list: every room, Lagos HQ first, then the biggest. Staff only ("Not allowed" for anyone else). */
   listForStaff(): Promise<RoomSummary[]>;
+  /**
+   * The same two for the /admin desk, which has the shared staff token and no account. Real: through /api/admin/event-rooms with
+   * the desk's token ("Sign in first" with none, "Not allowed" when it is refused). Fake: the dev "Hoppaz Staff" user, as above.
+   */
+  listForDesk(): Promise<RoomSummary[]>;
+  setThreeDFromDesk(roomId: string, on: boolean): Promise<void>;
   /** Announcements, newest first. Includes event Pops tagged with the event. */
   announcements(roomId: string): Promise<RoomAnnouncement[]>;
   /** Plain room announcement (never shows on an event). */

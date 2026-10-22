@@ -229,6 +229,16 @@ await step("staff switch the owner's room back on", async () => {
   await api.rooms.setThreeD(room!.id, true);
   return `three_d_on=${(await api.rooms.get(room!.id))?.three_d_on} allowed=${await roomOn()}`;
 }, (v) => v);
+// The /admin desk has the shared token and no account: the same two through /api/admin/event-rooms (service role).
+const dk = await step("desk: listForDesk through the staff route", () => api.rooms.listForDesk(), (l) => `${l.length} rooms, first=${l[0]?.name} (${l[0]?.kind})`);
+out(!!dk && dk[0].kind === "hq" && dk.some((r) => r.id === room!.id && r.three_d_on === true && !r.joined), "desk list: Lagos HQ first, each room carries its switch");
+await step("desk: setThreeDFromDesk switches a room off, then on", async () => {
+  await api.rooms.setThreeDFromDesk(room!.id, false);
+  const off = !(await roomOn());
+  await api.rooms.setThreeDFromDesk(room!.id, true);
+  return `off=${off} on=${await roomOn()}`;
+}, (v) => v);
+await refuses("desk: a room that does not exist", () => api.rooms.setThreeDFromDesk("00000000-0000-4000-8000-000000000000", true), "Room not found");
 await refuses("setThreeD on a room that does not exist", () => api.rooms.setThreeD("00000000-0000-4000-8000-000000000000", true), "Room not found");
 await sb.auth.signOut();
 await core.ready();

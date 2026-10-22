@@ -15,6 +15,36 @@ type Row = Record<string, unknown>;
 /** The database's limit on a chat line (crew_room_messages and messages both stop at 400). */
 const MAX_LINE = 400;
 
+/* ------------------------------------------------------- the staff desk -- */
+
+/** The same key the staff desk keeps its token under (src/app/admin/page.tsx). */
+const TOKEN_KEY = "hoppaz-admin-token";
+
+function staffToken(): string {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** One call to /api/admin/event-rooms with the desk's token: no token is "Sign in first", a refused one "Not allowed". */
+async function desk<T>(json?: { room: string; on: boolean }): Promise<T> {
+  const token = staffToken();
+  if (!token) throw new Error("Sign in first");
+  const base = process.env.EVENTS_R1_API_BASE ?? "";
+  const res = await fetch(`${base}/api/admin/event-rooms`, {
+    method: json ? "POST" : "GET",
+    headers: { authorization: `Bearer ${token}`, ...(json ? { "content-type": "application/json" } : {}) },
+    body: json ? JSON.stringify(json) : undefined,
+    cache: "no-store",
+  });
+  const out = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+  if (res.status === 401) throw new Error("Not allowed");
+  if (!res.ok || out.ok === false) throw new Error(out.message || "That did not work. Try again");
+  return out as T;
+}
+
 /* ------------------------------------------------------------ my roles -- */
 
 /** My role in each room I am in, from the app's own membership table (readable for my own rows). owner | admin | member. */
@@ -170,6 +200,19 @@ export const rooms: RoomsApi = {
     if (!rows) throw new Error("Not allowed");
     const role = await roles();
     return rows.map((r) => mapRoom(r, extras(String(r.id), role)));
+  },
+
+  /** The /admin desk has the shared token and no account: the same list through the staff route (service role). */
+  async listForDesk() {
+    const out = await desk<{ rooms: Row[] }>();
+    return out.rooms.map((r) => mapRoom(r));
+  },
+
+  async setThreeDFromDesk(roomId, on) {
+    const id = await roomIdOf(roomId);
+    if (!id) throw new Error("Room not found");
+    await desk({ room: id, on: !!on });
+    emit();
   },
 
   async announcements(roomId) {

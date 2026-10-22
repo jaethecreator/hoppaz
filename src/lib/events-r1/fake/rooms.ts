@@ -117,6 +117,15 @@ export const rooms: RoomsApi = {
     return all.sort((a, b) => Number(b.kind === "hq") - Number(a.kind === "hq") || b.members - a.members || a.name.localeCompare(b.name));
   },
 
+  /** The /admin desk: in the fake layer staff are the dev "Hoppaz Staff" user, so these are the same two. */
+  async listForDesk() {
+    return rooms.listForStaff();
+  },
+
+  async setThreeDFromDesk(roomId, on) {
+    return rooms.setThreeD(roomId, on);
+  },
+
   async announcements(roomId) {
     flushDuePops();
     const r = findRoom(roomId);
