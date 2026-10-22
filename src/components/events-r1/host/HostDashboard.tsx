@@ -77,8 +77,8 @@ export default function HostDashboard({ id }: { id: string }) {
   };
 
   const shell = (children: React.ReactNode) => (
-    <div className="h-full overflow-y-auto px-4 pb-10">
-      <div className="mx-auto w-full max-w-2xl">{children}</div>
+    <div className="h-full overflow-y-auto px-4 pb-24">
+      <div className="mx-auto w-full min-w-0 max-w-2xl">{children}</div>
     </div>
   );
 
