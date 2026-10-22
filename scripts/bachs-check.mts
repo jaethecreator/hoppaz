@@ -11,6 +11,11 @@ import { fileURLToPath } from "node:url";
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    if (specifier === "next/server") return nextResolve("next/server.js", context); // the route files import it extensionless
+    if (specifier.startsWith("@/")) {
+      const base = new URL(`../src/${specifier.slice(2)}`, import.meta.url).href;
+      for (const cand of [`${base}.ts`, `${base}/index.ts`]) if (existsSync(fileURLToPath(cand))) return nextResolve(cand, context);
+    }
     if (specifier.startsWith(".") && context.parentURL && !/\.[mc]?[jt]s$/.test(specifier)) {
       const base = new URL(specifier, context.parentURL).href;
       for (const cand of [`${base}.ts`, `${base}/index.ts`]) if (existsSync(fileURLToPath(cand))) return nextResolve(cand, context);
@@ -27,6 +32,7 @@ const api = await import("../src/lib/bachs/api.ts");
 const { routeBachsEvent } = await import("../src/lib/bachs/webhookRouter.ts");
 const { handleWebhook } = await import("../src/lib/bachs/webhook.ts");
 const { startRefund } = await import("../src/lib/bachs/refunds.ts");
+const { makeDb } = await import("./bachs-stub-db.mts");
 
 let pass = 0;
 let fail = 0;
@@ -250,53 +256,6 @@ await test("client: a timeout becomes a retryable error, not a crash", async () 
 });
 
 // ---------------------------------------------------- webhook routing (stub) ---
-type Order = { id: string; status: string; host_account: string; gross_kobo: number; checkout: string; reference: string; method: "card" | "bank_transfer" | null; charge: string | null; issued: number; needs_refund: boolean; needs_manual: boolean };
-function makeDb(seed?: Partial<Order>) {
-  const log: string[] = [];
-  const events = new Map<string, { processed: boolean }>();
-  const order: Order = { id: "ord-1", status: "open", host_account: ACCT, gross_kobo: 500000, checkout: "chk_1", reference: "ord_1", method: null, charge: null, issued: 0, needs_refund: false, needs_manual: false, ...seed };
-  const row = () => ({ id: order.id, buyer_id: "u1", event_id: "e1", status: order.status, gross_kobo: order.gross_kobo, platform_fee_kobo: 22500, host_account: order.host_account, bachs_checkout_id: order.checkout, bachs_reference: order.reference, bachs_charge_id: order.charge, payment_method: order.method, needs_refund: order.needs_refund, needs_manual_refund: order.needs_manual });
-  const refunds: { reference: string; status: string }[] = [];
-  const db = {
-    log,
-    order,
-    refunds,
-    events,
-    recordEvent: async (e: { id: string }) => { log.push(`record ${e.id}`); if (events.has(e.id)) return false; events.set(e.id, { processed: false }); return true; },
-    isProcessed: async (id: string) => !!events.get(id)?.processed,
-    markProcessed: async (id: string) => { events.get(id)!.processed = true; log.push(`processed ${id}`); },
-    hostAccountOf: async () => null, hostSaveAccount: async () => "ok",
-    hostApplyCapability: async (a: string, c: string, s: string, at: string | null) => { log.push(`capability ${a} ${c} ${s} ${at}`); return "ok"; },
-    hostApplyRequirements: async (a: string, o: string[]) => { log.push(`requirements ${a} ${o.join("|")}`); return "ok"; },
-    ticketPrice: async () => 5000,
-    orderReserve: async () => ({ ok: false }), orderAttach: async () => "ok", orderRelease: async () => "ok",
-    orderRow: async (id: string) => (id === order.id ? row() : null),
-    orderByRef: async (c: string | null, r: string | null) => (c === order.checkout || r === order.reference ? row() : null),
-    orderPaid: async (i: { ref: string; charge: string | null; amount: string; method: string | null }) => {
-      log.push(`paid ${i.ref} ${i.charge} ${i.amount} ${i.method}`);
-      if (["paid", "refund_pending", "refunded"].includes(order.status)) return { ok: true, order_id: order.id, issued: false, needs_refund: order.needs_refund };
-      if (i.amount !== "5000.00") return { ok: true, order_id: order.id, issued: false, needs_refund: false, flag_review: true, reason: "amount_mismatch" };
-      const late = order.status === "expired";
-      order.status = "paid"; order.charge = i.charge; order.method = (i.method as Order["method"]) ?? order.method;
-      if (late) { order.needs_refund = true; order.needs_manual = order.method === "bank_transfer"; return { ok: true, order_id: order.id, issued: false, late: true, needs_refund: true }; }
-      order.issued++;
-      return { ok: true, order_id: order.id, issued: true, needs_refund: false };
-    },
-    orderDetails: async (i: { charge: string | null; checkout: string; feeKobo: number | null; method: string | null }) => { log.push(`details ${i.charge} ${i.feeKobo} ${i.method}`); return { ok: true }; },
-    orderExpire: async (c: string) => { log.push(`expire ${c}`); if (order.status === "open") { order.status = "expired"; return { ok: true, changed: true }; } return { ok: true, changed: false }; },
-    sweep: async () => [], refundsOwedByCard: async () => [],
-    canRefund: async () => true,
-    refundStart: async (id: string, actor: string | null) => {
-      log.push(`refund_start ${id} ${actor}`);
-      if (order.status !== "paid") return { ok: false, reason: "not_paid" };
-      if (order.method === "card") { order.status = "refund_pending"; order.needs_refund = false; refunds.push({ reference: "rf_ord1", status: "requested" }); return { ok: true, method: "card", reference: "rf_ord1", charge_id: order.charge, host_account: order.host_account }; }
-      order.needs_refund = true; order.needs_manual = true; return { ok: true, method: "manual" };
-    },
-    refundApply: async (rid: string | null, ref: string, status: string) => { log.push(`refund_apply ${rid} ${ref} ${status}`); return { ok: true, status }; },
-    disputeFlag: async (c: string, d: string, s: string) => { log.push(`dispute ${c} ${d} ${s}`); return { ok: true }; },
-  };
-  return db;
-}
 const completed = (extra: Record<string, unknown> = {}, top: Record<string, unknown> = {}) => ({
   id: "evt_c1", type: "checkout.completed", created_at: new Date().toISOString(), account: ACCT, organization_id: ACCT,
   data: { checkout_id: "chk_1", status: "completed", payment_status: "paid", amount: "5000.00", currency: "NGN", reference: "ord_1", charge: { id: "ch_1", status: "succeeded" }, metadata: { order_id: "ord-1" }, ...extra }, ...top,
@@ -471,6 +430,65 @@ await test("refund: a stranger is refused before Bachs or the database is asked"
   const g = fakeFetch([{ status: 500 }]);
   eq(await startRefund(db as never, { orderId: "ord-1", actor: "stranger" }, { config, fetchImpl: g.impl, log: quiet }, quiet), { ok: false, reason: "not_allowed" }, "refused");
   eq([g.calls.length, db.log.length], [0, 0], "nothing called");
+});
+
+// ------------------------------------------- the route files themselves (no database) ---
+// Environment for the route tests: a webhook secret, a cron secret, and a database address that refuses connections at once.
+process.env.BACHS_WEBHOOK_SECRET = SECRET;
+process.env.HOPPAZ_CRON_SECRET = "cron_test_secret";
+process.env.BACHS_SECRET_KEY = "sk_sandbox_SECRETVALUE";
+process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:9";
+process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "pub";
+process.env.SUPABASE_SECRET_KEY = "svc";
+process.env.NEXT_PUBLIC_SITE_URL = "https://hoppaz.test";
+const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
+  new Request(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+const webhookRoute = await import("../src/app/api/bachs/webhook/route.ts");
+const onboardRoute = await import("../src/app/api/events-r1/pay/onboard/route.ts");
+const checkoutRoute = await import("../src/app/api/events-r1/pay/checkout/route.ts");
+const confirmRoute = await import("../src/app/api/events-r1/pay/confirm/route.ts");
+const refundRoute = await import("../src/app/api/events-r1/pay/refund/route.ts");
+const sweepRoute = await import("../src/app/api/events-r1/pay/sweep/route.ts");
+const quoteRoute = await import("../src/app/api/events-r1/pay/quote/route.ts");
+const { signRefresh } = await import("../src/lib/bachs/http.ts");
+const UID = "11111111-1111-4111-8111-111111111111";
+
+await test("route webhook: bad or missing signature is 400 before anything else", async () => {
+  const raw = JSON.stringify(completed());
+  const t = Math.floor(Date.now() / 1000);
+  const bad = new Request("https://hoppaz.test/api/bachs/webhook", { method: "POST", body: raw, headers: { "x-bachs-signature-v2": signatureHeader("wrong", raw, t) } });
+  eq((await webhookRoute.POST(bad)).status, 400, "wrong secret");
+  eq((await webhookRoute.POST(new Request("https://hoppaz.test/api/bachs/webhook", { method: "POST", body: raw }))).status, 400, "no header");
+  const good = new Request("https://hoppaz.test/api/bachs/webhook", { method: "POST", body: raw, headers: { "x-bachs-signature-v2": signatureHeader(SECRET, raw, t) } });
+  const res = await webhookRoute.POST(good);
+  eq(res.status, 500, "a correct signature reaches our own code, which fails here (no database): 5xx so Bachs retries");
+});
+await test("route sweep: 401 without the shared secret, with a wrong one; with the right one it reaches the database", async () => {
+  eq((await sweepRoute.POST(new Request("https://hoppaz.test/x", { method: "POST" }))).status, 401, "none");
+  eq((await sweepRoute.POST(new Request("https://hoppaz.test/x", { method: "POST", headers: { authorization: "Bearer nope" } }))).status, 401, "wrong bearer");
+  eq((await sweepRoute.POST(new Request("https://hoppaz.test/x", { method: "POST", headers: { "x-hoppaz-cron-secret": "nope" } }))).status, 401, "wrong header");
+  eq((await sweepRoute.GET(new Request("https://hoppaz.test/x", { headers: { authorization: "Bearer cron_test_secret" } }))).status, 500, "right secret passes the gate (and our own failure with no database is 500, not a crash)");
+});
+await test("routes: no session is 401, a foreign Origin is 403, bad input is 400", async () => {
+  const url = "https://hoppaz.test/api/events-r1/pay/";
+  for (const [name, route] of [["checkout", checkoutRoute], ["confirm", confirmRoute], ["refund", refundRoute], ["onboard", onboardRoute]] as const) {
+    eq((await route.POST(post(url + name, {}))).status, 401, `${name} without a bearer`);
+    eq((await route.POST(post(url + name, {}, { origin: "https://evil.test", authorization: "Bearer x" }))).status, 403, `${name} from another site`);
+  }
+  eq((await quoteRoute.POST(post(url + "quote", { eventId: "x" }))).status, 400, "quote bad input");
+  eq((await quoteRoute.POST(post(url + "quote", { eventId: UID, ticketTypeId: UID, quantity: 9 }))).status, 400, "quote quantity 9");
+});
+await test("route onboard refresh: a bad or expired signed link goes back to the site, never to Bachs", async () => {
+  const exp = Math.floor(Date.now() / 1000) + 3600;
+  const sig = signRefresh(UID, "/host/e1?tab=overview", exp);
+  const mk = (q: Record<string, string>) => onboardRoute.GET(new Request("https://hoppaz.test/api/events-r1/pay/onboard?" + new URLSearchParams(q)));
+  const badSig = await mk({ u: UID, r: "/host/e1?tab=overview", e: String(exp), s: "0".repeat(64) });
+  eq([badSig.status, badSig.headers.get("location")], [307, "https://hoppaz.test/host/e1?tab=overview"], "bad signature");
+  const expired = await mk({ u: UID, r: "/host/e1?tab=overview", e: String(exp - 7200), s: signRefresh(UID, "/host/e1?tab=overview", exp - 7200) });
+  eq(expired.headers.get("location"), "https://hoppaz.test/host/e1?tab=overview", "expired link");
+  const evil = await mk({ u: UID, r: "//evil.test/x", e: String(exp), s: signRefresh(UID, "//evil.test/x", exp) });
+  eq(evil.headers.get("location"), "https://hoppaz.test/", "an off-site return path is dropped");
+  ok(sig.length === 64, "signature is hex sha256");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

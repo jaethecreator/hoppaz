@@ -20,6 +20,15 @@ export const dynamic = "force-dynamic";
  */
 async function run(req: Request) {
   if (!cronAllowed(req)) return fail(401, "Not allowed.");
+  try {
+    return await sweep();
+  } catch (e) {
+    console.error(`[bachs] sweep failed: ${(e as Error).message}`);
+    return fail(500, "Sweep failed.");
+  }
+}
+
+async function sweep() {
   const db = serviceDb();
   if (!db) return fail(503, "Not configured.");
   const expired = await db.sweep();

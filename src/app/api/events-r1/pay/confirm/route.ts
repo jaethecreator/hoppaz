@@ -1,15 +1,11 @@
-import { stringToKobo } from "@/lib/bachs/amounts";
-import { getCheckout } from "@/lib/bachs/api";
-import { BachsError, bachsConfig } from "@/lib/bachs/client";
-import type { PayDb } from "@/lib/bachs/db";
+import { bachsConfig } from "@/lib/bachs/client";
+import { reconcileOrder } from "@/lib/bachs/confirm";
 import { fail, isResponse, json, limiter, sameOrigin, sessionOf, UUID } from "@/lib/bachs/http";
-import { methodOf } from "@/lib/bachs/webhookRouter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const slowDown = limiter(30);
-const PAID = new Set(["paid", "succeeded"]);
 
 /**
  * POST { order_id } with a bearer session: the buyer's return from the Bachs page. -> { order: Order, checked }.
@@ -35,31 +31,8 @@ export async function POST(req: Request) {
 
   let checked: "paid" | "pending" | "expired" | "already" | "unreachable" = "already";
   if (["open", "expired", "failed"].includes(row.status) && row.bachs_checkout_id && bachsConfig()) {
-    checked = await reconcile(db, row);
+    checked = await reconcileOrder(db, row);
   }
   const { data: order } = await session.userClient.rpc("ev_pay_my_order", { p_order: orderId });
   return json({ order: order ?? null, checked });
-}
-
-/** Ask Bachs about one order's checkout and settle it. Shared with the sweeper in spirit; kept here because only this route needs the buyer check. */
-async function reconcile(db: PayDb, row: NonNullable<Awaited<ReturnType<PayDb["orderRow"]>>>) {
-  try {
-    const c = await getCheckout(row.bachs_checkout_id!, row.host_account);
-    // It must be this order's session: same id, same reference, exactly the gross.
-    if (c.checkout_id !== row.bachs_checkout_id || c.reference !== row.bachs_reference || (c.currency && c.currency !== "NGN")) return "pending" as const;
-    if (!c.amount || stringToKobo(c.amount) !== row.gross_kobo) return "pending" as const;
-    if (c.status === "completed" && PAID.has(String(c.payment_status ?? "")) && (!c.charge?.status || c.charge.status === "succeeded")) {
-      const fee = c.charge?.fees?.amount ? stringToKobo(c.charge.fees.amount) : null;
-      await db.orderPaid({ ref: row.bachs_checkout_id!, charge: c.charge?.payment_id ?? c.charge?.id ?? null, amount: c.amount, method: methodOf(c.charge?.payment_method ?? c.charge?.payment_method_details?.type), feeKobo: fee });
-      return "paid" as const;
-    }
-    if (c.status === "expired") {
-      await db.orderExpire(row.bachs_checkout_id!);
-      return "expired" as const;
-    }
-    return "pending" as const;
-  } catch (e) {
-    if (!(e instanceof BachsError)) console.error(`[bachs] confirm ${row.id}: ${(e as Error).message}`);
-    return "unreachable" as const;
-  }
 }
