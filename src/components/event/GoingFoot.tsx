@@ -88,6 +88,9 @@ export default function GoingFoot({
   return (
     <>
       {/* ---------------------------------------------------- the guest list -- */}
+      {/* Release 1: the going count is in the block above (and it is the real one), so only who is here now stays. */}
+      {r1 && live && here > 0 && <p className="mb-3 font-mono text-[11.5px] font-medium uppercase tracking-[0.08em] text-cream">{here} HERE NOW</p>}
+      {!r1 && (
       <div className="flex items-end justify-between gap-4">
         <div className="min-w-0">
           <p className={clsx("num text-[36px] text-cream", compact && "short:text-[28px]")} aria-live="polite">
@@ -105,7 +108,6 @@ export default function GoingFoot({
           {/* TODO(back end): crew faces. Who in your crew is going to this event is not readable
               client side (swipes are private; crew RSVPs carry no avatars). It needs an RPC that
               returns crewmates' avatars for an event id. Render them here, before your own face. */}
-          {!r1 && (
           <div className="flex flex-col items-center gap-1">
             {going ? (
               <span
@@ -120,9 +122,9 @@ export default function GoingFoot({
             )}
             <span className={clsx("font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-dim", compact && "short:hidden")}>YOU</span>
           </div>
-          )}
         </div>
       </div>
+      )}
 
       {/* --------------------------------------------------- the one button -- */}
       {!r1 && (
@@ -156,7 +158,7 @@ export default function GoingFoot({
       {/* -------------------------------------------------- the secondary row -- */}
       <div
         className={clsx(
-          r1 ? "mt-3" : "mt-2",
+          r1 ? "" : "mt-2",
           "overflow-hidden rounded-hz border border-line",
           // Narrow: a two-column grid whose 1px gaps show the hairline; the chat link takes a row of its own when it is the odd one out.
           // On a short phone it is one row of three (the arrows and the word "event" go), to give the card's body its room.
