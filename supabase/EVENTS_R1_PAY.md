@@ -93,6 +93,11 @@ system (an automatic refund of a late payment).
 ```
 For `card`: call `POST /v1/refunds { charge_id, reference }` (with `X-Account-Id: host_account` if Bachs confirms), then wait for `refund.paid`. The tickets are void and
 the seats are free the moment this returns. A failed earlier refund does not count; the next reference gets `_2`, `_3`.
+A refund whose call to Bachs has an UNKNOWN outcome (timeout, 5xx) is NOT failed: the route calls `ev_pay_refund_attempt(p_reference, p_error)` (service role; `{ ok, attempts }`),
+which records the try on the refund row (`attempts`, `last_attempt_at`, `last_error`) and leaves the order `refund_pending` with its tickets void; the tenth try flags the order
+`flag_review = 'refund_stuck'`. The sweeper then settles it: `GET /v1/refunds/{id}` as the host when the id is known, otherwise the SAME reference and the SAME idempotency key
+(`refund:<reference>`) again. Only a definite Bachs refusal calls `ev_pay_refund_apply(..., 'failed')`. `refund.paid` always wins: it makes the order `refunded` and voids its
+tickets again; a later `failed` never undoes a paid refund and a duplicate `failed` for an older refund never undoes a newer one.
 `ev_pay_mark_manual_refund(p_order uuid)` (a client function, section 6) finishes a bank transfer refund.
 
 ## 6. Client functions (signed-in user, own identity)
@@ -108,7 +113,7 @@ the seats are free the moment this returns. A failed earlier refund does not cou
 
 `Order` fields (all present): `id, event_id, event_title, buyer_id, buyer_name, ticket_type_id, ticket_name, quantity, unit_price_naira, gross_naira,
 platform_fee_naira, processing_fee_naira (null until known), host_net_naira (null until paid and the fee is known), status, payment_method, created_at,
-expires_at, paid_at, checkout_url, needs_refund, needs_manual_refund`.
+expires_at, paid_at, checkout_url, needs_refund, needs_manual_refund, refund_reason` (`late` when the payment landed after the hold with no seat left, `failed` when a refund was definitely refused, else null).
 
 Other functions the paid flow uses (from the earlier files): `ev_my_tickets(event)` (one ticket per seat, each with `token`, `code`, `seat`), `ev_scan` (per ticket),
 `ev_door_counts` (counts tickets), `ev_register` (answers `use_checkout` for a paid type), `ev_cancel_registration` (answers `paid_use_refund` for a paid registration).

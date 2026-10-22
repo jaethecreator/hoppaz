@@ -210,7 +210,10 @@ const REASONS: Record<string, string> = {
   use_checkout: "Buy this ticket with checkout",
   too_many_answers: "Too many answers",
   answer_too_long: "Keep each answer under 500 characters",
-  paid_use_refund: "This ticket was paid for. Ask the host for a refund.",
+  // The buyer's cancel. A host declining a paid registration gets its own words (registrations.decline).
+  paid_use_refund: "You paid for this ticket. Ask the host for a refund.",
+  not_open: "Not open yet",
+  no_host: "Tickets for this event are not sold here",
   already_checked_in: "You are already checked in",
   nothing_to_approve: "Nothing to approve",
   not_waitlisted: "This person is not on the waitlist",

@@ -35,7 +35,7 @@ registerHooks({
 process.loadEnvFile(fileURLToPath(new URL("../.env.local", import.meta.url)));
 if (process.env.RUN_PAID === "1") {
   // Part B talks to the mock only, whatever .env.local says (it may name the real sandbox).
-  process.env.BACHS_API_BASE = "http://127.0.0.1:3415";
+  process.env.BACHS_API_BASE = `http://127.0.0.1:${process.env.MOCK_PORT || 3415}`;
   process.env.BACHS_SECRET_KEY = "sk_mock";
   process.env.BACHS_WEBHOOK_SECRET = "whsec_mock";
   process.env.HOPPAZ_TICKET_FEE_PERCENT ||= "4.5";
@@ -278,6 +278,29 @@ eq("signed out: auth.current() is null", api.auth.current(), null);
 const listAnon = await api.events.list();
 out(listAnon.some((e) => e.id === eid), "events.list works with no session", `${listAnon.length} events`);
 await refuses("registrations.register with no session", () => api.registrations.register(eid), "Sign in first");
+// An ANONYMOUS session (the app gives every visitor one): it has an auth.uid() but no account, so it is NOT signed in.
+const anon = await sb.auth.signInAnonymously();
+out(!anon.error && !!anon.data.user, "anonymous guest session", anon.error?.message ?? "");
+await core.ready();
+const vsGuest = await api.events.viewerState(eid);
+eq("anonymous guest: viewerState.signedIn is false", vsGuest.signedIn, false);
+eq("anonymous guest: auth.current() is null", api.auth.current(), null);
+await refuses("anonymous guest: Register answers Sign in first", () => api.registrations.register(eid), "Sign in first");
+eq("anonymous guest: the button is still Request (the sign-in sheet opens first)", vsGuest.button, "request");
+await sb.auth.signOut();
+await core.ready();
+
+// The launch switch: with events_r1 off every write answers "Not open yet", reads keep working; on again everything works.
+await admin.rpc("ev_set_setting", { p_key: "events_r1", p_value: "off" });
+try {
+  await login(bea);
+  await refuses("events_r1 off: events.create answers Not open yet", () => api.events.create({ title: "Not yet" }), "Not open yet");
+  await refuses("events_r1 off: registrations.register answers Not open yet", () => api.registrations.register(eid), "Not open yet");
+  await refuses("events_r1 off: reports.report answers Not open yet", () => api.reports.report(eid, "other", ""), "Not open yet");
+  eq("events_r1 off: events.get still reads", (await api.events.get(eid))?.id, eid);
+} finally {
+  await admin.rpc("ev_set_setting", { p_key: "events_r1", p_value: "on" });
+}
 
 // Bea: approval -> requested
 await login(bea);

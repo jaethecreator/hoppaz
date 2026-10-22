@@ -37,6 +37,8 @@ export type Order = {
   needs_refund: boolean;
   /** Bank transfers cannot be refunded through Bachs: the host pays the buyer by hand. */
   needs_manual_refund: boolean;
+  /** Why a refund is owed, for the buyer's screen: "late" (the payment landed after the hold and the seats were gone) or "failed" (the host's refund was refused and the order is paid again). Null or missing: no reason known. */
+  refund_reason?: "late" | "failed" | null;
 };
 
 export type HostPayoutStatus = "not_started" | "in_progress" | "ready" | "restricted";
@@ -74,7 +76,12 @@ export type Sales = {
 
 export type Quote = { gross_naira: number; platform_fee_naira: number; quantity: number; unit_price_naira: number };
 export type Checkout = { order_id: string; checkout_url: string; expires_at: string };
-export type RefundResult = { method: "card" | "manual"; status: "refund_pending" | "refunded" | "manual_needed" };
+export type RefundResult = {
+  method: "card" | "manual";
+  status: "refund_pending" | "refunded" | "manual_needed";
+  /** Bachs did not answer yet: the refund is pending (the tickets stay void) and will be settled automatically. */
+  unconfirmed?: boolean;
+};
 
 export interface PayApi {
   /** The signed-in host's payout setup. */

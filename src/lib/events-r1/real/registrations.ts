@@ -52,7 +52,7 @@ export const registrations: RegistrationsApi = {
   },
 
   async decline(registrationId) {
-    const out = await rpcOk<{ registration: Row }>("ev_decide", { p_registration: registrationId, p_action: "decline" }, { not_found: "Registration not found" });
+    const out = await rpcOk<{ registration: Row }>("ev_decide", { p_registration: registrationId, p_action: "decline" }, { not_found: "Registration not found", paid_use_refund: "This ticket was paid for. Use Refund instead." });
     emit();
     return mapRegistration(out.registration);
   },
