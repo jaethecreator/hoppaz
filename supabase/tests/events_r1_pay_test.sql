@@ -4,6 +4,8 @@
 -- middle show that anon and signed-in users cannot call them.
 --   docker exec -i supabase_db_hoppaz-local psql -U postgres -d <a throwaway hoppaz_ev_ database> -q -v ON_ERROR_STOP=1 < supabase/tests/events_r1_pay_test.sql
 begin;
+-- Release 1 is switched on for the test (rolled back with everything else). The "off" cases switch it off again inside the test.
+select public.ev_set_setting('events_r1', 'on');
 create function pg_temp.ok(v boolean, label text) returns void language plpgsql as $$
 begin
   if v is not true then raise exception 'FAILED: %', label; end if;
@@ -439,6 +441,141 @@ begin
   perform pg_temp.ok((r ->> 'refunds_owed')::int = 1 and (r -> 'totals' ->> 'sold')::int = 2, 'refunds owed counts the bank transfer still to pay back');
   perform pg_temp.ok(pg_temp.j(x, format('select public.ev_pay_sales(%L)', e1)) is null and pg_temp.j(b1, format('select public.ev_pay_sales(%L)', e1)) is null and pg_temp.j(st, format('select public.ev_pay_sales(%L)', e1)) is not null,
                      'sales are for the host and staff only');
+
+  -- ================================================== review fixes ========
+  declare
+    ex uuid; ty uuid; oa uuid; ob uuid; oc uuid; od uuid; rf1 text; rf2 text; reg_id uuid; tk0 int; q0 int; ref text; i int;
+  begin
+    -- F1: a refund whose outcome is unknown (timeout, 5xx) is recorded, not undone. Order stays refund_pending, tickets stay void.
+    ex := pg_temp.ev(h, 'Refund unknown', 5); ty := pg_temp.ty(ex, 'VIP', 2000);
+    oa := pg_temp.go(b1, ex, ty, 2, 2000);
+    perform pg_temp.paid(oa, 'card');
+    perform pg_temp.ok(pg_temp.tix(ex, b1) = 2, 'F1 setup: a paid card order with 2 tickets');
+    r := public.ev_pay_refund_start(oa, h);
+    rf1 := r ->> 'reference';
+    perform pg_temp.ok(pg_temp.tix(ex, b1) = 0 and pg_temp.st(oa) = 'refund_pending', 'F1: the refund starts: tickets void, refund_pending');
+    r := public.ev_pay_refund_attempt(rf1, 'Bachs did not answer');
+    perform pg_temp.ok((r ->> 'ok')::boolean and (r ->> 'attempts')::int = 1 and pg_temp.st(oa) = 'refund_pending' and pg_temp.tix(ex, b1) = 0
+                       and (select last_error from public.ev_refunds where reference = rf1) = 'Bachs did not answer' and (select status from public.ev_refunds where reference = rf1) = 'requested',
+                       'F1: a timeout is recorded as an attempt: the order stays refund_pending, the tickets stay void, the refund is not failed');
+    perform pg_temp.ok(public.ev_pay_refund_start(oa, null) ->> 'reason' = 'already_refunding' and (select count(*) from public.ev_refunds where order_id = oa) = 1,
+                       'F1: the sweeper can never start a second refund with a new reference while one is pending');
+    perform pg_temp.ok(public.ev_pay_refund_attempt('rf_nobody', 'x') ->> 'reason' = 'not_found', 'F1: an attempt on an unknown refund is not_found');
+    r := public.ev_pay_refund_apply('rfnd_u1', rf1, 'paid');
+    perform pg_temp.ok(r ->> 'status' = 'paid' and pg_temp.st(oa) = 'refunded' and pg_temp.tix(ex, b1) = 0 and (select refund_reason from public.ev_orders where id = oa) is null,
+                       'F1: timeout, then refund.paid: refunded, tickets void');
+    perform pg_temp.ok(public.ev_pay_refund_attempt(rf1, 'late') ->> 'reason' = 'not_found', 'F1: no attempt is recorded on a refund that is paid');
+    perform pg_temp.ok(not (public.ev_pay_refund_apply('rfnd_u1', rf1, 'failed') ->> 'changed')::boolean and pg_temp.st(oa) = 'refunded' and pg_temp.tix(ex, b1) = 0,
+                       'F1: a late refund.failed never undoes a refund that is recorded as paid');
+    -- The refund is refused for sure, the tickets come back, then it turns out the money went out: refund.paid voids them again.
+    ob := pg_temp.go(b2, ex, ty, 1, 2000);
+    perform pg_temp.paid(ob, 'card');
+    r := public.ev_pay_refund_start(ob, h);
+    rf2 := r ->> 'reference';
+    r := public.ev_pay_refund_apply(null, rf2, 'failed');
+    perform pg_temp.ok(pg_temp.st(ob) = 'paid' and pg_temp.tix(ex, b2) = 1 and (select needs_refund from public.ev_orders where id = ob)
+                       and (select refund_reason from public.ev_orders where id = ob) = 'failed', 'F1: a definite refusal: order paid again, tickets valid again, refund owed with reason failed');
+    perform pg_temp.ok(pg_temp.j(b2, format('select public.ev_pay_my_order(%L)', ob)) ->> 'refund_reason' = 'failed', 'F1: the buyer''s Order says refund_reason failed');
+    r := public.ev_pay_refund_apply('rfnd_u2', rf2, 'paid');
+    perform pg_temp.ok(pg_temp.st(ob) = 'refunded' and pg_temp.tix(ex, b2) = 0 and (select quantity from public.ev_registrations where event_id = ex and user_id = b2) = 0,
+                       'F1: refund.paid after a failed one: refunded, and the order''s tickets are void again (the buyer cannot be refunded AND get in)');
+    -- A duplicate refund.failed for an earlier refund must not undo a newer refund that is under way.
+    oc := pg_temp.go(b3, ex, ty, 1, 2000);
+    perform pg_temp.paid(oc, 'card');
+    r := public.ev_pay_refund_start(oc, h); rf1 := r ->> 'reference';
+    perform public.ev_pay_refund_apply(null, rf1, 'failed');
+    r := public.ev_pay_refund_start(oc, null); rf2 := r ->> 'reference';
+    perform pg_temp.ok(rf2 = rf1 || '_2' and pg_temp.st(oc) = 'refund_pending', 'F1: after a DEFINITE failure a new refund (a new reference) may start');
+    perform public.ev_pay_refund_apply(null, rf1, 'failed');
+    perform pg_temp.ok(pg_temp.st(oc) = 'refund_pending' and pg_temp.tix(ex, b3) = 0, 'F1: a duplicate failed for the first refund does not undo the second');
+    -- Ten attempts flag the order for a person.
+    for i in 1..10 loop perform public.ev_pay_refund_attempt(rf2, 'timeout ' || i); end loop;
+    perform pg_temp.ok((select flag_review from public.ev_orders where id = oc) = 'refund_stuck' and (select attempts from public.ev_refunds where reference = rf2) = 10, 'F1: ten unknown outcomes flag the order refund_stuck');
+
+    -- F2: an old listing is never sold, and its door price is not a ticket price.
+    insert into public.events (title, venue_name, starts_at, status, created_by, price_naira) values ('Old paid listing', 'Somewhere', now() + interval '3 days', 'live', h, 5000) returning id into ex;
+    r := pg_temp.res(b1, ex, md5('ticket-type:' || ex::text)::uuid, 1, 5000);
+    perform pg_temp.ok(r ->> 'reason' = 'no_host', 'F2: reserve for an event with no host_id answers no_host');
+    perform pg_temp.ok((select price_naira from public._ev_types(ex)) = 0, 'F2: the derived General of an old listing is free');
+
+    -- F5: the switch. A buyer cannot reserve while it is off; orders that exist keep settling.
+    ex := pg_temp.ev(h, 'Switch pay', 5); ty := pg_temp.ty(ex, 'VIP', 1000);
+    oa := pg_temp.go(b1, ex, ty, 1, 1000);
+    perform public.ev_set_setting('events_r1', 'off');
+    perform pg_temp.ok(pg_temp.res(b2, ex, ty, 1, 1000) ->> 'reason' = 'not_open', 'F5: events_r1 off: reserve answers not_open');
+    r := pg_temp.paid(oa, 'card');
+    perform pg_temp.ok((r ->> 'ok')::boolean and (r ->> 'issued')::boolean, 'F5: events_r1 off: a payment for an order that already exists is still settled');
+    perform pg_temp.ok(pg_temp.t(h, format('select public.ev_pay_mark_manual_refund(%L)', oa)) = 'not_open', 'F5: events_r1 off: mark manual refund answers not_open');
+    perform public.ev_set_setting('events_r1', 'on');
+
+    -- F6: a late payment with no seat and no method yet (checkout.completed before collection.succeeded) must not crash.
+    ex := pg_temp.ev(h, 'No method yet', 1); ty := pg_temp.ty(ex, 'VIP', 1000);
+    oa := pg_temp.go(b1, ex, ty, 1, 1000);
+    update public.ev_orders set expires_at = now() - interval '5 minutes' where id = oa;
+    perform public.ev_pay_sweep();
+    ob := pg_temp.go(b2, ex, ty, 1, 1000);
+    perform pg_temp.paid(ob, 'card');
+    r := public.ev_pay_order_paid('chk_' || replace(oa::text, '-', ''), 'ch_nm1', pg_temp.gross(oa), null, null);
+    perform pg_temp.ok((r ->> 'ok')::boolean and (r ->> 'late')::boolean and (r ->> 'needs_refund')::boolean and pg_temp.st(oa) = 'paid' and pg_temp.tix(ex, b1) = 0,
+                       'F6: a late payment with no seat and NO payment method does not crash: paid, no ticket, refund owed');
+    perform pg_temp.ok((select needs_manual_refund from public.ev_orders where id = oa) and (select refund_reason from public.ev_orders where id = oa) = 'late', 'F6: an unknown method is held as manual, with the reason late');
+    r := public.ev_pay_order_details('ch_nm1', 'chk_' || replace(oa::text, '-', ''), 20000, 'card');
+    perform pg_temp.ok((r ->> 'refund_by_card')::boolean and not (select needs_manual_refund from public.ev_orders where id = oa) and (select needs_refund from public.ev_orders where id = oa),
+                       'F6: collection.succeeded says card: handed to the automatic card refund');
+    ex := pg_temp.ev(h, 'No method bank', 1); ty := pg_temp.ty(ex, 'VIP', 1000);
+    ob := pg_temp.go(b3, ex, ty, 1, 1000);
+    update public.ev_orders set expires_at = now() - interval '5 minutes' where id = ob;
+    perform public.ev_pay_sweep();
+    perform pg_temp.paid(pg_temp.go(b2, ex, ty, 1, 1000), 'card');
+    perform public.ev_pay_order_paid('chk_' || replace(ob::text, '-', ''), 'ch_nm2', pg_temp.gross(ob), null, null);
+    r := public.ev_pay_order_details('ch_nm2', 'chk_' || replace(ob::text, '-', ''), 15000, 'bank_transfer');
+    perform pg_temp.ok((select needs_manual_refund from public.ev_orders where id = ob) and r ->> 'refund_by_card' is null, 'F6: a bank transfer stays manual');
+    -- the issue = -1 path (the person is waiting or declined by the time the payment lands), also with no method
+    ex := pg_temp.ev(h, 'Issue refused', 5); ty := pg_temp.ty(ex, 'VIP', 1000);
+    oa := pg_temp.go(b4, ex, ty, 1, 1000);
+    insert into public.ev_registrations (event_id, user_id, status, name) values (ex, b4, 'declined', 'Pay Dayo');
+    r := public.ev_pay_order_paid('chk_' || replace(oa::text, '-', ''), 'ch_nm3', pg_temp.gross(oa), null, null);
+    perform pg_temp.ok((r ->> 'ok')::boolean and (r ->> 'needs_refund')::boolean and not (r ->> 'issued')::boolean and (select needs_manual_refund from public.ev_orders where id = oa),
+                       'F6: the path where the registration cannot take the seats, with no method, does not crash either');
+
+    -- F7: an event that is cancelled or hidden issues nothing, on every path.
+    ex := pg_temp.ev(h, 'Cancel with open order', 5); ty := pg_temp.ty(ex, 'VIP', 1000);
+    oa := pg_temp.go(b1, ex, ty, 2, 1000);
+    perform pg_temp.ok(pg_temp.left_of(ex, ty) = 3, 'F7 setup: an open order holds 2 of 5 seats');
+    r := pg_temp.j(h, format('select public.ev_cancel_event(%L)', ex));
+    perform pg_temp.ok((r ->> 'ok')::boolean and pg_temp.st(oa) = 'expired' and (select reconcile from public.ev_orders where id = oa), 'F7: cancelling an event expires its open orders and marks them for the sweeper');
+    perform pg_temp.ok(pg_temp.left_of(ex, ty) = 5, 'F7: the seats are free at once');
+    r := public.ev_pay_sweep();
+    perform pg_temp.ok(r -> 'expired' @> jsonb_build_array(jsonb_build_object('order_id', oa, 'checkout_id', 'chk_' || replace(oa::text, '-', ''))) and not (select reconcile from public.ev_orders where id = oa),
+                       'F7: the sweeper gets that order back to ask Bachs about its checkout, once');
+    perform pg_temp.ok(not (public.ev_pay_sweep() -> 'expired' @> jsonb_build_array(jsonb_build_object('order_id', oa, 'checkout_id', 'chk_' || replace(oa::text, '-', '')))), 'F7: and only once');
+    r := pg_temp.paid(oa, 'card');
+    perform pg_temp.ok((r ->> 'needs_refund')::boolean and not (r ->> 'issued')::boolean and pg_temp.tix(ex, b1) = 0 and pg_temp.st(oa) = 'paid', 'F7: a payment that still lands on the cancelled event: no ticket, refund owed');
+    -- an order still open (never swept) on an event cancelled by a direct update: the on-time path
+    ex := pg_temp.ev(h, 'Cancelled underneath', 5); ty := pg_temp.ty(ex, 'VIP', 1000);
+    oa := pg_temp.go(b2, ex, ty, 1, 1000);
+    update public.events set status = 'cancelled' where id = ex;
+    r := pg_temp.paid(oa, 'card');
+    perform pg_temp.ok(pg_temp.st(oa) = 'paid' and (r ->> 'needs_refund')::boolean and not (r ->> 'late')::boolean and pg_temp.tix(ex, b2) = 0 and (select refund_reason from public.ev_orders where id = oa) is null,
+                       'F7: an on-time payment on a cancelled event is not issued either: refund owed, and it is not called late');
+    ex := pg_temp.ev(h, 'Hidden underneath', 5); ty := pg_temp.ty(ex, 'VIP', 1000);
+    oa := pg_temp.go(b3, ex, ty, 1, 1000);
+    update public.events set status = 'hidden' where id = ex;
+    r := pg_temp.paid(oa, 'card');
+    perform pg_temp.ok((r ->> 'needs_refund')::boolean and not (r ->> 'issued')::boolean and pg_temp.tix(ex, b3) = 0, 'F7: a hidden event issues nothing either');
+
+    -- F14: declining a registration that holds a paid order is refused.
+    ex := pg_temp.ev(h, 'Decline paid', 5); ty := pg_temp.ty(ex, 'VIP', 1000);
+    oa := pg_temp.go(b1, ex, ty, 1, 1000);
+    perform pg_temp.paid(oa, 'card');
+    select id into reg_id from public.ev_registrations where event_id = ex and user_id = b1;
+    r := pg_temp.j(h, format('select public.ev_decide(%L, %L)', reg_id, 'decline'));
+    perform pg_temp.ok(r ->> 'reason' = 'paid_use_refund' and pg_temp.tix(ex, b1) = 1 and (select status from public.ev_registrations where id = reg_id) = 'going',
+                       'F14: declining a paid registration answers paid_use_refund and changes nothing');
+    perform public.ev_pay_refund_start(oa, h);
+    perform public.ev_pay_refund_apply(null, 'rf_' || replace(oa::text, '-', ''), 'paid');
+    perform pg_temp.ok(pg_temp.st(oa) = 'refunded', 'F14: the refund path is the way to undo it');
+  end;
 
   -- ================================================== access ========
   for f in select p.oid as oid, p.oid::regprocedure as sig, p.proname as name
