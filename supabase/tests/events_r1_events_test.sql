@@ -253,10 +253,11 @@ begin
   perform pg_temp.ok((r -> 'event' ->> 'lat')::float = 6.5, 'a place with coordinates gives a pin');
   r := pg_temp.upd(h, id1, '{"place_name":"Another Hall","area":null}');
   perform pg_temp.ok(r -> 'event' ->> 'venue_name' = 'Another Hall' and r -> 'event' ->> 'lat' is null, 'a new place name with no coordinates and no area drops the old pin');
-  perform pg_temp.ok(pg_temp.upd(h, id1, '{"visibility":"invite"}') -> 'event' ->> 'visibility' = 'invite' and (select status from public.events where id = id1) = 'unlisted',
-                     'editing visibility to invite makes it unlisted');
+  r := pg_temp.upd(h, id1, '{"visibility":"invite"}');
+  perform pg_temp.ok(r -> 'event' ->> 'visibility' = 'invite' and (select status from public.events where id = id1) = 'unlisted', 'editing visibility to invite makes it unlisted');
   perform pg_temp.ok(not pg_temp.listed(s, id1), 'and a stranger''s list drops it');
-  perform pg_temp.ok(pg_temp.upd(h, id1, '{"visibility":"public"}') -> 'event' ->> 'status' = 'live' and pg_temp.listed(s, id1), 'back to public and it is live and listed again');
+  r := pg_temp.upd(h, id1, '{"visibility":"public"}');
+  perform pg_temp.ok(r -> 'event' ->> 'status' = 'live' and pg_temp.listed(s, id1), 'back to public and it is live and listed again');
   perform pg_temp.ok(pg_temp.upd(h, id1, '{"title":""}') ->> 'reason' = 'need_name', 'an edit is checked like a create');
   r := pg_temp.upd(h, id2, '{"kind":"in_person"}');
   perform pg_temp.ok((r ->> 'ok')::boolean and r -> 'event' ->> 'link_type' is null and not exists (select 1 from public.ev_event_links where event_id = id2),

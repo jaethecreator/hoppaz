@@ -124,7 +124,8 @@ begin
   e2 := pg_temp.ev(h, 'Two places', 2);
   perform pg_temp.reg(a, e2); perform pg_temp.reg(b, e2);
   perform pg_temp.ok(pg_temp.reg(c, e2) ->> 'reason' = 'full', 'the third person gets full when there is no waitlist');
-  perform pg_temp.ok(pg_temp.cancel(a, e2) = 'ok' and pg_temp.st(e2, a) = 'cancelled', 'a cancel works');
+  perform pg_temp.ok(pg_temp.cancel(a, e2) = 'ok', 'a cancel answers ok');
+  perform pg_temp.ok(pg_temp.st(e2, a) = 'cancelled', 'and the registration is cancelled');
   perform pg_temp.ok(pg_temp.reg(c, e2) -> 'registration' ->> 'status' = 'going', 'and frees a place');
   perform pg_temp.ok(pg_temp.cancel(a, e2) = 'ok', 'cancelling twice is ok');
   perform pg_temp.ok(pg_temp.cancel(x, e2) = 'not_registered', 'a person who never registered is not_registered');
@@ -138,7 +139,8 @@ begin
                      'the next waitlisted person is promoted in the same transaction and the rest move up');
   perform pg_temp.reg(d, e3);
   perform pg_temp.ok(pg_temp.st(e3, d) = 'waitlisted' and pg_temp.pos(e3, d) = 2, 'a new person joins the back');
-  perform pg_temp.ok(pg_temp.cancel(c, e3) = 'ok' and pg_temp.pos(e3, d) = 1 and pg_temp.pos(e3, c) is null, 'someone leaving the waitlist moves the others up');
+  perform pg_temp.cancel(c, e3);
+  perform pg_temp.ok(pg_temp.pos(e3, d) = 1 and pg_temp.pos(e3, c) is null, 'someone leaving the waitlist moves the others up');
   perform pg_temp.reg(a, e3);
   perform pg_temp.ok(pg_temp.st(e3, a) = 'waitlisted' and pg_temp.pos(e3, a) = 2, 'a person who cancelled and comes back goes to the back');
   perform pg_temp.ok((select count(*) from public.ev_registrations where event_id = e3 and status in ('going', 'checked_in')) = 1, 'never more going than the capacity');
