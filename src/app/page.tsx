@@ -37,7 +37,7 @@ import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
 import { closeHotspots, useHotspotNav } from "@/lib/hotspots/open";
 import YouMarker from "@/components/map/YouMarker";
-import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import { EVENTS_R1, ROOMS_SEAL } from "@/lib/events-r1/flags";
 import CreateButton from "@/components/events-r1/CreateButton";
 import EventsHeading from "@/components/events-r1/EventsHeading";
 
@@ -364,7 +364,8 @@ export default function MapPage() {
       {mounted && map && <YouMarker map={map} fix={fix} look={profile?.avatar ?? look} />}
 
       {/* Hotspots: a pin on each open one, the Hotspots button and list, the sheet and the room. Placed under the chrome's measured height. */}
-      {mounted && <MainHotspots map={map} fix={fix} top={hud.top} hidden={!!event || filtering || picking || hopOpen} />}
+      {/* Release 1: sealed behind NEXT_PUBLIC_ROOMS_SEAL, nothing deleted. */}
+      {mounted && !ROOMS_SEAL && <MainHotspots map={map} fix={fix} top={hud.top} hidden={!!event || filtering || picking || hopOpen} />}
 
       {/* The chrome is all "now" (today's rail, the clock), so it draws on the client only: a page
           prerendered yesterday must not hydrate against today's rail. */}

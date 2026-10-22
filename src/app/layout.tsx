@@ -15,6 +15,7 @@ import SoundLane from "@/components/app/SoundLane"
 import GameTimePing from "@/components/game-time/GameTimePing"
 import FirstRun from "@/components/firstrun/FirstRun"
 import SocialPing from "@/components/social/SocialPing"
+import { ROOMS_SEAL } from "@/lib/events-r1/flags"
 import { THEME_BOOT_SCRIPT } from "@/lib/theme"
 import "@fontsource/archivo/400.css"
 import "@fontsource/archivo/500.css"
@@ -90,7 +91,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
         {/* The two biggest public reads start before React hydrates. Same path, no query and same-origin credentials as getJSON in src/lib/publicApi.ts, or the preload is wasted. */}
         <link rel="preload" href="/api/public/events" as="fetch" crossOrigin="anonymous" />
-        <link rel="preload" href="/api/public/hotspots" as="fetch" crossOrigin="anonymous" />
+        {!ROOMS_SEAL && <link rel="preload" href="/api/public/hotspots" as="fetch" crossOrigin="anonymous" />}
       </head>
       <body className="overflow-hidden">
         {/* First, so its effect runs before any page's: a page that sends a guest to sign up has the router by then. */}

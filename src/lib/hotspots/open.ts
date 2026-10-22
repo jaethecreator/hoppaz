@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import { requireAccount } from "@/lib/accountGate";
 import { appNavigate } from "@/lib/appNav";
+import { ROOMS_SEAL } from "@/lib/events-r1/flags";
 import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
 
 /**
@@ -99,6 +100,8 @@ export const hasHotspotRoom = (slug: string) => !!hotspotRoomData(slugOf(slug));
  * falls back to the sheet, whose ENTER opens the crossroads chat screen (enterCrossroads below).
  */
 export function openHotspot(slug: string): boolean {
+  // Release 1: hotspots are sealed (NEXT_PUBLIC_ROOMS_SEAL). Nothing opens.
+  if (ROOMS_SEAL) return false;
   const s = slugOf(slug);
   if (hasHotspotRoom(s)) {
     const href = `/room/${s}`;
@@ -117,6 +120,7 @@ export function openHotspot(slug: string): boolean {
  * when the Hopper was sent to sign up.
  */
 export function enterCrossroads(slug: string): boolean {
+  if (ROOMS_SEAL) return false;
   if (!requireAccount("enter a hotspot")) return false;
   try {
     // Spread the current state so Next's own bookkeeping on the entry survives.

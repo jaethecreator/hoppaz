@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { notFound, useParams, useRouter } from "next/navigation";
 import clsx from "clsx";
 import { ChevronDown, ChevronLeft, MessageCircle } from "lucide-react";
 import CampaignWorld from "@/components/campaign/CampaignWorld";
@@ -22,6 +22,7 @@ import { hotspotRoom } from "@/lib/campaign/templates";
 import { canWalkScene, type CampaignLayout } from "@/lib/campaign/layout";
 import type { RoomPeer, SocialWorld } from "@/lib/crew-room/types";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
+import { ROOMS_SEAL } from "@/lib/events-r1/flags";
 import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
 import { useHoppaz } from "@/lib/store";
 import { useSession } from "@/lib/useSession";
@@ -78,6 +79,8 @@ function placeHeads(layout: CampaignLayout, heads: Head[], at: string, looks: Re
 export default function HotspotRoomPage() {
   const { slug } = useParams<{ slug: string }>();
   const router = useRouter();
+  // Release 1: every hotspot room is sealed (NEXT_PUBLIC_ROOMS_SEAL); the page is simply not there.
+  if (ROOMS_SEAL) notFound();
   const room = hotspotRoom(slug);
   const data = hotspotRoomData(slug);
   if (!room || !data) return <Crossroads slug={slug} onLeave={() => router.push("/")} />;
