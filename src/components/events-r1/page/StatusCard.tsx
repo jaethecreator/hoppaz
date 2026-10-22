@@ -10,6 +10,7 @@ import JoinCall from "./JoinCall";
 import { hasOnline } from "./link";
 import { eventUrl, shareOrCopy } from "./share";
 import { startsIn } from "./time";
+import TicketCards from "../pay/TicketCards";
 import TicketQr from "./TicketQr";
 
 const ROW = "btn btn-ghost w-full justify-start gap-2.5 normal-case";
@@ -100,7 +101,11 @@ export default function StatusCard({ event, viewer }: { event: R1Event; viewer: 
 
       {ticket && (
         <div className="mt-4">
-          <TicketQr eventId={event.id} regKey={`${reg.id}:${reg.status}`} />
+          {(reg.quantity ?? 1) > 1 ? (
+            <TicketCards eventId={event.id} regKey={`${reg.id}:${reg.status}:${reg.quantity}`} />
+          ) : (
+            <TicketQr eventId={event.id} regKey={`${reg.id}:${reg.status}`} />
+          )}
         </div>
       )}
 

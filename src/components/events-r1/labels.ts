@@ -10,7 +10,7 @@ export type ButtonKind = ViewerState["button"];
 export type RegisterLabel = {
   kind: ButtonKind;
   text: string;
-  /** Nothing to tap: paid events (Release 2) and closed ones. */
+  /** Nothing to tap: paid events while paid tickets are off, and closed ones. */
   disabled: boolean;
   /** The person is already in the loop (in, pending, on the waitlist): shown as a status, not a call to act. */
   status: boolean;
@@ -40,15 +40,17 @@ export function buttonFromEvent(
   return e.requires_approval ? "request" : "register";
 }
 
+/** `pay.on` is paidTicketsOn(): with it off Get ticket stays disabled (Currently unavailable); with it on a paid ticket can be bought. */
 export function registerLabel(
   state: Pick<ViewerState, "button"> | null | undefined,
-  event?: Parameters<typeof buttonFromEvent>[0] | null
+  event?: Parameters<typeof buttonFromEvent>[0] | null,
+  pay?: { on: boolean }
 ): RegisterLabel {
   const kind: ButtonKind = state?.button ?? (event ? buttonFromEvent(event) : "register");
   return {
     kind,
     text: TEXT[kind],
-    disabled: kind === "get_ticket" || kind === "closed" || kind === "declined",
+    disabled: (kind === "get_ticket" && !pay?.on) || kind === "closed" || kind === "declined",
     status: kind === "going" || kind === "pending" || kind === "waitlisted",
   };
 }

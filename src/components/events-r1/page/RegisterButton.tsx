@@ -7,6 +7,7 @@ import { Settings2 } from "lucide-react";
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
 import type { R1Event } from "@/lib/events-r1/types";
 import SignInSheet from "../SignInSheet";
+import PayQuantity from "../pay/PayQuantity";
 import HostStrip from "./HostStrip";
 import QuestionsForm from "./QuestionsForm";
 import TicketPicker from "./TicketPicker";
@@ -21,6 +22,9 @@ import { useRegisterFlow } from "./useRegisterFlow";
  * On the event page the area then becomes the status card (You're in, Pending, On the waitlist, Declined), or the host
  * strip for the host. On a card it stays a button that says where you stand and opens the event page for the rest.
  * `trailing` sits beside the button in the same row (the card's "Open event page").
+ *
+ * A paid ticket (paid tickets on) adds a quantity stepper and the price on the button; a tap goes to the hosted Bachs page.
+ * A person who left a payment open sees "Continue to payment" in place of the button.
  */
 export default function RegisterButton({
   event: given,
@@ -98,16 +102,28 @@ export default function RegisterButton({
         </button>
       );
     }
+    const resume = !host && !label.status && flow.openUrl;
     body = (
       <>
         {flow.multi && !host && !label.status && (
-          <TicketPicker event={event} value={flow.selected?.id ?? null} onChange={flow.selectType} disabled={busy} />
+          <TicketPicker event={event} value={flow.selected?.id ?? null} onChange={flow.selectType} disabled={busy} paidOn={flow.paidOn} />
+        )}
+        {flow.paid && !host && !label.status && !resume && (
+          <PayQuantity unit={flow.paid.price_naira} qty={flow.qty} max={flow.maxQty} total={flow.total} onQty={flow.setQty} disabled={busy} />
+        )}
+        {resume && (
+          <div className="mb-3 rounded-hz border border-line bg-ink-3 p-3">
+            <p className="font-body text-[14px] text-cream">You have a payment open for this event. Your seats are held for a few minutes.</p>
+            <button type="button" onClick={() => window.location.assign(resume)} className={clsx(btn, "mt-2 w-full")}>
+              Continue to payment
+            </button>
+          </div>
         )}
         <div className={clsx("gap-2", side ? "grid" : "flex")}>
-          {main}
+          {!resume && main}
           {trailing}
         </div>
-        {label.kind === "get_ticket" && !host && <p className="hint mt-2">{PAID_UNAVAILABLE}</p>}
+        {label.kind === "get_ticket" && label.disabled && !host && !flow.paidOn && <p className="hint mt-2">{PAID_UNAVAILABLE}</p>}
       </>
     );
   }
@@ -122,7 +138,7 @@ export default function RegisterButton({
       )}
       <SignInSheet
         open={phase === "signin"}
-        reason={`Register for ${event.title}`}
+        reason={flow.paid ? `Buy a ticket for ${event.title}` : `Register for ${event.title}`}
         onClose={flow.cancel}
         onSignedIn={() => void flow.proceed()}
       />

@@ -3,18 +3,26 @@
 import clsx from "clsx";
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
 import type { R1Event, TicketType } from "@/lib/events-r1/types";
+import { naira } from "../pay/words";
 
-/** Can a person pick this type now? Free, and either a place left or a waitlist to join. */
-export const pickable = (t: TicketType, event: Pick<R1Event, "waitlist_on">) => t.price_naira === 0 && (t.spots_left !== 0 || event.waitlist_on);
+/**
+ * Can a person pick this type now? Free: a place left or a waitlist to join. Paid: only when paid tickets are on (paidOn)
+ * and there is a place left (a paid ticket has no waitlist).
+ */
+export const pickable = (t: TicketType, event: Pick<R1Event, "waitlist_on">, paidOn = false) =>
+  t.price_naira === 0 ? t.spots_left !== 0 || event.waitlist_on : paidOn && t.spots_left !== 0;
 
-/** The type to start on: the first free one with room, else the first free one. */
-export function defaultType(event: Pick<R1Event, "ticket_types" | "waitlist_on">): TicketType | null {
+/** The type to start on: the first free one with room, else the first free one; with no free type, the first paid one with room. */
+export function defaultType(event: Pick<R1Event, "ticket_types" | "waitlist_on">, paidOn = false): TicketType | null {
   const free = event.ticket_types.filter((t) => t.price_naira === 0);
-  return free.find((t) => t.spots_left !== 0) ?? free.find((t) => pickable(t, event)) ?? free[0] ?? null;
+  const found = free.find((t) => t.spots_left !== 0) ?? free.find((t) => pickable(t, event)) ?? free[0] ?? null;
+  if (found || !paidOn) return found;
+  return event.ticket_types.find((t) => pickable(t, event, true)) ?? event.ticket_types[0] ?? null;
 }
 
-function sub(t: TicketType, event: Pick<R1Event, "waitlist_on">): string {
-  if (t.price_naira > 0) return `₦${t.price_naira.toLocaleString("en-NG")} · ${PAID_UNAVAILABLE}`;
+function sub(t: TicketType, event: Pick<R1Event, "waitlist_on">, paidOn: boolean): string {
+  if (t.price_naira > 0 && !paidOn) return `₦${t.price_naira.toLocaleString("en-NG")} · ${PAID_UNAVAILABLE}`;
+  if (t.price_naira > 0) return `${naira(t.price_naira)} · ${t.spots_left === 0 ? "Sold out" : t.spots_left === null ? "No limit" : `${t.spots_left} spot${t.spots_left === 1 ? "" : "s"} left`}`;
   if (t.spots_left === 0) return event.waitlist_on ? "Join waitlist · Free" : "Full";
   return `${t.spots_left === null ? "No limit" : `${t.spots_left} spot${t.spots_left === 1 ? "" : "s"} left`} · Free`;
 }
@@ -25,16 +33,18 @@ export default function TicketPicker({
   value,
   onChange,
   disabled,
+  paidOn = false,
 }: {
   event: R1Event;
   value: string | null;
   onChange: (id: string) => void;
   disabled?: boolean;
+  paidOn?: boolean;
 }) {
   return (
     <div role="radiogroup" aria-label="Ticket" className="mb-3 flex flex-col gap-2">
       {event.ticket_types.map((t) => {
-        const ok = pickable(t, event) && !disabled;
+        const ok = pickable(t, event, paidOn) && !disabled;
         const on = value === t.id;
         return (
           <button
@@ -54,7 +64,7 @@ export default function TicketPicker({
             </span>
             <span className="min-w-0">
               <span className="block font-body text-[15px] text-cream">{t.name}</span>
-              <span className="block font-body text-[13px] text-dim">{sub(t, event)}</span>
+              <span className="block font-body text-[13px] text-dim">{sub(t, event, paidOn)}</span>
             </span>
           </button>
         );
