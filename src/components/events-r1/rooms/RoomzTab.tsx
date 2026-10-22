@@ -13,12 +13,12 @@ import { useR1Api, useR1Auth, useRooms } from "@/lib/events-r1/hooks";
 import type { EventChat, RoomSummary } from "@/lib/events-r1/types";
 import CreateButton from "../CreateButton";
 import SignInSheet from "../SignInSheet";
-import { closesWord, enterPath, memberWord, roomPath } from "./words";
+import { closesWord, enterPath, memberWord, roomPath, walkable } from "./words";
 
 const tab = "min-h-[44px] flex-1 rounded-hz border px-4 font-display text-[14px] font-bold";
 
 /**
- * Release 1 ROOMZ tab (flag on): Hoppaz HQ pinned at the top, then Mine (your roomz and their event chats) or Discover.
+ * Release 1 ROOMZ tab (flag on): Lagos HQ pinned at the top, then Mine (your roomz and their event chats) or Discover.
  * Tapping a room's body opens its home; Enter room goes straight in. Reads only from the data layer.
  */
 export default function RoomzTab() {
@@ -117,7 +117,7 @@ function Badge({ n }: { n: number }) {
   );
 }
 
-/** Hoppaz HQ, pinned at the very top. Everyone is in it. */
+/** Lagos HQ, pinned at the very top. Everyone is in it. */
 function HqRow({ hq }: { hq: RoomSummary }) {
   return (
     <Link href={roomPath(hq)} className="card flex min-h-[44px] items-center gap-3 py-3" data-room-row="hq">
@@ -151,9 +151,11 @@ function MineRow({ room }: { room: RoomSummary }) {
           <span className="hint block truncate">{a ? a.body : memberWord(room.members)}</span>
         </span>
       </Link>
-      <Link href={enterPath(room)} className="btn btn-ghost min-h-[40px] flex-none px-3 text-[13px] normal-case" aria-label={`Enter ${room.name}`}>
-        Enter room
-      </Link>
+      {walkable(room) && (
+        <Link href={enterPath(room)} className="btn btn-ghost min-h-[40px] flex-none px-3 text-[13px] normal-case" aria-label={`Enter ${room.name}`}>
+          Enter room
+        </Link>
+      )}
     </div>
   );
 }

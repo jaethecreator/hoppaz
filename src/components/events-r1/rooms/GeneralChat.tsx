@@ -11,7 +11,7 @@ import { memberWord, roomPath } from "./words";
 
 /**
  * Release 1 General (/rooms/<slug>/general): the room's own chat, always open. Anyone can read it; saying something needs
- * an account and, in every room but Hoppaz HQ, being in the room.
+ * an account and, in every room but Lagos HQ, being in the room.
  */
 export default function GeneralChat({ slug }: { slug: string }) {
   const api = useR1Api();

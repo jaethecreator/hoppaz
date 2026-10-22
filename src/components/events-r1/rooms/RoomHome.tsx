@@ -10,12 +10,13 @@ import { useR1Api, useR1Now, useRoom, useRoomChats, useRoomEvents } from "@/lib/
 import type { R1Event, RoomSummary } from "@/lib/events-r1/types";
 import SignInSheet from "../SignInSheet";
 import Tag from "./AnnouncementTag";
-import { dayWord, enterPath, roomPath } from "./words";
+import { dayWord, enterPath, roomPath, walkable } from "./words";
 import { priceWord, timeWord } from "../words";
 import RoomHeader from "./RoomHeader";
+import ManageRoom from "./ManageRoom";
 
 /**
- * Release 1 room home (/rooms/<slug>, and /rooms/hq for Hoppaz HQ): the wallpaper header, Enter room, the two sections every
+ * Release 1 room home (/rooms/<slug>, and /rooms/hq for Lagos HQ): the wallpaper header, Enter room, the two sections every
  * room has (Announcements, General) plus any open event chat, the latest announcement, and the room's events.
  */
 export default function RoomHome({ slug }: { slug: string }) {
@@ -70,12 +71,14 @@ function Home({ room }: { room: RoomSummary }) {
       <div className="mx-auto w-full max-w-[760px]">
         <RoomHeader room={room} />
         <div className="px-4">
-          {/* HQ is chat first: no Enter room, the sections and the optional 3D button are the way in. */}
+          {/* HQ is chat first: no Enter room, the sections and the optional 3D button are the way in. A room with its 3D room off is chat only. */}
           {!hq &&
             (room.joined ? (
-              <Link href={enterPath(room)} className="btn mt-4 w-full text-[15px] normal-case" data-enter-room>
-                <DoorOpen size={18} aria-hidden /> Enter room
-              </Link>
+              walkable(room) && (
+                <Link href={enterPath(room)} className="btn mt-4 w-full text-[15px] normal-case" data-enter-room>
+                  <DoorOpen size={18} aria-hidden /> Enter room
+                </Link>
+              )
             ) : (
               <button type="button" className="btn mt-4 w-full text-[15px] normal-case" onClick={join} disabled={busy || !api} data-join>
                 <DoorOpen size={18} aria-hidden /> Join
@@ -118,6 +121,7 @@ function Home({ room }: { room: RoomSummary }) {
               See all events on the map <ChevronRight size={16} className="text-dim" aria-hidden />
             </Link>
           </section>
+          <ManageRoom room={room} />
         </div>
       </div>
       <SignInSheet open={signin} reason={`Join ${room.name}`} onClose={() => setSignin(false)} onSignedIn={() => setSignin(false)} />
@@ -125,9 +129,10 @@ function Home({ room }: { room: RoomSummary }) {
   );
 }
 
-/** Hoppaz HQ's optional walkable room. Off until the 3D room is ready; it never opens by itself. */
+/** Lagos HQ's optional walkable room. Off until the owner or staff switch it on; it never opens by itself. */
 function WalkButton({ room }: { room: RoomSummary }) {
   if (room.has_3d) {
+    if (!room.three_d_on) return null;
     return (
       <div className="mt-3">
         <Link href={`/crew/${room.id}/room`} className="btn btn-ghost w-full normal-case" data-walk>
