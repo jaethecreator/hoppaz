@@ -9,7 +9,7 @@
 --            for events_r1_tickets.sql: ev_issue_ticket and ev_void_ticket (no ticket is made until that file is run).
 --
 -- WHAT IT IS. Swiping right on the deck stays what it is today: "interested", a private like. Register is the commitment. A
--- registration is one row per person per event. Free events only in Release 1 (an event with a price is refused).
+-- registration is one row per person per event. Release 1 takes free tickets only: a paid ticket type exists but cannot be taken (currently_unavailable).
 --
 --   ev_registrations           one row per person per event: status, answers to the host's questions, who invited them, the place
 --                              on the waitlist. Closed to anon and authenticated: no policy, no grant.
@@ -25,18 +25,26 @@
 --                                       place. Outcome: going (a place and no approval), requested (approval on), waitlisted (full
 --                                       and the waitlist is on). Full with no waitlist: full. { ok, registration } or { ok: false,
 --                                       reason }. Registering again while registered returns the same registration.
---                                       reasons: no_session, need_account, not_found, cancelled, event_over, paid_not_open, declined,
---                                       full, answer_needed (with the question), too_many_answers, answer_too_long.
+--                                       reasons: no_session, need_account, not_found, cancelled, event_over, declined, full, type_full,
+--                                       bad_ticket, currently_unavailable, answer_needed (with the question), too_many_answers, answer_too_long.
+--                                       TICKET TYPES: opts.ticketTypeId picks a type (bad_ticket if it is not one of the event's). With none given
+--                                       the person gets the first free type that has room, else the first free type (it is full). A paid type is
+--                                       always refused with currently_unavailable, whether or not paid_tickets is on (no payment code in Release 1).
+--                                       A type's places are counted from going and checked_in people holding it AND the event's capacity: the
+--                                       tighter one decides. A full type follows the event's waitlist setting: waitlisted, or type_full (full when the
+--                                       whole event is full). Approval applies to free types only. A registration remembers its type.
 --   ev_cancel_registration(event)       my own. Text: ok | not_found | not_registered | already_checked_in. If I was going, my ticket
 --                                       is voided and the next waitlisted person is promoted, in the same transaction. With approval
 --                                       on, the next waitlisted person moves to requested and the host decides (as in the fake layer).
 --   ev_decide(registration, action)     host or staff. action approve | decline. Approving someone when the event is full puts them on
 --                                       the waitlist instead. { ok, registration } or { ok: false, reason: not_found | not_allowed |
 --                                       bad_action | nothing_to_approve | already_checked_in }.
---   ev_promote(registration)            host or staff: a waitlisted person goes in now. no_free_place when full (raise the capacity).
+--   ev_promote(registration)            host or staff: a waitlisted person goes in now. no_free_place when THEIR ticket type is full (raise its
+--                                       capacity, or the event's). The waitlist fill is per type: a full type is skipped, and a spare place in
+--                                       another type does not move someone waiting for the full one.
 --   ev_audience(event)                  host or staff: { ok, counts: {going, checked_in, pending, waitlist, declined}, registrations }.
 --                                       going counts going and checked_in together, like the door counts.
---   ev_export(event)                    host or staff: rows (name, email, phone, status, registered, checked_in, invited_by), cancelled
+--   ev_export(event)                    host or staff: rows (name, email, phone, ticket, status, registered, checked_in, invited_by), cancelled
 --                                       left out. Nothing for anyone else. The screen builds the CSV: it should put a ' in front of
 --                                       any cell that starts with = + - or @, so a spreadsheet does not run a guest's name as a formula.
 --   ev_get_registration_settings(event) { questions, messages } for anyone who can open the event.
@@ -57,12 +65,14 @@ create table if not exists public.ev_registrations (
   answers       jsonb not null default '{}'::jsonb check (jsonb_typeof(answers) = 'object' and pg_column_size(answers) < 4096),
   referrer_id   uuid references public.profiles(id) on delete set null,
   waitlist_pos  integer check (waitlist_pos is null or waitlist_pos >= 1),
+  ticket_type_id uuid references public.ev_ticket_types(id),
   -- clock_timestamp, not now(): the waitlist order is the order people joined, even inside one transaction.
   created_at    timestamptz not null default clock_timestamp(),
   updated_at    timestamptz not null default clock_timestamp(),
   checked_in_at timestamptz,
   unique (event_id, user_id)
 );
+alter table public.ev_registrations add column if not exists ticket_type_id uuid references public.ev_ticket_types(id);
 create index if not exists ev_registrations_event_idx on public.ev_registrations (event_id, status, created_at);
 create index if not exists ev_registrations_user_idx on public.ev_registrations (user_id, status);
 alter table public.ev_registrations enable row level security;
@@ -109,6 +119,22 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke all on function public._ev_reg_status(uuid, uuid) from public, anon, authenticated;
 
+-- Going and checked-in people holding a type (a registration with no type holds the event's first type).
+create or replace function public._ev_type_sold(p_event uuid, p_type uuid) returns integer
+language sql stable security definer set search_path = public, pg_temp as $$
+  select count(*)::int from public.ev_registrations r
+   where r.event_id = p_event and r.status in ('going', 'checked_in')
+     and coalesce(r.ticket_type_id, public._ev_first_type(p_event)) = p_type;
+$$;
+revoke all on function public._ev_type_sold(uuid, uuid) from public, anon, authenticated;
+
+-- No place left on this type (its own capacity or the event's).
+create or replace function public._ev_type_full(p_event uuid, p_type uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(public._ev_type_left(p_event, p_type) = 0, false);
+$$;
+revoke all on function public._ev_type_full(uuid, uuid) from public, anon, authenticated;
+
 create or replace function public._ev_full(p_event uuid) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce((select e.capacity is not null and public._ev_going(e.id) >= e.capacity from public.events e where e.id = p_event), false);
@@ -134,28 +160,37 @@ revoke all on function public._ev_renumber_waitlist(uuid) from public, anon, aut
 create or replace function public._ev_fill_waitlist(p_event uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  e         public.events;
-  w         record;
-  v_room    integer;
-  v_moved   integer := 0;
+  e       public.events;
+  w       record;
+  v_type  uuid;
+  v_cap   integer;
+  v_event integer;
+  v_own   integer;
 begin
   select * into e from public.events where id = p_event;
   if not found or e.status not in ('live', 'unlisted') then return; end if;
-  if e.requires_approval then
-    v_room := case when e.capacity is null then 1000000 else greatest(0, e.capacity - public._ev_going(p_event)) end
-              - (select count(*)::int from public.ev_registrations where event_id = p_event and status = 'requested');
-    for w in select id from public.ev_registrations where event_id = p_event and status = 'waitlisted' order by created_at, id loop
-      exit when v_moved >= v_room;
-      update public.ev_registrations set status = 'requested', waitlist_pos = null, updated_at = now() where id = w.id;
-      v_moved := v_moved + 1;
-    end loop;
-  else
-    for w in select id from public.ev_registrations where event_id = p_event and status = 'waitlisted' order by created_at, id loop
-      exit when e.capacity is not null and public._ev_going(p_event) >= e.capacity;
+  -- One person at a time, in the order they joined. Each moves up only if THEIR ticket type has a place (and the event does):
+  -- a full type is skipped, it does not hold up the people behind it.
+  for w in select id, ticket_type_id from public.ev_registrations where event_id = p_event and status = 'waitlisted' order by created_at, id loop
+    v_type := coalesce(w.ticket_type_id, public._ev_first_type(p_event));
+    if e.requires_approval then
+      -- Room for a request: the capacity minus the people going and the requests already waiting, for the event and for the type.
+      v_event := case when e.capacity is null then 1000000
+                      else e.capacity - public._ev_going(p_event)
+                           - (select count(*)::int from public.ev_registrations where event_id = p_event and status = 'requested') end;
+      select t.capacity into v_cap from public._ev_types(p_event) t where t.id = v_type;
+      v_own := case when v_cap is null then 1000000
+                    else v_cap - public._ev_type_sold(p_event, v_type)
+                         - (select count(*)::int from public.ev_registrations where event_id = p_event and status = 'requested'
+                              and coalesce(ticket_type_id, public._ev_first_type(p_event)) = v_type) end;
+      if v_event > 0 and v_own > 0 then
+        update public.ev_registrations set status = 'requested', waitlist_pos = null, updated_at = now() where id = w.id;
+      end if;
+    elsif not public._ev_type_full(p_event, v_type) then
       update public.ev_registrations set status = 'going', waitlist_pos = null, updated_at = now() where id = w.id;
       perform public.ev_issue_ticket(w.id);
-    end loop;
-  end if;
+    end if;
+  end loop;
   perform public._ev_renumber_waitlist(p_event);
 end $$;
 revoke all on function public._ev_fill_waitlist(uuid) from public, anon, authenticated;
@@ -166,7 +201,10 @@ language sql stable security definer set search_path = public, pg_temp as $$
   select jsonb_build_object(
     'id', r.id, 'event_id', r.event_id, 'user_id', r.user_id, 'name', r.name,
     'email', coalesce((select u.email from auth.users u where u.id = r.user_id), ''),
-    'phone', r.answers ->> 'phone', 'status', r.status, 'answers', r.answers,
+    'phone', r.answers ->> 'phone', 'status', r.status,
+    'ticket_type_id', coalesce(r.ticket_type_id, public._ev_first_type(r.event_id)),
+    'ticket_name', coalesce((select t.name from public._ev_types(r.event_id) t where t.id = coalesce(r.ticket_type_id, public._ev_first_type(r.event_id))), 'General'),
+    'answers', r.answers,
     'referrer_id', r.referrer_id,
     'referrer_name', (select coalesce(nullif(btrim(p.display_name), ''), p.handle) from public.profiles p where p.id = r.referrer_id),
     'created_at', r.created_at, 'checked_in_at', r.checked_in_at, 'waitlist_pos', r.waitlist_pos);
@@ -295,6 +333,8 @@ declare
   v_ref     uuid;
   v_name    text;
   v_txt     text;
+  v_type    uuid;
+  v_price   integer;
   v_count   integer := 0;
   a         record;
   q         jsonb;
@@ -309,13 +349,31 @@ begin
   if e.status = 'cancelled' then return jsonb_build_object('ok', false, 'reason', 'cancelled'); end if;
   if e.status not in ('live', 'unlisted') then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
   if now() > coalesce(e.ends_at, e.starts_at + interval '3 hours') then return jsonb_build_object('ok', false, 'reason', 'event_over'); end if;
-  if e.price_naira > 0 then return jsonb_build_object('ok', false, 'reason', 'paid_not_open'); end if;
+  -- An old event with no ticket type rows gets its General row now (this call holds the lock).
+  perform public._ev_ensure_types(p_event);
 
   select * into r from public.ev_registrations where event_id = p_event and user_id = me for update;
   if r.id is not null and r.status <> 'cancelled' then
     if r.status = 'declined' then return jsonb_build_object('ok', false, 'reason', 'declined'); end if;
     return jsonb_build_object('ok', true, 'registration', public._ev_reg_json(r));
   end if;
+
+  -- The ticket type: the one asked for, else the first free type with room, else the first free type (it is full), else the first type.
+  if jsonb_typeof(v_opts -> 'ticketTypeId') = 'string' then
+    if (v_opts ->> 'ticketTypeId') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+      return jsonb_build_object('ok', false, 'reason', 'bad_ticket');
+    end if;
+    select t.id, t.price_naira into v_type, v_price from public._ev_types(p_event) t where t.id = (v_opts ->> 'ticketTypeId')::uuid;
+    if v_type is null then return jsonb_build_object('ok', false, 'reason', 'bad_ticket'); end if;
+  else
+    select t.id, t.price_naira into v_type, v_price from public._ev_types(p_event) t
+     where t.price_naira = 0 order by (public._ev_type_full(p_event, t.id)), t.sort, t.id limit 1;
+    if v_type is null then
+      select t.id, t.price_naira into v_type, v_price from public._ev_types(p_event) t order by t.sort, t.id limit 1;
+    end if;
+  end if;
+  -- No payment code in Release 1: a paid type is never taken, with paid_tickets on or off.
+  if v_price > 0 then return jsonb_build_object('ok', false, 'reason', 'currently_unavailable'); end if;
 
   -- The answers: text only, short keys, a few of them.
   if jsonb_typeof(v_opts -> 'answers') = 'object' then
@@ -339,8 +397,10 @@ begin
   end loop;
 
   -- Full: the waitlist if it is on, otherwise closed. Approval on: requested. Otherwise: in.
-  if public._ev_full(p_event) then
-    if not e.waitlist_on then return jsonb_build_object('ok', false, 'reason', 'full'); end if;
+  if public._ev_type_full(p_event, v_type) then
+    if not e.waitlist_on then
+      return jsonb_build_object('ok', false, 'reason', case when public._ev_full(p_event) then 'full' else 'type_full' end);
+    end if;
     v_status := 'waitlisted';
   else
     v_status := case when e.requires_approval then 'requested' else 'going' end;
@@ -352,13 +412,13 @@ begin
   select coalesce(nullif(btrim(p.display_name), ''), p.handle, 'Guest') into v_name from public.profiles p where p.id = me;
 
   if r.id is null then
-    insert into public.ev_registrations (event_id, user_id, status, name, answers, referrer_id)
-    values (p_event, me, v_status, coalesce(v_name, 'Guest'), v_answers, v_ref)
+    insert into public.ev_registrations (event_id, user_id, status, name, answers, referrer_id, ticket_type_id)
+    values (p_event, me, v_status, coalesce(v_name, 'Guest'), v_answers, v_ref, v_type)
     returning * into r;
   else
     -- A returning person (they had cancelled): the same row, back in line at the end.
     update public.ev_registrations
-       set status = v_status, name = coalesce(v_name, 'Guest'), answers = v_answers,
+       set status = v_status, name = coalesce(v_name, 'Guest'), answers = v_answers, ticket_type_id = v_type,
            referrer_id = coalesce(v_ref, referrer_id), created_at = clock_timestamp(), updated_at = clock_timestamp(),
            checked_in_at = null, waitlist_pos = null
      where id = r.id
@@ -413,7 +473,7 @@ begin
 
   if p_action = 'approve' then
     if r.status not in ('requested', 'waitlisted') then return jsonb_build_object('ok', false, 'reason', 'nothing_to_approve'); end if;
-    if not public._ev_full(v_event) then
+    if not public._ev_type_full(v_event, coalesce(r.ticket_type_id, public._ev_first_type(v_event))) then
       update public.ev_registrations set status = 'going', waitlist_pos = null, updated_at = now() where id = r.id;
       perform public.ev_issue_ticket(r.id);
     else
@@ -451,7 +511,9 @@ begin
   if not public._ev_manage(v_event) then return jsonb_build_object('ok', false, 'reason', 'not_allowed'); end if;
   select * into r from public.ev_registrations where id = p_registration for update;
   if r.status <> 'waitlisted' then return jsonb_build_object('ok', false, 'reason', 'not_waitlisted'); end if;
-  if public._ev_full(v_event) then return jsonb_build_object('ok', false, 'reason', 'no_free_place'); end if;
+  if public._ev_type_full(v_event, coalesce(r.ticket_type_id, public._ev_first_type(v_event))) then
+    return jsonb_build_object('ok', false, 'reason', 'no_free_place');
+  end if;
   update public.ev_registrations set status = 'going', waitlist_pos = null, updated_at = now() where id = r.id;
   perform public.ev_issue_ticket(r.id);
   perform public._ev_renumber_waitlist(v_event);
@@ -482,11 +544,14 @@ begin
                        order by x.created_at desc, x.id limit 5000)), '[]'::jsonb));
 end $$;
 
-create or replace function public.ev_export(p_event uuid)
-returns table (name text, email text, phone text, status text, registered timestamptz, checked_in timestamptz, invited_by text)
+-- The return columns changed (ticket added), and Postgres will not replace a function whose result changed: drop it first.
+drop function if exists public.ev_export(uuid);
+create function public.ev_export(p_event uuid)
+returns table (name text, email text, phone text, ticket text, status text, registered timestamptz, checked_in timestamptz, invited_by text)
 language sql stable security definer set search_path = public, pg_temp as $$
-  select r.name, coalesce(u.email, ''), r.answers ->> 'phone', r.status, r.created_at, r.checked_in_at,
-         coalesce(nullif(btrim(rp.display_name), ''), rp.handle)
+  select r.name, coalesce(u.email, ''), r.answers ->> 'phone',
+         coalesce((select t.name from public._ev_types(r.event_id) t where t.id = coalesce(r.ticket_type_id, public._ev_first_type(r.event_id))), 'General'),
+         r.status, r.created_at, r.checked_in_at, coalesce(nullif(btrim(rp.display_name), ''), rp.handle)
     from public.ev_registrations r
     left join auth.users u on u.id = r.user_id
     left join public.profiles rp on rp.id = r.referrer_id
@@ -524,8 +589,10 @@ begin
   elsif v_active then
     v_button := case r.status when 'going' then 'going' when 'checked_in' then 'going' when 'requested' then 'pending'
                               when 'waitlisted' then 'waitlisted' else 'declined' end;
-  elsif e.price_naira > 0 then v_button := 'get_ticket';
-  elsif public._ev_full(p_event) then v_button := case when e.waitlist_on then 'waitlist' else 'closed' end;
+  -- get_ticket only when every type is paid; full only when every free type is full.
+  elsif not exists (select 1 from public._ev_types(p_event) t where t.price_naira = 0) then v_button := 'get_ticket';
+  elsif not exists (select 1 from public._ev_types(p_event) t where t.price_naira = 0 and not public._ev_type_full(p_event, t.id)) then
+    v_button := case when e.waitlist_on then 'waitlist' else 'closed' end;
   else v_button := case when e.requires_approval then 'request' else 'register' end;
   end if;
 

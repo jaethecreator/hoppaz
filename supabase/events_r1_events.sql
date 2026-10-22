@@ -32,10 +32,26 @@
 --   reason codes (the real layer can turn them into the fake layer's messages): no_session, need_account, try_again_later (the
 --   silent rate limit, 5 events an hour per person), need_name, name_too_short, name_too_long, bad_start, bad_end,
 --   end_before_start, bad_timezone, bad_kind, bad_place, lagos_only, bad_link, bad_link_type, bad_capacity, whatsapp_max_32,
---   bad_visibility, need_room, bad_cover, bad_draft, not_found, not_allowed.
+--   bad_visibility, need_room, bad_cover, bad_draft, not_found, not_allowed, currently_unavailable (a paid type), tickets_needed,
+--   too_many_tickets, bad_ticket, need_ticket_name, ticket_name_too_long, duplicate_ticket, bad_price, bad_ticket_capacity, ticket_in_use.
+--
+-- TICKET TYPES (added later; Jae wants them now, with paid gated). Every event has 1 to 5 ticket types: a name, a whole-naira price (0 =
+-- free) and a capacity (empty = no limit of its own). They live in the closed table ev_ticket_types. ev_create_event gives every new event one
+-- free "General" with no limit unless the draft has a tickets list: { tickets: [{ name, price_naira, capacity }] }. The names are not empty,
+-- 60 characters at most and unique ignoring case; ev_update_event with a tickets list keeps types whose name is kept (same id), adds new ones, and
+-- refuses to drop a type people hold ({ ok: false, reason: ticket_in_use, ticket }); ev_clone_event copies the types. An old event with no
+-- rows is NOT backfilled: it reads as one derived General at the event's own price (a fixed id from the event id), and the real row is made
+-- the first time someone registers. Places: a type's spots_left is the tighter of its own capacity and the event's.
+-- PAID IS SWITCHED OFF. Any type with a price above 0 is refused by create, update and clone with exactly the reason text
+-- currently_unavailable, until the setting 'paid_tickets' is 'on'. It is in the closed one-row table ev_settings (key, value), starts as 'off'
+-- (re-running this file never flips it) and is set only through ev_set_setting(key, value), which only the service role (and the SQL editor) can
+-- run: select public.ev_set_setting('paid_tickets', 'on'). Even with it on, nobody can REGISTER for a paid type in Release 1 (ev_register answers
+-- currently_unavailable): there is no payment code. Clone refuses a paid type too while the setting is off (the fake layer copies it).
+-- add_to_room: the draft may say false to keep the event out of the host's room (default true when the host has a room).
 --
 -- Event shape (what every function returns for an event): the fields of R1Event in src/lib/events-r1/types.ts, with these notes.
--- venue_name is '' and lat, lng are null when there is no pin; distance_m is null (the phone works it out); status is
+-- ticket_types is an array of { id, event_id, name, price_naira, capacity, sold, spots_left } (always at least one) and price_naira is the lowest
+-- type price. venue_name is '' and lat, lng are null when there is no pin; distance_m is null (the phone works it out); status is
 -- live | cancelled | ended | hidden | pending | rejected ('ended' is worked out from the time, nothing flips it); the host is
 -- { id, name, roomId, roomName, verified }.
 --
@@ -137,6 +153,46 @@ alter table public.ev_event_links enable row level security;
 revoke all on public.ev_event_links from anon, authenticated;
 grant all on public.ev_event_links to service_role;
 
+-- ------------------------------------------------------ settings and ticket types ---
+create table if not exists public.ev_settings (
+  key        text primary key check (key ~ '^[a-z_]{1,40}$'),
+  value      text not null check (char_length(value) <= 200),
+  updated_at timestamptz not null default now()
+);
+alter table public.ev_settings enable row level security;
+revoke all on public.ev_settings from anon, authenticated;
+grant all on public.ev_settings to service_role;
+-- Paid tickets start off. A re-run leaves whatever Ola set.
+insert into public.ev_settings (key, value) values ('paid_tickets', 'off') on conflict (key) do nothing;
+
+create table if not exists public.ev_ticket_types (
+  id         uuid primary key default gen_random_uuid(),
+  event_id   uuid not null references public.events(id) on delete cascade,
+  name       text not null check (char_length(btrim(name)) between 1 and 60),
+  price_naira integer not null default 0 check (price_naira >= 0),
+  capacity   integer check (capacity is null or capacity > 0),
+  sort       integer not null default 0,
+  created_at timestamptz not null default clock_timestamp()
+);
+create unique index if not exists ev_ticket_types_name_idx on public.ev_ticket_types (event_id, lower(name));
+create index if not exists ev_ticket_types_event_idx on public.ev_ticket_types (event_id, sort);
+alter table public.ev_ticket_types enable row level security;
+revoke all on public.ev_ticket_types from anon, authenticated;
+grant all on public.ev_ticket_types to service_role;
+
+-- The only way to change a setting. Service role (and the SQL editor) only.
+create or replace function public.ev_set_setting(p_key text, p_value text) returns text
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if p_key is distinct from 'paid_tickets' then return 'bad_key'; end if;
+  if p_value is null or p_value not in ('on', 'off') then return 'bad_value'; end if;
+  insert into public.ev_settings (key, value) values (p_key, p_value)
+  on conflict (key) do update set value = excluded.value, updated_at = now();
+  return 'ok';
+end $$;
+revoke all on function public.ev_set_setting(text, text) from public, anon, authenticated;
+grant execute on function public.ev_set_setting(text, text) to service_role;
+
 -- ------------------------------------------- live and public go together (note 2b) ---
 create or replace function public.ev_events_sync_status() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
@@ -164,6 +220,11 @@ begin
     create function public._ev_reg_status(p_event uuid, p_user uuid) returns text
     language sql stable security definer set search_path = public, pg_temp as 'select null::text';
     revoke all on function public._ev_reg_status(uuid, uuid) from public, anon, authenticated;
+  end if;
+  if to_regprocedure('public._ev_type_sold(uuid, uuid)') is null then
+    create function public._ev_type_sold(p_event uuid, p_type uuid) returns integer
+    language sql stable security definer set search_path = public, pg_temp as 'select 0';
+    revoke all on function public._ev_type_sold(uuid, uuid) from public, anon, authenticated;
   end if;
   if to_regprocedure('public._ev_is_hq(uuid)') is null then
     create function public._ev_is_hq(p_crew uuid) returns boolean
@@ -261,6 +322,122 @@ language sql stable set search_path = public, pg_temp as $$
 $$;
 revoke all on function public._ev_status_text(text, timestamptz, timestamptz) from public, anon, authenticated;
 
+-- ------------------------------------------------------------- ticket type helpers ---
+create or replace function public._ev_paid_on() returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce((select s.value = 'on' from public.ev_settings s where s.key = 'paid_tickets'), false);
+$$;
+revoke all on function public._ev_paid_on() from public, anon, authenticated;
+
+-- The event's types. An old event with no rows gets one derived General at its own price (same id every time).
+create or replace function public._ev_types(p_event uuid)
+returns table (id uuid, name text, price_naira integer, capacity integer, sort integer)
+language sql stable security definer set search_path = public, pg_temp as $$
+  select t.id, t.name, t.price_naira, t.capacity, t.sort from public.ev_ticket_types t where t.event_id = p_event
+  union all
+  select md5('ticket-type:' || e.id::text)::uuid, 'General'::text, e.price_naira, null::integer, 0
+    from public.events e
+   where e.id = p_event and not exists (select 1 from public.ev_ticket_types x where x.event_id = e.id);
+$$;
+revoke all on function public._ev_types(uuid) from public, anon, authenticated;
+
+create or replace function public._ev_first_type(p_event uuid) returns uuid
+language sql stable security definer set search_path = public, pg_temp as $$
+  select x.id from public._ev_types(p_event) x order by x.sort, x.id limit 1;
+$$;
+revoke all on function public._ev_first_type(uuid) from public, anon, authenticated;
+
+-- Make the real General row of an old event (the caller holds the event lock). Nothing when the event has rows.
+create or replace function public._ev_ensure_types(p_event uuid) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  insert into public.ev_ticket_types (id, event_id, name, price_naira, capacity, sort)
+  select md5('ticket-type:' || e.id::text)::uuid, e.id, 'General', e.price_naira, null, 0
+    from public.events e
+   where e.id = p_event and not exists (select 1 from public.ev_ticket_types x where x.event_id = e.id);
+end $$;
+revoke all on function public._ev_ensure_types(uuid) from public, anon, authenticated;
+
+-- Places left on a type: its own capacity and the event's, whichever is tighter. null = no limit at all.
+create or replace function public._ev_type_left(p_event uuid, p_type uuid) returns integer
+language sql stable security definer set search_path = public, pg_temp as $$
+  select case
+           when t.capacity is null and e.capacity is null then null
+           when t.capacity is null then greatest(0, e.capacity - public._ev_going(e.id))
+           when e.capacity is null then greatest(0, t.capacity - public._ev_type_sold(e.id, t.id))
+           else least(greatest(0, t.capacity - public._ev_type_sold(e.id, t.id)), greatest(0, e.capacity - public._ev_going(e.id)))
+         end
+    from public.events e
+    join public._ev_types(e.id) t on t.id = p_type
+   where e.id = p_event;
+$$;
+revoke all on function public._ev_type_left(uuid, uuid) from public, anon, authenticated;
+
+create or replace function public._ev_types_json(p_event uuid) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', t.id, 'event_id', p_event, 'name', t.name, 'price_naira', t.price_naira, 'capacity', t.capacity,
+           'sold', public._ev_type_sold(p_event, t.id), 'spots_left', public._ev_type_left(p_event, t.id)) order by t.sort, t.id), '[]'::jsonb)
+    from public._ev_types(p_event) t;
+$$;
+revoke all on function public._ev_types_json(uuid) from public, anon, authenticated;
+
+-- The types as a draft again (name, price, capacity), for a clone.
+create or replace function public._ev_types_draft(p_event uuid) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(jsonb_agg(jsonb_build_object('name', t.name, 'price_naira', t.price_naira, 'capacity', t.capacity) order by t.sort, t.id), '[]'::jsonb)
+    from public._ev_types(p_event) t;
+$$;
+revoke all on function public._ev_types_draft(uuid) from public, anon, authenticated;
+
+-- The name of a type people hold that a new list would drop, or null. Reads registrations only if that table exists yet.
+create or replace function public._ev_types_blocker(p_event uuid, p_tickets jsonb) returns text
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_name text;
+begin
+  if to_regclass('public.ev_registrations') is null then return null; end if;
+  select t.name into v_name
+    from public._ev_types(p_event) t
+   where not exists (select 1 from jsonb_array_elements(p_tickets) x where lower(x ->> 'name') = lower(t.name))
+     and exists (select 1 from public.ev_registrations r
+                  where r.event_id = p_event and r.status not in ('cancelled', 'declined')
+                    and coalesce(r.ticket_type_id, public._ev_first_type(p_event)) = t.id)
+   order by t.sort, t.id limit 1;
+  return v_name;
+end $$;
+revoke all on function public._ev_types_blocker(uuid, jsonb) from public, anon, authenticated;
+
+-- Write the types of a checked list. New event with no list: one free General. Edit with no list: nothing. Edit with a list: types whose
+-- name is kept keep their id, new names are added, the rest go (the caller checked nobody holds them). The caller holds the event lock.
+create or replace function public._ev_apply_types(p_event uuid, p_tickets jsonb, p_new boolean) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  x jsonb;
+  i integer := 0;
+begin
+  if p_tickets is null or jsonb_typeof(p_tickets) <> 'array' then
+    if p_new then
+      insert into public.ev_ticket_types (event_id, name, price_naira, capacity, sort) values (p_event, 'General', 0, null, 0);
+    end if;
+    return;
+  end if;
+  if not p_new then perform public._ev_ensure_types(p_event); end if;
+  for x in select value from jsonb_array_elements(p_tickets) loop
+    i := i + 1;
+    update public.ev_ticket_types
+       set name = x ->> 'name', price_naira = (x ->> 'price_naira')::integer, capacity = (x ->> 'capacity')::integer, sort = i
+     where event_id = p_event and lower(name) = lower(x ->> 'name');
+    if not found then
+      insert into public.ev_ticket_types (event_id, name, price_naira, capacity, sort)
+      values (p_event, x ->> 'name', (x ->> 'price_naira')::integer, (x ->> 'capacity')::integer, i);
+    end if;
+  end loop;
+  delete from public.ev_ticket_types
+   where event_id = p_event
+     and lower(name) not in (select lower(v ->> 'name') from jsonb_array_elements(p_tickets) v);
+end $$;
+revoke all on function public._ev_apply_types(uuid, jsonb, boolean) from public, anon, authenticated;
+
 -- ------------------------------------------------------------ the event shape ---
 create or replace function public._ev_event_json(p_id uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -308,11 +485,12 @@ begin
     'description', e.description, 'visibility', e.visibility,
     'status', public._ev_status_text(e.status, e.starts_at, e.ends_at),
     'capacity', e.capacity, 'requires_approval', e.requires_approval, 'waitlist_on', e.waitlist_on,
-    'link_type', e.link_type, 'online_link', v_link, 'room_id', v_room
+    'link_type', e.link_type, 'online_link', v_link, 'room_id', e.room_id
   ) || jsonb_build_object(
     'going', v_going,
     'spots_left', case when e.capacity is null then null else greatest(0, e.capacity - v_going) end,
-    'price_naira', e.price_naira, 'vibe', e.vibe, 'source', e.source, 'ig_url', e.ig_url, 'flyer_url', e.flyer_url,
+    'price_naira', coalesce((select min(t.price_naira) from public._ev_types(e.id) t), e.price_naira),
+    'ticket_types', public._ev_types_json(e.id), 'vibe', e.vibe, 'source', e.source, 'ig_url', e.ig_url, 'flyer_url', e.flyer_url,
     'created_at', e.created_at, 'slug', coalesce(e.slug, e.id::text),
     'host', jsonb_build_object('id', v_host, 'name', coalesce(v_hostname, 'Hoppaz'), 'roomId', v_room, 'roomName', v_roomname,
                                'verified', coalesce(v_verified, false)),
@@ -347,6 +525,12 @@ declare
   v_vibe     text;
   v_appr     boolean;
   v_wait     boolean;
+  v_tickets  jsonb := null;
+  tk         jsonb;
+  v_names    text[] := '{}';
+  v_tn       text;
+  v_price    numeric;
+  v_tcap     numeric;
 begin
   if jsonb_typeof(d) <> 'object' then return jsonb_build_object('ok', false, 'reason', 'bad_draft'); end if;
 
@@ -442,6 +626,40 @@ begin
   v_vibe := lower(btrim(coalesce(d ->> 'vibe', '')));
   if v_vibe !~ '^[a-z ]{2,20}$' then v_vibe := 'culture'; end if;
 
+  -- Ticket types: 1 to 5, names not empty and unique ignoring case, price a whole number from 0, capacity empty or 1 and up.
+  -- A paid type is refused while paid tickets are off.
+  if jsonb_typeof(d -> 'tickets') = 'array' then
+    if jsonb_array_length(d -> 'tickets') < 1 then return jsonb_build_object('ok', false, 'reason', 'tickets_needed'); end if;
+    if jsonb_array_length(d -> 'tickets') > 5 then return jsonb_build_object('ok', false, 'reason', 'too_many_tickets'); end if;
+    v_tickets := '[]'::jsonb;
+    for tk in select value from jsonb_array_elements(d -> 'tickets') loop
+      if jsonb_typeof(tk) <> 'object' then return jsonb_build_object('ok', false, 'reason', 'bad_ticket'); end if;
+      v_tn := btrim(coalesce(tk ->> 'name', ''));
+      if v_tn = '' then return jsonb_build_object('ok', false, 'reason', 'need_ticket_name'); end if;
+      if char_length(v_tn) > 60 then return jsonb_build_object('ok', false, 'reason', 'ticket_name_too_long'); end if;
+      if lower(v_tn) = any (v_names) then return jsonb_build_object('ok', false, 'reason', 'duplicate_ticket'); end if;
+      v_names := v_names || lower(v_tn);
+      v_price := 0;
+      if jsonb_typeof(tk -> 'price_naira') = 'number' then
+        v_price := (tk ->> 'price_naira')::numeric;
+        if v_price <> trunc(v_price) or v_price < 0 or v_price > 100000000 then return jsonb_build_object('ok', false, 'reason', 'bad_price'); end if;
+      elsif tk ? 'price_naira' and jsonb_typeof(tk -> 'price_naira') <> 'null' then
+        return jsonb_build_object('ok', false, 'reason', 'bad_price');
+      end if;
+      if v_price > 0 and not public._ev_paid_on() then return jsonb_build_object('ok', false, 'reason', 'currently_unavailable'); end if;
+      v_tcap := null;
+      if jsonb_typeof(tk -> 'capacity') = 'number' then
+        v_tcap := (tk ->> 'capacity')::numeric;
+        if v_tcap <> trunc(v_tcap) or v_tcap < 1 or v_tcap > 100000 then return jsonb_build_object('ok', false, 'reason', 'bad_ticket_capacity'); end if;
+      elsif tk ? 'capacity' and jsonb_typeof(tk -> 'capacity') <> 'null' then
+        return jsonb_build_object('ok', false, 'reason', 'bad_ticket_capacity');
+      end if;
+      v_tickets := v_tickets || jsonb_build_array(jsonb_build_object('name', v_tn, 'price_naira', v_price::integer, 'capacity', v_tcap::integer));
+    end loop;
+  elsif d ? 'tickets' and jsonb_typeof(d -> 'tickets') <> 'null' then
+    return jsonb_build_object('ok', false, 'reason', 'bad_ticket');
+  end if;
+
   v_appr := case when jsonb_typeof(d -> 'requires_approval') = 'boolean' then (d ->> 'requires_approval')::boolean else false end;
   v_wait := case when jsonb_typeof(d -> 'waitlist_on') = 'boolean' then (d ->> 'waitlist_on')::boolean else false end;
 
@@ -451,7 +669,8 @@ begin
     'link_type', v_ltype, 'online_link', v_link,
     'description', left(btrim(coalesce(d ->> 'description', '')), 2000),
     'capacity', v_cap, 'requires_approval', v_appr, 'waitlist_on', v_wait, 'visibility', v_vis,
-    'flyer_url', v_cover, 'vibe', v_vibe));
+    'flyer_url', v_cover, 'vibe', v_vibe, 'tickets', v_tickets,
+    'price_naira', (select min((x ->> 'price_naira')::integer) from jsonb_array_elements(coalesce(v_tickets, '[]'::jsonb)) x)));
 end $$;
 revoke all on function public._ev_normalize(jsonb, uuid) from public, anon, authenticated;
 
@@ -492,6 +711,8 @@ begin
   if v_n >= 5 then return jsonb_build_object('ok', false, 'reason', 'try_again_later'); end if;
 
   v_room := public._ev_host_room(me);
+  -- add_to_room false keeps the event out of the host's room.
+  if jsonb_typeof(p_draft -> 'add_to_room') = 'boolean' and not (p_draft ->> 'add_to_room')::boolean then v_room := null; end if;
   n := public._ev_normalize(p_draft, v_room);
   if not (n ->> 'ok')::boolean then return n; end if;
   f := n -> 'f';
@@ -504,14 +725,16 @@ begin
   -- Inserted as 'pending' (your trigger makes it so), then flipped to live in this same transaction (note 1 in the header).
   insert into public.events (title, venue_name, area, geog, starts_at, ends_at, vibe, flyer_url, status,
                              host_id, room_id, description, kind, timezone, link_type, capacity,
-                             requires_approval, waitlist_on, visibility, slug)
+                             requires_approval, waitlist_on, visibility, slug, price_naira)
   values (f ->> 'title', f ->> 'venue_name', f ->> 'area',
           case when (f ->> 'lat') is null then null
                else st_point((f ->> 'lng')::double precision, (f ->> 'lat')::double precision)::geography end,
           (f ->> 'starts_at')::timestamptz, (f ->> 'ends_at')::timestamptz, f ->> 'vibe', f ->> 'flyer_url', 'pending',
           me, v_room, f ->> 'description', f ->> 'kind', f ->> 'timezone', f ->> 'link_type', (f ->> 'capacity')::integer,
-          (f ->> 'requires_approval')::boolean, (f ->> 'waitlist_on')::boolean, f ->> 'visibility', v_slug)
+          (f ->> 'requires_approval')::boolean, (f ->> 'waitlist_on')::boolean, f ->> 'visibility', v_slug,
+          coalesce((f ->> 'price_naira')::integer, 0))
   returning id into v_id;
+  perform public._ev_apply_types(v_id, f -> 'tickets', true);
 
   if (f ->> 'online_link') is not null then
     insert into public.ev_event_links (event_id, link) values (v_id, f ->> 'online_link');
@@ -539,8 +762,9 @@ declare
   e        public.events;
   v_allowed text[] := array['title', 'starts_at', 'ends_at', 'timezone', 'kind', 'place_name', 'area', 'lat', 'lng',
                             'link_type', 'online_link', 'description', 'capacity', 'requires_approval', 'waitlist_on',
-                            'visibility', 'cover_url', 'vibe'];
+                            'visibility', 'cover_url', 'vibe', 'tickets'];
   v_patch  jsonb;
+  v_block  text;
   v_merged jsonb;
   n        jsonb;
   f        jsonb;
@@ -564,7 +788,13 @@ begin
   if not (n ->> 'ok')::boolean then return n; end if;
   f := n -> 'f';
 
-  v_reopen := (e.capacity is not null and ((f ->> 'capacity') is null or (f ->> 'capacity')::integer > e.capacity))
+  -- A ticket type people hold cannot be dropped. Checked before anything is written.
+  if jsonb_typeof(f -> 'tickets') = 'array' then
+    v_block := public._ev_types_blocker(p_event, f -> 'tickets');
+    if v_block is not null then return jsonb_build_object('ok', false, 'reason', 'ticket_in_use', 'ticket', v_block); end if;
+  end if;
+
+  v_reopen := jsonb_typeof(f -> 'tickets') = 'array' or (e.capacity is not null and ((f ->> 'capacity') is null or (f ->> 'capacity')::integer > e.capacity))
               or ((f ->> 'requires_approval')::boolean is distinct from e.requires_approval);
 
   update public.events set
@@ -575,8 +805,10 @@ begin
     timezone = f ->> 'timezone', kind = f ->> 'kind', link_type = f ->> 'link_type',
     description = f ->> 'description', capacity = (f ->> 'capacity')::integer,
     requires_approval = (f ->> 'requires_approval')::boolean, waitlist_on = (f ->> 'waitlist_on')::boolean,
-    visibility = f ->> 'visibility', flyer_url = f ->> 'flyer_url', vibe = f ->> 'vibe'
+    visibility = f ->> 'visibility', flyer_url = f ->> 'flyer_url', vibe = f ->> 'vibe',
+    price_naira = coalesce((f ->> 'price_naira')::integer, price_naira)
   where id = p_event;
+  perform public._ev_apply_types(p_event, f -> 'tickets', false);
 
   if (f ->> 'online_link') is null then
     delete from public.ev_event_links where event_id = p_event;
@@ -623,7 +855,7 @@ begin
   d := public._ev_draft_of(p_event);
   s := (d ->> 'starts_at')::timestamptz + interval '7 days';
   x := (d ->> 'ends_at')::timestamptz + interval '7 days';
-  d := d || jsonb_build_object('starts_at', s, 'ends_at', x);
+  d := d || jsonb_build_object('starts_at', s, 'ends_at', x, 'tickets', public._ev_types_draft(p_event));
   r := public._ev_create_core(d);
   if not (r ->> 'ok')::boolean then return r; end if;
   perform public._ev_copy_settings(p_event, (r ->> 'id')::uuid);

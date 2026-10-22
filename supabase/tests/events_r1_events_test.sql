@@ -67,7 +67,7 @@ declare
   h uuid := pg_temp.newuser('Evt Host'); s uuid := pg_temp.newuser('Evt Stranger'); m uuid := pg_temp.newuser('Evt Member');
   g uuid := pg_temp.newuser('Evt Guest', true); st uuid := pg_temp.newuser('Evt Staff'); r5 uuid := pg_temp.newuser('Evt Rate');
   room uuid := gen_random_uuid();
-  r jsonb; e jsonb; e2 jsonb; id1 uuid; id2 uuid; id3 uuid; id4 uuid; n int; i int; titles text[];
+  r jsonb; e jsonb; e2 jsonb; id1 uuid; id2 uuid; id3 uuid; id4 uuid; n int; i int; titles text[]; idt uuid; idl uuid; idp uuid; gid uuid; tt jsonb;
 begin
   update public.profiles set is_admin = true where id = st;
   insert into public.areas (name, side, centroid) values ('EV Test Area', 'island', st_point(3.42, 6.45)::geography) on conflict (name) do nothing;
@@ -293,6 +293,107 @@ begin
   perform pg_temp.ok(jsonb_array_length(pg_temp.j(s, 'select public.ev_my_events()')) = 0, 'a stranger has none');
   perform pg_temp.ok((e -> 0 ->> 'starts_at')::timestamptz > now() - interval '1 hour', 'upcoming come first');
 
+  -- ===================================================== ticket types ========
+  update public.ev_settings set value = 'off' where key = 'paid_tickets';
+  perform pg_temp.relax(h);
+  r := pg_temp.mk(h, '{"title":"Default types"}');
+  e := r -> 'event'; idt := (e ->> 'id')::uuid;
+  perform pg_temp.ok(jsonb_array_length(e -> 'ticket_types') = 1 and e -> 'ticket_types' -> 0 ->> 'name' = 'General' and (e -> 'ticket_types' -> 0 ->> 'price_naira')::int = 0
+                     and e -> 'ticket_types' -> 0 -> 'capacity' = 'null'::jsonb and (e -> 'ticket_types' -> 0 ->> 'sold')::int = 0 and e -> 'ticket_types' -> 0 -> 'spots_left' = 'null'::jsonb
+                     and e -> 'ticket_types' -> 0 ->> 'event_id' = idt::text and (e ->> 'price_naira')::int = 0, 'every new event has one free General with no limit');
+  perform pg_temp.ok((select count(*) from public.ev_ticket_types where event_id = idt) = 1, 'stored as one row');
+  r := pg_temp.mk(h, '{"title":"Three kinds","capacity":10,"tickets":[{"name":"General","price_naira":0,"capacity":5},{"name":" VIP ","price_naira":0,"capacity":2},{"name":"Early"}]}');
+  e := r -> 'event'; idl := (e ->> 'id')::uuid;
+  perform pg_temp.ok((r ->> 'ok')::boolean and jsonb_array_length(e -> 'ticket_types') = 3 and e -> 'ticket_types' -> 0 ->> 'name' = 'General' and e -> 'ticket_types' -> 1 ->> 'name' = 'VIP'
+                     and e -> 'ticket_types' -> 2 ->> 'name' = 'Early', 'a tickets list makes those types, in order, names trimmed');
+  perform pg_temp.ok((e -> 'ticket_types' -> 0 ->> 'spots_left')::int = 5 and (e -> 'ticket_types' -> 1 ->> 'spots_left')::int = 2 and (e -> 'ticket_types' -> 2 ->> 'spots_left')::int = 10,
+                     'spots_left is the tighter of the type''s own capacity and the event''s (no capacity of its own: the event''s 10)');
+  perform pg_temp.ok(jsonb_array_length(pg_temp.get(s, idl::text) -> 'ticket_types') = 3 and exists (select 1 from jsonb_array_elements(pg_temp.j(s, 'select public.ev_list_events()')) q where q ->> 'id' = idl::text and jsonb_array_length(q -> 'ticket_types') = 3),
+                     'the types come with get and with the list, for a stranger too');
+  -- The checks.
+  perform pg_temp.relax(h);
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":[]}') ->> 'reason' = 'tickets_needed', 'an empty tickets list is refused');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":[{"name":"a"},{"name":"b"},{"name":"c"},{"name":"d"},{"name":"e"},{"name":"f"}]}') ->> 'reason' = 'too_many_tickets', 'six types are too many');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":[{"name":"  "}]}') ->> 'reason' = 'need_ticket_name', 'a type needs a name');
+  perform pg_temp.ok(pg_temp.mk(h, json_build_object('title', 'T', 'tickets', json_build_array(json_build_object('name', repeat('n', 61))))::jsonb) ->> 'reason' = 'ticket_name_too_long', 'and a name under 61 characters');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":[{"name":"VIP"},{"name":"vip "}]}') ->> 'reason' = 'duplicate_ticket', 'names are unique ignoring case');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":[{"name":"a","price_naira":2.5}]}') ->> 'reason' = 'bad_price' and pg_temp.mk(h, '{"title":"T","tickets":[{"name":"a","price_naira":-1}]}') ->> 'reason' = 'bad_price'
+                     and pg_temp.mk(h, '{"title":"T","tickets":[{"name":"a","price_naira":"free"}]}') ->> 'reason' = 'bad_price', 'a price is a whole number from 0');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":[{"name":"a","capacity":0}]}') ->> 'reason' = 'bad_ticket_capacity' and pg_temp.mk(h, '{"title":"T","tickets":[{"name":"a","capacity":1.5}]}') ->> 'reason' = 'bad_ticket_capacity',
+                     'a type capacity is empty or 1 and up');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":"all of them"}') ->> 'reason' = 'bad_ticket' and pg_temp.mk(h, '{"title":"T","tickets":["x"]}') ->> 'reason' = 'bad_ticket', 'a tickets value of the wrong shape is refused');
+  perform pg_temp.ok((select count(*) from public.events where title = 'T') = 0, 'and none of those made an event');
+  -- Paid is switched off.
+  r := pg_temp.mk(h, '{"title":"Paid","tickets":[{"name":"General","price_naira":0},{"name":"VIP","price_naira":5000,"capacity":10}]}');
+  perform pg_temp.ok(r ->> 'reason' = 'currently_unavailable' and (r ->> 'ok')::boolean is false, 'a paid type is refused on create with exactly currently_unavailable');
+  perform pg_temp.ok(pg_temp.upd(h, idt, '{"tickets":[{"name":"General"},{"name":"VIP","price_naira":1}]}') ->> 'reason' = 'currently_unavailable', 'and on update');
+  perform pg_temp.ok(pg_temp.j(h, format('select public.ev_clone_event(%L)', idt)) ->> 'ok' = 'true', 'cloning a free event still works');
+  begin
+    perform pg_temp.actor(h);
+    perform public.ev_set_setting('paid_tickets', 'on');
+    perform pg_temp.admin();
+    perform pg_temp.ok(false, 'a signed-in user must not flip the setting');
+  exception when insufficient_privilege then
+    perform pg_temp.admin();
+    perform pg_temp.ok(true, 'a signed-in user cannot call ev_set_setting');
+  end;
+  begin
+    perform pg_temp.anon();
+    perform public.ev_set_setting('paid_tickets', 'on');
+    perform pg_temp.admin();
+    perform pg_temp.ok(false, 'anon must not flip the setting');
+  exception when insufficient_privilege then
+    perform pg_temp.admin();
+    perform pg_temp.ok(true, 'anon cannot call ev_set_setting');
+  end;
+  perform pg_temp.ok((select value from public.ev_settings where key = 'paid_tickets') = 'off', 'and it is still off');
+  perform pg_temp.ok(public.ev_set_setting('other', 'on') = 'bad_key' and public.ev_set_setting('paid_tickets', 'maybe') = 'bad_value', 'only paid_tickets can be set, to on or off');
+  perform pg_temp.ok(not has_table_privilege('authenticated', 'public.ev_ticket_types', 'select') and not has_table_privilege('anon', 'public.ev_ticket_types', 'select')
+                     and not has_table_privilege('authenticated', 'public.ev_settings', 'select') and not has_table_privilege('anon', 'public.ev_settings', 'select')
+                     and not has_table_privilege('authenticated', 'public.ev_settings', 'update') and not has_table_privilege('authenticated', 'public.ev_ticket_types', 'insert'),
+                     'LEAK CHECK: ev_ticket_types and ev_settings are closed to anon and authenticated');
+  -- With paid on, a paid type can be made (still not taken: see the registrations test).
+  perform pg_temp.ok(public.ev_set_setting('paid_tickets', 'on') = 'ok', 'Ola switches paid tickets on');
+  perform pg_temp.relax(h);
+  r := pg_temp.mk(h, '{"title":"Paid two","tickets":[{"name":"General","price_naira":0},{"name":"VIP","price_naira":5000,"capacity":10}]}');
+  idp := (r -> 'event' ->> 'id')::uuid;
+  perform pg_temp.ok((r ->> 'ok')::boolean and (r -> 'event' ->> 'price_naira')::int = 0 and r -> 'event' -> 'ticket_types' -> 1 ->> 'price_naira' = '5000', 'on: a paid type saves; the event price is the lowest type price');
+  r := pg_temp.mk(h, '{"title":"All paid","tickets":[{"name":"Ticket","price_naira":2000}]}');
+  perform pg_temp.ok((r -> 'event' ->> 'price_naira')::int = 2000 and (select price_naira from public.events where title = 'All paid') = 2000, 'and when every type is paid the event price is the lowest of them');
+  perform pg_temp.ok(public.ev_set_setting('paid_tickets', 'off') = 'ok', 'Ola switches it off again');
+  r := pg_temp.j(h, format('select public.ev_clone_event(%L)', idp));
+  perform pg_temp.ok(r ->> 'reason' = 'currently_unavailable', 'cloning an event that has a paid type is refused while it is off');
+  perform pg_temp.ok(pg_temp.upd(h, idp, '{"title":"Paid two, renamed"}') ->> 'ok' = 'true', 'but editing its other fields is fine (the types are only checked when a tickets list is sent)');
+  -- Editing the types.
+  perform pg_temp.relax(h);
+  select id into gid from public.ev_ticket_types where event_id = idl and name = 'General';
+  r := pg_temp.upd(h, idl, '{"tickets":[{"name":"general","price_naira":0,"capacity":9},{"name":"Extra","capacity":3}]}');
+  tt := r -> 'event' -> 'ticket_types';
+  perform pg_temp.ok((r ->> 'ok')::boolean and jsonb_array_length(tt) = 2 and tt -> 0 ->> 'id' = gid::text and tt -> 0 ->> 'name' = 'general' and (tt -> 0 ->> 'capacity')::int = 9
+                     and tt -> 1 ->> 'name' = 'Extra' and not exists (select 1 from public.ev_ticket_types where event_id = idl and name = 'VIP'),
+                     'an edit with a list keeps the id of a name that stays (any case), adds the new one, drops the rest');
+  perform pg_temp.ok(pg_temp.upd(h, idl, '{"tickets":[]}') ->> 'reason' = 'tickets_needed' and jsonb_array_length(pg_temp.get(h, idl::text) -> 'ticket_types') = 2, 'an empty list on edit is refused and nothing changes');
+  r := pg_temp.upd(h, idl, '{"title":"Three kinds, edited"}');
+  perform pg_temp.ok(jsonb_array_length(r -> 'event' -> 'ticket_types') = 2, 'an edit with no list leaves the types alone');
+  r := pg_temp.j(h, format('select public.ev_clone_event(%L)', idl));
+  perform pg_temp.ok((r ->> 'ok')::boolean and jsonb_array_length(r -> 'event' -> 'ticket_types') = 2 and r -> 'event' -> 'ticket_types' -> 0 ->> 'id' <> gid::text
+                     and (r -> 'event' -> 'ticket_types' -> 0 ->> 'capacity')::int = 9 and r -> 'event' -> 'ticket_types' -> 1 ->> 'name' = 'Extra', 'a clone has the same types with new ids');
+  -- An old event: no rows, a derived General, not backfilled.
+  insert into public.events (title, venue_name, starts_at, status, price_naira) values ('Old free', 'Somewhere', now() + interval '3 days', 'live', 0) returning id into id1;
+  insert into public.events (title, venue_name, starts_at, status, price_naira) values ('Old paid', 'Somewhere', now() + interval '3 days', 'live', 300) returning id into id2;
+  e := pg_temp.get(s, id1::text);
+  perform pg_temp.ok(jsonb_array_length(e -> 'ticket_types') = 1 and e -> 'ticket_types' -> 0 ->> 'name' = 'General' and e -> 'ticket_types' -> 0 ->> 'id' = md5('ticket-type:' || id1::text)::uuid::text
+                     and (select count(*) from public.ev_ticket_types where event_id = id1) = 0, 'an old event reads as one derived General and is not backfilled');
+  e := pg_temp.get(s, id2::text);
+  perform pg_temp.ok((e ->> 'price_naira')::int = 300 and (e -> 'ticket_types' -> 0 ->> 'price_naira')::int = 300, 'an old paid event''s derived General has its price');
+  -- Out of the room.
+  insert into public.crews (id, name, created_by, visibility) values (gen_random_uuid(), 'Evt Types Room', st, 'open') returning id into idt;
+  insert into public.crew_members (crew_id, user_id, role) values (idt, st, 'owner');
+  r := pg_temp.mk(st, '{"title":"In my room"}');
+  perform pg_temp.ok(r -> 'event' ->> 'room_id' = idt::text, 'a host with a room gets the event tied to it');
+  r := pg_temp.mk(st, '{"title":"Not in my room","add_to_room":false}');
+  perform pg_temp.ok(r -> 'event' -> 'room_id' = 'null'::jsonb and r -> 'event' -> 'host' ->> 'roomId' = idt::text, 'add_to_room false keeps it out of the room (the host card still shows their room)');
+
   -- Access: only get and list are open to a visitor with no account.
   declare f record;
   begin
@@ -300,7 +401,8 @@ begin
                from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
               where ns.nspname = 'public'
                 and p.proname in ('ev_create_event', 'ev_update_event', 'ev_cancel_event', 'ev_clone_event', 'ev_get_event', 'ev_list_events', 'ev_my_events',
-                                  '_ev_event_json', '_ev_normalize', '_ev_create_core', '_ev_staff', '_ev_can_open', '_ev_manage', 'ev_events_sync_status')
+                                  '_ev_event_json', '_ev_normalize', '_ev_create_core', '_ev_staff', '_ev_can_open', '_ev_manage', 'ev_events_sync_status', 'ev_set_setting',
+                                  '_ev_types', '_ev_paid_on', '_ev_apply_types', '_ev_ensure_types')
     loop
       perform pg_temp.ok(has_function_privilege('anon', f.oid, 'execute') = (f.name in ('ev_get_event', 'ev_list_events')),
                          f.sig || ': anon ' || case when f.name in ('ev_get_event', 'ev_list_events') then 'may call' else 'cannot call' end);

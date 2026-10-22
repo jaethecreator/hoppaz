@@ -61,6 +61,10 @@ create function pg_temp.cancel(u uuid, ev uuid) returns text language plpgsql as
 begin
   return pg_temp.t(u, format('select public.ev_cancel_registration(%L)', ev));
 end $$;
+create function pg_temp.regt(u uuid, ev uuid, ty uuid) returns jsonb language plpgsql as $$
+begin
+  return pg_temp.j(u, format('select public.ev_register(%L, %L::jsonb)', ev, json_build_object('ticketTypeId', ty)::text));
+end $$;
 create function pg_temp.mine(u uuid, ev uuid) returns jsonb language plpgsql as $$
 begin
   return pg_temp.j(u, format('select public.ev_my_ticket(%L)', ev));
@@ -81,7 +85,7 @@ declare
   h uuid := pg_temp.newuser('Tix Host'); a uuid := pg_temp.newuser('Tix Ada'); b uuid := pg_temp.newuser('Tix Bola');
   c uuid := pg_temp.newuser('Tix Chike'); x uuid := pg_temp.newuser('Tix Stranger'); w uuid := pg_temp.newuser('Tix Waiter');
   secret text := 'test-secret-for-the-ticket-tests-0123456789abcdef';
-  e1 uuid; e2 uuid; e3 uuid; ew uuid;
+  e1 uuid; e2 uuid; e3 uuid; ew uuid; ety uuid; treg uuid; tvip uuid;
   ta jsonb; tb jsonb; ta2 jsonb; tw jsonb; r jsonb; n int; tok text; body text; sig text; code text; f record; p jsonb;
 begin
   -- The secret, and everything closed.
@@ -245,6 +249,32 @@ begin
   perform pg_temp.ok(pg_temp.scan(h, e2, code) ->> 'reason' = 'void', 'a cancelled event: every scan is void');
   perform pg_temp.ok((select count(*) from public.ev_scans where event_id = e1 and result = 'not_valid') >= 8 and (select count(*) from public.ev_scans where event_id = e1 and result = 'checked_in') = 2,
                      'every scan, good or bad, is in the log');
+
+  -- Ticket types: the ticket carries the type and its name.
+  ety := pg_temp.ev(h, 'Typed night');
+  treg := gen_random_uuid();
+  insert into public.ev_ticket_types (id, event_id, name, price_naira, capacity, sort) values (treg, ety, 'Regular', 0, null, 1);
+  tvip := gen_random_uuid();
+  insert into public.ev_ticket_types (id, event_id, name, price_naira, capacity, sort) values (tvip, ety, 'VIP', 0, 5, 2);
+  perform pg_temp.regt(a, ety, tvip);
+  ta := pg_temp.mine(a, ety);
+  perform pg_temp.ok(ta ->> 'ticket_name' = 'VIP' and (select ticket_type_id from public.ev_tickets where event_id = ety) = tvip, 'a VIP registration gets a VIP ticket, with the type on the row');
+  r := pg_temp.scan(h, ety, ta ->> 'token');
+  perform pg_temp.ok(r ->> 'ticket' = 'VIP', 'the door card shows VIP');
+  perform pg_temp.reg(b, ety);
+  tb := pg_temp.mine(b, ety);
+  perform pg_temp.ok(tb ->> 'ticket_name' = 'Regular', 'with no type asked for the ticket is the first free type with room (Regular)');
+  r := pg_temp.scan(h, ety, tb ->> 'code', 'express');
+  perform pg_temp.ok(r ->> 'ticket' = 'Regular' and r ->> 'kind' = 'checked_in', 'express check-in names the type too');
+  r := pg_temp.j(h, format('select public.ev_door_search(%L, %L)', ety, 'tix ada'));
+  perform pg_temp.ok(r -> 0 ->> 'ticket_name' = 'VIP', 'the name search shows the ticket name');
+  perform pg_temp.cancel(a, ety);
+  perform pg_temp.regt(a, ety, treg);
+  ta2 := pg_temp.mine(a, ety);
+  perform pg_temp.ok((ta2 ->> 'version')::int = 2 and ta2 ->> 'ticket_name' = 'Regular' and ta2 ->> 'id' = ta ->> 'id' and (select ticket_type_id from public.ev_tickets where id = (ta2 ->> 'id')::uuid) = treg,
+                     'coming back with another type: the same ticket row, version 2, now Regular');
+  r := pg_temp.j(h, format('select public.ev_checkin_manual(%L, %L)', ety, pg_temp.rid(ety, a)));
+  perform pg_temp.ok(r ->> 'ticket' = 'Regular', 'a manual check-in names the type');
 
   -- Access.
   for f in select p.oid, p.oid::regprocedure as sig, p.proname as name

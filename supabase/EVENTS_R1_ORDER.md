@@ -46,6 +46,25 @@ It answers `already_set` if one exists; pass `true` as the second argument only 
 verifying). Until it is set, `ev_my_ticket` raises `ticket_secret_missing` and `ev_scan` answers `no_secret`. The secret lives in the closed
 table `ev_ticket_secret`; no signed-in user can read it or set it.
 
+## 2b. Ticket types and the paid switch
+
+Every event has 1 to 5 ticket types (name, price in whole naira, capacity), in the closed table `ev_ticket_types`, made by `events_r1_events.sql`
+(`ev_create_event` gives each new event one free General with no limit). Registrations and tickets carry `ticket_type_id`; the ticket and the door
+card show the type's name; a type's places are counted on going and checked-in people holding it AND the event's capacity (spots_left is the
+tighter), the waitlist moves up per type (a full type is skipped), and an edit cannot drop a type people hold (`ticket_in_use`). Old events are
+NOT backfilled: they read as one derived General at the event's own price, and the real row is made at their first registration.
+
+Paid is off. `ev_create_event`, `ev_update_event` (when it is sent a tickets list) and `ev_clone_event` refuse any type with a price above 0 with
+exactly the text `currently_unavailable`, until Ola turns the setting on. The setting is the row `paid_tickets` of the closed table `ev_settings`
+(key, value), `off` at first; a re-run of the file never flips it. Only the service role and the SQL editor can change it:
+
+```sql
+select public.ev_set_setting('paid_tickets', 'on');    -- or 'off'; answers ok, bad_key or bad_value
+```
+
+Even with it on, `ev_register` on a paid type answers `currently_unavailable`: there is no payment code in Release 1. (Clone also refuses a paid
+type while the setting is off; the fake layer copies it.) `ev_export` gained a Ticket column, so the file drops and recreates that one function.
+
 ## 3. The cron line (Pops)
 
 `ev_dispatch_due_pops()` makes the automatic Pops (day before, 1 hour before, doors open) when they are due and sends the scheduled ones. It
@@ -66,11 +85,11 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
 | Fake layer method | SQL |
 |---|---|
 | events.list / get / listMine / listForRoom | `ev_list_events` / `ev_get_event` / `ev_my_events` / `ev_room_events` |
-| events.create / update / clone / cancel | `ev_create_event` / `ev_update_event` / `ev_clone_event` / `ev_cancel_event` |
+| events.create / update / clone / cancel (draft.tickets = the ticket types) | `ev_create_event` / `ev_update_event` / `ev_clone_event` / `ev_cancel_event` |
 | events.setInterested | the existing swipes (untouched) |
 | events.viewerState | `ev_viewer_state` |
 | events.get/setRegistrationSettings | `ev_get_registration_settings` / `ev_set_registration_settings` |
-| registrations.register / cancel | `ev_register` / `ev_cancel_registration` |
+| registrations.register (opts.ticketTypeId) / cancel | `ev_register` / `ev_cancel_registration` |
 | registrations.list / approve / decline / promote / exportCsv | `ev_audience` / `ev_decide` / `ev_decide` / `ev_promote` / `ev_export` (rows) |
 | registrations.ticketFor | `ev_my_ticket` |
 | pops.listForEvent / visibleOnEvent / send | `ev_host_pops` / `ev_event_pops` / `ev_send_pop` |
@@ -120,10 +139,13 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
     thing yet. Keep it, or host and staff only for Release 1?
 13. **pg_cron and the Pops delivery.** Is pg_cron on, and who delivers the push for a Pop (the web push route exists; email does not)?
 
+14. **Paid tickets switch.** `paid_tickets` lives in `ev_settings` and only you set it, with `ev_set_setting`. Is a SQL-editor statement enough, or do you want
+    it behind the admin route too? And in Release 2, should the switch stay as a global kill switch?
+
 ## 6. Deliberately not included
 
-- Payments of any kind: Bachs, orders, order items, checkout, webhooks, payouts, fees, paid events (`ev_register` refuses a price above 0).
-- Ticket types (there is one free General ticket), discount codes, transfer, resale, refunds, chargebacks, per-event refund policy.
+- Payments of any kind: Bachs, orders, order items, checkout, webhooks, payouts, fees (`ev_register` refuses a paid type).
+- Paying for a paid ticket type (a paid type can exist once Ola switches the setting on, but cannot be taken), sales windows and per-person limits per type, discount codes, transfer, resale, refunds, chargebacks, per-event refund policy.
 - Approval for paid tickets (Jae: paying is the approval; Release 2).
 - The email code sign-in itself and the email sender (Supabase Auth, yours), a phone number, Web3 identity.
 - Pop delivery (push, email, WhatsApp). The WhatsApp share is a front end copy of the text and the event link.

@@ -1,6 +1,6 @@
 -- ============================================================================
 -- DRAFT FOR OLA, NOT RUN ON PRODUCTION
--- Hoppaz Release 1, file 3 of 6: tickets, the signed QR and the door scan. Free events only: one General ticket per person who
+-- Hoppaz Release 1, file 3 of 6: tickets, the signed QR and the door scan. Free events only: one ticket (of the person's ticket type) per person who
 -- is going. Written from src/lib/events-r1/fake/door.ts, crypto.ts and registrations.ts and from section 6 of
 -- notes/luma/08-ticketing-framework.md.
 --
@@ -16,7 +16,8 @@
 -- can be run by the service role and by you in the SQL editor, never by a signed-in user.
 --
 -- WHAT IT IS.
---   ev_tickets    one row per registration that is going: the ticket id, the owner, the holder name, a short code a person at the
+--   ev_tickets    one row per registration that is going: the ticket id, the owner, the holder name, the ticket type and its name (shown on
+--                 the ticket, by ev_scan and by the name search; a person who comes back with another type gets that type), a short code a person at the
 --                 door can type when a QR will not scan (8 characters, no 0 O 1 I), a version and a status (valid | used | void).
 --   ev_scans      the door log: every scan, good or not, by whom, when, standard or express, and whether it came from a phone that was
 --                 offline. The phone's own clock is kept as device_at.
@@ -72,6 +73,7 @@ create table if not exists public.ev_tickets (
   registration_id uuid not null unique references public.ev_registrations(id) on delete cascade,
   owner_id        uuid not null references public.profiles(id) on delete cascade,
   holder_name     text not null default '',
+  ticket_type_id  uuid references public.ev_ticket_types(id),
   ticket_name     text not null default 'General',
   code            text not null check (code ~ '^[A-HJ-NP-Z2-9]{8}$'),
   version         integer not null default 1 check (version >= 1),
@@ -80,6 +82,7 @@ create table if not exists public.ev_tickets (
   used_at         timestamptz,
   used_by         uuid references public.profiles(id) on delete set null
 );
+alter table public.ev_tickets add column if not exists ticket_type_id uuid references public.ev_ticket_types(id);
 create unique index if not exists ev_tickets_code_idx on public.ev_tickets (event_id, code);
 create index if not exists ev_tickets_event_idx on public.ev_tickets (event_id, status);
 alter table public.ev_tickets enable row level security;
@@ -208,21 +211,28 @@ declare
   t    public.ev_tickets;
   v_id uuid;
   i    integer;
+  v_type uuid;
+  v_tname text;
 begin
   select * into r from public.ev_registrations where id = p_registration;
   if r.id is null or r.status not in ('going', 'checked_in') then return null; end if;
+  -- The ticket carries the person's ticket type and its name (an old registration with no type holds the event's first).
+  v_type := coalesce(r.ticket_type_id, public._ev_first_type(r.event_id));
+  select x.name into v_tname from public._ev_types(r.event_id) x where x.id = v_type;
+  v_tname := coalesce(v_tname, 'General');
   select * into t from public.ev_tickets where registration_id = r.id for update;
   if t.id is not null then
     -- A returning person gets a new version, so the old QR stops working.
     if t.status = 'void' then
-      update public.ev_tickets set version = version + 1, status = 'valid', holder_name = r.name, used_at = null, used_by = null where id = t.id;
+      update public.ev_tickets set version = version + 1, status = 'valid', holder_name = r.name, used_at = null, used_by = null,
+             ticket_type_id = v_type, ticket_name = v_tname where id = t.id;
     end if;
     return t.id;
   end if;
   for i in 1..10 loop
     begin
-      insert into public.ev_tickets (event_id, registration_id, owner_id, holder_name, code)
-      values (r.event_id, r.id, r.user_id, r.name, public._ev_code())
+      insert into public.ev_tickets (event_id, registration_id, owner_id, holder_name, ticket_type_id, ticket_name, code)
+      values (r.event_id, r.id, r.user_id, r.name, v_type, v_tname, public._ev_code())
       returning id into v_id;
       exit;
     exception when unique_violation then
