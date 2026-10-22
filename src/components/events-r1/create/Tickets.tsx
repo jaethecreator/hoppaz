@@ -61,14 +61,20 @@ export default function Tickets({
       {types.map((t, i) => (
         <div key={t.key} className="flex flex-col gap-2 rounded-hz border border-line bg-ink-3/40 p-3">
           {paid && (
-            <label className="flex items-center gap-2">
-              <span className="font-body text-[15px] text-dim">₦</span>
-              <input value={t.price} onChange={(e) => edit(t.key, { price: digits(e.target.value) })} inputMode="numeric" placeholder="Price in naira" aria-label={`Price in naira, ticket ${i + 1}`} />
+            <label className="block">
+              <span className="mb-1 block font-body text-[13px] text-dim">Price (₦)</span>
+              <input value={t.price} onChange={(e) => edit(t.key, { price: digits(e.target.value) })} inputMode="numeric" placeholder="0" aria-label={`Price (₦), ticket ${i + 1}`} />
             </label>
           )}
-          <div className="grid grid-cols-[1fr_7.5rem] gap-2">
-            <input value={t.name} onChange={(e) => edit(t.key, { name: e.target.value })} placeholder="Name" aria-label={`Name, ticket ${i + 1}`} maxLength={60} autoComplete="off" />
-            <input value={t.capacity} onChange={(e) => edit(t.key, { capacity: digits(e.target.value, 5) })} inputMode="numeric" placeholder="No limit" aria-label={`Capacity, ticket ${i + 1}`} />
+          <div className="grid grid-cols-[1fr_8.5rem] items-end gap-2">
+            <label className="block min-w-0">
+              <span className="mb-1 block font-body text-[13px] text-dim">Ticket name</span>
+              <input value={t.name} onChange={(e) => edit(t.key, { name: e.target.value })} placeholder="General" aria-label={`Ticket name, ticket ${i + 1}`} maxLength={60} autoComplete="off" />
+            </label>
+            <label className="block min-w-0">
+              <span className="mb-1 block font-body text-[13px] leading-tight text-dim">How many (empty = no limit)</span>
+              <input value={t.capacity} onChange={(e) => edit(t.key, { capacity: digits(e.target.value, 5) })} inputMode="numeric" placeholder="No limit" aria-label={`How many, ticket ${i + 1}`} />
+            </label>
           </div>
           {types.length > 1 && (
             <button type="button" onClick={() => onTypes(types.filter((x) => x.key !== t.key))} className="min-h-[36px] self-start font-body text-[14px] text-dim underline underline-offset-4">
@@ -83,8 +89,6 @@ export default function Tickets({
           + Add ticket type
         </button>
       )}
-
-      <p className="hint">The second box is how many people. Empty means no limit.</p>
 
       {paid && !PAID_TICKETS && <p className="font-body text-[14px] text-danfo">{PAID_UNAVAILABLE}</p>}
     </div>
