@@ -268,7 +268,7 @@ export function buildSeed(now: number): FakeState {
 
   /* Rooms. */
   const rooms: Array<[string, string, string, RoomRec["kind"], string | null, number, boolean, string | null, string]> = [
-    [R.hq, "hoppaz-hq", "Hoppaz HQ", "hq", U.hq, 1200, true, null, "The home room. Say hi, ask anything, find out what is on."],
+    [R.hq, "hoppaz-hq", "Hoppaz HQ", "hq", U.hq, 4800, true, null, "The home room. Say hi, ask anything, find out what is on."],
     [R.p360, "360playlist", "360Playlist", "brand", U.p360, 839, true, "/brands/360playlist.jpg", "New music, listening parties and the people behind the playlist."],
     [R.kredete, "kredete", "Kredete", "crew", U.kredete, 312, false, null, "Open mics, food tables and small nights."],
     [R.lrc, "lagos-run-club", "Lagos Run Club", "crew", U.lrc, 467, false, null, "Runs for every pace across Lagos."],
@@ -282,7 +282,7 @@ export function buildSeed(now: number): FakeState {
     st.rooms[id] = {
       id, slug, name, kind, logo_url: logo, wallpaper_url: null, verified, owner_id: owner, description, base_members: base,
       // Hoppaz HQ is chat first: no walkable room here (so nothing can fill a 60 walker cap).
-      has_3d: false, online: kind === "hq" ? 3410 : 0,
+      has_3d: false, online: kind === "hq" ? 320 : 0,
     };
   }
   st.memberships[`${U.ada}:${R.p360}`] = true;

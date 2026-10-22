@@ -608,7 +608,7 @@ await test("rooms: is_owner, can_post, has_3d, online, HQ short address and mine
   eq(await api.rooms.mine(), [], "signed out owns nothing");
   as("Ada Obi");
   const l = await api.rooms.list();
-  eq([l.hq.is_owner, l.hq.can_post, l.hq.has_3d, l.hq.online], [false, false, false, 3410], "HQ for a guest: chat first, no 3D, people online");
+  eq([l.hq.is_owner, l.hq.can_post, l.hq.has_3d, l.hq.online], [false, false, false, 320], "HQ for a guest: chat first, no 3D, people online");
   eq((await api.rooms.get("hq"))?.id, l.hq.id, "/rooms/hq finds Hoppaz HQ");
   eq((await api.rooms.get("hoppaz-hq"))?.id, l.hq.id, "and its own slug");
   eq(l.mine.map((r) => [r.name, r.is_owner, r.can_post]).sort(), [["360Playlist", false, false], ["Lagos Run Club", false, false]], "a member is not an owner");

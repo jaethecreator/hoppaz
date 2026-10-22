@@ -92,6 +92,29 @@ export const useViewerState = (eventId: string | null | undefined) =>
 
 export const useRooms = () => useR1Query((api) => api.rooms.list(), []);
 
+/** One room by id or slug ("hq" is Hoppaz HQ). null when there is none. */
+export const useRoom = (idOrSlug: string | null | undefined) =>
+  useR1Query((api) => (idOrSlug ? api.rooms.get(idOrSlug) : Promise.resolve(null)), [idOrSlug]);
+
+/** The rooms the viewer owns (create offers "Add to <room>" from this). */
+export const useMyRooms = () => useR1Query((api) => api.rooms.mine(), []);
+
+/** A room's events, upcoming first, then past. */
+export const useRoomEvents = (roomId: string | null | undefined) =>
+  useR1Query((api) => (roomId ? api.events.listForRoom(roomId) : Promise.resolve([])), [roomId]);
+
+/** The event chats of a room the viewer cares about. */
+export const useRoomChats = (roomId: string | null | undefined) =>
+  useR1Query((api) => (roomId ? api.rooms.eventChats(roomId) : Promise.resolve([])), [roomId]);
+
+/** One event's chat (null when the event has no room). */
+export const useEventChat = (eventId: string | null | undefined) =>
+  useR1Query((api) => (eventId ? api.rooms.eventChat(eventId) : Promise.resolve(null)), [eventId]);
+
+/** Chat lines of a room: channel "general", or an event id for that event's chat. */
+export const useRoomMessages = (roomId: string | null | undefined, channel: string) =>
+  useR1Query((api) => (roomId ? api.rooms.messages(roomId, channel) : Promise.resolve([])), [roomId, channel]);
+
 export const useAnnouncements = (roomId: string | null | undefined) =>
   useR1Query((api) => (roomId ? api.rooms.announcements(roomId) : Promise.resolve([])), [roomId]);
 

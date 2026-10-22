@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import SignInSheet from "@/components/events-r1/SignInSheet";
 import { AREAS, areaByName } from "@/lib/geo";
-import { useR1Api, useR1Auth, useR1Now, useR1Query } from "@/lib/events-r1/hooks";
+import { useMyRooms, useR1Api, useR1Now } from "@/lib/events-r1/hooks";
 import type { EventDraft, EventKind, LinkType, Visibility } from "@/lib/events-r1/types";
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
 import { PAID_TICKETS } from "@/lib/events-r1/flags";
@@ -33,7 +33,6 @@ const WA_MAX = 32;
 export default function EventForm({ cover }: { cover: string | null }) {
   const router = useRouter();
   const api = useR1Api();
-  const { user } = useR1Auth();
   const clock = useR1Now();
 
   const [title, setTitle] = useState("");
@@ -73,10 +72,10 @@ export default function EventForm({ cover }: { cover: string | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
-  // The host's room (if any) comes from their own events: the data layer has no "my room" call yet.
-  const mine = useR1Query((a) => a.events.listMine(), [user?.id ?? null]);
-  const room = mine.data?.find((e) => e.host.roomId)?.host ?? null;
-  const roomName = room?.roomName ?? null;
+  // The host's room (if any): the first room they own.
+  const mine = useMyRooms();
+  const room = mine.data?.[0] ?? null;
+  const roomName = room?.name ?? null;
   const roomOn = !!room && addToRoom;
 
   const online = kind !== "in_person";
