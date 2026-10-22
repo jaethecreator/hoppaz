@@ -4,10 +4,18 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { EVENTS_R1_FAKE } from "@/lib/events-r1/flags";
 import { useR1Api, useR1Auth, useR1Now } from "@/lib/events-r1/hooks";
+import type { HostPayoutStatus } from "@/lib/events-r1/pay";
 import type { R1Event } from "@/lib/events-r1/types";
 
 type Dev = (typeof import("@/lib/events-r1/fake"))["fakeDev"];
 type Person = ReturnType<Dev["users"]>[number];
+
+const PAYOUTS: Array<[HostPayoutStatus, string]> = [
+  ["not_started", "Not started"],
+  ["in_progress", "In progress"],
+  ["ready", "Ready"],
+  ["restricted", "Restricted"],
+];
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -45,6 +53,8 @@ function Panel() {
   const [events, setEvents] = useState<R1Event[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [offset, setOffset] = useState(0);
+  const [paid, setPaid] = useState(false);
+  const [payout, setPayout] = useState<HostPayoutStatus>("not_started");
   const [ticket, setTicket] = useState<{ id: string; text: string } | null>(null);
   const [note, setNote] = useState("");
 
@@ -57,7 +67,10 @@ function Panel() {
     setEvents(dev.allEvents());
     setPeople(dev.users());
     setOffset(dev.getOffset());
-  }, [dev]);
+    setPaid(dev.paidOn());
+    const id = api?.auth.current()?.id;
+    setPayout(id ? dev.payoutStatus(id) : "not_started");
+  }, [dev, api]);
 
   useEffect(() => {
     refresh();
@@ -118,6 +131,25 @@ function Panel() {
             <button type="button" className="chip" onClick={() => dev.resetClock()}>Reset time</button>
           </div>
           {nextBefore20 && <p className="hint mt-2">Next event: {nextBefore20.title}, {lagosStamp(Date.parse(nextBefore20.starts_at))}</p>}
+        </section>
+
+        <section className="card mt-4">
+          <h2 className="seclabel">Paid tickets</h2>
+          <p className="mt-2 font-body text-[15px]">Paid tickets: {paid ? "On" : "Off"}{dev.paidLockedByBuild ? " (set by the build)" : ""}</p>
+          <p className="hint mt-1">Off: a paid ticket shows Currently unavailable. On: hosts who can sell may save one and buyers go to the fake payment page.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" className="chip" aria-pressed={paid} disabled={dev.paidLockedByBuild} onClick={() => dev.setPaid(true)}>On</button>
+            <button type="button" className="chip" aria-pressed={!paid} disabled={dev.paidLockedByBuild} onClick={() => dev.setPaid(false)}>Off</button>
+          </div>
+          <p className="seclabel mt-4">Host payouts</p>
+          <p className="hint mt-1">{user ? `For ${user.name}, the signed-in person. Rooftop Sessions and Kredete start as Ready; new people start as Not started.` : "Sign in as a host first."}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {PAYOUTS.map(([value, label]) => (
+              <button key={value} type="button" className="chip" aria-pressed={payout === value} disabled={!user} onClick={() => user && dev.setPayoutOf(user.id, value)}>
+                {label}
+              </button>
+            ))}
+          </div>
         </section>
 
         <section className="card mt-4">
