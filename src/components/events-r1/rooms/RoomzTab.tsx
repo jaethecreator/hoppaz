@@ -45,7 +45,7 @@ export default function RoomzTab() {
               role="tab"
               aria-selected={view === v}
               onClick={() => setView(v)}
-              className={clsx(tab, view === v ? "border-cream bg-cream text-brand-ink" : "border-line text-cream")}
+              className={clsx(tab, view === v ? "border-orange bg-orange text-brand-ink" : "border-line text-cream")}
             >
               {v === "mine" ? "Mine" : "Discover"}
             </button>
