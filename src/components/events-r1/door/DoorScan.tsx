@@ -114,7 +114,7 @@ export default function DoorScan({ id }: { id: string }) {
   };
 
   const shell = (children: React.ReactNode) => (
-    <div className="h-full overflow-y-auto bg-ink px-4 pb-10">
+    <div className="h-full overflow-y-auto bg-ink px-4 pb-28">
       <div className="mx-auto w-full max-w-4xl">{children}</div>
     </div>
   );
@@ -166,7 +166,7 @@ export default function DoorScan({ id }: { id: string }) {
         <button type="button" onClick={back} aria-label="Back" className="-ml-3 grid h-11 w-11 flex-none place-items-center text-cream">
           <ChevronLeft size={26} strokeWidth={2.2} aria-hidden />
         </button>
-        <h1 className="min-w-0 flex-1 truncate font-display text-[22px] font-black leading-tight">Check in · {e.title}</h1>
+        <h1 className="min-w-0 flex-1 font-display text-[22px] font-black leading-tight">Check in · {e.title}</h1>
       </div>
     </header>
   );
@@ -214,8 +214,6 @@ export default function DoorScan({ id }: { id: string }) {
             ))}
           </div>
 
-          <DoorCamera onRead={check} paused={busy || !!pending} />
-
           <div aria-live="polite">
             {result && <ResultBanner result={result} busy={busy} onConfirm={confirm} onSkip={skip} onClose={skip} />}
             {fail && (
@@ -224,6 +222,8 @@ export default function DoorScan({ id }: { id: string }) {
               </p>
             )}
           </div>
+
+          <DoorCamera onRead={check} paused={busy || !!pending} />
 
           <form
             onSubmit={(ev) => {
@@ -240,7 +240,7 @@ export default function DoorScan({ id }: { id: string }) {
                 id="door-code"
                 value={code}
                 onChange={(ev) => setCode(ev.target.value)}
-                placeholder="The short code under the QR"
+                placeholder="Code under the QR"
                 autoComplete="off"
                 autoCapitalize="characters"
                 spellCheck={false}
@@ -261,14 +261,14 @@ export default function DoorScan({ id }: { id: string }) {
               }}
             >
               <label htmlFor="door-token" className="mb-1.5 block font-body text-[13px] text-dim">
-                Test with a typed token
+                Test with a typed token (from /dev/events-r1)
               </label>
               <div className="flex gap-2">
                 <input
                   id="door-token"
                   value={token}
                   onChange={(ev) => setToken(ev.target.value)}
-                  placeholder="Paste a ticket token from /dev/events-r1"
+                  placeholder="Paste a ticket token"
                   autoComplete="off"
                   spellCheck={false}
                   className="min-h-[48px] flex-1 font-mono text-[13px]"
