@@ -18,11 +18,18 @@ export const STORAGE_KEY = "hz.r1.fake.v1";
 
 export type UserRec = { id: string; name: string; email: string; staff?: boolean };
 
-/** An event as stored: R1Event without what is worked out on read (counts, host card, distance). */
+/** A ticket type as stored: what is worked out on read (sold, spots left) is not kept. */
+export type TicketTypeRec = { id: string; name: string; price_naira: number; capacity: number | null };
+
+/**
+ * An event as stored: R1Event without what is worked out on read (counts, host card, distance). ticket_types is stored
+ * lean and may be missing (seeded events, and events saved before ticket types existed): rules.typesOf() then gives the
+ * one free "General" (or, for a seeded paid event, one General at the event's price).
+ */
 export type EventRec = Omit<
   R1Event,
-  "going" | "spots_left" | "host" | "distance_m" | "heat" | "checkins" | "swipes_in" | "here_now"
-> & { host_id: string };
+  "going" | "spots_left" | "host" | "distance_m" | "heat" | "checkins" | "swipes_in" | "here_now" | "ticket_types"
+> & { host_id: string; ticket_types?: TicketTypeRec[] };
 
 export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "latest_announcement"> & {
   owner_id: string | null;

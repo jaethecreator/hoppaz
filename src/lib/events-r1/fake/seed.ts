@@ -391,6 +391,9 @@ function crowdFor(st: FakeState, ev: EventRec, sp: Spec, now: number): void {
       name,
       email,
       phone: null,
+      // The seeded events have the one default type (rules.typesOf builds the same id).
+      ticket_type_id: seedId(`ticket-type:${ev.id}`),
+      ticket_name: "General",
       status,
       answers: {},
       referrer_id: ref ? ref.user_id : null,

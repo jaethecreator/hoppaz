@@ -46,8 +46,11 @@ export interface EventsApi {
 }
 
 export interface RegistrationsApi {
-  /** Register. Outcome depends on approval and capacity: going, requested or waitlisted. Needs a signed-in viewer. */
-  register(eventId: string, opts?: { answers?: Record<string, string>; referrerId?: string | null }): Promise<Registration>;
+  /**
+   * Register. Outcome depends on approval and capacity: going, requested or waitlisted. Needs a signed-in viewer.
+   * ticketTypeId picks the ticket type (default: the first free type with room). A paid type throws "Currently unavailable".
+   */
+  register(eventId: string, opts?: { ticketTypeId?: string; answers?: Record<string, string>; referrerId?: string | null }): Promise<Registration>;
   cancel(eventId: string): Promise<void>;
   /** Host: the Audience list. */
   list(eventId: string): Promise<Registration[]>;

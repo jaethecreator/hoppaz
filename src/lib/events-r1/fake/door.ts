@@ -17,6 +17,9 @@ const notValid = (reason: Extract<ScanResult, { kind: "not_valid" }>["reason"]):
   result: { ok: false, kind: "not_valid", reason },
 });
 
+/** The ticket type's name on the door card (a registration saved before types existed was General). */
+const ticketOf = (reg: Registration) => reg.ticket_name || "General";
+
 function counts(eventId: string) {
   const regs = regsOf(eventId);
   const checked = regs.filter((r) => r.status === "checked_in").length;
@@ -65,12 +68,12 @@ function checkIn(reg: Registration): ScanResult {
   ensureTicket(reg).status = "used";
   emit();
   const c = counts(reg.event_id);
-  return { ok: true, kind: "checked_in", name: reg.name, ticket: "General", checked_in: c.checked_in, total: c.going };
+  return { ok: true, kind: "checked_in", name: reg.name, ticket: ticketOf(reg), checked_in: c.checked_in, total: c.going };
 }
 
 function confirmCard(reg: Registration): ScanResult {
   const c = counts(reg.event_id);
-  return { ok: true, kind: "confirm", name: reg.name, ticket: "General", checked_in: c.checked_in, total: c.going };
+  return { ok: true, kind: "confirm", name: reg.name, ticket: ticketOf(reg), checked_in: c.checked_in, total: c.going };
 }
 
 export const door: DoorApi = {

@@ -22,6 +22,9 @@ registerHooks({
 
 const { fakeApi: api, fakeDev } = await import("../src/lib/events-r1/fake/index.ts");
 
+const { PAID_TICKETS } = await import("../src/lib/events-r1/flags.ts");
+const { PAID_UNAVAILABLE } = await import("../src/lib/events-r1/constants.ts");
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -203,7 +206,7 @@ await test("paid event: button get_ticket and register throws, no approval", asy
   const ev = seeded("Afro Beach Day Party");
   await newPerson();
   eq((await api.events.viewerState(ev.id)).button, "get_ticket", "button");
-  await rejects(api.registrations.register(ev.id), "Paid tickets are Release 2", "register");
+  await rejects(api.registrations.register(ev.id), PAID_UNAVAILABLE, "register");
 });
 
 await test("one registration per person per event", async () => {
@@ -411,6 +414,122 @@ await test("create: a name is enough; online has no pin; WhatsApp defaults to 32
   ok((await api.events.list()).some((x) => x.id === e.id), "appears in the list");
   eq([e.room_id !== null, (await api.events.create({ title: "Out of the room", add_to_room: false })).room_id], [true, null], "add_to_room defaults on, false keeps it out");
   await rejects(api.events.create({ title: "No room, community", visibility: "community", add_to_room: false }), "Community events need a room. Create a room first.", "community needs the room");
+});
+
+await test("ticket types: default is one free General with no limit; the seeded paid event is still Get ticket", async () => {
+  const e = await kredeteEvent();
+  eq(e.ticket_types.map((t) => [t.name, t.price_naira, t.capacity, t.sold, t.spots_left]), [["General", 0, null, 0, null]], "default type");
+  eq(e.price_naira, 0, "price");
+  for (const s of fakeDev.allEvents()) ok(s.ticket_types.length >= 1, `every seeded event has a type: ${s.title}`);
+  const paid = seeded("Afro Beach Day Party");
+  eq(paid.ticket_types.map((t) => [t.name, t.price_naira]), [["General", 3000]], "seeded paid type");
+  await newPerson();
+  eq((await api.events.viewerState(paid.id)).button, "get_ticket", "seeded paid event still shows Get ticket");
+});
+
+await test("ticket types: free with two types, per-type capacity, the register cases", async () => {
+  const bad = (tickets: Array<{ name: string; price_naira: number; capacity: number | null }>) => api.events.create({ title: "Bad", tickets });
+  as("Kredete");
+  await rejects(bad([{ name: "A", price_naira: 0, capacity: null }, { name: "a", price_naira: 0, capacity: null }]), "Two ticket types have the same name", "unique names");
+  await rejects(bad([{ name: " ", price_naira: 0, capacity: null }]), "Give every ticket type a name", "name needed");
+  await rejects(bad([{ name: "A", price_naira: 0, capacity: 0 }]), "Capacity must be 1 or more", "capacity positive");
+  await rejects(bad(Array.from({ length: 6 }, (_, i) => ({ name: `T${i}`, price_naira: 0, capacity: null }))), "Up to 5 ticket types", "five at most");
+
+  const ev = await kredeteEvent({ tickets: [{ name: "General", price_naira: 0, capacity: 2 }, { name: "VIP list", price_naira: 0, capacity: 1 }] });
+  eq(ev.ticket_types.map((t) => [t.name, t.capacity, t.spots_left]), [["General", 2, 2], ["VIP list", 1, 1]], "two types");
+  const [gen, vip] = ev.ticket_types;
+  await newPerson();
+  eq((await api.registrations.register(ev.id)).ticket_name, "General", "no type asked: the first free type with room");
+  await newPerson();
+  const r2 = await api.registrations.register(ev.id, { ticketTypeId: vip.id });
+  eq([r2.ticket_name, r2.ticket_type_id, r2.status], ["VIP list", vip.id, "going"], "type asked");
+  eq((await api.events.get(ev.id))!.ticket_types.map((t) => [t.sold, t.spots_left]), [[1, 1], [1, 0]], "counted per type");
+  eq((await api.registrations.ticketFor(ev.id))!.ticket_name, "VIP list", "the ticket carries the type name");
+  await newPerson();
+  await rejects(api.registrations.register(ev.id, { ticketTypeId: vip.id }), "That ticket is full", "full type, no waitlist");
+  await rejects(api.registrations.register(ev.id, { ticketTypeId: "nope" }), "Pick a ticket", "unknown type");
+  eq((await api.events.viewerState(ev.id)).button, "register", "another type still has room");
+  eq((await api.registrations.register(ev.id)).ticket_type_id, gen.id, "no type asked: skips the full VIP, takes General");
+  await newPerson();
+  eq((await api.events.viewerState(ev.id)).button, "closed", "every free type full, no waitlist: closed");
+  await rejects(api.registrations.register(ev.id), "That ticket is full", "closed");
+
+  // A full type follows the event's waitlist.
+  const wl = await kredeteEvent({ waitlist_on: true, tickets: [{ name: "General", price_naira: 0, capacity: 1 }, { name: "VIP list", price_naira: 0, capacity: 1 }] });
+  const [wg, wv] = wl.ticket_types;
+  const first = await newPerson();
+  void first;
+  await api.registrations.register(wl.id, { ticketTypeId: wg.id });
+  await newPerson();
+  const queued = await api.registrations.register(wl.id, { ticketTypeId: wg.id });
+  eq([queued.status, queued.ticket_name], ["waitlisted", "General"], "full type, waitlist on");
+  await newPerson();
+  eq((await api.events.viewerState(wl.id)).button, "register", "VIP has room: Register");
+  await api.registrations.register(wl.id, { ticketTypeId: wv.id });
+  await newPerson();
+  eq((await api.events.viewerState(wl.id)).button, "waitlist", "all full: Join waitlist");
+  // The waitlisted person comes in when General opens up, not when only VIP does.
+  as("Kredete");
+  const audience = await api.registrations.list(wl.id);
+  const goingGen = audience.find((r) => r.status === "going" && r.ticket_type_id === wg.id)!;
+  const goingVip = audience.find((r) => r.status === "going" && r.ticket_type_id === wv.id)!;
+  fakeDev.signInAs(goingVip.user_id);
+  await api.registrations.cancel(wl.id);
+  as("Kredete");
+  eq((await api.registrations.list(wl.id)).find((r) => r.id === queued.id)!.status, "waitlisted", "a VIP place does not move a General waiter");
+  fakeDev.signInAs(goingGen.user_id);
+  await api.registrations.cancel(wl.id);
+  as("Kredete");
+  eq((await api.registrations.list(wl.id)).find((r) => r.id === queued.id)!.status, "going", "a General place does");
+
+  // The event's own capacity applies on top.
+  const cap = await kredeteEvent({ capacity: 1, tickets: [{ name: "General", price_naira: 0, capacity: null }, { name: "VIP list", price_naira: 0, capacity: 5 }] });
+  eq(cap.ticket_types.map((t) => t.spots_left), [1, 1], "event capacity caps every type");
+  await newPerson();
+  await api.registrations.register(cap.id, { ticketTypeId: cap.ticket_types[1].id });
+  eq((await api.events.get(cap.id))!.ticket_types.map((t) => t.spots_left), [0, 0], "event full: every type full");
+  await newPerson();
+  await rejects(api.registrations.register(cap.id), "This event is full", "event full");
+
+  // Approval is for the event's free types: requested, not going.
+  const appr = await kredeteEvent({ requires_approval: true, tickets: [{ name: "General", price_naira: 0, capacity: null }, { name: "VIP list", price_naira: 0, capacity: 3 }] });
+  await newPerson();
+  eq((await api.registrations.register(appr.id, { ticketTypeId: appr.ticket_types[1].id })).status, "requested", "approval on a free type");
+
+  // Clone copies the types.
+  as("Kredete");
+  const copy = await api.events.clone(ev.id);
+  eq(copy.ticket_types.map((t) => [t.name, t.capacity, t.sold]), [["General", 2, 0], ["VIP list", 1, 0]], "clone copies the types");
+  ok(copy.ticket_types[0].id !== gen.id, "with new ids");
+});
+
+await test(`ticket types: paid is ${PAID_TICKETS ? "saved (flag on)" : "rejected (flag off)"}, and never bought`, async () => {
+  as("Kredete");
+  const paidDraft = { title: "Paid night", tickets: [{ name: "General", price_naira: 0, capacity: null }, { name: "Table", price_naira: 5000, capacity: 4 }] };
+  if (!PAID_TICKETS) {
+    await rejects(api.events.create(paidDraft), PAID_UNAVAILABLE, "paid type while the flag is off");
+    const own = await kredeteEvent();
+    await rejects(api.events.update(own.id, { tickets: paidDraft.tickets }), PAID_UNAVAILABLE, "update too");
+    eq((await api.events.get(own.id))!.ticket_types.length, 1, "nothing changed");
+    // Editing something else on the seeded paid event does not trip over its paid type.
+    as("Rooftop Sessions");
+    const beach = seeded("Afro Beach Day Party");
+    eq((await api.events.update(beach.id, { description: "Same day, same sand." })).ticket_types[0].price_naira, 3000, "seeded paid event still editable");
+  } else {
+    const e = await api.events.create(paidDraft);
+    eq([e.price_naira, e.ticket_types.map((t) => t.price_naira)], [0, [0, 5000]], "saved, lowest price is free");
+    const table = e.ticket_types[1];
+    await newPerson();
+    await rejects(api.registrations.register(e.id, { ticketTypeId: table.id }), PAID_UNAVAILABLE, "register on a paid type, flag on");
+    eq((await api.registrations.register(e.id)).ticket_name, "General", "default skips the paid type");
+    as("Kredete");
+    const allPaid = await api.events.create({ title: "All paid", tickets: [{ name: "Table", price_naira: 5000, capacity: null }] });
+    await newPerson();
+    eq([allPaid.price_naira, (await api.events.viewerState(allPaid.id)).button], [5000, "get_ticket"], "every type paid: Get ticket");
+    await rejects(api.registrations.register(allPaid.id), PAID_UNAVAILABLE, "register, all paid");
+    as("Kredete");
+    eq((await api.events.clone(allPaid.id)).ticket_types[0].price_naira, 5000, "clone keeps prices");
+  }
 });
 
 await test("auth: six digits, any code, Google signs in as Ada Obi, sign out", async () => {

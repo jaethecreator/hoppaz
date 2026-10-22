@@ -2,9 +2,9 @@
  * The rules the fake layer shares between its modules: capacity, the waitlist, who may see what, and how a stored
  * event becomes the R1Event a screen gets. Nothing here is async or touches the network.
  */
-import type { EventChat, EventStatus, HostRef, R1Event, RegStatus, Registration, RoomSummary } from "../types";
+import type { EventChat, EventStatus, HostRef, R1Event, RegStatus, Registration, RoomSummary, TicketType } from "../types";
 import { haversineKm, LAGOS_CENTER } from "../../geo";
-import type { EventRec, RoomRec, TicketRec, UserRec } from "./store";
+import type { EventRec, RoomRec, TicketRec, TicketTypeRec, UserRec } from "./store";
 import { S, now, viewer } from "./store";
 import { clone, HOUR, DAY, seedId } from "./util";
 
@@ -81,6 +81,42 @@ export function isFull(e: EventRec): boolean {
   return e.capacity !== null && goingCount(e.id) >= e.capacity;
 }
 
+/* --------------------------------------------------------- ticket types -- */
+
+/** The event's ticket types. Always at least one: a missing list is one General at the event's own price, no limit. */
+export function typesOf(e: EventRec): TicketTypeRec[] {
+  if (e.ticket_types && e.ticket_types.length) return e.ticket_types;
+  return [{ id: seedId(`ticket-type:${e.id}`), name: "General", price_naira: e.price_naira, capacity: null }];
+}
+
+/** The type a registration holds (one saved before types existed holds the first). */
+export function typeOfReg(e: EventRec, r: Pick<Registration, "ticket_type_id">): TicketTypeRec {
+  const ts = typesOf(e);
+  return ts.find((t) => t.id === r.ticket_type_id) ?? ts[0];
+}
+
+/** Going and checked-in people holding this type. */
+export function soldOf(e: EventRec, typeId: string): number {
+  return regsOf(e.id).filter((r) => isGoing(r.status) && typeOfReg(e, r).id === typeId).length;
+}
+
+/** Places left on a type: its own capacity and the event's, whichever is tighter. null = no limit. */
+export function typeSpotsLeft(e: EventRec, t: TicketTypeRec): number | null {
+  const own = t.capacity === null ? null : Math.max(0, t.capacity - soldOf(e, t.id));
+  const ev = e.capacity === null ? null : Math.max(0, e.capacity - goingCount(e.id));
+  if (own === null) return ev;
+  return ev === null ? own : Math.min(own, ev);
+}
+
+export const typeFull = (e: EventRec, t: TicketTypeRec) => typeSpotsLeft(e, t) === 0;
+
+/** Free types (price 0): the only ones a person can take in R1. */
+export const freeTypes = (e: EventRec) => typesOf(e).filter((t) => t.price_naira === 0);
+
+export function typeView(e: EventRec, t: TicketTypeRec): TicketType {
+  return { id: t.id, event_id: e.id, name: t.name, price_naira: t.price_naira, capacity: t.capacity, sold: soldOf(e, t.id), spots_left: typeSpotsLeft(e, t) };
+}
+
 /** Find by id or slug. Does not check who may see it. */
 export function findEvent(idOrSlug: string): EventRec | undefined {
   const all = Object.values(S().events);
@@ -125,12 +161,16 @@ export function canSeeLink(e: EventRec): boolean {
 
 /** The stored event as a screen gets it: counts worked out, the online link only for those who may have it. */
 export function eventView(e: EventRec, opts: { revealLink?: boolean } = {}): R1Event {
-  const { host_id, ...rest } = e;
+  const { host_id, ticket_types: _stored, ...rest } = e;
+  void _stored;
+  const types = typesOf(e);
   const going = goingCount(e.id);
   const interested = Object.keys(S().interest).filter((k) => S().interest[k] && k.endsWith(`:${e.id}`)).length;
   const checked = regsOf(e.id).filter((r) => r.status === "checked_in").length;
   return clone({
     ...rest,
+    price_naira: Math.min(...types.map((t) => t.price_naira)),
+    ticket_types: types.map((t) => typeView(e, t)),
     status: statusOf(e),
     going,
     spots_left: e.capacity === null ? null : Math.max(0, e.capacity - going),
@@ -199,16 +239,19 @@ export function fillFromWaitlist(eventId: string): void {
   const waiting = regsOf(eventId)
     .filter((r) => r.status === "waitlisted")
     .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
-  if (e.requires_approval) {
-    const open = e.capacity === null ? waiting.length : Math.max(0, e.capacity - goingCount(eventId));
-    const pending = regsOf(eventId).filter((r) => r.status === "requested").length;
-    for (const r of waiting.slice(0, Math.max(0, open - pending))) {
-      r.status = "requested";
-      r.waitlist_pos = null;
-    }
-  } else {
-    for (const r of waiting) {
-      if (isFull(e)) break;
+  const requestedOf = (typeId?: string) =>
+    regsOf(eventId).filter((r) => r.status === "requested" && (!typeId || typeOfReg(e, r).id === typeId)).length;
+  // Each person moves up only if their own ticket type has a place (and the event does); a full type is skipped, not a wall.
+  for (const r of waiting) {
+    const t = typeOfReg(e, r);
+    if (e.requires_approval) {
+      const eventRoom = e.capacity === null ? Infinity : e.capacity - goingCount(eventId) - requestedOf();
+      const typeRoom = t.capacity === null ? Infinity : t.capacity - soldOf(e, t.id) - requestedOf(t.id);
+      if (eventRoom > 0 && typeRoom > 0) {
+        r.status = "requested";
+        r.waitlist_pos = null;
+      }
+    } else if (!typeFull(e, t)) {
       admit(r);
     }
   }

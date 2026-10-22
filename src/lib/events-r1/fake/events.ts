@@ -2,15 +2,17 @@
 import type { EventsApi } from "../api";
 import type { EventDraft, EventKind, LinkType, ViewerState, Visibility } from "../types";
 import { VIBES } from "../../brand";
+import { PAID_UNAVAILABLE } from "../constants";
+import { PAID_TICKETS } from "../flags";
 import { areaByName, insideLagos, LAGOS_CENTER, nearestArea } from "../../geo";
 import { autoPopsFor, defaultMessages, defaultQuestions } from "./defaults";
 import { retimeAutoPops } from "./pops";
 import {
-  assertManage, canList, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, hostRoom,
-  isFull, isGoing, isHostOf, regOf, requireViewer, statusOf,
+  assertManage, canList, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, freeTypes, hostRoom,
+  isGoing, isHostOf, regOf, regsOf, requireViewer, statusOf, typeFull, typesOf, typeOfReg,
 } from "./rules";
 import { emit, now, S, subscribe, viewer } from "./store";
-import type { EventRec, RegSettings, UserRec } from "./store";
+import type { EventRec, RegSettings, TicketTypeRec, UserRec } from "./store";
 import { clone, DAY, HOUR, lagosAt, newId, slugFor } from "./util";
 
 const KINDS: EventKind[] = ["in_person", "online", "hybrid"];
@@ -22,10 +24,49 @@ type Fields = Pick<
   EventRec,
   | "title" | "venue_name" | "area" | "lat" | "lng" | "starts_at" | "ends_at" | "timezone" | "kind" | "link_type"
   | "online_link" | "description" | "capacity" | "requires_approval" | "waitlist_on" | "visibility" | "flyer_url" | "vibe"
+  | "price_naira" | "ticket_types"
 >;
 
+const MAX_TYPES = 5;
+
+/**
+ * Check the ticket types of a draft and make them records. No list: keep `existing` (an edit) or one free General.
+ * A paid type is refused unless PAID_TICKETS is on. Ids are kept for a type whose name is kept.
+ */
+function normalizeTypes(list: EventDraft["tickets"], existing: TicketTypeRec[] | null, eventId: string | null): TicketTypeRec[] {
+  if (!list) return existing ?? [{ id: newId(), name: "General", price_naira: 0, capacity: null }];
+  if (list.length < 1) throw new Error("Add at least one ticket type");
+  if (list.length > MAX_TYPES) throw new Error(`Up to ${MAX_TYPES} ticket types`);
+  const seen = new Set<string>();
+  const out: TicketTypeRec[] = list.map((t) => {
+    const name = (t.name ?? "").trim();
+    if (!name) throw new Error("Give every ticket type a name");
+    if (name.length > 60) throw new Error("Keep ticket names under 60 characters");
+    if (seen.has(name.toLowerCase())) throw new Error("Two ticket types have the same name");
+    seen.add(name.toLowerCase());
+    const price = t.price_naira ?? 0;
+    if (!Number.isInteger(price) || price < 0) throw new Error("A price must be a whole number");
+    if (price > 0 && !PAID_TICKETS) throw new Error(PAID_UNAVAILABLE);
+    const cap = t.capacity ?? null;
+    if (cap !== null && (!Number.isInteger(cap) || cap < 1)) throw new Error("Capacity must be 1 or more");
+    const kept = existing?.find((x) => x.name.toLowerCase() === name.toLowerCase());
+    return { id: kept?.id ?? newId(), name, price_naira: price, capacity: cap };
+  });
+  // A type people already hold cannot be dropped.
+  if (eventId && existing) {
+    const ev = S().events[eventId];
+    for (const x of existing) {
+      if (out.some((o) => o.id === x.id)) continue;
+      if (ev && regsOf(eventId).some((r) => r.status !== "cancelled" && r.status !== "declined" && typeOfReg(ev, r).id === x.id)) {
+        throw new Error(`People already took ${x.name}. Keep that ticket.`);
+      }
+    }
+  }
+  return out;
+}
+
 /** Check a draft and fill every default: a name is enough. */
-function normalize(d: EventDraft, roomId: string | null): Fields {
+function normalize(d: EventDraft, roomId: string | null, existing: { id: string; types: TicketTypeRec[] } | null = null): Fields {
   const title = (d.title ?? "").trim();
   if (!title) throw new Error("Give your event a name");
   if (title.length > 120) throw new Error("Keep the name under 120 characters");
@@ -83,7 +124,11 @@ function normalize(d: EventDraft, roomId: string | null): Fields {
   if (!VISIBILITIES.includes(visibility)) throw new Error("Pick Public, Community or Invite only");
   if (visibility === "community" && !roomId) throw new Error("Community events need a room. Create a room first.");
 
+  const ticket_types = normalizeTypes(d.tickets, existing?.types ?? null, existing?.id ?? null);
+
   return {
+    price_naira: Math.min(...ticket_types.map((t) => t.price_naira)),
+    ticket_types,
     title,
     venue_name,
     area,
@@ -112,17 +157,21 @@ function checkRateLimit(host: UserRec): void {
   if (recent.length >= 5) throw new Error("Try again later");
 }
 
-function makeEvent(host: UserRec, draft: EventDraft): EventRec {
+function makeEvent(host: UserRec, draft: EventDraft, copyTypes?: TicketTypeRec[]): EventRec {
   checkRateLimit(host);
   const room = draft.add_to_room === false ? null : hostRoom(host.id);
-  const f = normalize(draft, room?.id ?? null);
+  const f = normalize(copyTypes ? { ...draft, tickets: undefined } : draft, room?.id ?? null);
+  // Clone: the same types (new ids), prices and all, whatever the paid flag says; nothing new is being offered.
+  if (copyTypes) {
+    f.ticket_types = copyTypes.map((t) => ({ ...t, id: newId() }));
+    f.price_naira = Math.min(...f.ticket_types.map((t) => t.price_naira));
+  }
   const id = newId();
   let slug = slugFor(f.title, id);
   while (Object.values(S().events).some((e) => e.slug === slug)) slug = `${slug}x`;
   const rec: EventRec = {
     id,
     ...f,
-    price_naira: 0,
     source: "hopper",
     ig_url: null,
     status: "live",
@@ -192,8 +241,8 @@ export function viewerStateFor(e: EventRec): ViewerState {
   if (status !== "live") button = "closed";
   else if (active) {
     button = isGoing(active.status) ? "going" : active.status === "requested" ? "pending" : active.status === "waitlisted" ? "waitlisted" : "declined";
-  } else if (e.price_naira > 0) button = "get_ticket";
-  else if (isFull(e)) button = e.waitlist_on ? "waitlist" : "closed";
+  } else if (freeTypes(e).length === 0) button = "get_ticket";
+  else if (freeTypes(e).every((t) => typeFull(e, t))) button = e.waitlist_on ? "waitlist" : "closed";
   else button = e.requires_approval ? "request" : "register";
 
   return {
@@ -253,7 +302,7 @@ export const events: EventsApi = {
       merged.lng = null;
     }
     const before = { start: e.starts_at, capacity: e.capacity, approval: e.requires_approval };
-    Object.assign(e, normalize(merged, e.room_id));
+    Object.assign(e, normalize(merged, e.room_id, { id: e.id, types: typesOf(e) }));
     if (e.starts_at !== before.start) retimeAutoPops(e);
     if ((e.capacity === null || (before.capacity !== null && e.capacity > before.capacity)) || e.requires_approval !== before.approval) {
       fillFromWaitlist(e.id);
@@ -268,7 +317,7 @@ export const events: EventsApi = {
     const draft = asDraft(src);
     draft.starts_at = iso(Date.parse(src.starts_at) + 7 * DAY);
     draft.ends_at = src.ends_at ? iso(Date.parse(src.ends_at) + 7 * DAY) : null;
-    const rec = makeEvent(host, draft);
+    const rec = makeEvent(host, draft, typesOf(src));
     const s = S().regSettings[src.id];
     if (s) S().regSettings[rec.id] = clone(s);
     emit();

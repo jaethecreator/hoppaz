@@ -23,6 +23,21 @@ export type HostRef = {
  * unchanged. An event with no place has lat/lng parked on LAGOS_CENTER and venue_name "" (hasVenue()
  * then keeps it off the map), exactly like today's "no venue yet" leads.
  */
+/** One kind of ticket for an event. An event always has at least one; the default is one free "General" with no limit. */
+export type TicketType = {
+  id: string;
+  event_id: string;
+  name: string;
+  /** Whole naira. 0 = free. Paid types save only with NEXT_PUBLIC_PAID_TICKETS=1 and cannot be bought in R1. */
+  price_naira: number;
+  /** null = no limit of its own (the event's capacity still applies). */
+  capacity: number | null;
+  /** Going and checked-in people holding this type. */
+  sold: number;
+  /** Places left on this type, counting the event's own capacity too. null = no limit at all. */
+  spots_left: number | null;
+};
+
 export type R1Event = EventRow & {
   description: string;
   host: HostRef;
@@ -41,8 +56,10 @@ export type R1Event = EventRow & {
   /** Going counts approved and checked-in people only. */
   going: number;
   spots_left: number | null;
-  /** Free-only in R1. Kept so Release 2 does not change the shape. */
+  /** The lowest ticket type price (0 when any type is free). */
   price_naira: number;
+  /** Always at least one. */
+  ticket_types: TicketType[];
   created_at: string;
   /** Short link slug for hoppaz.fun/e/<slug>. */
   slug: string;
@@ -68,6 +85,9 @@ export type Registration = {
   email: string;
   phone: string | null;
   status: RegStatus;
+  /** The ticket type this person took. */
+  ticket_type_id: string;
+  ticket_name: string;
   answers: Record<string, string>;
   /** Who invited this person (their own invite link), so the host sees who brought whom. */
   referrer_id: string | null;
@@ -106,7 +126,7 @@ export type Ticket = {
   id: string;
   event_id: string;
   holder_name: string;
-  ticket_name: string; // "General"
+  ticket_name: string; // the ticket type's name, e.g. "General"
   /** Short code a door person can type when a QR will not scan, e.g. "7K4M2Q9A". */
   code: string;
   /** Signed token drawn as the QR: <b64 payload>.<b64 signature>. Payload = ticket id, event id, version. */
@@ -216,6 +236,8 @@ export type EventDraft = {
   visibility?: Visibility;
   cover_url?: string | null;
   vibe?: string;
+  /** Ticket types, 1 to 5. Default: one free "General" with no limit. A paid type needs PAID_TICKETS. */
+  tickets?: { name: string; price_naira: number; capacity: number | null }[];
   /** Put the event in the host's room. Default true when the host has a room; false keeps it out. */
   add_to_room?: boolean;
 };
