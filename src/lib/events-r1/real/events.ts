@@ -45,7 +45,6 @@ export const events: EventsApi = {
   },
 
   async update(id, patch) {
-    // add_to_room is not in the database's list of things an edit may change (a gap listed in the README): it is dropped there.
     const out = await rpcOk<{ event: Record<string, unknown> }>("ev_update_event", { p_event: await eventIdOf(id), p_patch: patch });
     emit();
     return mapEvent(out.event);

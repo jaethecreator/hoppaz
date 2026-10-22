@@ -194,3 +194,20 @@ online link cannot be read from any table, list or `ev_get_event` except by the 
 returned by `events_near`, `events_deck`, `claim_checkin` or a plain select on `events`, and the starter quests notes in question 6 and in
 `events_r1_events.sql` are true. The registrations test cannot show two people racing for the last place
 in one transaction; the header of that test says how to see it with two real sessions.
+
+## 8. Local test database (the shared `postgres` on the Docker stack)
+
+The seven `events_r1_` files are loaded in the local `postgres` database (events, registrations, tickets, pops, reports, rooms, pay, in that order; each also passed its test twice in a throwaway `hoppaz_ev_` database first). The real front end layer (`src/lib/events-r1/real/`) runs against it. The ticket signing secret is set there with a random local value, and `paid_tickets` is `off` (the paid check script switches it on and back off). Only local data was touched: nothing is on production or any remote database.
+
+Backup taken first, before anything was loaded: `localdb/backups/postgres-before-events-r1-20261022-1908.dump` (pg_dump custom format). To go back to exactly that state:
+
+```bash
+# drops everything in postgres and restores the backup (the stack must be up; this replaces the current local data)
+docker exec -i supabase_db_hoppaz-local pg_restore -U postgres -d postgres --clean --if-exists --no-owner < localdb/backups/postgres-before-events-r1-20261022-1908.dump
+```
+
+Run the real layer check (local stack, Inbucket on 54324): `node --no-warnings scripts/events-r1-real-check.mts`, and with the mock Bachs on 3415 `RUN_PAID=1 node --no-warnings scripts/events-r1-real-check.mts` (header of the script says how to start the mock).
+
+## 9. Email code sign in: two templates for the Supabase dashboard
+
+The sign in screens ask for a six digit code, not a link. Supabase only sends the code if the email template prints `{{ .Token }}`. Two new templates are ready to paste (Authentication, Emails): `supabase/email-templates/magic-link-code.html` (the "Magic link" template, used for a person with no session or an email that already has an account; also paste it into "Confirm sign up" if that is on) and `supabase/email-templates/email-change-code.html` (the "Change email address" template, used when a guest adds their email so their progress is kept). Subject for both: `Your Hoppaz code is {{ .Token }}`. The local stack's `config.toml` was not edited: the local tests read the code through the auth admin API instead.

@@ -151,6 +151,8 @@ export function mapPop(j: J): Pop {
     status: j.status === "sent" ? "sent" : "scheduled",
     auto: j.auto ?? null,
     recipients: num(j.recipients),
+    // Only an automatic Pop can be off; the others have no switch.
+    ...(j.auto && j.enabled === false ? { enabled: false } : {}),
   };
 }
 
