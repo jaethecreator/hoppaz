@@ -388,8 +388,10 @@ begin
   -- Failed: the tickets stay void, the refund is owed again, a new one can be started by staff.
   r := public.ev_pay_refund_start(o6, st);
   perform pg_temp.ok((r ->> 'ok')::boolean and r ->> 'method' = 'card', 'staff can start a refund');
-  perform pg_temp.ok(public.ev_pay_refund_apply('rfnd_2', r ->> 'reference', 'failed') ->> 'status' = 'failed' and pg_temp.st(o6) = 'paid' and (select needs_refund from public.ev_orders where id = o6) and pg_temp.tix(e3, b3) = 0,
-                     'refund.failed: the order is paid again and owed a refund, the tickets stay void');
+  perform pg_temp.ok(public.ev_pay_refund_apply('rfnd_2', r ->> 'reference', 'failed') ->> 'status' = 'failed' and pg_temp.st(o6) = 'paid' and (select needs_refund from public.ev_orders where id = o6),
+                     'refund.failed: the order is paid again and owed a refund');
+  perform pg_temp.ok(pg_temp.tix(e3, b3) = 1 and (select quantity from public.ev_registrations where event_id = e3 and user_id = b3) = 1 and (select status from public.ev_registrations where event_id = e3 and user_id = b3) = 'going',
+                     'and the voided ticket is back (INSUFFICIENT_BALANCE case), the registration holds its seat again');
   r := public.ev_pay_refund_start(o6, null);
   perform pg_temp.ok((r ->> 'ok')::boolean and r ->> 'reference' = 'rf_' || replace(o6::text, '-', '') || '_2', 'a failed refund does not count: a new one starts with a new reference (and the system can start it)');
   perform public.ev_pay_refund_apply(null, r ->> 'reference', 'success');

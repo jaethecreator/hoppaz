@@ -32,7 +32,8 @@
 --  * The platform fee must be above 0 and below the gross (Bachs INVALID_PLATFORM_FEE rule); the route computes it, the database checks it.
 --  * A late payment (after the order expired): the seats are taken again if they are free and the tickets issue; if not, needs_refund is set (and
 --    needs_manual_refund for a bank transfer: Bachs cannot refund those, the host pays the buyer by hand).
---  * A refund voids the order's tickets at once and gives the seats back (the waitlist moves up). Hoppaz's fee and Bachs's fee are not returned
+--  * A refund voids the order's tickets at once and gives the seats back (the waitlist moves up). If the refund FAILS (for example INSUFFICIENT_BALANCE on
+--    the host's balance) the order goes back to paid with the refund owed and the voided tickets come back (if their seats are still free). Hoppaz's fee and Bachs's fee are not returned
 --    by Bachs: the host is short by the platform fee on every refund. One refund per order (a failed one does not count).
 --  * Capability events can arrive twice and out of order: ev_pay_host_apply_capability keeps the time of the last change per capability and ignores
 --    older ones, and applying the same one again changes nothing.
@@ -643,6 +644,10 @@ declare
   f      public.ev_refunds;
   v_st   text := case lower(coalesce(p_status, '')) when 'paid' then 'paid' when 'success' then 'paid' when 'succeeded' then 'paid' when 'failed' then 'failed' else 'processing' end;
   v_ev   uuid;
+  o      public.ev_orders;
+  v_n    integer;
+  v_left integer;
+  v_back integer := 0;
 begin
   select * into f from public.ev_refunds where reference = p_reference or (p_refund_id is not null and bachs_refund_id = p_refund_id) order by (reference = p_reference) desc limit 1;
   if f.id is null then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
@@ -657,12 +662,24 @@ begin
   if v_st = 'paid' then
     update public.ev_orders set status = 'refunded', refunded_at = now(), needs_refund = false, needs_manual_refund = false, updated_at = clock_timestamp() where id = f.order_id;
   elsif v_st = 'failed' then
-    -- Tickets stay void; the refund is owed again and a new one can be started.
-    update public.ev_orders set status = 'paid', needs_refund = true, updated_at = clock_timestamp() where id = f.order_id and status = 'refund_pending';
+    -- The refund failed (for example Bachs INSUFFICIENT_BALANCE on the host's balance): the order goes back to paid, the refund is owed again (a new
+    -- one can be started, or the sweeper retries it), and the tickets the refund voided come back, if their seats are still free.
+    select * into o from public.ev_orders where id = f.order_id for update;
+    if o.status = 'refund_pending' then
+      select count(*)::int into v_n from public.ev_tickets t where t.order_id = o.id and t.status = 'void' and t.void_reason = 'refund';
+      v_left := public._ev_type_left(o.event_id, o.ticket_type_id);
+      if v_n > 0 and (v_left is null or v_left >= v_n) then
+        update public.ev_tickets set status = 'valid', void_reason = null where order_id = o.id and status = 'void' and void_reason = 'refund';
+        update public.ev_registrations set quantity = quantity + v_n, status = case when status in ('cancelled', 'checked_in') then 'going' else status end, updated_at = clock_timestamp()
+         where id = o.registration_id;
+        v_back := v_n;
+      end if;
+      update public.ev_orders set status = 'paid', needs_refund = true, issued_seats = issued_seats + v_back, updated_at = clock_timestamp() where id = o.id;
+    end if;
   else
     update public.ev_orders set status = 'refund_pending', updated_at = clock_timestamp() where id = f.order_id and status = 'paid';
   end if;
-  return jsonb_build_object('ok', true, 'order_id', f.order_id, 'status', v_st, 'changed', true);
+  return jsonb_build_object('ok', true, 'order_id', f.order_id, 'status', v_st, 'changed', true, 'tickets_restored', v_back);
 end $$;
 
 -- dispute.created / dispute.updated: a flag on the order for a person to look at. Nothing is voided automatically.
