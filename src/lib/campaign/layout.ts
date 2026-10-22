@@ -3,7 +3,12 @@ import type { Block, Tile } from "./geometry";
 /** The clubhouse's own zone ids. Event and hotspot rooms (src/lib/campaign/rooms) bring their own, so a zone id is any string. */
 export type ZoneId = "studio" | "stage" | "awards" | "courtyard" | "records" | "campaign" | (string & {});
 export type FloorMaterial = "acoustic" | "stage" | "marble" | "grass" | "wood" | "terrazzo" | (string & {});
-export type CampaignZone = Block & { id: ZoneId; number: string; name: string; subtitle: string; material: FloorMaterial; stop: Tile; plaque: Tile };
+/**
+ * `link` is optional data: a room template may give a zone one link (a label for the room's action pill, and an https URL),
+ * and the pill offers it while someone stands in the zone (useZoneCards.ts). The engine knows no brand, only this field.
+ */
+export type CampaignZoneLink = { label: string; url: string };
+export type CampaignZone = Block & { id: ZoneId; number: string; name: string; subtitle: string; material: FloorMaterial; stop: Tile; plaque: Tile; link?: CampaignZoneLink };
 /**
  * What a prop is drawn as. The first sixteen are the clubhouse kit (ClubhouseArt). Event and hotspot rooms draw their own
  * props in their art file (src/components/campaign/art), so a kind is any string there: the layout only needs the box.

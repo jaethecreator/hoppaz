@@ -496,7 +496,7 @@ function Rooms({ card, onChange, work: { what, run } }: { card: CrewCard; onChan
   return (
     <Section id="room" title="Meeting room" hint="Where your crew meets.">
       <div role="radiogroup" aria-label="Meeting room" className="grid grid-cols-2 gap-2">
-        {ROOM_TEMPLATES.map((t) => {
+        {ROOM_TEMPLATES.filter((t) => t.pickable !== false || t.key === card.template).map((t) => {
           const on = t.key === card.template;
           return (
             <button
