@@ -8,8 +8,8 @@ import { BUS_INTRO_ENABLED } from "./flags";
  * "First time on this device" is the absence of every sign that this phone has used Hoppaz: the title's own mark, a first run
  * that has got past its first card, the location answer, and a saved location or avatar in the settings. A link to one thing (an
  * event, a hotspot, a room, a day) is not met with the title, and it is marked seen so it does not turn up later: the same people
- * the first run leaves alone. Skipping it, finishing it or leaving the app mid-way all count as seen: the mark is written when it
- * starts.
+ * the first run leaves alone. Someone who asked for reduced motion is not shown it either (it is all motion). Skipping it,
+ * finishing it or leaving the app mid-way all count as seen: the mark is written when it starts.
  *
  * What the device looked like is read once, when this module first loads on the phone (before any effect has run), because the
  * first run starts writing its own step as soon as the app is up.
@@ -76,7 +76,8 @@ export function claimBusIntro(): boolean {
       decision = true;
     } else if (WAS_USED) {
       decision = false;
-    } else if (VIA_LINK) {
+    } else if (VIA_LINK || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      // A link to one thing, or someone who asked for less motion: no title, and not later either.
       markSeen();
       decision = false;
     } else {
