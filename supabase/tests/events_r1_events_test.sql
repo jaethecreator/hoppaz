@@ -166,8 +166,11 @@ begin
   perform pg_temp.ok(pg_temp.mk(h, '{"title":"Local other path","cover_url":"http://127.0.0.1:54321/etc/passwd"}') ->> 'reason' = 'bad_cover', 'a local http link outside public storage is refused');
   e := pg_temp.mk(h, '{"title":"Uploaded cover","cover_url":"https://x.supabase.co/storage/v1/object/public/crew-images/event-covers/u/a.jpg"}') -> 'event';
   perform pg_temp.ok(e ->> 'flyer_url' = 'https://x.supabase.co/storage/v1/object/public/crew-images/event-covers/u/a.jpg', 'an https storage cover is kept as the flyer');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"Local cover off","cover_url":"http://127.0.0.1:54321/storage/v1/object/public/crew-images/event-covers/u/a.jpg"}') ->> 'reason' = 'bad_cover', 'a local http storage link is refused while local_http_covers is off (production)');
+  perform pg_temp.ok(public.ev_set_setting('local_http_covers', 'on') = 'ok', 'ev_set_setting knows local_http_covers');
   e := pg_temp.mk(h, '{"title":"Local cover","cover_url":"http://127.0.0.1:54321/storage/v1/object/public/crew-images/event-covers/u/a.jpg"}') -> 'event';
-  perform pg_temp.ok(e ->> 'flyer_url' like 'http://127.0.0.1:54321/storage/%', 'the local stack public storage link is accepted (dev only in practice)');
+  perform pg_temp.ok(e ->> 'flyer_url' like 'http://127.0.0.1:54321/storage/%', 'with local_http_covers on (local stack only), the local storage link is accepted');
+  delete from public.ev_settings where key = 'local_http_covers';
   e := pg_temp.upd(h, (e ->> 'id')::uuid, '{"cover_url":"https://x.supabase.co/storage/v1/object/public/crew-images/event-covers/u/b.jpg"}') -> 'event';
   perform pg_temp.ok(e ->> 'flyer_url' like '%/b.jpg', 'an update replaces the cover');
   perform pg_temp.ok(pg_temp.upd(h, (e ->> 'id')::uuid, '{"cover_url":"data:image/jpeg;base64,AAAA"}') ->> 'reason' = 'bad_cover', 'an update with a data URL cover is refused');

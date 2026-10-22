@@ -89,6 +89,8 @@ Only the service role and the SQL editor can run it. Separately, an event with n
 
 ## 2d. Event cover pictures (file 8)
 
+**Local stack only:** the local Supabase serves storage on http://127.0.0.1, so on a laptop run `select public.ev_set_setting('local_http_covers','on');` once. Never on production: there only https cover links are accepted.
+
 `events_r1_covers.sql` lets a host with an account upload a cover to the existing public `crew-images` bucket, in their own folder: `event-covers/<user id>/<file>.jpg` (2 MB, jpeg, png or webp: the bucket's own limits, unchanged). It adds three storage policies (`events_r1_cover_upload`, `_read`, `_remove`) and one helper (`_ev_cover_path_owner`); the older crew picture policies only match a file straight under a crew id, so they are not touched. The app keeps the full public link as `cover_url` (saved as `flyer_url`), because every card, the map and the share card use `flyer_url` as an image address as is. `events_r1_events.sql` changed in one line: the cover check in `_ev_create_core` also accepts a plain `http://localhost` or `http://127.0.0.1` link into `/storage/v1/object/public/` (the local stack serves storage on http); any other plain http link is still `bad_cover`. Cover files are not removed when an event is deleted or the account is deleted (`/api/account/delete` clears `event-photos` and `chat-images`, not this folder). Test: `tests/events_r1_covers_test.sql`.
 
 ## 3. The cron line (Pops)
