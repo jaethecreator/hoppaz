@@ -56,7 +56,8 @@ export type RegStatus =
   | "cancelled"
   | "checked_in";
 
-export type RegQuestion = { id: string; label: string; required: boolean; builtin?: "name" | "email" | "phone" };
+/** `enabled` false = the question is switched off (Phone is off by default). Missing means on. */
+export type RegQuestion = { id: string; label: string; required: boolean; builtin?: "name" | "email" | "phone"; enabled?: boolean };
 export type RegMessages = { pending: string; going: string; declined: string };
 
 export type Registration = {
@@ -106,6 +107,8 @@ export type Ticket = {
   event_id: string;
   holder_name: string;
   ticket_name: string; // "General"
+  /** Short code a door person can type when a QR will not scan, e.g. "7K4M2Q9A". */
+  code: string;
   /** Signed token drawn as the QR: <b64 payload>.<b64 signature>. Payload = ticket id, event id, version. */
   token: string;
   version: number;
@@ -184,6 +187,8 @@ export type Report = {
 };
 
 export type ScanResult =
+  /** Standard mode: a good ticket, shown to the door person. Nobody is checked in until door.confirm(). */
+  | { ok: true; kind: "confirm"; name: string; ticket: string; checked_in: number; total: number }
   | { ok: true; kind: "checked_in"; name: string; ticket: string; checked_in: number; total: number }
   | { ok: false; kind: "already_used"; name: string; at: string }
   | { ok: false; kind: "not_valid"; reason: "bad_signature" | "wrong_event" | "void" | "unknown" | "not_going" };

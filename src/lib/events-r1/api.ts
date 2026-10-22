@@ -85,6 +85,8 @@ export interface RoomsApi {
   postAnnouncement(roomId: string, body: string): Promise<RoomAnnouncement>;
   eventChats(roomId: string): Promise<EventChat[]>;
   eventChat(eventId: string): Promise<EventChat | null>;
+  /** The viewer has seen the room's announcements: unread goes to 0. */
+  markRead(roomId: string): Promise<void>;
   subscribe(fn: () => void): Unsub;
 }
 
@@ -96,7 +98,10 @@ export interface ReportsApi {
 }
 
 export interface DoorApi {
-  /** Scan a QR token. mode "express" checks in at once; "standard" returns the person to confirm first (then confirm()). */
+  /**
+   * Scan a QR token or a typed ticket code. mode "express" checks in at once (kind "checked_in"); "standard" returns
+   * kind "confirm" with the person, and nothing changes until confirm().
+   */
   scan(eventId: string, token: string, mode: "standard" | "express"): Promise<ScanResult>;
   /** Standard mode: confirm after seeing the name. */
   confirm(eventId: string, token: string): Promise<ScanResult>;
