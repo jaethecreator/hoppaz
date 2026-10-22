@@ -13,7 +13,6 @@ import {
   renumberWaitlist, requireViewer, typeFull, typeOfReg, typesOf, userById, voidTicket,
 } from "./rules";
 import { emit, now, persist, S, viewer } from "./store";
-import type { EventRec } from "./store";
 import { clone, newId } from "./util";
 
 /** The short code for a registration, to type at the door when a QR will not scan: first 8 characters of its id. */
