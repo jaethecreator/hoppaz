@@ -26,6 +26,7 @@ Then the new files, in this order, each one once (they are safe to run again):
 | 3 | `events_r1_tickets.sql` | pgcrypto (from `schema.sql`) | files 1 and 2 |
 | 4 | `events_r1_pops.sql` | `crew_announcements` (the table) | files 1 and 2 |
 | 5 | `events_r1_reports.sql` | as file 1 | file 1 |
+| 7 | `events_r1_pay.sql` | all six new files; `auth.users` | files 1 to 6 (see `EVENTS_R1_PAY.md`) |
 | 6 | `events_r1_rooms.sql` | `crews`, `crew_members`, `crew_rooms`, `crew_announcement_seen`, `crew_announcement_seen()` | files 1, 2 and 4 |
 
 Files 1 and 2 leave small stubs for functions that later files fill in (the going count, the waitlist fill, the ticket issue and void,
@@ -46,6 +47,16 @@ It answers `already_set` if one exists; pass `true` as the second argument only 
 verifying). Until it is set, `ev_my_ticket` raises `ticket_secret_missing` and `ev_scan` answers `no_secret`. The secret lives in the closed
 table `ev_ticket_secret`; no signed-in user can read it or set it.
 
+## 2a. Paid tickets on Bachs (file 7)
+
+`events_r1_pay.sql` adds host Bachs accounts (`ev_host_payouts`), orders (`ev_orders`), refunds (`ev_refunds`) and the webhook dedupe table
+(`ev_bachs_events`), with the service-role functions the Next.js route handlers call and six client functions. The exact signatures, result shapes,
+the order state machine and the environment variable names are in `supabase/EVENTS_R1_PAY.md`. It changes three earlier files (all drafts): a paid
+purchase is ONE registration with `quantity` N and N tickets (`ev_tickets` has one row per seat, `ev_registrations.quantity`), open orders hold
+seats against the type and event capacity, door counts count tickets, `ev_register` answers `use_checkout` for a paid type, `ev_cancel_registration`
+answers `paid_use_refund` for a paid registration, and a paid type needs the host's `can_sell` (`payouts_not_ready`). Paid tickets stay off until
+`select public.ev_set_setting('paid_tickets','on')`. No Bachs call is made by any SQL; Ola's routes must do those and verify the webhook signature.
+
 ## 2b. Ticket types and the paid switch
 
 Every event has 1 to 5 ticket types (name, price in whole naira, capacity), in the closed table `ev_ticket_types`, made by `events_r1_events.sql`
@@ -62,8 +73,8 @@ exactly the text `currently_unavailable`, until Ola turns the setting on. The se
 select public.ev_set_setting('paid_tickets', 'on');    -- or 'off'; answers ok, bad_key or bad_value
 ```
 
-Even with it on, `ev_register` on a paid type answers `currently_unavailable`: there is no payment code in Release 1. (Clone also refuses a paid
-type while the setting is off; the fake layer copies it.) `ev_export` gained a Ticket column, so the file drops and recreates that one function.
+With it on, a paid type also needs a host whose Bachs account can sell (`payouts_not_ready`), and `ev_register` on a paid type answers `use_checkout` (paid orders go
+through `events_r1_pay.sql`). (Clone also refuses a paid type while the setting is off; the fake layer copies it.) `ev_export` gained a Ticket column, so the file drops and recreates that one function.
 
 ## 3. The cron line (Pops)
 
@@ -144,8 +155,8 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
 
 ## 6. Deliberately not included
 
-- Payments of any kind: Bachs, orders, order items, checkout, webhooks, payouts, fees (`ev_register` refuses a paid type).
-- Paying for a paid ticket type (a paid type can exist once Ola switches the setting on, but cannot be taken), sales windows and per-person limits per type, discount codes, transfer, resale, refunds, chargebacks, per-event refund policy.
+- Any Bachs call, the webhook signature check, the platform fee percentage, payouts, transfer and resale (the SQL only stores and decides).
+- Sales windows and per-person limits per type, discount codes, transfer, resale, refunds, chargebacks, per-event refund policy.
 - Approval for paid tickets (Jae: paying is the approval; Release 2).
 - The email code sign-in itself and the email sender (Supabase Auth, yours), a phone number, Web3 identity.
 - Pop delivery (push, email, WhatsApp). The WhatsApp share is a front end copy of the text and the event link.
@@ -164,11 +175,11 @@ docker exec supabase_db_hoppaz-local pg_dump -U postgres -d postgres -s | docker
 # the schema dump has no rows: the rooms test needs the two room layouts that crew_rooms.sql inserts (read only from postgres)
 docker exec supabase_db_hoppaz-local pg_dump -U postgres -d postgres -a -t public.crew_room_layouts | docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q
 # then, in this order, each file twice (the second run checks they are safe to run again):
-for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms; do
+for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms events_r1_pay; do
   for i in 1 2; do docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q -v ON_ERROR_STOP=1 < supabase/$f.sql; done
 done
 # then each test (one transaction that rolls back; each ends with ALL ... TESTS PASSED):
-for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms events_r1_leaks; do
+for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms events_r1_pay; do
   docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q -v ON_ERROR_STOP=1 < supabase/tests/${f}_test.sql
 done
 docker exec supabase_db_hoppaz-local psql -U postgres -d postgres -c "drop database hoppaz_ev_t1"

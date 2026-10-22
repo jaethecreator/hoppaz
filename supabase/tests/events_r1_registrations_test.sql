@@ -419,11 +419,11 @@ begin
   perform pg_temp.cancel(x, ey);
   perform pg_temp.ok(pg_temp.regt(x, ey, tv) ->> 'reason' = 'currently_unavailable', 'asking for the paid type: currently_unavailable');
   perform pg_temp.ok(public.ev_set_setting('paid_tickets', 'on') = 'ok', 'paid switched on');
-  perform pg_temp.ok(pg_temp.regt(x, ey, tv) ->> 'reason' = 'currently_unavailable' and pg_temp.st(ey, x) = 'cancelled', 'with it on the paid type is STILL refused: there is no payment code');
+  perform pg_temp.ok(pg_temp.regt(x, ey, tv) ->> 'reason' = 'use_checkout' and pg_temp.st(ey, x) = 'cancelled', 'with it on the paid type is still not registered for: use_checkout (the buyer goes to checkout)');
   perform pg_temp.ok(pg_temp.vs(b, ey) ->> 'button' = 'register', 'a mix of free and paid: the button is Register');
   ey := pg_temp.ev(h, 'All paid');
   perform pg_temp.ty(ey, 'Ticket', 3000, null, 1);
-  perform pg_temp.ok(pg_temp.vs(b, ey) ->> 'button' = 'get_ticket' and pg_temp.reg(b, ey) ->> 'reason' = 'currently_unavailable', 'every type paid: get_ticket, and a plain register is currently_unavailable');
+  perform pg_temp.ok(pg_temp.vs(b, ey) ->> 'button' = 'get_ticket' and pg_temp.reg(b, ey) ->> 'reason' = 'use_checkout', 'every type paid: get_ticket, and a plain register is use_checkout (setting on)');
   perform public.ev_set_setting('paid_tickets', 'off');
   -- The button with every free type full.
   ey := pg_temp.ev(h, 'Free full', null, false, false);

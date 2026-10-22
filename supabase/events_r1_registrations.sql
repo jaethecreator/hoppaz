@@ -9,7 +9,8 @@
 --            for events_r1_tickets.sql: ev_issue_ticket and ev_void_ticket (no ticket is made until that file is run).
 --
 -- WHAT IT IS. Swiping right on the deck stays what it is today: "interested", a private like. Register is the commitment. A
--- registration is one row per person per event. Release 1 takes free tickets only: a paid ticket type exists but cannot be taken (currently_unavailable).
+-- registration is one row per person per event. Free tickets are registered here. A paid ticket type is bought through checkout (events_r1_pay.sql): ev_register answers use_checkout for it
+-- (currently_unavailable while the paid_tickets setting is off).
 --
 --   ev_registrations           one row per person per event: status, answers to the host's questions, who invited them, the place
 --                              on the waitlist. Closed to anon and authenticated: no policy, no grant.
@@ -26,10 +27,10 @@
 --                                       and the waitlist is on). Full with no waitlist: full. { ok, registration } or { ok: false,
 --                                       reason }. Registering again while registered returns the same registration.
 --                                       reasons: no_session, need_account, not_found, cancelled, event_over, declined, full, type_full,
---                                       bad_ticket, currently_unavailable, answer_needed (with the question), too_many_answers, answer_too_long.
+--                                       bad_ticket, use_checkout, currently_unavailable, answer_needed (with the question), too_many_answers, answer_too_long.
 --                                       TICKET TYPES: opts.ticketTypeId picks a type (bad_ticket if it is not one of the event's). With none given
 --                                       the person gets the first free type that has room, else the first free type (it is full). A paid type is
---                                       always refused with currently_unavailable, whether or not paid_tickets is on (no payment code in Release 1).
+--                                       never registered for here: use_checkout when paid_tickets is on, currently_unavailable when off.
 --                                       A type's places are counted from going and checked_in people holding it AND the event's capacity: the
 --                                       tighter one decides. A full type follows the event's waitlist setting: waitlisted, or type_full (full when the
 --                                       whole event is full). Approval applies to free types only. A registration remembers its type.
@@ -66,6 +67,8 @@ create table if not exists public.ev_registrations (
   referrer_id   uuid references public.profiles(id) on delete set null,
   waitlist_pos  integer check (waitlist_pos is null or waitlist_pos >= 1),
   ticket_type_id uuid references public.ev_ticket_types(id),
+  -- Seats held. 1 for a free ticket; a paid purchase of N makes ONE registration with quantity N (events_r1_pay.sql).
+  quantity      integer not null default 1 check (quantity between 0 and 10),
   -- clock_timestamp, not now(): the waitlist order is the order people joined, even inside one transaction.
   created_at    timestamptz not null default clock_timestamp(),
   updated_at    timestamptz not null default clock_timestamp(),
@@ -73,6 +76,7 @@ create table if not exists public.ev_registrations (
   unique (event_id, user_id)
 );
 alter table public.ev_registrations add column if not exists ticket_type_id uuid references public.ev_ticket_types(id);
+alter table public.ev_registrations add column if not exists quantity integer not null default 1 check (quantity between 0 and 10);
 create index if not exists ev_registrations_event_idx on public.ev_registrations (event_id, status, created_at);
 create index if not exists ev_registrations_user_idx on public.ev_registrations (user_id, status);
 alter table public.ev_registrations enable row level security;
@@ -109,7 +113,8 @@ end $stubs$;
 -- ------------------------------------------------------------- helpers (real) ---
 create or replace function public._ev_going(p_event uuid) returns integer
 language sql stable security definer set search_path = public, pg_temp as $$
-  select count(*)::int from public.ev_registrations r where r.event_id = p_event and r.status in ('going', 'checked_in');
+  -- Places are seats: a registration of 3 tickets is 3 going.
+  select coalesce(sum(r.quantity), 0)::int from public.ev_registrations r where r.event_id = p_event and r.status in ('going', 'checked_in');
 $$;
 revoke all on function public._ev_going(uuid) from public, anon, authenticated;
 
@@ -122,7 +127,7 @@ revoke all on function public._ev_reg_status(uuid, uuid) from public, anon, auth
 -- Going and checked-in people holding a type (a registration with no type holds the event's first type).
 create or replace function public._ev_type_sold(p_event uuid, p_type uuid) returns integer
 language sql stable security definer set search_path = public, pg_temp as $$
-  select count(*)::int from public.ev_registrations r
+  select coalesce(sum(r.quantity), 0)::int from public.ev_registrations r
    where r.event_id = p_event and r.status in ('going', 'checked_in')
      and coalesce(r.ticket_type_id, public._ev_first_type(p_event)) = p_type;
 $$;
@@ -137,7 +142,7 @@ revoke all on function public._ev_type_full(uuid, uuid) from public, anon, authe
 
 create or replace function public._ev_full(p_event uuid) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
-  select coalesce((select e.capacity is not null and public._ev_going(e.id) >= e.capacity from public.events e where e.id = p_event), false);
+  select coalesce((select e.capacity is not null and public._ev_going(e.id) + public._ev_held(e.id, null) >= e.capacity from public.events e where e.id = p_event), false);
 $$;
 revoke all on function public._ev_full(uuid) from public, anon, authenticated;
 
@@ -176,11 +181,11 @@ begin
     if e.requires_approval then
       -- Room for a request: the capacity minus the people going and the requests already waiting, for the event and for the type.
       v_event := case when e.capacity is null then 1000000
-                      else e.capacity - public._ev_going(p_event)
+                      else e.capacity - public._ev_going(p_event) - public._ev_held(p_event, null)
                            - (select count(*)::int from public.ev_registrations where event_id = p_event and status = 'requested') end;
       select t.capacity into v_cap from public._ev_types(p_event) t where t.id = v_type;
       v_own := case when v_cap is null then 1000000
-                    else v_cap - public._ev_type_sold(p_event, v_type)
+                    else v_cap - public._ev_type_sold(p_event, v_type) - public._ev_held(p_event, v_type)
                          - (select count(*)::int from public.ev_registrations where event_id = p_event and status = 'requested'
                               and coalesce(ticket_type_id, public._ev_first_type(p_event)) = v_type) end;
       if v_event > 0 and v_own > 0 then
@@ -201,7 +206,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   select jsonb_build_object(
     'id', r.id, 'event_id', r.event_id, 'user_id', r.user_id, 'name', r.name,
     'email', coalesce((select u.email from auth.users u where u.id = r.user_id), ''),
-    'phone', r.answers ->> 'phone', 'status', r.status,
+    'phone', r.answers ->> 'phone', 'status', r.status, 'quantity', r.quantity,
     'ticket_type_id', coalesce(r.ticket_type_id, public._ev_first_type(r.event_id)),
     'ticket_name', coalesce((select t.name from public._ev_types(r.event_id) t where t.id = coalesce(r.ticket_type_id, public._ev_first_type(r.event_id))), 'General'),
     'answers', r.answers,
@@ -373,7 +378,10 @@ begin
     end if;
   end if;
   -- No payment code in Release 1: a paid type is never taken, with paid_tickets on or off.
-  if v_price > 0 then return jsonb_build_object('ok', false, 'reason', 'currently_unavailable'); end if;
+  -- A paid type is bought through checkout (events_r1_pay.sql), never registered for here.
+  if v_price > 0 then
+    return jsonb_build_object('ok', false, 'reason', case when public._ev_paid_on() then 'use_checkout' else 'currently_unavailable' end);
+  end if;
 
   -- The answers: text only, short keys, a few of them.
   if jsonb_typeof(v_opts -> 'answers') = 'object' then
@@ -418,7 +426,7 @@ begin
   else
     -- A returning person (they had cancelled): the same row, back in line at the end.
     update public.ev_registrations
-       set status = v_status, name = coalesce(v_name, 'Guest'), answers = v_answers, ticket_type_id = v_type,
+       set status = v_status, name = coalesce(v_name, 'Guest'), answers = v_answers, ticket_type_id = v_type, quantity = 1,
            referrer_id = coalesce(v_ref, referrer_id), created_at = clock_timestamp(), updated_at = clock_timestamp(),
            checked_in_at = null, waitlist_pos = null
      where id = r.id
@@ -444,6 +452,11 @@ begin
   if r.id is null then return 'not_registered'; end if;
   if r.status = 'cancelled' then return 'ok'; end if;
   if r.status = 'checked_in' then return 'already_checked_in'; end if;
+  -- A paid registration is undone by a refund (events_r1_pay.sql), not by cancelling.
+  if to_regclass('public.ev_orders') is not null and exists (
+       select 1 from public.ev_orders o where o.event_id = p_event and o.buyer_id = me and o.status in ('paid', 'refund_pending')) then
+    return 'paid_use_refund';
+  end if;
   v_was := r.status = 'going';
   update public.ev_registrations set status = 'cancelled', waitlist_pos = null, updated_at = now() where id = r.id;
   if v_was then

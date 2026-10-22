@@ -352,9 +352,14 @@ begin
                      and not has_table_privilege('authenticated', 'public.ev_settings', 'select') and not has_table_privilege('anon', 'public.ev_settings', 'select')
                      and not has_table_privilege('authenticated', 'public.ev_settings', 'update') and not has_table_privilege('authenticated', 'public.ev_ticket_types', 'insert'),
                      'LEAK CHECK: ev_ticket_types and ev_settings are closed to anon and authenticated');
-  -- With paid on, a paid type can be made (still not taken: see the registrations test).
+  -- With paid on, a paid type also needs a host whose Bachs account can take money.
   perform pg_temp.ok(public.ev_set_setting('paid_tickets', 'on') = 'ok', 'Ola switches paid tickets on');
   perform pg_temp.relax(h);
+  r := pg_temp.mk(h, '{"title":"Paid early","tickets":[{"name":"VIP","price_naira":5000}]}');
+  perform pg_temp.ok(r ->> 'reason' = 'payouts_not_ready', 'setting on but the host has no ready Bachs account: payouts_not_ready');
+  perform pg_temp.ok(public.ev_pay_host_save_account(h, 'acct_evtesthost') = 'ok' and public.ev_pay_host_apply_capability('acct_evtesthost', 'bank_transfer', 'active') = 'ok', 'the host gets an account and one capability');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"Paid early","tickets":[{"name":"VIP","price_naira":5000}]}') ->> 'reason' = 'payouts_not_ready', 'a collection capability alone is not enough (payouts too)');
+  perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_evtesthost', 'payouts', 'active') = 'ok', 'payouts active: ready');
   r := pg_temp.mk(h, '{"title":"Paid two","tickets":[{"name":"General","price_naira":0},{"name":"VIP","price_naira":5000,"capacity":10}]}');
   idp := (r -> 'event' ->> 'id')::uuid;
   perform pg_temp.ok((r ->> 'ok')::boolean and (r -> 'event' ->> 'price_naira')::int = 0 and r -> 'event' -> 'ticket_types' -> 1 ->> 'price_naira' = '5000', 'on: a paid type saves; the event price is the lowest type price');

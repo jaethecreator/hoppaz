@@ -32,7 +32,8 @@
 --   ev_issue_ticket(registration)    internal. Called by ev_register, ev_decide, ev_promote and the waitlist fill when a person
 --                                    becomes going. Makes the ticket, or brings a voided one back with version + 1. Service role only.
 --   ev_void_ticket(registration)     internal. Called when a going person cancels or is declined. Service role only.
---   ev_my_ticket(event)              mine: { id, event_id, holder_name, ticket_name, code, token, version, status } or null. status is
+--   ev_my_tickets(event)             every ticket I hold for the event, one per seat (a paid purchase of 3 has 3), each with its own token and a seat number.
+--   ev_my_ticket(event)              mine (the first of those): { id, event_id, holder_name, ticket_name, code, token, version, status } or null. status is
 --                                    used once checked in. Makes the ticket if a going person has none yet.
 --   ev_scan(event, token or code, mode, offline, at)   host, staff or door staff. mode: standard (look, change nothing) | express
 --                                    (check in at once) | confirm (check in after a standard look). The answer is the ScanResult
@@ -70,7 +71,9 @@ grant all on public.ev_ticket_secret to service_role;
 create table if not exists public.ev_tickets (
   id              uuid primary key default gen_random_uuid(),
   event_id        uuid not null references public.events(id) on delete cascade,
-  registration_id uuid not null unique references public.ev_registrations(id) on delete cascade,
+  registration_id uuid not null references public.ev_registrations(id) on delete cascade,
+  seat            integer not null default 1 check (seat >= 1),
+  void_reason     text check (void_reason is null or void_reason in ('cancelled', 'refund')),
   owner_id        uuid not null references public.profiles(id) on delete cascade,
   holder_name     text not null default '',
   ticket_type_id  uuid references public.ev_ticket_types(id),
@@ -83,6 +86,11 @@ create table if not exists public.ev_tickets (
   used_by         uuid references public.profiles(id) on delete set null
 );
 alter table public.ev_tickets add column if not exists ticket_type_id uuid references public.ev_ticket_types(id);
+-- One registration can hold several tickets (a paid purchase of N seats): one row per seat.
+alter table public.ev_tickets add column if not exists seat integer not null default 1 check (seat >= 1);
+alter table public.ev_tickets add column if not exists void_reason text check (void_reason is null or void_reason in ('cancelled', 'refund'));
+alter table public.ev_tickets drop constraint if exists ev_tickets_registration_id_key;
+create unique index if not exists ev_tickets_seat_idx on public.ev_tickets (registration_id, seat);
 create unique index if not exists ev_tickets_code_idx on public.ev_tickets (event_id, code);
 create index if not exists ev_tickets_event_idx on public.ev_tickets (event_id, status);
 alter table public.ev_tickets enable row level security;
@@ -183,9 +191,12 @@ revoke all on function public._ev_can_door(uuid) from public, anon, authenticate
 
 create or replace function public._ev_door_counts(p_event uuid) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
+  -- going and checked_in count TICKETS (seats): a purchase of 3 is 3. A registration that has no ticket rows counts by its quantity.
   select jsonb_build_object(
-    'going', count(*) filter (where r.status in ('going', 'checked_in')),
-    'checked_in', count(*) filter (where r.status = 'checked_in'),
+    'going', coalesce(sum(r.quantity) filter (where r.status in ('going', 'checked_in')), 0),
+    'checked_in', coalesce((select count(*) from public.ev_tickets t where t.event_id = p_event and t.status = 'used'), 0)
+                  + coalesce(sum(r.quantity) filter (where r.status = 'checked_in'
+                       and not exists (select 1 from public.ev_tickets t2 where t2.registration_id = r.id)), 0),
     'pending', count(*) filter (where r.status = 'requested'),
     'waitlist', count(*) filter (where r.status = 'waitlisted'))
   from public.ev_registrations r where r.event_id = p_event;
@@ -207,11 +218,14 @@ revoke all on function public._ev_not_valid(uuid, uuid, text, boolean, timestamp
 create or replace function public.ev_issue_ticket(p_registration uuid) returns uuid
 language plpgsql security definer set search_path = public, extensions, pg_temp as $$
 declare
-  r    public.ev_registrations;
-  t    public.ev_tickets;
-  v_id uuid;
-  i    integer;
-  v_type uuid;
+  r       public.ev_registrations;
+  t       public.ev_tickets;
+  v_first uuid;
+  v_id    uuid;
+  v_need  integer;
+  v_seat  integer;
+  i       integer;
+  v_type  uuid;
   v_tname text;
 begin
   select * into r from public.ev_registrations where id = p_registration;
@@ -220,29 +234,34 @@ begin
   v_type := coalesce(r.ticket_type_id, public._ev_first_type(r.event_id));
   select x.name into v_tname from public._ev_types(r.event_id) x where x.id = v_type;
   v_tname := coalesce(v_tname, 'General');
-  select * into t from public.ev_tickets where registration_id = r.id for update;
-  if t.id is not null then
-    -- A returning person gets a new version, so the old QR stops working.
-    if t.status = 'void' then
-      update public.ev_tickets set version = version + 1, status = 'valid', holder_name = r.name, used_at = null, used_by = null,
-             ticket_type_id = v_type, ticket_name = v_tname where id = t.id;
-    end if;
-    return t.id;
-  end if;
-  for i in 1..10 loop
-    begin
-      insert into public.ev_tickets (event_id, registration_id, owner_id, holder_name, ticket_type_id, ticket_name, code)
-      values (r.event_id, r.id, r.user_id, r.name, v_type, v_tname, public._ev_code())
-      returning id into v_id;
-      exit;
-    exception when unique_violation then
-      -- Either another call made this person's ticket a moment ago, or the code is taken: look, then try another code.
-      select id into v_id from public.ev_tickets where registration_id = r.id;
-      if v_id is not null then exit; end if;
-    end;
+  -- One live ticket per seat the registration holds (quantity). Missing ones: first bring back tickets voided by a cancel (a returning
+  -- person gets a new version, so the old QR stops working), then make new seats. A ticket voided by a refund is never brought back here.
+  v_need := greatest(r.quantity, 1) - (select count(*)::int from public.ev_tickets x where x.registration_id = r.id and x.status in ('valid', 'used'));
+  for t in select * from public.ev_tickets x where x.registration_id = r.id and x.status = 'void' and coalesce(x.void_reason, 'cancelled') = 'cancelled' order by x.seat for update loop
+    exit when v_need <= 0;
+    update public.ev_tickets set version = version + 1, status = 'valid', void_reason = null, holder_name = r.name, used_at = null, used_by = null,
+           ticket_type_id = v_type, ticket_name = v_tname where id = t.id;
+    v_need := v_need - 1;
   end loop;
-  if v_id is null then raise exception 'ticket_code_failed'; end if;
-  return v_id;
+  while v_need > 0 loop
+    select coalesce(max(x.seat), 0) + 1 into v_seat from public.ev_tickets x where x.registration_id = r.id;
+    v_id := null;
+    for i in 1..10 loop
+      begin
+        insert into public.ev_tickets (event_id, registration_id, seat, owner_id, holder_name, ticket_type_id, ticket_name, code)
+        values (r.event_id, r.id, v_seat, r.user_id, r.name, v_type, v_tname, public._ev_code())
+        returning id into v_id;
+        exit;
+      exception when unique_violation then
+        -- The code is taken (or, rarely, this seat was made a moment ago): try another code.
+        null;
+      end;
+    end loop;
+    if v_id is null then raise exception 'ticket_code_failed'; end if;
+    v_need := v_need - 1;
+  end loop;
+  select x.id into v_first from public.ev_tickets x where x.registration_id = r.id and x.status in ('valid', 'used') order by x.seat limit 1;
+  return v_first;
 end $$;
 revoke all on function public.ev_issue_ticket(uuid) from public, anon, authenticated;
 grant execute on function public.ev_issue_ticket(uuid) to service_role;
@@ -250,29 +269,37 @@ grant execute on function public.ev_issue_ticket(uuid) to service_role;
 create or replace function public.ev_void_ticket(p_registration uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  update public.ev_tickets set status = 'void' where registration_id = p_registration and status = 'valid';
+  update public.ev_tickets set status = 'void', void_reason = 'cancelled' where registration_id = p_registration and status = 'valid';
 end $$;
 revoke all on function public.ev_void_ticket(uuid) from public, anon, authenticated;
 grant execute on function public.ev_void_ticket(uuid) to service_role;
 
 -- --------------------------------------------------------------- my ticket ---
-create or replace function public.ev_my_ticket(p_event uuid) returns jsonb
+-- Every ticket I hold for the event (one per seat), seat order. Makes the tickets a going person is missing.
+create or replace function public.ev_my_tickets(p_event uuid) returns jsonb
 language plpgsql security definer set search_path = public, extensions, pg_temp as $$
 declare
   me uuid := auth.uid();
   r  public.ev_registrations;
-  t  public.ev_tickets;
 begin
-  if me is null then return null; end if;
+  if me is null then return '[]'::jsonb; end if;
   select * into r from public.ev_registrations where event_id = p_event and user_id = me and status in ('going', 'checked_in');
-  if r.id is null then return null; end if;
+  if r.id is null then return '[]'::jsonb; end if;
   perform public.ev_issue_ticket(r.id);
-  select * into t from public.ev_tickets where registration_id = r.id;
-  if t.id is null then return null; end if;
-  return jsonb_build_object(
-    'id', t.id, 'event_id', t.event_id, 'holder_name', t.holder_name, 'ticket_name', t.ticket_name, 'code', t.code,
-    'token', public._ev_token(t.id, t.event_id, t.version), 'version', t.version,
-    'status', case when r.status = 'checked_in' then 'used' else t.status end);
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', t.id, 'event_id', t.event_id, 'holder_name', t.holder_name, 'ticket_name', t.ticket_name, 'code', t.code,
+             'token', public._ev_token(t.id, t.event_id, t.version), 'version', t.version, 'status', t.status, 'seat', t.seat) order by t.seat)
+      from public.ev_tickets t where t.registration_id = r.id and t.status in ('valid', 'used')), '[]'::jsonb);
+end $$;
+
+-- My first ticket (the Ticket type of the front end), or null.
+create or replace function public.ev_my_ticket(p_event uuid) returns jsonb
+language plpgsql security definer set search_path = public, extensions, pg_temp as $$
+declare j jsonb := public.ev_my_tickets(p_event);
+begin
+  if jsonb_array_length(j) = 0 then return null; end if;
+  return j -> 0;
 end $$;
 
 -- ------------------------------------------------------------------- scan ---
@@ -342,12 +369,12 @@ begin
   if (v_ver is not null and t.version <> v_ver) or t.status = 'void' then
     return public._ev_not_valid(p_event, me, v_mode, p_offline, p_at, 'void', t.id);
   end if;
-  if r.status = 'checked_in' or t.status = 'used' then
+  if t.status = 'used' then
     insert into public.ev_scans (event_id, ticket_id, scanned_by, device_at, mode, offline, result)
     values (p_event, t.id, me, p_at, v_mode, coalesce(p_offline, false), 'already_used');
     return jsonb_build_object('ok', false, 'kind', 'already_used', 'name', r.name, 'at', coalesce(t.used_at, r.checked_in_at, clock_timestamp()));
   end if;
-  if r.status <> 'going' then return public._ev_not_valid(p_event, me, v_mode, p_offline, p_at, 'not_going', t.id); end if;
+  if r.status not in ('going', 'checked_in') then return public._ev_not_valid(p_event, me, v_mode, p_offline, p_at, 'not_going', t.id); end if;
   if e.status not in ('live', 'unlisted') then return public._ev_not_valid(p_event, me, v_mode, p_offline, p_at, 'void', t.id); end if;
 
   if v_mode = 'standard' then
@@ -359,7 +386,10 @@ begin
   end if;
 
   update public.ev_tickets set status = 'used', used_at = clock_timestamp(), used_by = me where id = t.id;
-  update public.ev_registrations set status = 'checked_in', checked_in_at = clock_timestamp(), updated_at = clock_timestamp() where id = r.id;
+  -- The registration is checked in when its last live ticket is used (a purchase of 3 is checked in ticket by ticket).
+  update public.ev_registrations set checked_in_at = coalesce(checked_in_at, clock_timestamp()), updated_at = clock_timestamp(),
+         status = case when exists (select 1 from public.ev_tickets x where x.registration_id = r.id and x.status = 'valid') then status else 'checked_in' end
+   where id = r.id;
   insert into public.ev_scans (event_id, ticket_id, scanned_by, device_at, mode, offline, result)
   values (p_event, t.id, me, p_at, v_mode, coalesce(p_offline, false), 'checked_in');
   c := public._ev_door_counts(p_event);
@@ -383,16 +413,19 @@ begin
   if not public._ev_can_door(p_event) then return jsonb_build_object('ok', false, 'reason', 'not_allowed'); end if;
   select * into r from public.ev_registrations where id = p_registration and event_id = p_event for update;
   if r.id is null then return public._ev_not_valid(p_event, me, 'manual', false, null, 'unknown'); end if;
-  if r.status = 'checked_in' then
+  if r.status not in ('going', 'checked_in') then return public._ev_not_valid(p_event, me, 'manual', false, null, 'not_going'); end if;
+  if e.status not in ('live', 'unlisted') then return public._ev_not_valid(p_event, me, 'manual', false, null, 'void'); end if;
+  perform public.ev_issue_ticket(r.id);
+  -- The next ticket of this person that has not been used. None left: everyone of theirs is in already.
+  select * into t from public.ev_tickets x where x.registration_id = r.id and x.status = 'valid' order by x.seat limit 1 for update;
+  if t.id is null then
     insert into public.ev_scans (event_id, scanned_by, mode, result) values (p_event, me, 'manual', 'already_used');
     return jsonb_build_object('ok', false, 'kind', 'already_used', 'name', r.name, 'at', coalesce(r.checked_in_at, clock_timestamp()));
   end if;
-  if r.status <> 'going' then return public._ev_not_valid(p_event, me, 'manual', false, null, 'not_going'); end if;
-  if e.status not in ('live', 'unlisted') then return public._ev_not_valid(p_event, me, 'manual', false, null, 'void'); end if;
-  perform public.ev_issue_ticket(r.id);
-  select * into t from public.ev_tickets where registration_id = r.id for update;
   update public.ev_tickets set status = 'used', used_at = clock_timestamp(), used_by = me where id = t.id;
-  update public.ev_registrations set status = 'checked_in', checked_in_at = clock_timestamp(), updated_at = clock_timestamp() where id = r.id;
+  update public.ev_registrations set checked_in_at = coalesce(checked_in_at, clock_timestamp()), updated_at = clock_timestamp(),
+         status = case when exists (select 1 from public.ev_tickets x where x.registration_id = r.id and x.status = 'valid') then status else 'checked_in' end
+   where id = r.id;
   insert into public.ev_scans (event_id, ticket_id, scanned_by, mode, result) values (p_event, t.id, me, 'manual', 'checked_in');
   c := public._ev_door_counts(p_event);
   return jsonb_build_object('ok', true, 'kind', 'checked_in', 'name', r.name, 'ticket', t.ticket_name,
@@ -433,7 +466,7 @@ begin
     'ok', true, 'event_id', p_event, 'generated_at', clock_timestamp(),
     'tickets', coalesce((select jsonb_agg(jsonb_build_object('id', t.id, 'v', t.version) order by t.id)
                            from public.ev_tickets t
-                           join public.ev_registrations r on r.id = t.registration_id and r.status = 'going'
+                           join public.ev_registrations r on r.id = t.registration_id and r.status in ('going', 'checked_in')
                           where t.event_id = p_event and t.status = 'valid'), '[]'::jsonb));
 end $$;
 
@@ -459,10 +492,10 @@ begin
 end $$;
 
 -- ----------------------------------------------------------------- access ---
-revoke all on function public.ev_my_ticket(uuid), public.ev_scan(uuid, text, text, boolean, timestamptz), public.ev_checkin_manual(uuid, uuid),
+revoke all on function public.ev_my_ticket(uuid), public.ev_my_tickets(uuid), public.ev_scan(uuid, text, text, boolean, timestamptz), public.ev_checkin_manual(uuid, uuid),
   public.ev_door_search(uuid, text), public.ev_door_counts(uuid), public.ev_valid_tickets(uuid), public.ev_set_door_staff(uuid, uuid, boolean)
   from public, anon;
-grant execute on function public.ev_my_ticket(uuid), public.ev_scan(uuid, text, text, boolean, timestamptz), public.ev_checkin_manual(uuid, uuid),
+grant execute on function public.ev_my_ticket(uuid), public.ev_my_tickets(uuid), public.ev_scan(uuid, text, text, boolean, timestamptz), public.ev_checkin_manual(uuid, uuid),
   public.ev_door_search(uuid, text), public.ev_door_counts(uuid), public.ev_valid_tickets(uuid), public.ev_set_door_staff(uuid, uuid, boolean)
   to authenticated;
 
