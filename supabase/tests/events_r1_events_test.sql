@@ -67,7 +67,7 @@ declare
   h uuid := pg_temp.newuser('Evt Host'); s uuid := pg_temp.newuser('Evt Stranger'); m uuid := pg_temp.newuser('Evt Member');
   g uuid := pg_temp.newuser('Evt Guest', true); st uuid := pg_temp.newuser('Evt Staff'); r5 uuid := pg_temp.newuser('Evt Rate');
   room uuid := gen_random_uuid();
-  r jsonb; e jsonb; e2 jsonb; id1 uuid; id2 uuid; id3 uuid; id4 uuid; n int; i int; titles text[]; idt uuid; idl uuid; idp uuid; gid uuid; tt jsonb;
+  r jsonb; e jsonb; e2 jsonb; id1 uuid; id2 uuid; id3 uuid; id4 uuid; n int; i int; titles text[]; idt uuid; idl uuid; idp uuid; ida uuid; gid uuid; tt jsonb;
 begin
   update public.profiles set is_admin = true where id = st;
   insert into public.areas (name, side, centroid) values ('EV Test Area', 'island', st_point(3.42, 6.45)::geography) on conflict (name) do nothing;
@@ -398,6 +398,18 @@ begin
   perform pg_temp.ok(r -> 'event' ->> 'room_id' = idt::text, 'a host with a room gets the event tied to it');
   r := pg_temp.mk(st, '{"title":"Not in my room","add_to_room":false}');
   perform pg_temp.ok(r -> 'event' -> 'room_id' = 'null'::jsonb and r -> 'event' -> 'host' ->> 'roomId' = idt::text, 'add_to_room false keeps it out of the room (the host card still shows their room)');
+  -- An edit can put an event in the room or take it out; a community event cannot leave.
+  ida := (r -> 'event' ->> 'id')::uuid;
+  r := pg_temp.upd(st, ida, '{"add_to_room":true}');
+  perform pg_temp.ok((r ->> 'ok')::boolean and r -> 'event' ->> 'room_id' = idt::text, 'an edit with add_to_room true puts the event in the host''s room');
+  r := pg_temp.upd(st, ida, '{"add_to_room":false,"title":"Out again"}');
+  perform pg_temp.ok((r ->> 'ok')::boolean and r -> 'event' -> 'room_id' = 'null'::jsonb and r -> 'event' ->> 'title' = 'Out again', 'with add_to_room false it leaves the room again');
+  r := pg_temp.upd(st, ida, '{"title":"Still out"}');
+  perform pg_temp.ok(r -> 'event' -> 'room_id' = 'null'::jsonb, 'an edit that does not mention it leaves the room as it was');
+  r := pg_temp.upd(st, ida, '{"add_to_room":true,"visibility":"community"}');
+  perform pg_temp.ok((r ->> 'ok')::boolean and r -> 'event' ->> 'room_id' = idt::text, 'it can become a community event in the room');
+  perform pg_temp.ok(pg_temp.upd(st, ida, '{"add_to_room":false}') ->> 'reason' = 'need_room', 'a community event cannot leave its room');
+  perform pg_temp.ok(pg_temp.upd(s, ida, '{"add_to_room":true}') ->> 'reason' = 'not_allowed', 'and a stranger cannot move it');
 
   -- Access: only get and list are open to a visitor with no account.
   declare f record;

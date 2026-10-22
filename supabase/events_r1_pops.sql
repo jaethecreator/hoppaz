@@ -36,6 +36,11 @@
 --                           until they are made), newest first. For the Pops tab.
 --   ev_room_announcements(room)   the room's announcements, newest first, with the event tag where there is one: { id, room_id, body,
 --                           created_at, author_name, event_id, event_title }. Members of the room and staff only.
+--   ev_cancel_pop(pop)      host or staff: take back a scheduled Pop. { ok } or { ok: false, reason: already_sent | use_switch (an automatic one) |
+--                           not_found | not_allowed | no_session }.
+--   ev_set_auto_pop(event, auto, enabled)   host or staff: switch an automatic Pop on or off (off = never sent; the row is made now if its time has not come,
+--                           the dispatcher keeps one that exists). { ok, pop } or { ok: false, reason: already_sent | time_passed (switching on) | event_closed | ... }.
+--   ev_edit_auto_pop(event, auto, body)     host or staff: change the text (1 to 280) of an automatic Pop that has not gone. Same answers, plus empty | too_long.
 --   ev_dispatch_due_pops()  service role (and the database's own cron). Makes the automatic Pops that are due, sends the scheduled
 --                           ones whose time has come, copies to rooms. Returns how many it sent. Meant to run every minute:
 --                              select cron.schedule('hoppaz-ev-pops', '* * * * *', 'select public.ev_dispatch_due_pops()');
@@ -73,6 +78,8 @@ create table if not exists public.ev_pops (
   created_at timestamptz not null default clock_timestamp(),
   unique (event_id, auto)
 );
+-- enabled: an automatic Pop the host switched off is never sent (default on).
+alter table public.ev_pops add column if not exists enabled boolean not null default true;
 create index if not exists ev_pops_event_idx on public.ev_pops (event_id, status, sent_at desc);
 create index if not exists ev_pops_due_idx on public.ev_pops (send_at) where status = 'scheduled';
 alter table public.ev_pops enable row level security;
@@ -111,7 +118,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     'id', p.id, 'event_id', p.event_id, 'event_title', (select e.title from public.events e where e.id = p.event_id),
     'author_name', coalesce((select coalesce(nullif(btrim(pr.display_name), ''), pr.handle) from public.profiles pr where pr.id = p.author_id), 'Host'),
     'body', p.body, 'audience', p.audience, 'also_room', p.also_room, 'send_at', p.send_at, 'sent_at', p.sent_at,
-    'status', p.status, 'auto', p.auto, 'recipients', p.recipients);
+    'status', p.status, 'auto', p.auto, 'recipients', p.recipients, 'enabled', p.enabled);
 $$;
 revoke all on function public._ev_pop_json(public.ev_pops) from public, anon, authenticated;
 
@@ -307,7 +314,7 @@ begin
 
   -- 2. Send every scheduled Pop that is due. A Pop of an event that is cancelled, hidden or gone is cancelled instead.
   for p in
-    select x.id from public.ev_pops x where x.status = 'scheduled' and x.send_at <= now() order by x.send_at, x.id limit 500 for update skip locked
+    select x.id from public.ev_pops x where x.status = 'scheduled' and x.enabled and x.send_at <= now() order by x.send_at, x.id limit 500 for update skip locked
   loop
     begin
       select ev.* into v_ev from public.events ev where ev.id = (select y.event_id from public.ev_pops y where y.id = p.id);
@@ -338,11 +345,97 @@ language sql stable security definer set search_path = public, pg_temp as $$
            else r.status in ('going', 'checked_in', 'requested', 'waitlisted') end;
 $$;
 
+-- ------------------------------------------- change or take back a Pop that has not gone ---
+-- When an automatic Pop goes out: the same times as ev_host_pops and the dispatcher use.
+create or replace function public._ev_auto_fire(p_kind text, p_starts timestamptz) returns timestamptz
+language sql immutable set search_path = public, pg_temp as $$
+  select case p_kind when 'day_before' then p_starts - interval '24 hours' when 'hour_before' then p_starts - interval '1 hour' else p_starts end;
+$$;
+revoke all on function public._ev_auto_fire(text, timestamptz) from public, anon, authenticated;
+
+-- The automatic Pop of an event, made now if its time has not come (the dispatcher only makes it at its time, and keeps one that exists).
+-- Locks the event row. { ok: true, pop: <row> } or { ok: false, reason }.
+create or replace function public._ev_auto_row(p_event uuid, p_auto text, p_enabled boolean) returns public.ev_pops
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  e public.events;
+  p public.ev_pops;
+begin
+  select * into e from public.events where id = p_event for update;
+  select * into p from public.ev_pops where event_id = p_event and auto = p_auto;
+  if p.id is not null then return p; end if;
+  insert into public.ev_pops (event_id, author_id, body, audience, also_room, send_at, status, auto, enabled)
+  values (p_event, coalesce(e.host_id, e.created_by),
+          public._ev_auto_text(p_auto, e.title, e.starts_at, e.timezone, e.kind = 'online'), 'going', false,
+          public._ev_auto_fire(p_auto, e.starts_at), 'scheduled', p_auto, coalesce(p_enabled, true))
+  returning * into p;
+  return p;
+end $$;
+revoke all on function public._ev_auto_row(uuid, text, boolean) from public, anon, authenticated;
+
+-- Take back a scheduled Pop that has not gone. A sent one is "already_sent"; an automatic one is switched off, not cancelled.
+create or replace function public.ev_cancel_pop(p_pop uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare p public.ev_pops;
+begin
+  if auth.uid() is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
+  select * into p from public.ev_pops where id = p_pop for update;
+  if p.id is null then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
+  if not public._ev_manage(p.event_id) then return jsonb_build_object('ok', false, 'reason', 'not_allowed'); end if;
+  if p.status = 'sent' then return jsonb_build_object('ok', false, 'reason', 'already_sent'); end if;
+  if p.auto is not null then return jsonb_build_object('ok', false, 'reason', 'use_switch'); end if;
+  update public.ev_pops set status = 'cancelled' where id = p.id;
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- Switch an automatic Pop on or off. Off: it is never sent. On needs its time to be ahead.
+create or replace function public.ev_set_auto_pop(p_event uuid, p_auto text, p_enabled boolean) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  e public.events;
+  p public.ev_pops;
+begin
+  if auth.uid() is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
+  if p_auto is null or p_auto not in ('day_before', 'hour_before', 'doors_open') then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
+  select * into e from public.events where id = p_event;
+  if e.id is null then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
+  if not public._ev_manage(p_event) then return jsonb_build_object('ok', false, 'reason', 'not_allowed'); end if;
+  if e.status not in ('live', 'unlisted') then return jsonb_build_object('ok', false, 'reason', 'event_closed'); end if;
+  p := public._ev_auto_row(p_event, p_auto, coalesce(p_enabled, true));
+  if p.status = 'sent' then return jsonb_build_object('ok', false, 'reason', 'already_sent'); end if;
+  if coalesce(p_enabled, true) and p.send_at is not null and p.send_at <= now() then return jsonb_build_object('ok', false, 'reason', 'time_passed'); end if;
+  update public.ev_pops set enabled = coalesce(p_enabled, true) where id = p.id returning * into p;
+  return jsonb_build_object('ok', true, 'pop', public._ev_pop_json(p));
+end $$;
+
+-- Change the text of an automatic Pop that has not gone.
+create or replace function public.ev_edit_auto_pop(p_event uuid, p_auto text, p_body text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  e      public.events;
+  p      public.ev_pops;
+  v_body text := btrim(coalesce(p_body, ''));
+begin
+  if auth.uid() is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
+  if p_auto is null or p_auto not in ('day_before', 'hour_before', 'doors_open') then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
+  select * into e from public.events where id = p_event;
+  if e.id is null then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
+  if not public._ev_manage(p_event) then return jsonb_build_object('ok', false, 'reason', 'not_allowed'); end if;
+  if e.status not in ('live', 'unlisted') then return jsonb_build_object('ok', false, 'reason', 'event_closed'); end if;
+  if v_body = '' then return jsonb_build_object('ok', false, 'reason', 'empty'); end if;
+  if char_length(v_body) > 280 then return jsonb_build_object('ok', false, 'reason', 'too_long'); end if;
+  p := public._ev_auto_row(p_event, p_auto, true);
+  if p.status = 'sent' then return jsonb_build_object('ok', false, 'reason', 'already_sent'); end if;
+  update public.ev_pops set body = v_body where id = p.id returning * into p;
+  return jsonb_build_object('ok', true, 'pop', public._ev_pop_json(p));
+end $$;
+
 -- ----------------------------------------------------------------- access ---
 revoke all on function public.ev_send_pop(uuid, text, text, boolean, timestamptz), public.ev_event_pops(uuid), public.ev_host_pops(uuid),
-  public.ev_room_announcements(uuid), public.ev_dispatch_due_pops(), public.ev_pop_recipient_ids(uuid) from public, anon;
+  public.ev_room_announcements(uuid), public.ev_dispatch_due_pops(), public.ev_pop_recipient_ids(uuid),
+  public.ev_cancel_pop(uuid), public.ev_set_auto_pop(uuid, text, boolean), public.ev_edit_auto_pop(uuid, text, text) from public, anon;
 grant execute on function public.ev_send_pop(uuid, text, text, boolean, timestamptz), public.ev_event_pops(uuid), public.ev_host_pops(uuid),
-  public.ev_room_announcements(uuid) to authenticated;
+  public.ev_room_announcements(uuid), public.ev_cancel_pop(uuid), public.ev_set_auto_pop(uuid, text, boolean), public.ev_edit_auto_pop(uuid, text, text) to authenticated;
 revoke all on function public.ev_dispatch_due_pops(), public.ev_pop_recipient_ids(uuid) from authenticated;
 grant execute on function public.ev_dispatch_due_pops(), public.ev_pop_recipient_ids(uuid) to service_role;
 

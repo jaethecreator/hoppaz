@@ -22,7 +22,7 @@
 --                       event with no place has no pin and stays off the map but is in the lists.
 --   ev_event_links      the online link, one row per event, on its OWN closed table (see LEAK CHECK below).
 --   ev_create_event(draft)            a name is enough. Publishes at once. { ok, event } or { ok: false, reason }.
---   ev_update_event(event, patch)     host or staff. Same checks as create.
+--   ev_update_event(event, patch)     host or staff. Same checks as create. patch.add_to_room true or false puts the event in the host's room or takes it out.
 --   ev_cancel_event(event)            host or staff. The event stays readable as cancelled.
 --   ev_clone_event(event)             host or staff. Same event a week on, no guests, same registration settings.
 --   ev_get_event(id or slug)          one event, or null. online_link only for the host and people who are going.
@@ -807,6 +807,7 @@ declare
   n        jsonb;
   f        jsonb;
   v_reopen boolean;
+  v_room   uuid;
 begin
   if me is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
   if p_patch is null or jsonb_typeof(p_patch) <> 'object' then return jsonb_build_object('ok', false, 'reason', 'bad_draft'); end if;
@@ -822,7 +823,13 @@ begin
     v_merged := v_merged || jsonb_build_object('lat', null::double precision, 'lng', null::double precision);
   end if;
 
-  n := public._ev_normalize(v_merged, e.room_id, coalesce(e.host_id, e.created_by));
+  -- add_to_room: true puts the event in the host's own room, false takes it out (a community event cannot leave: need_room).
+  v_room := e.room_id;
+  if jsonb_typeof(p_patch -> 'add_to_room') = 'boolean' then
+    v_room := case when (p_patch ->> 'add_to_room')::boolean then public._ev_host_room(coalesce(e.host_id, e.created_by)) else null end;
+  end if;
+
+  n := public._ev_normalize(v_merged, v_room, coalesce(e.host_id, e.created_by));
   if not (n ->> 'ok')::boolean then return n; end if;
   f := n -> 'f';
 
@@ -843,9 +850,14 @@ begin
     timezone = f ->> 'timezone', kind = f ->> 'kind', link_type = f ->> 'link_type',
     description = f ->> 'description', capacity = (f ->> 'capacity')::integer,
     requires_approval = (f ->> 'requires_approval')::boolean, waitlist_on = (f ->> 'waitlist_on')::boolean,
-    visibility = f ->> 'visibility', flyer_url = f ->> 'flyer_url', vibe = f ->> 'vibe',
+    visibility = f ->> 'visibility', flyer_url = f ->> 'flyer_url', vibe = f ->> 'vibe', room_id = v_room,
     price_naira = coalesce((f ->> 'price_naira')::integer, price_naira)
   where id = p_event;
+  -- The start moved: automatic Pops that exist and have not gone follow it (the pops file may not be loaded yet).
+  if (f ->> 'starts_at')::timestamptz is distinct from e.starts_at and to_regclass('public.ev_pops') is not null then
+    execute 'update public.ev_pops set send_at = case auto when ''day_before'' then $1 - interval ''24 hours'' when ''hour_before'' then $1 - interval ''1 hour'' else $1 end
+              where event_id = $2 and auto is not null and status = ''scheduled''' using (f ->> 'starts_at')::timestamptz, p_event;
+  end if;
   perform public._ev_apply_types(p_event, f -> 'tickets', false);
 
   if (f ->> 'online_link') is null then

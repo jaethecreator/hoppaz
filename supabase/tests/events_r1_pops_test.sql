@@ -228,15 +228,59 @@ begin
   select count(*) into n from public.ev_pop_recipient_ids(pid);
   perform pg_temp.ok(n = 2, 'and for a going Pop the 2');
 
+  -- Take back a scheduled Pop, switch an automatic Pop off, change its text.
+  declare
+    ec uuid := pg_temp.ev(h, 'Change night', now() + interval '3 days');
+    sp uuid;
+    ap uuid;
+  begin
+    r := pg_temp.send(h, ec, 'Later one', 'going', false, now() + interval '1 day');
+    sp := (r -> 'pop' ->> 'id')::uuid;
+    perform pg_temp.ok(pg_temp.j(x, format('select public.ev_cancel_pop(%L)', sp)) ->> 'reason' = 'not_allowed', 'a stranger cannot take back a Pop');
+    perform pg_temp.ok((pg_temp.j(h, format('select public.ev_cancel_pop(%L)', sp)) ->> 'ok')::boolean, 'the host takes back a scheduled Pop');
+    perform pg_temp.ok(not exists (select 1 from jsonb_array_elements(pg_temp.j(h, format('select public.ev_host_pops(%L)', ec))) q where q ->> 'body' = 'Later one'), 'it is gone from the Pops tab');
+    r := pg_temp.send(h, ec, 'Now one', 'going', false, null);
+    perform pg_temp.ok(pg_temp.j(h, format('select public.ev_cancel_pop(%L)', (r -> 'pop' ->> 'id')::uuid)) ->> 'reason' = 'already_sent', 'a sent Pop cannot be taken back');
+    perform pg_temp.ok(pg_temp.j(h, format('select public.ev_cancel_pop(%L)', gen_random_uuid())) ->> 'reason' = 'not_found', 'a Pop that is not there is not_found');
+    -- Automatic: off, text, on again.
+    r := pg_temp.j(h, format('select public.ev_set_auto_pop(%L, %L, false)', ec, 'hour_before'));
+    perform pg_temp.ok((r ->> 'ok')::boolean and (r -> 'pop' ->> 'enabled')::boolean = false and r -> 'pop' ->> 'auto' = 'hour_before', 'an automatic Pop is switched off');
+    ap := (r -> 'pop' ->> 'id')::uuid;
+    perform pg_temp.ok(exists (select 1 from jsonb_array_elements(pg_temp.j(h, format('select public.ev_host_pops(%L)', ec))) q where q ->> 'auto' = 'hour_before' and (q ->> 'enabled')::boolean = false),
+                       'the Pops tab shows it Off');
+    perform pg_temp.ok(pg_temp.j(h, format('select public.ev_cancel_pop(%L)', ap)) ->> 'reason' = 'use_switch', 'an automatic Pop is switched off, not cancelled');
+    r := pg_temp.j(h, format('select public.ev_edit_auto_pop(%L, %L, %L)', ec, 'day_before', 'Tomorrow, bring snacks'));
+    perform pg_temp.ok((r ->> 'ok')::boolean and r -> 'pop' ->> 'body' = 'Tomorrow, bring snacks' and (r -> 'pop' ->> 'enabled')::boolean, 'the text of an automatic Pop is changed');
+    perform pg_temp.ok(pg_temp.j(h, format('select public.ev_edit_auto_pop(%L, %L, %L)', ec, 'day_before', '  ')) ->> 'reason' = 'empty'
+                       and pg_temp.j(h, format('select public.ev_edit_auto_pop(%L, %L, %L)', ec, 'day_before', repeat('x', 281))) ->> 'reason' = 'too_long'
+                       and pg_temp.j(x, format('select public.ev_edit_auto_pop(%L, %L, %L)', ec, 'day_before', 'hi')) ->> 'reason' = 'not_allowed'
+                       and pg_temp.j(h, format('select public.ev_set_auto_pop(%L, %L, true)', ec, 'weekly')) ->> 'reason' = 'not_found', 'bad text, a stranger and a bad kind are refused');
+    -- The dispatcher keeps the edit and skips the Off one when their time comes.
+    update public.events set starts_at = now() + interval '30 minutes', created_at = now() - interval '2 days' where id = ec;
+    update public.ev_pops set send_at = now() - interval '1 minute' where event_id = ec and auto in ('hour_before', 'day_before');
+    n := pg_temp.dispatch();
+    perform pg_temp.ok(exists (select 1 from public.ev_pops where event_id = ec and auto = 'day_before' and status = 'sent' and body = 'Tomorrow, bring snacks'), 'the edited text is what goes out');
+    perform pg_temp.ok(exists (select 1 from public.ev_pops where event_id = ec and auto = 'hour_before' and status = 'scheduled' and not enabled), 'a switched-off Pop is never sent');
+    perform pg_temp.ok(pg_temp.j(h, format('select public.ev_set_auto_pop(%L, %L, true)', ec, 'hour_before')) ->> 'reason' = 'time_passed', 'switching on a Pop whose time has passed is refused');
+    perform pg_temp.ok(pg_temp.j(h, format('select public.ev_edit_auto_pop(%L, %L, %L)', ec, 'day_before', 'late edit')) ->> 'reason' = 'already_sent', 'a sent automatic Pop cannot be edited');
+    -- Moving the start moves a Pop that was made early.
+    update public.events set starts_at = now() + interval '5 days', created_at = now() - interval '2 days' where id = ec;
+    r := pg_temp.j(h, format('select public.ev_update_event(%L, %L::jsonb)', ec, json_build_object('starts_at', (now() + interval '6 days'))::text));
+    perform pg_temp.ok((r ->> 'ok')::boolean, 'the host moves the start');
+    perform pg_temp.ok(exists (select 1 from public.ev_pops where event_id = ec and auto = 'hour_before' and status = 'scheduled'
+                               and abs(extract(epoch from (send_at - (now() + interval '6 days' - interval '1 hour')))) < 5), 'a switched-off automatic Pop follows the new start');
+  end;
+
   -- Access.
   for f in select p.oid, p.oid::regprocedure as sig, p.proname as name
              from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
             where ns.nspname = 'public'
               and p.proname in ('ev_send_pop', 'ev_event_pops', 'ev_host_pops', 'ev_room_announcements', 'ev_dispatch_due_pops', 'ev_pop_recipient_ids',
-                                '_ev_copy_pop_to_room', '_ev_pop_json', '_ev_auto_text', '_ev_audience_count')
+                                '_ev_copy_pop_to_room', '_ev_pop_json', '_ev_auto_text', '_ev_audience_count',
+                                'ev_cancel_pop', 'ev_set_auto_pop', 'ev_edit_auto_pop', '_ev_auto_fire', '_ev_auto_row')
   loop
     perform pg_temp.ok(not has_function_privilege('anon', f.oid, 'execute'), f.sig || ': anon cannot call');
-    perform pg_temp.ok(has_function_privilege('authenticated', f.oid, 'execute') = (f.name in ('ev_send_pop', 'ev_event_pops', 'ev_host_pops', 'ev_room_announcements')),
+    perform pg_temp.ok(has_function_privilege('authenticated', f.oid, 'execute') = (f.name in ('ev_send_pop', 'ev_event_pops', 'ev_host_pops', 'ev_room_announcements', 'ev_cancel_pop', 'ev_set_auto_pop', 'ev_edit_auto_pop')),
                        f.sig || ': authenticated access is as designed');
   end loop;
   perform pg_temp.ok(has_function_privilege('service_role', 'public.ev_dispatch_due_pops()', 'execute') and has_function_privilege('service_role', 'public.ev_pop_recipient_ids(uuid)', 'execute'),
