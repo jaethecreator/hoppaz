@@ -91,6 +91,14 @@ export const fakeDev = {
     return t ? { registrationId: reg.id, name: reg.name, code: t.code, token: t.token } : null;
   },
 
+  /** Give a room a walkable 3D room (or take it away): Enter room and the HQ button follow it. */
+  setHas3d(roomId: string, on: boolean) {
+    const r = S().rooms[roomId];
+    if (!r) throw new Error("No such room");
+    r.has_3d = on;
+    emit();
+  },
+
   /** Start over: a fresh seed, signed out, real time. */
   resetAll,
 };

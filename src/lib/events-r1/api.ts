@@ -5,7 +5,7 @@
  */
 import type {
   AuthUser, EventChat, EventDraft, Pop, PopAudience, R1Event, RegMessages, RegQuestion, Registration,
-  Report, ReportReason, RoomAnnouncement, RoomDraft, RoomSummary, ScanResult, Ticket, ViewerState,
+  Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomMessage, RoomSummary, ScanResult, Ticket, ViewerState,
 } from "./types";
 
 export type Unsub = () => void;
@@ -80,6 +80,8 @@ export interface RoomsApi {
   /** Rooms tab: Hoppaz HQ first, then the viewer's rooms, then discoverable rooms. */
   list(): Promise<{ hq: RoomSummary; mine: RoomSummary[]; discover: RoomSummary[]; eventChats: EventChat[] }>;
   get(idOrSlug: string): Promise<RoomSummary | null>;
+  /** The rooms the viewer owns (the create page offers "Add to <room>" from this). Empty when signed out. */
+  mine(): Promise<RoomSummary[]>;
   create(draft: RoomDraft): Promise<RoomSummary>;
   join(roomId: string): Promise<void>;
   /** Announcements, newest first. Includes event Pops tagged with the event. */
@@ -90,6 +92,13 @@ export interface RoomsApi {
   eventChat(eventId: string): Promise<EventChat | null>;
   /** The viewer has seen the room's announcements: unread goes to 0. */
   markRead(roomId: string): Promise<void>;
+  /**
+   * Chat lines, oldest first. channel "general" is the room chat; an event id is that event's chat (host Pops come with
+   * pinned_pop set). An event chat the viewer cannot enter returns nothing.
+   */
+  messages(roomId: string, channel: RoomChannel): Promise<RoomMessage[]>;
+  /** Say something. Needs a signed in viewer ("Sign in first"). An event chat refuses when it is closed, not open yet, or the viewer cannot enter. */
+  send(roomId: string, channel: RoomChannel, body: string): Promise<RoomMessage>;
   subscribe(fn: () => void): Unsub;
 }
 

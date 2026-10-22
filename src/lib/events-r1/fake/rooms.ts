@@ -4,16 +4,20 @@
  * after it ends.
  */
 import type { RoomsApi } from "../api";
-import type { EventChat, RoomSummary } from "../types";
-import { flushDuePops } from "./pops";
-import { canList, chatFor, isGoing, isHostOf, isMember, regOf, requireViewer, roomSummary } from "./rules";
+import type { EventChat, RoomMessage, RoomSummary } from "../types";
+import { flushDuePops, pops } from "./pops";
+import { canList, chatFor, findEvent, isGoing, isHostOf, isMember, regOf, requireViewer, roomSummary } from "./rules";
 import { emit, now, S, subscribe, viewer } from "./store";
 import type { RoomRec } from "./store";
 import { clone, DAY, newId } from "./util";
 
+/** By id or slug. "hq" is Hoppaz HQ's short address (/rooms/hq). */
 function findRoom(idOrSlug: string): RoomRec | undefined {
-  return S().rooms[idOrSlug] ?? Object.values(S().rooms).find((r) => r.slug === idOrSlug);
+  const all = Object.values(S().rooms);
+  return S().rooms[idOrSlug] ?? all.find((r) => r.slug === idOrSlug) ?? (idOrSlug === "hq" ? all.find((r) => r.kind === "hq") : undefined);
 }
+
+const MAX_LINE = 500;
 
 function slugOf(name: string): string {
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "room";
@@ -62,6 +66,14 @@ export const rooms: RoomsApi = {
     flushDuePops();
     const r = findRoom(idOrSlug);
     return r ? roomSummary(r) : null;
+  },
+
+  async mine() {
+    const v = viewer();
+    if (!v) return [];
+    return Object.values(S().rooms)
+      .filter((r) => r.owner_id === v.id && r.kind !== "hq")
+      .map((r) => roomSummary(r));
   },
 
   async create(draft) {
@@ -132,6 +144,53 @@ export const rooms: RoomsApi = {
     if (!v || !r) return;
     S().reads[`${v.id}:${r.id}`] = new Date(now()).toISOString();
     emit();
+  },
+
+  async messages(roomId, channel) {
+    flushDuePops();
+    const r = findRoom(roomId);
+    if (!r) return [];
+    const byTime = (a: RoomMessage, b: RoomMessage) => Date.parse(a.created_at) - Date.parse(b.created_at);
+    if (channel === "general") {
+      return clone(Object.values(S().messages).filter((m) => m.room_id === r.id && m.channel === "general").sort(byTime));
+    }
+    const e = findEvent(channel);
+    const chat = e && e.room_id === r.id ? chatFor(e) : null;
+    if (!e || !chat || !chat.can_enter) return [];
+    const lines = Object.values(S().messages).filter((m) => m.room_id === r.id && m.channel === e.id);
+    // The host's Pops for this event come with the chat, pinned.
+    const sent = await pops.visibleOnEvent(e.id);
+    const popLines: RoomMessage[] = sent.map((p) => ({
+      id: `pop:${p.id}`, room_id: r.id, channel: e.id, author_name: p.author_name, body: p.body, created_at: p.sent_at ?? p.send_at ?? "",
+      pinned_pop: { event_id: e.id, event_title: e.title },
+    }));
+    return clone([...lines, ...popLines].sort(byTime));
+  },
+
+  async send(roomId, channel, body) {
+    const v = requireViewer();
+    const r = findRoom(roomId);
+    if (!r) throw new Error("Room not found");
+    const text = body.trim();
+    if (!text) throw new Error("Write a message first");
+    if (text.length > MAX_LINE) throw new Error(`Keep it under ${MAX_LINE} characters`);
+    if (channel === "general") {
+      if (!isMember(r.id)) throw new Error("Join the room to chat");
+    } else {
+      const e = findEvent(channel);
+      const chat = e && e.room_id === r.id ? chatFor(e) : null;
+      if (!chat) throw new Error("Chat not found");
+      if (chat.state === "closed") throw new Error("This event has closed");
+      if (chat.state === "upcoming") throw new Error("The chat is not open yet");
+      if (!chat.can_enter) throw new Error("You are not in this chat");
+    }
+    const m: RoomMessage = {
+      id: newId(), room_id: r.id, channel: channel === "general" ? "general" : findEvent(channel)!.id, author_name: v.name, body: text,
+      created_at: new Date(now()).toISOString(),
+    };
+    S().messages[m.id] = m;
+    emit();
+    return clone(m);
   },
 
   subscribe,

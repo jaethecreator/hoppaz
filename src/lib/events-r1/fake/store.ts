@@ -9,7 +9,7 @@
  * Importable under Node (the check script): every use of window and localStorage is guarded.
  */
 import type {
-  AuthUser, Pop, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement, RoomSummary, Ticket,
+  AuthUser, Pop, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement, RoomMessage, RoomSummary, Ticket,
 } from "../types";
 import { buildSeed } from "./seed";
 import { clone } from "./util";
@@ -31,8 +31,12 @@ export type EventRec = Omit<
   "going" | "spots_left" | "host" | "distance_m" | "heat" | "checkins" | "swipes_in" | "here_now" | "ticket_types"
 > & { host_id: string; ticket_types?: TicketTypeRec[] };
 
-export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "latest_announcement"> & {
+export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "latest_announcement" | "is_owner" | "can_post" | "has_3d" | "online"> & {
   owner_id: string | null;
+  /** Missing means no walkable 3D room (the fake has none; a tester can switch one on with fakeDev.setHas3d). */
+  has_3d?: boolean;
+  /** Missing means not counted. */
+  online?: number;
   description: string;
   /** Members before anyone joins in this browser. */
   base_members: number;
@@ -56,6 +60,7 @@ export type FakeState = {
   tickets: Record<string, TicketRec>;
   pops: Record<string, Pop>;
   announcements: Record<string, RoomAnnouncement>;
+  messages: Record<string, RoomMessage>;
   reports: Record<string, Report>;
   rooms: Record<string, RoomRec>;
   regSettings: Record<string, RegSettings>;
@@ -74,7 +79,7 @@ export type FakeState = {
 };
 
 const COLLS = [
-  "users", "events", "regs", "tickets", "pops", "announcements", "reports", "rooms",
+  "users", "events", "regs", "tickets", "pops", "announcements", "messages", "reports", "rooms",
   "regSettings", "memberships", "interest", "reads",
 ] as const;
 type Coll = (typeof COLLS)[number];

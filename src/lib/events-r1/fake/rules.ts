@@ -315,5 +315,9 @@ export function roomSummary(room: RoomRec): RoomSummary {
     joined,
     unread: joined ? anns.filter((a) => Date.parse(a.created_at) > since).length : 0,
     latest_announcement: anns[0] ? clone(anns[0]) : null,
+    is_owner: !!v && room.owner_id === v.id,
+    can_post: !!v && (room.owner_id === v.id || !!v.staff),
+    has_3d: !!room.has_3d,
+    online: room.online ?? 0,
   };
 }

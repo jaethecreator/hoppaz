@@ -169,6 +169,14 @@ export type RoomSummary = {
   joined: boolean;
   unread: number;
   latest_announcement: RoomAnnouncement | null;
+  /** The viewer made this room. */
+  is_owner: boolean;
+  /** Owner or admin: may post an announcement. */
+  can_post: boolean;
+  /** The room has a walkable 3D room to enter. False: Enter room goes to General. Hoppaz HQ is chat first and may be false. */
+  has_3d: boolean;
+  /** People in the room right now (shown on Hoppaz HQ). 0 when not counted. */
+  online: number;
 };
 
 export type RoomAnnouncement = {
@@ -180,6 +188,23 @@ export type RoomAnnouncement = {
   /** Set when it came from an event Pop: shown tagged with the event name. One way: never the reverse. */
   event_id: string | null;
   event_title: string | null;
+};
+
+/** "general" is the room's own chat; any other value is an event id (that event's chat). */
+export type RoomChannel = string;
+
+/** Marks a message as a host Pop for an event: shown pinned at the top of that event's chat. */
+export type PopTag = { event_id: string; event_title: string };
+
+export type RoomMessage = {
+  id: string;
+  room_id: string;
+  channel: RoomChannel;
+  author_name: string;
+  body: string;
+  created_at: string;
+  /** Set on a host Pop: the chat pins it. */
+  pinned_pop?: PopTag;
 };
 
 export type EventChatState = "upcoming" | "open" | "closed";

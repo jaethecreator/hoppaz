@@ -219,11 +219,36 @@ const ANNS: AnnSeed[] = [
   { room: "roof", body: "Members night is coming. Only people in this room can see it.", hoursAgo: 15, author: "Rooftop Sessions" },
 ];
 
+/** Chat lines. "general" is the room chat; an event key is that event's chat. Minutes ago, oldest first. */
+type MsgSeed = { room: HostKey; channel: "general" | string; who: string; body: string; minAgo: number };
+const MESSAGES: MsgSeed[] = [
+  { room: "hq", channel: "general", who: "Tayo Bello", body: "Anyone going to the Welcome Hop tomorrow?", minAgo: 190 },
+  { room: "hq", channel: "general", who: "Ada Obi", body: "Yes! First time on the bus, any tips?", minAgo: 176 },
+  { room: "hq", channel: "general", who: "Chidi Okafor", body: "Come hungry, they play ludo at the back.", minAgo: 171 },
+  { room: "hq", channel: "general", who: "Hoppaz HQ", body: "This weekend: 14 events in Lagos. Check the map.", minAgo: 95 },
+  { room: "p360", channel: "general", who: "Ngozi Eze", body: "Who is coming to the listening party on Friday?", minAgo: 310 },
+  { room: "p360", channel: "general", who: "Femi Balogun", body: "Me. Bringing two friends.", minAgo: 296 },
+  { room: "p360", channel: "general", who: "360Playlist", body: "Send us your requests here and we will play the best ones.", minAgo: 240 },
+  { room: "kredete", channel: "general", who: "Bisi Adeyemi", body: "Is the jollof table still on for Saturday?", minAgo: 420 },
+  { room: "kredete", channel: "general", who: "Kredete", body: "Yes. Five seats, join the waitlist if it is full.", minAgo: 400 },
+  { room: "lrc", channel: "general", who: "Emeka Nwosu", body: "Route looks flat this week. Good for a PB.", minAgo: 150 },
+  { room: "lrc", channel: "general", who: "Amaka Okonkwo", body: "I will bring extra water for the 2.5K stop.", minAgo: 130 },
+  { room: "roof", channel: "general", who: "Seyi Lawal", body: "Members night is going to be loud.", minAgo: 600 },
+  { room: "p360", channel: "listening-party", who: "Ada Obi", body: "Who is coming early?", minAgo: 70 },
+  { room: "p360", channel: "listening-party", who: "Tunde Bello", body: "See you there", minAgo: 62 },
+  { room: "p360", channel: "listening-party", who: "Zainab Musa", body: "Is there a dress code?", minAgo: 40 },
+  { room: "roof", channel: "sunset-rooftop", who: "Kunle Ojo", body: "Bringing a jacket, the wind is strong up there.", minAgo: 55 },
+  { room: "roof", channel: "sunset-rooftop", who: "Folake Alabi", body: "Same. See you by the rail.", minAgo: 44 },
+  { room: "kredete", channel: "highlife-ended", who: "Obinna Chukwu", body: "That was amazing", minAgo: 100 },
+  { room: "kredete", channel: "highlife-ended", who: "Sade Akinola", body: "Next one is Friday", minAgo: 92 },
+  { room: "kredete", channel: "highlife-ended", who: "Kredete", body: "Thank you all for coming. Photos are coming soon.", minAgo: 80 },
+];
+
 /* ---------------------------------------------------------------- build -- */
 
 export function buildSeed(now: number): FakeState {
   const st: FakeState = {
-    users: {}, events: {}, regs: {}, tickets: {}, pops: {}, announcements: {}, reports: {}, rooms: {},
+    users: {}, events: {}, regs: {}, tickets: {}, pops: {}, announcements: {}, messages: {}, reports: {}, rooms: {},
     regSettings: {}, memberships: {}, interest: {}, reads: {},
     viewerId: null, pendingEmail: null, offset: 0, key: null,
   };
@@ -256,6 +281,8 @@ export function buildSeed(now: number): FakeState {
   for (const [id, slug, name, kind, owner, base, verified, logo, description] of rooms) {
     st.rooms[id] = {
       id, slug, name, kind, logo_url: logo, wallpaper_url: null, verified, owner_id: owner, description, base_members: base,
+      // Hoppaz HQ is chat first: no walkable room here (so nothing can fill a 60 walker cap).
+      has_3d: false, online: kind === "hq" ? 3410 : 0,
     };
   }
   st.memberships[`${U.ada}:${R.p360}`] = true;
@@ -344,6 +371,15 @@ export function buildSeed(now: number): FakeState {
     st.announcements[id] = {
       id, room_id: R[a.room], body: a.body, created_at: iso(now - a.hoursAgo * HOUR), author_name: a.author, event_id: null, event_title: null,
     } satisfies RoomAnnouncement;
+  });
+
+  /* Chat lines. */
+  MESSAGES.forEach((m, i) => {
+    const id = seedId(`msg:${m.room}:${m.channel}:${i}`);
+    st.messages[id] = {
+      id, room_id: R[m.room], channel: m.channel === "general" ? "general" : eventKey[m.channel].id, author_name: m.who, body: m.body,
+      created_at: iso(now - m.minAgo * 60_000),
+    };
   });
 
   /* Reports for the staff list. */

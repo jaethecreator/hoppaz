@@ -532,6 +532,26 @@ await test(`ticket types: paid is ${PAID_TICKETS ? "saved (flag on)" : "rejected
   }
 });
 
+await test("date and time picker helpers: Lagos time, +01:00 ISO, 15 minute steps, Ends follows Starts", async () => {
+  const d = await import("../src/components/events-r1/dateTime.ts");
+  const t = Date.parse("2026-10-23T18:00:00Z"); // 19:00 in Lagos
+  eq(d.lagosIso(t), "2026-10-23T19:00:00+01:00", "ISO with the offset");
+  eq(Date.parse(d.lagosIso(t)), t, "the same instant");
+  eq(d.formatWhen("2026-10-23T19:00:00+01:00"), "Fri 23 Oct · 19:00", "printed like the event page");
+  eq(d.formatWhen("2026-10-23T23:30:00Z"), "Sat 24 Oct · 00:30", "after midnight is the next calendar day");
+  eq(d.dayChips(t, 4).map((c: { label: string }) => c.label), ["Today", "Tomorrow", "Sun 25", "Mon 26"], "day chips");
+  eq([d.TIMES.length, d.TIMES[0], d.TIMES[1], d.TIMES[95]], [96, 0, 15, 1425], "times");
+  eq(d.clockOf(1425), "23:45", "clock");
+  eq(d.withDay("2026-10-23T19:15:00+01:00", "2026-12-01"), "2026-12-01T19:15:00+01:00", "day moves, time stays");
+  eq(d.withMinutes("2026-10-23T19:15:00+01:00", 600), "2026-10-23T10:00:00+01:00", "time moves, day stays");
+  eq(d.moveEnd("2026-10-23T19:00:00+01:00", "2026-10-23T22:00:00+01:00", "2026-10-24T20:00:00+01:00"), "2026-10-24T23:00:00+01:00", "Ends keeps the length");
+  eq(d.moveEnd("2026-10-23T19:00:00+01:00", "2026-10-23T18:00:00+01:00", "2026-10-24T20:00:00+01:00"), "2026-10-24T23:00:00+01:00", "a broken length falls back to 3 hours");
+  eq([d.endError("2026-10-23T19:00:00+01:00", "2026-10-23T19:00:00+01:00"), d.endError("2026-10-23T19:00:00+01:00", "2026-10-23T19:15:00+01:00")], ["Ends must be after Starts", ""], "end error");
+  const oct = d.monthCells("2026-10");
+  eq([oct.length, oct[0], oct[3], oct[oct.length - 1]], [34, null, "2026-10-01", "2026-10-31"], "October 2026 starts on a Thursday, Monday first");
+  eq(d.shiftMonth("2026-12", 1), "2027-01", "month shift");
+});
+
 await test("auth: six digits, any code, Google signs in as Ada Obi, sign out", async () => {
   await rejects(api.auth.sendCode("nope"), "Enter a valid email", "bad email");
   await api.auth.sendCode("ada@example.com");
@@ -582,6 +602,82 @@ await test("rooms: HQ first and joined, announcements tagged from Pops, Ada's ro
   await api.rooms.markRead(p360.id);
   eq((await api.rooms.get(p360.id))?.unread, 0, "unread after");
   ok(l.eventChats.length > 0, "event chats listed");
+});
+
+await test("rooms: is_owner, can_post, has_3d, online, HQ short address and mine()", async () => {
+  eq(await api.rooms.mine(), [], "signed out owns nothing");
+  as("Ada Obi");
+  const l = await api.rooms.list();
+  eq([l.hq.is_owner, l.hq.can_post, l.hq.has_3d, l.hq.online], [false, false, false, 3410], "HQ for a guest: chat first, no 3D, people online");
+  eq((await api.rooms.get("hq"))?.id, l.hq.id, "/rooms/hq finds Hoppaz HQ");
+  eq((await api.rooms.get("hoppaz-hq"))?.id, l.hq.id, "and its own slug");
+  eq(l.mine.map((r) => [r.name, r.is_owner, r.can_post]).sort(), [["360Playlist", false, false], ["Lagos Run Club", false, false]], "a member is not an owner");
+  eq(await api.rooms.mine(), [], "Ada owns no room");
+  as("Kredete");
+  const mine = await api.rooms.mine();
+  eq(mine.map((r) => [r.name, r.is_owner, r.can_post]), [["Kredete", true, true]], "Kredete owns one room");
+  as("Hoppaz Staff");
+  const hq = await api.rooms.get("hq");
+  eq([hq?.can_post, hq?.is_owner], [true, false], "an admin may post but is not the owner");
+  fakeDev.setHas3d(hq!.id, true);
+  eq((await api.rooms.get("hq"))?.has_3d, true, "a 3D room can be switched on");
+  const made = await api.rooms.create({ name: "Check Room" });
+  eq([made.is_owner, made.can_post, made.has_3d, made.slug], [true, true, false, "check-room"], "a new room is the maker's");
+  eq((await api.rooms.mine()).map((r) => r.name), ["Check Room"], "listed in mine");
+});
+
+await test("rooms: General chat needs sign in and membership; lines come oldest first", async () => {
+  const kredete = (await api.rooms.get("kredete"))!;
+  const before = await api.rooms.messages(kredete.id, "general");
+  ok(before.length >= 2, "seeded lines");
+  ok(before.every((m) => m.channel === "general" && !m.pinned_pop), "all General");
+  ok(before.every((m, i) => i === 0 || Date.parse(m.created_at) >= Date.parse(before[i - 1].created_at)), "oldest first");
+  await rejects(api.rooms.send(kredete.id, "general", "hi"), "Sign in first", "signed out");
+  as("Ada Obi");
+  await rejects(api.rooms.send(kredete.id, "general", "hi"), "Join the room to chat", "not a member");
+  await api.rooms.join(kredete.id);
+  await rejects(api.rooms.send(kredete.id, "general", "   "), "Write a message first", "empty");
+  const m = await api.rooms.send(kredete.id, "general", "  Count me in  ");
+  eq([m.body, m.author_name, m.channel], ["Count me in", "Ada Obi", "general"], "sent");
+  const after = await api.rooms.messages(kredete.id, "general");
+  eq([after.length, after[after.length - 1].id], [before.length + 1, m.id], "it is last");
+  const hq = (await api.rooms.get("hq"))!;
+  await api.rooms.send(hq.id, "general", "HQ is open to everyone");
+  eq((await api.rooms.messages(hq.id, "general")).at(-1)?.body, "HQ is open to everyone", "HQ needs no join");
+});
+
+await test("rooms: event chat messages carry host Pops pinned; send refuses closed, not open yet, and outsiders", async () => {
+  const ev = seeded("360Playlist Listening Party");
+  const room = ev.room_id!;
+  as("Ada Obi");
+  const upcoming = await api.rooms.messages(room, ev.id);
+  ok(upcoming.some((m) => m.pinned_pop?.event_id === ev.id && m.body.startsWith("Doors open")), "the host Pop is in the chat, tagged");
+  ok(upcoming.some((m) => !m.pinned_pop), "and the chat lines");
+  await rejects(api.rooms.send(room, ev.id, "early"), "The chat is not open yet", "upcoming");
+  fakeDev.jumpTo(Date.parse(ev.starts_at) - 30 * MIN);
+  const m = await api.rooms.send(room, ev.id, "On my way");
+  eq(m.channel, ev.id, "sent to the event chat");
+  ok((await api.rooms.messages(room, ev.id)).some((x) => x.id === m.id), "shown");
+  eq((await api.rooms.messages(room, "general")).some((x) => x.id === m.id), false, "not in General");
+  await newPerson();
+  eq(await api.rooms.messages(room, ev.id), [], "an outsider sees nothing");
+  await rejects(api.rooms.send(room, ev.id, "hi"), "You are not in this chat", "outsider");
+  as("Ada Obi");
+  fakeDev.jumpTo(Date.parse(ev.ends_at!) + 3 * 24 * HOUR + MIN);
+  await rejects(api.rooms.send(room, ev.id, "late"), "This event has closed", "closed");
+  ok((await api.rooms.messages(room, ev.id)).some((x) => x.id === m.id), "a closed chat can still be read");
+  await rejects(api.rooms.send(room, "no-such-event", "x"), "Chat not found", "no such chat");
+});
+
+await test("rooms: a plain announcement from the owner never shows on an event; Pops show tagged", async () => {
+  const ev = seeded("Kredete Open Mic and Laughs");
+  as("Ada Obi");
+  await rejects(api.rooms.postAnnouncement(ev.room_id!, "nope"), "Only the room's host can post here", "a guest cannot post");
+  as("Kredete");
+  const a = await api.rooms.postAnnouncement(ev.room_id!, "Doors at 7");
+  eq([a.event_id, a.event_title], [null, null], "plain: no event tag");
+  eq((await api.rooms.announcements(ev.room_id!))[0].id, a.id, "newest first");
+  eq((await api.pops.visibleOnEvent(ev.id)).some((p) => p.body === "Doors at 7"), false, "not on the event");
 });
 
 await test("reports: anyone signed in reports, staff list and mark reviewed, others are refused", async () => {
