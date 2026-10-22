@@ -7,8 +7,9 @@ import { AREAS, areaByName } from "@/lib/geo";
 import { useMyRooms, useR1Api, useR1Now } from "@/lib/events-r1/hooks";
 import type { EventDraft, EventKind, LinkType, Visibility } from "@/lib/events-r1/types";
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
-import { paidTicketsOn } from "@/lib/events-r1/flags";
 import { Choice, Row, Toggle } from "./Fields";
+import { usePaidGate } from "../pay/usePay";
+import { hostPayError } from "../pay/words";
 import Tickets, { newTicket, ticketsDraft, ticketsError, ticketsSummary } from "./Tickets";
 import type { TicketForm } from "./Tickets";
 import DateTimePicker from "../DateTimePicker";
@@ -169,13 +170,14 @@ export default function EventForm({ cover }: { cover: string | null }) {
       const made = await api.events.create(draft());
       router.push(`/host/${made.id}?new=1`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Try again later");
+      setError(paid ? hostPayError(e) : e instanceof Error ? e.message : "Try again later");
       setBusy(false);
     }
   };
 
-  /** Paid with the paid flag off: nothing can be made. The button says so. */
-  const blocked = paid && !paidTicketsOn();
+  /** Paid with paid tickets off, or before the host can sell: nothing can be made. The button says so. */
+  const gate = usePaidGate();
+  const blocked = paid && gate.state !== "ready" && gate.state !== "signedout";
   const endBad = endError(start, end);
 
   const submit = () => {
@@ -304,7 +306,7 @@ export default function EventForm({ cover }: { cover: string | null }) {
 
       <div className="flex flex-col gap-2 pb-2">
         <button type="button" className="btn w-full normal-case" onClick={submit} disabled={busy || !title.trim() || !api || blocked}>
-          {blocked ? PAID_UNAVAILABLE : busy ? "Creating" : "Create event"}
+          {blocked && gate.state === "off" ? PAID_UNAVAILABLE : blocked && gate.state === "needs" ? "Set up payouts first" : busy ? "Creating" : "Create event"}
         </button>
         {error && (
           <p ref={errorRef} role="alert" className="px-1 font-body text-[14px] text-fireant">

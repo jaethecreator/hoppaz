@@ -4,7 +4,11 @@ import clsx from "clsx";
 import { useMemo, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { copyText, eventUrl, shareOrCopy } from "@/components/events-r1/page/share";
+import RefundControl from "@/components/events-r1/pay/RefundControl";
+import { useEventOrders, usePaidOn } from "@/components/events-r1/pay/usePay";
+import { paidLine } from "@/components/events-r1/pay/words";
 import { useR1Api, useR1Now, useR1Query } from "@/lib/events-r1/hooks";
+import type { Order } from "@/lib/events-r1/pay";
 import type { R1Event, Registration, RegStatus } from "@/lib/events-r1/types";
 import { CARD, ErrorLine, Pill, useFlash } from "./ui";
 import { countsOf, errWord, metaWord, registeredWord, STATUS_TONE, STATUS_WORD, stampWord } from "./words";
@@ -36,6 +40,15 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
   const [busy, setBusy] = useState<string | null>(null);
   const [fail, setFail] = useState<{ id: string; text: string } | null>(null);
   const [said, say] = useFlash();
+
+  // Paid tickets on: who paid, and a Refund on their row.
+  const paidOn = usePaidOn();
+  const orders = useEventOrders(event.id, paidOn);
+  const paidBy = useMemo(() => {
+    const m = new Map<string, Order[]>();
+    for (const o of orders.data ?? []) if (o.status === "paid" || o.needs_manual_refund) m.set(o.buyer_id, [...(m.get(o.buyer_id) ?? []), o]);
+    return m;
+  }, [orders.data]);
 
   const c = countsOf(regs);
   const typeOf = (r: Registration) => event.ticket_types.find((t) => t.id === r.ticket_type_id);
@@ -96,7 +109,8 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
         error={fail?.id === person.id ? fail.text : ""}
         onBack={() => setOpenId(null)}
         onAct={(w) => void act(person, w)}
-        ticket={ticketLine(person, typeOf(person)?.price_naira ?? 0)}
+        ticket={ticketLine(person, typeOf(person)?.price_naira ?? 0, paidBy.get(person.user_id))}
+        paid={paidBy.get(person.user_id)}
       />
     );
   }
@@ -135,13 +149,14 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
           {rows.map((r) => {
             const t = typeOf(r);
             const approve = canApprove(r);
+            const paid = paidBy.get(r.user_id);
             return (
               <li key={r.id} className="px-4 py-3">
                 <button type="button" onClick={() => setOpenId(r.id)} className="flex min-h-[44px] w-full items-start justify-between gap-3 text-left">
                   <span className="min-w-0">
                     <span className="block truncate font-body text-[16px] text-cream">{r.name}</span>
                     <span className="block font-body text-[13px] text-dim">
-                      {[ticketLine(r, t?.price_naira ?? 0), metaWord(r, now)].filter(Boolean).join(" · ")}
+                      {[ticketLine(r, t?.price_naira ?? 0, paid), metaWord(r, now)].filter(Boolean).join(" · ")}
                     </span>
                   </span>
                   <Pill tone={STATUS_TONE[r.status]}>{STATUS_WORD[r.status]}</Pill>
@@ -162,6 +177,13 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
                         Promote
                       </button>
                     )}
+                  </div>
+                )}
+                {paid && paid.length > 0 && (
+                  <div className="mt-2 flex flex-col items-end gap-2">
+                    {paid.map((o) => (
+                      <RefundControl key={o.id} order={o} />
+                    ))}
                   </div>
                 )}
                 {fail?.id === r.id && (
@@ -190,8 +212,13 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
   );
 }
 
-/** "General" or "General · ₦3,000". */
-function ticketLine(r: Registration, price: number): string {
+/** "General" or "General · ₦3,000"; for someone who paid (paid tickets on): "General · Paid ₦6,000 · 2 tickets". */
+function ticketLine(r: Registration, price: number, paid?: Order[]): string {
+  if (paid && paid.length > 0) {
+    const gross = paid.reduce((n, o) => n + o.gross_naira, 0);
+    const quantity = paid.reduce((n, o) => n + o.quantity, 0);
+    return `${r.ticket_name} · ${paidLine({ gross_naira: gross, quantity })}`;
+  }
   return price > 0 ? `${r.ticket_name} · ₦${price.toLocaleString("en-NG")}` : r.ticket_name;
 }
 
@@ -206,7 +233,7 @@ function Count({ n, label }: { n: number; label: string }) {
 
 /** One person, in place of the list: answers, ticket, who invited them, when they checked in. */
 function Person({
-  event, reg, now, busy, canApprove, error, ticket, onBack, onAct,
+  event, reg, now, busy, canApprove, error, ticket, paid, onBack, onAct,
 }: {
   event: R1Event;
   reg: Registration;
@@ -215,6 +242,7 @@ function Person({
   canApprove: boolean;
   error: string;
   ticket: string;
+  paid?: Order[];
   onBack: () => void;
   onAct: (w: "approve" | "decline" | "promote") => void;
 }) {
@@ -275,6 +303,13 @@ function Person({
               Promote
             </button>
           )}
+        </div>
+      )}
+      {paid && paid.length > 0 && (
+        <div className="flex flex-col items-stretch gap-2">
+          {paid.map((o) => (
+            <RefundControl key={o.id} order={o} />
+          ))}
         </div>
       )}
       <ErrorLine>{error}</ErrorLine>

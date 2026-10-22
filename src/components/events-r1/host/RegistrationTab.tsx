@@ -5,9 +5,10 @@ import { Toggle } from "@/components/events-r1/create/Fields";
 import Tickets, { newTicket, ticketsDraft, ticketsError } from "@/components/events-r1/create/Tickets";
 import type { TicketForm } from "@/components/events-r1/create/Tickets";
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
-import { paidTicketsOn } from "@/lib/events-r1/flags";
 import { useR1Api, useR1Query } from "@/lib/events-r1/hooks";
 import type { R1Event, RegMessages, RegQuestion } from "@/lib/events-r1/types";
+import GetPaidCard from "../pay/GetPaidCard";
+import { usePaidGate } from "../pay/usePay";
 import { CARD, ErrorLine, Section } from "./ui";
 import { errWord } from "./words";
 
@@ -47,8 +48,9 @@ function Form({ event, questions: q0, messages: m0 }: { event: R1Event; question
 
   const tickets = ticketsDraft(paid, types);
   const ticketsChanged = !same(tickets, event.ticket_types.map((t) => ({ name: t.name, price_naira: t.price_naira, capacity: t.capacity })));
-  /** A paid choice cannot be saved while the paid switch is off. A paid event left as it is can still change its other settings. */
-  const blocked = paid && !paidTicketsOn() && ticketsChanged;
+  /** A paid choice cannot be saved while paid tickets are off or the host cannot sell yet. A paid event left as it is can still change its other settings. */
+  const gate = usePaidGate();
+  const blocked = paid && ticketsChanged && gate.state !== "ready" && gate.state !== "signedout";
 
   const editQ = (id: string, patch: Partial<RegQuestion>) => touch(setQuestions)(questions.map((x) => (x.id === id ? { ...x, ...patch } : x)));
 
@@ -77,6 +79,8 @@ function Form({ event, questions: q0, messages: m0 }: { event: R1Event; question
 
   return (
     <div className="flex flex-col gap-4">
+      <GetPaidCard returnPath={`/host/${encodeURIComponent(event.id)}?tab=registration`} />
+
       <Section title="Tickets">
         <Tickets paid={paid} onPaid={touch(setPaid)} types={types} onTypes={touch(setTypes)} />
       </Section>
@@ -151,7 +155,7 @@ function Form({ event, questions: q0, messages: m0 }: { event: R1Event; question
 
       <div className="flex flex-col gap-2 pb-2">
         <button type="button" className="btn w-full normal-case" onClick={() => void save()} disabled={busy || !api || blocked}>
-          {blocked ? PAID_UNAVAILABLE : busy ? "Saving" : "Save"}
+          {blocked && gate.state === "needs" ? "Set up payouts first" : blocked ? PAID_UNAVAILABLE : busy ? "Saving" : "Save"}
         </button>
         <ErrorLine>{error}</ErrorLine>
         <p className="h-4 px-1 font-body text-[13px] text-dim" aria-live="polite">

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft } from "lucide-react";
+import SalesTab from "@/components/events-r1/pay/SalesTab";
+import { usePaidOn } from "@/components/events-r1/pay/usePay";
 import SignInSheet from "@/components/events-r1/SignInSheet";
 import { useR1Api, useR1Auth, useR1Event, useRegistrations } from "@/lib/events-r1/hooks";
 import type { R1Event } from "@/lib/events-r1/types";
@@ -20,6 +22,7 @@ export const TABS = [
   { id: "overview", label: "Overview" },
   { id: "audience", label: "Audience" },
   { id: "registration", label: "Registration" },
+  { id: "sales", label: "Sales" },
   { id: "roomz", label: "Roomz" },
   { id: "pops", label: "Pops" },
   { id: "more", label: "More" },
@@ -45,6 +48,9 @@ export default function HostDashboard({ id }: { id: string }) {
   const regs = useRegistrations(id);
   const [asked, setAsked] = useState(true);
   const bar = useRef<HTMLDivElement>(null);
+  // Sales shows only while paid tickets are on.
+  const paidOn = usePaidOn();
+  const tabs = TABS.filter((t) => t.id !== "sales" || paidOn);
 
   const signedIn = api ? !!api.auth.current() : null;
   const denied = signedIn === true && regs.error?.message === "Not allowed";
@@ -53,7 +59,9 @@ export default function HostDashboard({ id }: { id: string }) {
   }, [denied, id, router]);
 
   const fromUrl: TabId = TABS.find((t) => t.id === search.get("tab"))?.id ?? "overview";
-  const [tab, setTab] = useState<TabId>(fromUrl);
+  const [chosen, setTab] = useState<TabId>(fromUrl);
+  // With paid tickets off a ?tab=sales address (or a tab left open) falls back to Overview.
+  const tab: TabId = tabs.some((t) => t.id === chosen) ? chosen : "overview";
   const fresh = search.get("new") === "1";
   // The tab is kept in the address bar (?tab=) without a trip to the server, so switching is instant and a refresh stays put.
   const go = (t: TabId) => {
@@ -133,7 +141,7 @@ export default function HostDashboard({ id }: { id: string }) {
       </header>
 
       <div ref={bar} role="tablist" aria-label="Event dashboard" className="-mx-4 mb-5 flex gap-1 overflow-x-auto border-b border-line px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -156,6 +164,7 @@ export default function HostDashboard({ id }: { id: string }) {
         {tab === "overview" && <OverviewTab event={e} regs={people} fresh={fresh} onTab={go} />}
         {tab === "audience" && <AudienceTab event={e} regs={people} loading={regs.loading} />}
         {tab === "registration" && <RegistrationTab key={e.id} event={e} />}
+        {tab === "sales" && <SalesTab event={e} />}
         {tab === "roomz" && <RoomzTab event={e} />}
         {tab === "pops" && <PopsTab eventId={e.id} />}
         {tab === "more" && <MoreTab event={e} />}

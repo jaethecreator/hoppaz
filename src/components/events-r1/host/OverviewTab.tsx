@@ -10,6 +10,7 @@ import DateTimePicker from "@/components/events-r1/DateTimePicker";
 import { endError, lagosIso, moveEnd } from "@/components/events-r1/dateTime";
 import { cleanLink, detectLinkType, LINK_LABEL } from "@/components/events-r1/create/helpers";
 import { copyText, eventUrl, shareOrCopy } from "@/components/events-r1/page/share";
+import GetPaidCard from "@/components/events-r1/pay/GetPaidCard";
 import { AREAS, areaByName } from "@/lib/geo";
 import { useR1Api, useR1Now } from "@/lib/events-r1/hooks";
 import type { EventDraft, LinkType, R1Event, Registration } from "@/lib/events-r1/types";
@@ -88,6 +89,8 @@ export default function OverviewTab({ event, regs, fresh, onTab }: { event: R1Ev
             <Check size={15} strokeWidth={3} aria-hidden /> Your event is live
           </p>
         )}
+
+        <GetPaidCard returnPath={`/host/${encodeURIComponent(event.id)}?tab=overview`} quietWhenReady={!event.ticket_types.some((t) => t.price_naira > 0)} />
 
         <section className={CARD} aria-label="Finish setting up">
           {allSet && !showList ? (
