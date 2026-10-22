@@ -50,13 +50,16 @@ export function useR1ListEvents(fix: Fix, radiusKm: number) {
   }, []);
 
   useEffect(() => {
+    let live = true;
     let off: (() => void) | undefined;
     void load();
+    // Unmounted before the api arrived (StrictMode does this in dev): no listener is made, so none is left behind.
     void loadApi().then((api) => {
-      off = api.events.subscribe(() => void load());
+      if (live) off = api.events.subscribe(() => void load());
     }).catch(() => {});
     const timer = window.setInterval(() => void load(), 30_000);
     return () => {
+      live = false;
       off?.();
       window.clearInterval(timer);
     };
