@@ -3,6 +3,7 @@
  * `fake` (fake/) is in memory and seeded; `real` (real/) calls Ola's functions later.
  * Picked by getApi() in index.ts from NEXT_PUBLIC_EVENTS_R1_FAKE.
  */
+import type { PayApi } from "./pay";
 import type {
   AuthUser, EventChat, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
   Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomMessage, RoomSummary, ScanResult, Ticket, ViewerState,
@@ -62,6 +63,8 @@ export interface RegistrationsApi {
   /** Host: CSV text for Export. */
   exportCsv(eventId: string): Promise<string>;
   ticketFor(eventId: string): Promise<Ticket | null>;
+  /** Every ticket the viewer holds for the event (several when a paid order has quantity above 1), first one first. */
+  ticketsFor(eventId: string): Promise<Ticket[]>;
   /** Own invite link id: use as ?ref= on shared links. */
   inviteRef(eventId: string): string;
 }
@@ -144,4 +147,6 @@ export interface EventsR1Api {
   reports: ReportsApi;
   door: DoorApi;
   clock: ClockApi;
+  /** Paid tickets (Bachs). Only used when paid tickets are switched on. */
+  pay: PayApi;
 }

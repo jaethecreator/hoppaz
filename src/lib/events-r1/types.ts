@@ -88,6 +88,8 @@ export type Registration = {
   /** The ticket type this person took. */
   ticket_type_id: string;
   ticket_name: string;
+  /** Seats held: 1 for free tickets, 1 to 5 for a paid order. */
+  quantity: number;
   answers: Record<string, string>;
   /** Who invited this person (their own invite link), so the host sees who brought whom. */
   referrer_id: string | null;
@@ -133,6 +135,9 @@ export type Ticket = {
   token: string;
   version: number;
   status: "valid" | "used" | "void";
+  /** Seat number and seats in the order, e.g. 2 of 3, for a person who bought several tickets. */
+  seat_no?: number;
+  seats?: number;
 };
 
 export type PopAudience = "going" | "pending" | "waitlist" | "everyone";
