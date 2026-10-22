@@ -267,6 +267,64 @@ for (const room of HOTSPOT_ROOMS) {
     assert.ok(room.name.length >= 3 && room.name.length <= 30 && data.junction.toLowerCase().includes(room.name.toLowerCase()), `room name "${room.name}" must be the junction's name`);
   });
 }
+// ---- The Emergency Room crew template (src/lib/campaign/rooms/emergencyRoom.ts): both widths, the contract and the Instagram link. ----
+const ER_STABLE_IDS = ["main-stage", "tickets-desk", "brand-page", "merch", "doctors-on-duty", "hall-of-fame", "courtyard-fountain", "entry-map-table"];
+check("Zone links are data the engine can trust: https only, a short label, no em dash", () => {
+  const all = [...ROOM_TEMPLATES.flatMap((t) => ROOM_WIDTHS.map((w) => t.layout(w))), ...PLACE_ROOMS.map((r) => r.layout)];
+  for (const l of all) for (const z of l.zones) {
+    if (!z.link) continue;
+    assert.match(z.link.url, /^https:\/\/[^\s]+$/, `${l.id} zone ${z.id}: link must be an https address`);
+    assert.equal(validCampaignUrl(z.link.url), z.link.url);
+    assert.ok(z.link.label.length >= 3 && z.link.label.length <= 24 && z.link.label === z.link.label.toUpperCase() && copyOk(z.link.label), `${l.id} zone ${z.id}: link label`);
+  }
+});
+const erTemplate = ROOM_TEMPLATES.find((t) => t.key === "emergency-room");
+check("The Emergency Room is a crew template with a picker card", () => {
+  assert.ok(erTemplate, "emergency-room is not in ROOM_TEMPLATES");
+  assert.equal(templateFor("emergency-room").key, "emergency-room");
+  assert.equal(roomTemplate("emergency-room", 36).grid.width, 36);
+  assert.equal(roomTemplate("emergency-room", 99).grid.width, 30);
+  assert.ok(TEMPLATE_KEYS.includes("emergency-room"));
+});
+for (const width of ROOM_WIDTHS) {
+  check(`Emergency Room at ${width}: stable ids, the stage zone, open floor, every stop and tag tile walkable, the door and the Instagram link`, () => {
+    const l = erTemplate.layout(width);
+    assert.equal(l.id, "emergency-room");
+    assert.equal(l.grid.width, width);
+    assert.equal(l.spawn.x, width / 2, "the spawn is the middle of the room");
+    for (const id of ER_STABLE_IDS) assert.ok(l.props.some((p) => p.id === id), `${id} missing`);
+    assert.ok(l.zones.some((z) => z.id === "stage"), "the deck's zone id must be stage (stage voice)");
+    assert.ok(l.zones.length >= 3 && l.zones.length <= 7);
+    const door = l.props.find((p) => p.id === "entry-map-table");
+    assert.ok(door.x + 2 === l.spawn.x && door.y === 16 && door.w === 2 && door.h === 1, "the door sits two tiles left of the spawn");
+    const fountain = l.props.find((p) => p.id === "courtyard-fountain");
+    assert.equal(fountain.kind, "fountain");
+    assert.ok(fountain.solid && fountain.w * fountain.h >= 2);
+    for (const z of l.zones) {
+      assert.ok(canWalkScene(l, z.stop) && scenePath(l, l.spawn, z.stop), `${z.id} stop is not walkable or reachable`);
+      assert.ok(canWalkScene(l, z.plaque), `${z.id} tag tile is not on open floor`);
+      assert.ok(z.stop.x >= z.x && z.stop.x < z.x + z.w && z.stop.y >= z.y && z.stop.y < z.y + z.h, `${z.id} stop is outside it`);
+    }
+    for (const a of l.zones) for (const b of l.zones) if (a.id < b.id) assert.ok(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y, `zones ${a.id} and ${b.id} overlap`);
+    let walkable = 0; let reached = 0;
+    for (let y = 1; y < l.grid.height - 1; y++) for (let x = 1; x < width - 1; x++) if (canWalkScene(l, { x, y })) { walkable++; if (scenePath(l, l.spawn, { x, y })) reached++; }
+    assert.ok(walkable >= 120 && walkable - reached <= 2, `${walkable} walkable, ${walkable - reached} sealed off`);
+    // The Experiences zone offers its Instagram link through the room's action pill, and nothing else has a link.
+    const linked = l.zones.filter((z) => z.link);
+    assert.equal(linked.length, 1);
+    assert.equal(linked[0].id, "experiences");
+    assert.equal(JSON.stringify(linked[0].link), JSON.stringify({ label: "OPEN INSTAGRAM", url: "https://www.instagram.com/emergencyroombysos/" }));
+    // Nothing is solid in the lane between the gate and the deck, so a crowd can walk it.
+    for (let y = 13; y <= 17; y++) assert.ok(canWalkScene(l, { x: l.spawn.x, y }), `the lane at ${l.spawn.x},${y} is blocked`);
+  });
+}
+check("The Emergency Room's wide layout keeps every section of the narrow one and only adds floor", () => {
+  const a = erTemplate.layout(30);
+  const b = erTemplate.layout(36);
+  assert.equal(JSON.stringify(a.props.map((p) => [p.id, p.kind, p.w, p.h]).sort()), JSON.stringify(b.props.map((p) => [p.id, p.kind, p.w, p.h]).sort()));
+  assert.equal(JSON.stringify(a.zones.map((z) => z.id)), JSON.stringify(b.zones.map((z) => z.id)));
+  for (const z of a.zones) assert.equal(z.name, b.zones.find((q) => q.id === z.id).name);
+});
 if (failures.length) {
   console.log(`\n${passed} campaign checks passed, ${failures.length} FAILED:`);
   for (const label of failures) console.log(`  - ${label}`);

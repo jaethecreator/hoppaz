@@ -1,4 +1,5 @@
 import { CLUBHOUSE, clubhouseWidth, type CampaignLayout } from "./layout";
+import { emergencyRoomLayout } from "./rooms/emergencyRoom";
 import { EVENT_INDOOR } from "./rooms/eventIndoor";
 import { EVENT_THEATRE } from "./rooms/eventTheatre";
 import { EVENT_POOL } from "./rooms/eventPool";
@@ -20,7 +21,7 @@ import { HOTSPOT_IKORODU } from "./rooms/hotspotIkorodu";
  * the database by scripts/crew-room/export-layouts.mjs, so a template added here needs that run and a SQL load before
  * a crew can pick it.
  *
- * Crew templates (ROOM_TEMPLATES, what the MANAGE picker shows): the clubhouse today. Each one has its own backdrop
+ * Crew templates (ROOM_TEMPLATES, what the MANAGE picker shows): the clubhouse and the Emergency Room (Emergency Room by SOS). Each one has its own backdrop
  * component (ClubhouseArt draws the clubhouse and nothing else; see roomArt.tsx) and its own stable prop ids.
  *
  * Place rooms (PLACE_ROOMS, below) are not crew templates and never reach the picker: the event rooms (a template per kind
@@ -55,6 +56,13 @@ export const ROOM_TEMPLATES: RoomTemplate[] = [
     description: "Six corners round a courtyard: a stage up top, a studio, a lounge, a gallery and booths to chat in.",
     thumbnail: "/templates/clubhouse.jpg",
     layout: (width) => (width === 30 ? CLUBHOUSE : clubhouseWidth(width)),
+  },
+  {
+    key: "emergency-room",
+    name: "Emergency Room",
+    description: "A light rave venue: the deck in the middle, a corridor ring and bays for tickets, merch, performers and the crew's page.",
+    thumbnail: "/templates/emergency-room.jpg",
+    layout: (width) => emergencyRoomLayout(width),
   },
 ];
 
