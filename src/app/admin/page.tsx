@@ -14,6 +14,7 @@ import EventsSection from "@/components/admin/desk/sections/EventsSection";
 import MoreSection from "@/components/admin/desk/sections/MoreSection";
 import QuestsSection from "@/components/admin/desk/sections/QuestsSection";
 import EventReportsSection from "@/components/admin/desk/sections/EventReportsSection";
+import RoomsThreeDSection from "@/components/admin/desk/sections/RoomsThreeDSection";
 import SafetySection from "@/components/admin/desk/sections/SafetySection";
 import { SECTIONS, isSection } from "@/components/admin/desk/sections/nav";
 import { SectionHead, type Act, type Queue } from "@/components/admin/desk/sections/parts";
@@ -323,6 +324,11 @@ export default function AdminPage() {
           {EVENTS_R1 && (
             <Page on={section === "eventreports"} mounted={section === "eventreports" || visited.includes("eventreports")}>
               <EventReportsSection />
+            </Page>
+          )}
+          {EVENTS_R1 && (
+            <Page on={section === "roomz3d"} mounted={section === "roomz3d" || visited.includes("roomz3d")}>
+              <RoomsThreeDSection />
             </Page>
           )}
           <Page on={section === "quests"} mounted={section === "quests" || visited.includes("quests")}>

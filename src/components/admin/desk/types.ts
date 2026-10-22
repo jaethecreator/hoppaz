@@ -119,7 +119,7 @@ export type LiveEvent = { id: string; title: string; venue_name: string; area: s
 export type RoomRef = { kind: "crew" | "event" | "hotspot"; id: string };
 
 /** The desk's sections, in rail order. */
-export type SectionKey = "rooms" | "drops" | "events" | "hotspots" | "safety" | "eventreports" | "quests" | "more";
+export type SectionKey = "rooms" | "drops" | "events" | "hotspots" | "safety" | "eventreports" | "roomz3d" | "quests" | "more";
 
 /** POST an action to /api/admin/game-time. Resolves the answer, or null after telling staff why not (or after onError). */
 export type GameTimeAct = (body: Record<string, unknown>, onError?: (message: string) => void) => Promise<{ ok?: boolean; game?: Game } | null>;
