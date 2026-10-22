@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import PageHeader from "@/components/app/PageHeader";
-import { useR1Api } from "@/lib/events-r1/hooks";
 import CoverPicker from "./CoverPicker";
 import EventForm from "./EventForm";
 import { Choice } from "./Fields";
@@ -31,13 +30,11 @@ export default function CreatePage() {
     setCover(c);
     writeCover(c);
   };
-  // Real data refuses a picture sent as a data URL until the cover upload exists (cover.ts), so no picker there.
-  const coverOk = useR1Api()?.mode === "fake";
   return (
     <div className="h-full overflow-y-auto px-4 pb-10">
       <div className="mx-auto w-full max-w-xl">
         <PageHeader title="Create" back="/" className="pb-3" />
-        {mode === "event" && coverOk && <CoverPicker cover={cover} onChange={pickCover} />}
+        {mode === "event" && <CoverPicker cover={cover} onChange={pickCover} />}
         <Choice
           label="What to create"
           value={mode}

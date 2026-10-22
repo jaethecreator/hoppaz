@@ -46,13 +46,11 @@ export default function OverviewTab({ event, regs, fresh, onTab }: { event: R1Ev
 
   const online = event.kind !== "in_person";
   const inPerson = event.kind !== "online";
-  // No cover step on real data until the upload exists (create/cover.ts): the data URL is refused there.
-  const coverOk = api?.mode === "fake";
   const items: Array<{ id: ItemId; label: string; done: boolean }> = [
     { id: "name", label: "Name and time", done: !!event.title.trim() && !!event.starts_at },
     { id: "place", label: online && !inPerson ? "Online link" : "Place or online link", done: (inPerson && !!event.venue_name.trim()) || (online && !!event.online_link) },
     { id: "about", label: "Description", done: !!event.description.trim() },
-    ...(coverOk ? [{ id: "cover" as const, label: "Cover", done: !!event.flyer_url }] : []),
+    { id: "cover", label: "Cover", done: !!event.flyer_url },
     { id: "price", label: "Price (or keep it free)", done: event.ticket_types.some((t) => t.price_naira > 0) || keptFree },
   ];
   const done = items.filter((i) => i.done).length;

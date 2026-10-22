@@ -196,7 +196,7 @@ grant all on public.ev_ticket_types to service_role;
 create or replace function public.ev_set_setting(p_key text, p_value text) returns text
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  if p_key is null or p_key not in ('paid_tickets', 'events_r1') then return 'bad_key'; end if;
+  if p_key is null or p_key not in ('paid_tickets', 'events_r1', 'local_http_covers') then return 'bad_key'; end if;
   if p_value is null or p_value not in ('on', 'off') then return 'bad_value'; end if;
   insert into public.ev_settings (key, value) values (p_key, p_value)
   on conflict (key) do update set value = excluded.value, updated_at = now();
@@ -673,7 +673,12 @@ begin
   if v_vis = 'community' and p_room is null then return jsonb_build_object('ok', false, 'reason', 'need_room'); end if;
 
   v_cover := nullif(btrim(coalesce(d ->> 'cover_url', '')), '');
-  if v_cover is not null and (char_length(v_cover) > 500 or v_cover !~ '^(https://|/)[^[:space:]]+$') then
+  -- An https link or a path. The one http exception is a file in the LOCAL dev stack's own public storage (it serves storage on
+  -- http://127.0.0.1), and only while the setting local_http_covers is 'on'. It is never set on production, so there no plain http
+  -- link is accepted (a cover pointing at a viewer's own localhost would make every viewer's browser call it).
+  if v_cover is not null and (char_length(v_cover) > 500 or (v_cover !~ '^(https://|/)[^[:space:]]+$'
+      and not (coalesce((select s.value = 'on' from public.ev_settings s where s.key = 'local_http_covers'), false)
+               and v_cover ~ '^http://(localhost|127\.0\.0\.1)(:[0-9]{1,5})?/storage/v1/object/public/[^[:space:]]+$'))) then
     return jsonb_build_object('ok', false, 'reason', 'bad_cover');
   end if;
 
