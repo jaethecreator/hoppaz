@@ -5,6 +5,8 @@ import clsx from "clsx";
 import { CalendarDays, X } from "lucide-react";
 import { NEXT_COUNT, nightOf, nightTag } from "@/lib/filters";
 import type { EventRow } from "@/lib/types";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import { EVENTS_TITLE, NEXT_LINE } from "@/components/events-r1/words";
 import MonthPopup from "./MonthPopup";
 import NextCard from "./NextCard";
 
@@ -123,8 +125,8 @@ export default function DayPick({
 
       {list && (
         <NextCard
-          heading={isNext ? `Next ${NEXT_COUNT}` : dayHeading(date, now)}
-          sub={isNext ? `${nOn} coming up` : n === 0 ? "Nothing listed" : `${nOn} on`}
+          heading={EVENTS_R1 ? EVENTS_TITLE : isNext ? `Next ${NEXT_COUNT}` : dayHeading(date, now)}
+          sub={EVENTS_R1 ? (isNext ? NEXT_LINE : n === 0 ? "Nothing listed" : nOn) : isNext ? `${nOn} coming up` : n === 0 ? "Nothing listed" : `${nOn} on`}
           events={sorted}
           now={now}
           withDay={isNext}
