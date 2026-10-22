@@ -152,6 +152,8 @@ export type Pop = {
   status: "scheduled" | "sent";
   auto: PopAuto | null;
   recipients: number;
+  /** Automatic Pops only: false = switched off, never sent. Missing means on. */
+  enabled?: boolean;
 };
 
 export type RoomKind = "hq" | "crew" | "brand";

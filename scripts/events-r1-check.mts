@@ -338,6 +338,116 @@ await test("automatic Pops: three scheduled rows per event, visible to the host"
   eq((await api.pops.listForEvent(created.id)).filter((p) => p.auto).length, 3, "a new event gets them too");
 });
 
+await test("Pops: each audience reaches only its people; recipients and the live count agree", async () => {
+  const ev = await kredeteEvent({ requires_approval: true, capacity: 1, waitlist_on: true });
+  const a = await newPerson();
+  const ra = await api.registrations.register(ev.id);
+  const b = await newPerson();
+  const rb = await api.registrations.register(ev.id);
+  const c = await newPerson();
+  await api.registrations.register(ev.id);
+  as("Kredete");
+  await api.registrations.approve(ra.id);
+  await api.registrations.approve(rb.id);
+  const regs = await api.registrations.list(ev.id);
+  eq(["going", "waitlisted", "requested"].map((s) => regs.filter((r) => r.status === s).length), [1, 1, 1], "one in each state");
+  const sent = {
+    going: await api.pops.send({ eventId: ev.id, body: "For going", audience: "going", alsoRoom: false }),
+    pending: await api.pops.send({ eventId: ev.id, body: "For pending", audience: "pending", alsoRoom: false }),
+    waitlist: await api.pops.send({ eventId: ev.id, body: "For waitlist", audience: "waitlist", alsoRoom: false }),
+  };
+  eq([sent.going.recipients, sent.pending.recipients, sent.waitlist.recipients], [1, 1, 1], "recipients");
+  const seen = async (id: string) => {
+    fakeDev.signInAs(id);
+    return (await api.pops.visibleOnEvent(ev.id)).map((p) => p.body).sort();
+  };
+  eq(await seen(a.id), ["For going"], "going person");
+  eq(await seen(c.id), ["For pending"], "pending person");
+  eq(await seen(b.id), ["For waitlist"], "waitlisted person");
+  eq((await api.pops.listForEvent(ev.id).catch((e: Error) => e.message)), "Not allowed", "a guest has no host list");
+  as("Kredete");
+  eq((await api.pops.listForEvent(ev.id)).filter((p) => !p.auto).length, 3, "the host sees all three");
+});
+
+await test("Pops: Also post off stays out of Announcements; on copies tagged; an event with no room copies nothing", async () => {
+  const ev = seeded("Kredete Open Mic and Laughs");
+  as("Kredete");
+  const before = (await api.rooms.announcements(ev.room_id!)).length;
+  await api.pops.send({ eventId: ev.id, body: "Only on the event", audience: "going", alsoRoom: false });
+  const mid = await api.rooms.announcements(ev.room_id!);
+  eq(mid.length, before, "nothing added with Also post off");
+  ok((await api.pops.listForEvent(ev.id)).some((p) => p.body === "Only on the event" && !p.also_room), "still a Pop of the event");
+  const p = await api.pops.send({ eventId: ev.id, body: "Also in the room", audience: "going", alsoRoom: true });
+  eq(p.also_room, true, "marked");
+  const after = await api.rooms.announcements(ev.room_id!);
+  eq([after.length, after[0].body, after[0].event_id], [before + 1, "Also in the room", ev.id], "copied and tagged");
+  const bare = await kredeteEvent({ add_to_room: false });
+  eq(bare.room_id, null, "an event kept out of the room has none");
+  eq((await api.pops.send({ eventId: bare.id, body: "No room", audience: "going", alsoRoom: true })).also_room, false, "no room: not marked");
+});
+
+await test("Pops: 280 characters at most, a future time up to the start, host only", async () => {
+  const ev = seeded("Lagos Run Club 5K Social Run");
+  await rejects(api.pops.send({ eventId: ev.id, body: "hi", audience: "going", alsoRoom: false }), "Sign in first", "signed out");
+  as("Ada Obi");
+  await rejects(api.pops.send({ eventId: ev.id, body: "hi", audience: "going", alsoRoom: false }), "Not allowed", "a guest");
+  as("Lagos Run Club");
+  ok((await api.pops.send({ eventId: ev.id, body: "x".repeat(280), audience: "going", alsoRoom: false })).body.length === 280, "280 is fine");
+  await rejects(api.pops.send({ eventId: ev.id, body: "x".repeat(281), audience: "going", alsoRoom: false }), "Keep it under 280 characters", "281");
+  const t = api.clock.now();
+  await rejects(api.pops.send({ eventId: ev.id, body: "late", audience: "going", alsoRoom: false, sendAt: new Date(t - MIN).toISOString() }), "Pick a time in the future", "in the past");
+  await rejects(api.pops.send({ eventId: ev.id, body: "late", audience: "going", alsoRoom: false, sendAt: new Date(Date.parse(ev.starts_at) + MIN).toISOString() }), "Pick a time before the event starts", "after the start");
+  eq((await api.pops.send({ eventId: ev.id, body: "ok", audience: "going", alsoRoom: false, sendAt: ev.starts_at })).status, "scheduled", "at the start is fine");
+});
+
+await test("Pops: cancel a scheduled Pop and it never goes; a sent Pop or an automatic one cannot be cancelled", async () => {
+  const ev = seeded("Lagos Run Club 5K Social Run");
+  as("Lagos Run Club");
+  const at = new Date(api.clock.now() + HOUR).toISOString();
+  const keep = await api.pops.send({ eventId: ev.id, body: "Keep this one", audience: "going", alsoRoom: true, sendAt: at });
+  const drop = await api.pops.send({ eventId: ev.id, body: "Drop this one", audience: "going", alsoRoom: true, sendAt: at });
+  as("Ada Obi");
+  await rejects(api.pops.cancelScheduled(drop.id), "Not allowed", "a guest cannot cancel");
+  as("Lagos Run Club");
+  await api.pops.cancelScheduled(drop.id);
+  eq((await api.pops.listForEvent(ev.id)).some((p) => p.id === drop.id), false, "gone from the list");
+  fakeDev.advance(2 * HOUR);
+  const list = await api.pops.listForEvent(ev.id);
+  eq(list.find((p) => p.id === keep.id)?.status, "sent", "the other one went");
+  const bodies = (await api.rooms.announcements(ev.room_id!)).map((a) => a.body);
+  ok(bodies.includes("Keep this one") && !bodies.includes("Drop this one"), "only the kept one reached Announcements");
+  await rejects(api.pops.cancelScheduled(keep.id), "Already sent", "sent");
+  await rejects(api.pops.cancelScheduled(list.find((p) => p.auto)!.id), "Switch it off instead", "automatic");
+  await rejects(api.pops.cancelScheduled("nope"), "Pop not found", "unknown");
+});
+
+await test("automatic Pops: default on and sent at their time; Off is never sent; text can be edited until it goes", async () => {
+  const ev = seeded("Lagos Run Club 5K Social Run");
+  as("Lagos Run Club");
+  const autos = async () => Object.fromEntries((await api.pops.listForEvent(ev.id)).filter((p) => p.auto).map((p) => [p.auto!, p]));
+  const before = await autos();
+  ok(["day_before", "hour_before", "doors_open"].every((k) => before[k].enabled !== false && before[k].status === "scheduled"), "all on, scheduled");
+  const off = await api.pops.setAuto(ev.id, "hour_before", false);
+  eq([off.enabled, off.status], [false, "scheduled"], "switched off");
+  const edited = await api.pops.editAuto(ev.id, "doors_open", "  Gate is open. Bring your bib.  ");
+  eq(edited.body, "Gate is open. Bring your bib.", "edited and trimmed");
+  await rejects(api.pops.editAuto(ev.id, "doors_open", "  "), "Write a message first", "empty");
+  await rejects(api.pops.editAuto(ev.id, "doors_open", "x".repeat(281)), "Keep it under 280 characters", "too long");
+  as("Ada Obi");
+  await rejects(api.pops.setAuto(ev.id, "day_before", false), "Not allowed", "a guest");
+  await rejects(api.pops.editAuto(ev.id, "day_before", "hi"), "Not allowed", "a guest edit");
+  fakeDev.jumpTo(Date.parse(ev.starts_at) + MIN);
+  as("Lagos Run Club");
+  const after = await autos();
+  eq([after.day_before.status, after.hour_before.status, after.doors_open.status], ["sent", "scheduled", "sent"], "the Off one stayed unsent");
+  eq(after.doors_open.body, "Gate is open. Bring your bib.", "the edited text went");
+  eq(after.hour_before.sent_at, null, "never sent");
+  eq((await api.pops.visibleOnEvent(ev.id)).some((p) => p.auto === "hour_before"), false, "not on the event");
+  await rejects(api.pops.setAuto(ev.id, "hour_before", true), "That time has passed", "back on too late");
+  await rejects(api.pops.setAuto(ev.id, "doors_open", false), "Already sent", "sent");
+  await rejects(api.pops.editAuto(ev.id, "doors_open", "late edit"), "Already sent", "sent edit");
+});
+
 await test("door: express, standard confirm, already used, bad signature, wrong event, void, not going, typed code", async () => {
   const ev = seeded("Lagos Run Club 5K Social Run");
   as("Lagos Run Club");

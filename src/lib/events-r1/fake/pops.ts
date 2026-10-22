@@ -6,11 +6,14 @@
  * room announcement is never returned by visibleOnEvent.
  */
 import type { PopsApi } from "../api";
-import type { Pop, PopAudience } from "../types";
+import type { Pop, PopAudience, PopAuto } from "../types";
 import { AUTO_KINDS, autoSendAt } from "./defaults";
 import { assertManage, findEvent, isGoing, isHostOf, regOf, regsOf, userById } from "./rules";
 import { emit, now, S, viewer } from "./store";
 import { clone, newId, seedId } from "./util";
+
+/** The longest a Pop may be, like a room announcement. */
+const MAX_POP = 280;
 
 export function recipientsFor(eventId: string, audience: PopAudience): number {
   const regs = regsOf(eventId);
@@ -42,7 +45,7 @@ export function flushDuePops(): boolean {
   const t = now();
   let changed = false;
   for (const pop of Object.values(S().pops)) {
-    if (pop.status !== "scheduled" || !pop.send_at || Date.parse(pop.send_at) > t) continue;
+    if (pop.status !== "scheduled" || pop.enabled === false || !pop.send_at || Date.parse(pop.send_at) > t) continue;
     const e = S().events[pop.event_id];
     if (!e || e.status === "cancelled") continue;
     pop.status = "sent";
@@ -100,9 +103,12 @@ export const pops: PopsApi = {
     const e = assertManage(findEvent(eventId));
     const text = body.trim();
     if (!text) throw new Error("Write a message first");
+    if (text.length > MAX_POP) throw new Error(`Keep it under ${MAX_POP} characters`);
     const when = sendAt ? Date.parse(sendAt) : NaN;
     if (sendAt && !Number.isFinite(when)) throw new Error("Pick a time to send");
-    const later = Number.isFinite(when) && when > now();
+    if (sendAt && when <= now()) throw new Error("Pick a time in the future");
+    if (sendAt && when > Date.parse(e.starts_at)) throw new Error("Pick a time before the event starts");
+    const later = Number.isFinite(when);
     const author = userById(e.host_id)?.name ?? "Host";
     const pop: Pop = {
       id: newId(),
@@ -130,5 +136,45 @@ export const pops: PopsApi = {
     const e = S().events[p.event_id];
     return `${p.body}\n\nhttps://hoppaz.fun/e/${e?.slug ?? p.event_id}`;
   },
+
+  async cancelScheduled(popId) {
+    const p = S().pops[popId];
+    if (!p) throw new Error("Pop not found");
+    assertManage(S().events[p.event_id]);
+    flushDuePops();
+    if (p.status === "sent") throw new Error("Already sent");
+    if (p.auto) throw new Error("Switch it off instead");
+    delete S().pops[popId];
+    emit();
+  },
+
+  async setAuto(eventId, auto, enabled) {
+    const p = autoPop(eventId, auto);
+    flushDuePops();
+    if (p.status === "sent") throw new Error("Already sent");
+    if (enabled && p.send_at && Date.parse(p.send_at) <= now()) throw new Error("That time has passed");
+    p.enabled = enabled;
+    emit();
+    return clone(p);
+  },
+
+  async editAuto(eventId, auto, body) {
+    const p = autoPop(eventId, auto);
+    flushDuePops();
+    if (p.status === "sent") throw new Error("Already sent");
+    const text = body.trim();
+    if (!text) throw new Error("Write a message first");
+    if (text.length > MAX_POP) throw new Error(`Keep it under ${MAX_POP} characters`);
+    p.body = text;
+    emit();
+    return clone(p);
+  },
 };
 
+/** The automatic Pop of an event, for its host. */
+function autoPop(eventId: string, auto: PopAuto): Pop {
+  const e = assertManage(findEvent(eventId));
+  const p = S().pops[seedId(`autopop:${e.id}:${auto}`)];
+  if (!p) throw new Error("Pop not found");
+  return p;
+}

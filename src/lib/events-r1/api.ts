@@ -4,7 +4,7 @@
  * Picked by getApi() in index.ts from NEXT_PUBLIC_EVENTS_R1_FAKE.
  */
 import type {
-  AuthUser, EventChat, EventDraft, Pop, PopAudience, R1Event, RegMessages, RegQuestion, Registration,
+  AuthUser, EventChat, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
   Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomMessage, RoomSummary, ScanResult, Ticket, ViewerState,
 } from "./types";
 
@@ -74,6 +74,12 @@ export interface PopsApi {
   send(input: { eventId: string; body: string; audience: PopAudience; alsoRoom: boolean; sendAt?: string | null }): Promise<Pop>;
   /** Share to WhatsApp: text plus the event link. */
   shareText(popId: string): Promise<string>;
+  /** Host: take back a scheduled Pop that has not gone yet. A sent Pop or an automatic one cannot be cancelled ("Already sent"). */
+  cancelScheduled(popId: string): Promise<void>;
+  /** Host: switch an automatic Pop on or off. An Off one is never sent. Default On. */
+  setAuto(eventId: string, auto: PopAuto, enabled: boolean): Promise<Pop>;
+  /** Host: change the text of an automatic Pop that has not gone yet. */
+  editAuto(eventId: string, auto: PopAuto, body: string): Promise<Pop>;
 }
 
 export interface RoomsApi {
