@@ -225,6 +225,8 @@ export type Report = {
   event_id: string;
   event_title: string;
   reporter_id: string;
+  /** The reporter's name, for staff. Optional: the list may not know it. */
+  reporter_name?: string | null;
   reason: ReportReason;
   note: string;
   created_at: string;

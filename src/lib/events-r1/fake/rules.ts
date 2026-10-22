@@ -130,9 +130,13 @@ export function canOpen(e: EventRec): boolean {
   return true;
 }
 
-/** May this viewer see the event in lists? Hosts see their own whatever the visibility. */
+/** Open reports at which an event drops out of the lists until staff have checked it. */
+export const HIDE_AT_REPORTS = 3;
+
+/** May this viewer see the event in lists? Hosts see their own whatever the visibility. Staff still see an event hidden by reports. */
 export function canList(e: EventRec): boolean {
   if (isHostOf(e)) return true;
+  if (!viewer()?.staff && Object.values(S().reports).filter((r) => r.event_id === e.id && r.status === "open").length >= HIDE_AT_REPORTS) return false;
   if (e.visibility === "invite") return false;
   if (e.visibility === "community") return isMember(e.room_id);
   return true;

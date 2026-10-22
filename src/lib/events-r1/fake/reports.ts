@@ -29,7 +29,11 @@ export const reports: ReportsApi = {
 
   async list() {
     requireStaff();
-    return clone(Object.values(S().reports).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)));
+    return clone(
+      Object.values(S().reports)
+        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+        .map((r) => ({ ...r, reporter_name: S().users[r.reporter_id]?.name ?? null }))
+    );
   },
 
   async markReviewed(id) {

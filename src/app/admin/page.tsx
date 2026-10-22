@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import clsx from "clsx";
 import { Lock, LockKeyhole, RefreshCw, Search, X } from "lucide-react";
 import { useToast } from "@/lib/store";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
 import { emptySpawner } from "@/components/admin/SpawnerSection";
 import HotspotsSection, { emptyHotspots } from "@/components/admin/HotspotsSection";
 import DeskSearch from "@/components/admin/desk/DeskSearch";
@@ -12,6 +13,7 @@ import RoomsSection from "@/components/admin/desk/RoomsSection";
 import EventsSection from "@/components/admin/desk/sections/EventsSection";
 import MoreSection from "@/components/admin/desk/sections/MoreSection";
 import QuestsSection from "@/components/admin/desk/sections/QuestsSection";
+import EventReportsSection from "@/components/admin/desk/sections/EventReportsSection";
 import SafetySection from "@/components/admin/desk/sections/SafetySection";
 import { SECTIONS, isSection } from "@/components/admin/desk/sections/nav";
 import { SectionHead, type Act, type Queue } from "@/components/admin/desk/sections/parts";
@@ -318,6 +320,11 @@ export default function AdminPage() {
           <Page on={section === "safety"} mounted={section === "safety" || visited.includes("safety")}>
             <SafetySection queue={queue} act={act} />
           </Page>
+          {EVENTS_R1 && (
+            <Page on={section === "eventreports"} mounted={section === "eventreports" || visited.includes("eventreports")}>
+              <EventReportsSection />
+            </Page>
+          )}
           <Page on={section === "quests"} mounted={section === "quests" || visited.includes("quests")}>
             <QuestsSection queue={queue} act={act} busy={busy} />
           </Page>

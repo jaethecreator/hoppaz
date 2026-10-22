@@ -694,6 +694,28 @@ await test("reports: anyone signed in reports, staff list and mark reviewed, oth
   eq((await api.reports.list()).find((r) => r.id === mine.id)?.status, "reviewed", "reviewed");
 });
 
+await test("reports: three open reports hide an event from the list until staff mark them reviewed; the list names the reporter", async () => {
+  const ev = await kredeteEvent();
+  eq((await api.events.list()).some((e) => e.id === ev.id), true, "listed at first");
+  const ids: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    const p = await newPerson();
+    ids.push(p.id);
+    await api.reports.report(ev.id, "wrong_place", `Report ${i}`);
+  }
+  eq((await api.events.list()).some((e) => e.id === ev.id), false, "hidden at 3 open reports");
+  as("Kredete");
+  eq((await api.events.list()).some((e) => e.id === ev.id), true, "the host still sees it");
+  as("Hoppaz Staff");
+  const open = (await api.reports.list()).filter((r) => r.event_id === ev.id);
+  eq(open.length, 3, "staff see all three");
+  eq(open.map((r) => r.reporter_name).sort(), ["Tester " + (n - 2), "Tester " + (n - 1), "Tester " + n].sort(), "reporter names");
+  eq((await api.events.list()).some((e) => e.id === ev.id), true, "staff still see it in the list");
+  await api.reports.markReviewed(open[0].id);
+  await newPerson();
+  eq((await api.events.list()).some((e) => e.id === ev.id), true, "listed again with 2 open reports");
+});
+
 await test("clone, update and cancel", async () => {
   const ev = await kredeteEvent({ capacity: 3, waitlist_on: true, description: "Hello" });
   const copy = await api.events.clone(ev.id);
