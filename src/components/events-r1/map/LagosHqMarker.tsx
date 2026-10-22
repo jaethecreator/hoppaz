@@ -13,7 +13,7 @@ export const LAGOS_HQ_AT = { lat: 6.52, lng: 3.43 };
 const Z = 1;
 
 /** The marker's box is 96 px (the tap target); it is drawn at this share of that, by zoom: smaller zoomed out, bigger up close. */
-const scaleAt = (zoom: number) => Math.min(1.12, Math.max(0.74, 0.74 + (zoom - 11.5) * 0.1));
+const scaleAt = (zoom: number) => Math.min(1.4, Math.max(1.05, 1.05 + (zoom - 11.5) * 0.12));
 
 /**
  * The Lagos HQ pavilion: a tower and a wide hall on a pier over the water, Hoppaz orange and cream with a dark outline.
