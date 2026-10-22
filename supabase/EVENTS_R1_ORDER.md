@@ -63,7 +63,7 @@ Every event has 1 to 5 ticket types (name, price in whole naira, capacity), in t
 (`ev_create_event` gives each new event one free General with no limit). Registrations and tickets carry `ticket_type_id`; the ticket and the door
 card show the type's name; a type's places are counted on going and checked-in people holding it AND the event's capacity (spots_left is the
 tighter), the waitlist moves up per type (a full type is skipped), and an edit cannot drop a type people hold (`ticket_in_use`). Old events are
-NOT backfilled: they read as one derived General at the event's own price, and the real row is made at their first registration.
+NOT backfilled: they read as one derived FREE General (an old listing's `events.price_naira` is its listed door price, information for the old TICKETS link, never a ticket price; nothing paid is ever sold for an event with no `host_id`: `no_host`), and the real row is made at their first registration.
 
 Paid is off. `ev_create_event`, `ev_update_event` (when it is sent a tickets list) and `ev_clone_event` refuse any type with a price above 0 with
 exactly the text `currently_unavailable`, until Ola turns the setting on. The setting is the row `paid_tickets` of the closed table `ev_settings`
@@ -75,6 +75,16 @@ select public.ev_set_setting('paid_tickets', 'on');    -- or 'off'; answers ok, 
 
 With it on, a paid type also needs a host whose Bachs account can sell (`payouts_not_ready`), and `ev_register` on a paid type answers `use_checkout` (paid orders go
 through `events_r1_pay.sql`). (Clone also refuses a paid type while the setting is off; the fake layer copies it.) `ev_export` gained a Ticket column, so the file drops and recreates that one function.
+
+## 2c. THE LAUNCH SWITCH (`events_r1`): run this at launch
+
+Running the SQL does NOT turn Release 1 on. The row `events_r1` of `ev_settings` is `off` (a re-run of any file never flips it) and, while it is off, every WRITE a normal user can call answers `not_open` and changes nothing: `ev_create_event`, `ev_update_event`, `ev_cancel_event`, `ev_clone_event`, `ev_register`, `ev_cancel_registration`, `ev_decide`, `ev_promote`, `ev_set_registration_settings`, `ev_send_pop`, `ev_cancel_pop`, `ev_set_auto_pop`, `ev_edit_auto_pop`, `ev_report_event`, `ev_set_door_staff`, `ev_set_room_3d`, `ev_pay_mark_manual_refund`, and the server-side `ev_pay_order_reserve`. `ev_ensure_hq` makes and joins nothing for a signed-in person, `ev_room_mark_read` does nothing, `ev_my_tickets` makes no new ticket, and `ev_dispatch_due_pops` sends nothing. Reads (lists, event pages, the Audience, the Roomz list) keep working. The door (`ev_scan`, `ev_checkin_manual`, counts) is deliberately NOT switched: a ticket already sold must still scan. Payments, webhooks, refunds and the staff desk (service role only) are not switched either: money that moved is always settled.
+
+```sql
+select public.ev_set_setting('events_r1', 'on');    -- at launch; 'off' is the emergency stop. Answers ok, bad_key or bad_value.
+```
+
+Only the service role and the SQL editor can run it. Separately, an event with no `host_id` (the old curated and /drop listings) can be edited or cancelled by staff only: the Hopper who dropped it is not its host. The text of `not_open` in the app is "Not open yet".
 
 ## 3. The cron line (Pops)
 
@@ -144,9 +154,10 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
    who are going only (framework doc rule 10). Which do you want?
 10. **Invite only events in the host's own list.** `ev_list_events` shows a host their own invite events (as the fake layer does); nobody else
     ever sees them. Say if the host should not see them there either.
-11. **Reports.** Three open reports from three different accounts (guests cannot report) hide an event until staff look. Three friends can hide a
-    rival's event; raise the number or weigh accounts by age if that worries you. Staff still use the shared token; named staff and an audit
-    log are Release 2 (money).
+11. **Reports.** Three open reports from three different accounts that are MORE THAN 7 DAYS OLD (`auth.users.created_at`; guests cannot report) hide an
+    event from the lists until staff look. Never auto-hidden: an event with no host (an old listing) or with a paid order (staff only). A hidden event's
+    door still works (scan, manual check in, counts): hidden is for the lists only. Three week-old accounts can still hide a free event; raise the number if
+    that worries you. Staff still use the shared token; named staff and an audit log are Release 2 (money).
 12. **Door staff.** `ev_set_door_staff` lets a host add up to 20 helpers who can scan and search names and emails. The fake layer has no such
     thing yet. Keep it, or host and staff only for Release 1?
 13. **pg_cron and the Pops delivery.** Is pg_cron on, and who delivers the push for a Pop (the web push route exists; email does not)?
@@ -175,6 +186,15 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
 The app turns `room_off` into "The 3D room is off", and the client also hides Enter room when `three_d_on` is false. People already walking when it is switched off are not thrown out (`crew_room_step` is not changed); nobody new comes in. `tests/events_r1_rooms_test.sql` puts this exact line into the live function inside its own rolled-back transaction and shows: a member enters a room that is on, is refused with `room_off` when it is off (the owner too), and Lagos HQ is refused until staff switch it on.
 
 Staff in the app: `ev_set_room_3d` and `ev_admin_rooms` use the signed-in account's `profiles.is_admin`. The /admin desk has the shared token and no account, so it has its own two, in the same file: `ev_admin_set_room_3d(room, on)` (answers `ok`, `bad_value` or `not_found`) and `ev_admin_list_rooms()` (every room, Lagos HQ first, nobody "joined"). Both are service role only (revoked from everyone else, tested) and are called by the route `src/app/api/admin/event-rooms/route.ts` after it checks `HOPPAZ_ADMIN_TOKEN`, like the reports route. Nothing else changes for Ola: the file loads twice cleanly.
+
+## 5b. Known gaps (not fixed in Release 1, for Ola)
+
+- **Event chat is gated in the browser only** (review finding 9, question 8): the `in_room` / swipe rule lets anyone with an event id read and post in its chat; invite only and community privacy depends on that edit.
+- **The event list is heavy and not cached** (finding 13): `ev_list_events` builds up to 500 events with a dozen subqueries each, per client, and the app reloads it every 30 seconds and after every write. Measure before a big night; cache it or give it a materialised read.
+- **Old open insert policy** (finding 15): `events_insert` (`auth.uid() is not null`) lets a guest insert a pending row with `host_id` and `room_id` set to someone else's; if staff approve it in the old desk it shows as theirs. Restrict the policy or the approval step.
+- **Seat hold abuse** (finding 18): free accounts can each hold up to 5 seats for 17 minutes on a small paid event. Add a per-event cap on concurrent holds and a per-IP limit in the checkout route.
+- **Very low paid prices** (review small items): the fee clamps to gross minus 1 kobo, so a price of N1 to N100 leaves nothing for Bachs's processing fee. Set a minimum paid price (for example N500).
+- **Email confirmation**: with confirmation off a guest can attach any unclaimed email and the code step accepts any six digits (same exposure as the existing account creation route). Turn email confirmation on before launch.
 
 ## 6. Deliberately not included
 

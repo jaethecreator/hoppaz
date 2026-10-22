@@ -103,8 +103,9 @@ export function createCheckout(input: CreateCheckoutInput, deps?: ClientDeps) {
 export const getCheckout = (checkoutId: string, accountId: string, deps?: ClientDeps) =>
   bachsRequest<BachsCheckout>("GET", `/v1/checkout-sessions/${encodeURIComponent(checkoutId)}`, { accountId }, deps);
 
+/** accountId is required: a refund of a direct charge is the host's (Bachs answers 404 without it), and the client refuses the call without one. */
 export function createRefund(
-  input: { chargeId: string; reference: string; idempotencyKey: string; accountId?: string; amountKobo?: number; reason?: string; simulatedOutcome?: "success" | "failed" },
+  input: { chargeId: string; reference: string; idempotencyKey: string; accountId: string; amountKobo?: number; reason?: string; simulatedOutcome?: "success" | "failed" },
   deps?: ClientDeps
 ) {
   return bachsRequest<BachsRefund>(
@@ -124,6 +125,14 @@ export function createRefund(
     deps
   );
 }
+
+/**
+ * One refund by its id, as the host. Bachs documents no list-by-reference for refunds, so a refund whose creation timed out is
+ * asked about by id once the id is known (refund.created carries it), and otherwise the SAME reference is sent again with the
+ * SAME idempotency key (createRefund): Bachs returns the original answer, never a second refund.
+ */
+export const getRefund = (refundId: string, accountId: string, deps?: ClientDeps) =>
+  bachsRequest<BachsRefund>("GET", `/v1/refunds/${encodeURIComponent(refundId)}`, { accountId }, deps);
 
 /** Hoppaz's own record of what it earned on a charge (reconciliation only). */
 export async function getPlatformFee(chargeId: string, deps?: ClientDeps): Promise<BachsPlatformFee | null> {

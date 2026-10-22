@@ -74,6 +74,11 @@ export async function routeBachsEvent(event: BachsEvent, db: PayDb, bachs: Clien
       if (!order) return { action: "order_not_found", retry: true };
       if (account && account !== order.host_account) return { action: "account_mismatch" };
       const res = await db.orderDetails({ charge: d.charge_id ?? null, checkout: order.bachs_checkout_id ?? checkoutId ?? order.bachs_reference, feeKobo: koboOrNull(d.processing_fee), method: methodOf(d.payment_method_details?.type) });
+      // A payment that could not be seated while its method was unknown was held as a manual refund; now it says card, so Bachs can refund it.
+      if (res.ok && res.refund_by_card) {
+        await autoRefund(res, db, bachs, log);
+        return { action: "details_saved_refund_card" };
+      }
       return { action: res.ok ? "details_saved" : `details_${res.reason ?? "refused"}` };
     }
     case "checkout.expired": {

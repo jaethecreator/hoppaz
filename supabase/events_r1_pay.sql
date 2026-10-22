@@ -33,9 +33,17 @@
 --  * The platform fee must be above 0 and below the gross (Bachs INVALID_PLATFORM_FEE rule); the route computes it, the database checks it.
 --  * A late payment (after the order expired): the seats are taken again if they are free and the tickets issue; if not, needs_refund is set (and
 --    needs_manual_refund for a bank transfer: Bachs cannot refund those, the host pays the buyer by hand).
---  * A refund voids the order's tickets at once and gives the seats back (the waitlist moves up). If the refund FAILS (for example INSUFFICIENT_BALANCE on
---    the host's balance) the order goes back to paid with the refund owed and the voided tickets come back (if their seats are still free). Hoppaz's fee and Bachs's fee are not returned
---    by Bachs: the host is short by the platform fee on every refund. One refund per order (a failed one does not count).
+--  * A refund voids the order's tickets at once and gives the seats back (the waitlist moves up). If Bachs DEFINITELY refuses it (for example
+--    INSUFFICIENT_BALANCE on the host's balance, or a bad request) the order goes back to paid with the refund owed and the voided tickets come
+--    back (if their seats are still free). If the outcome is UNKNOWN (a timeout, a 5xx, no answer) nothing is undone: the order stays refund_pending
+--    with its tickets void, the attempt is recorded (ev_pay_refund_attempt), and the sweeper settles it by asking Bachs (GET /v1/refunds/{id}) or by
+--    sending the SAME reference with the SAME idempotency key again, never a new reference. refund.paid always wins: it marks the order refunded and
+--    voids its tickets again (idempotent), and a late refund.failed never undoes a refund that is recorded as paid. Hoppaz's fee and Bachs's fee are
+--    not returned by Bachs: the host is short by the platform fee on every refund. One refund per order (a failed one does not count).
+--  * The events_r1 switch (events_r1_events.sql): while it is off, a buyer cannot reserve seats (not_open) and ev_pay_mark_manual_refund answers not_open.
+--    Payments, webhooks and refunds of orders that already exist always work. An event with no host_id (an old listing) is never sold (no_host).
+--  * An order on an event that is cancelled or hidden is never issued, on any path: the payment is flagged needs_refund. Cancelling an event expires
+--    its open orders at once (marked reconcile: the sweeper asks Bachs about each checkout, and a payment that still lands is refunded).
 --  * Capability events can arrive twice and out of order: ev_pay_host_apply_capability keeps the time of the last change per capability and ignores
 --    older ones, and applying the same one again changes nothing.
 --
@@ -116,6 +124,10 @@ create table if not exists public.ev_refunds (
   created_at      timestamptz not null default clock_timestamp(),
   updated_at      timestamptz not null default clock_timestamp()
 );
+-- An unknown outcome is recorded here, not undone: how many tries, when, and what Bachs or the network said.
+alter table public.ev_refunds add column if not exists attempts integer not null default 0;
+alter table public.ev_refunds add column if not exists last_attempt_at timestamptz;
+alter table public.ev_refunds add column if not exists last_error text;
 create index if not exists ev_refunds_order_idx on public.ev_refunds (order_id, status);
 alter table public.ev_refunds enable row level security;
 revoke all on public.ev_refunds from anon, authenticated;
@@ -133,6 +145,12 @@ create table if not exists public.ev_bachs_events (
 alter table public.ev_bachs_events enable row level security;
 revoke all on public.ev_bachs_events from anon, authenticated;
 grant all on public.ev_bachs_events to service_role;
+
+-- Set when an event is cancelled and its open orders are expired: the sweeper asks Bachs about each of those checkouts once.
+alter table public.ev_orders add column if not exists reconcile boolean not null default false;
+-- Why a refund is owed, for the buyer's screen: late (the payment landed after the hold and the seats were gone) or failed (the host's refund
+-- was refused and the order is back to paid). Null for anything else (for example an event that closed) and once nothing is owed.
+alter table public.ev_orders add column if not exists refund_reason text check (refund_reason is null or refund_reason in ('late', 'failed'));
 
 -- Which order a ticket came from (a refund voids that order's tickets only).
 alter table public.ev_tickets add column if not exists order_id uuid references public.ev_orders(id) on delete set null;
@@ -216,7 +234,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
                            else public._ev_pay_naira(o.gross_kobo - o.platform_fee_kobo - o.processing_fee_kobo) end,
     'status', o.status, 'payment_method', o.payment_method, 'created_at', o.created_at, 'expires_at', o.expires_at, 'paid_at', o.paid_at,
     'checkout_url', case when p_show_url and o.status = 'open' then o.checkout_url else null end,
-    'needs_refund', o.needs_refund, 'needs_manual_refund', o.needs_manual_refund);
+    'needs_refund', o.needs_refund, 'needs_manual_refund', o.needs_manual_refund,
+    'refund_reason', case when o.needs_refund then o.refund_reason else null end);
 $$;
 revoke all on function public._ev_pay_order_json(public.ev_orders, boolean) from public, anon, authenticated;
 
@@ -302,11 +321,14 @@ declare
   a       record;
   q       jsonb;
 begin
+  if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   if p_user is null or not exists (select 1 from public.profiles where id = p_user) then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
   if p_qty is null or p_qty < 1 or p_qty > 5 then return jsonb_build_object('ok', false, 'reason', 'bad_qty'); end if;
   select * into e from public.events where id = p_event for update;
   if e.id is null then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
   if not public._ev_paid_on() then return jsonb_build_object('ok', false, 'reason', 'paid_off'); end if;
+  -- No host, no seller: an old listing (its created_by is only whoever dropped it) is never sold, whatever its door price says.
+  if e.host_id is null then return jsonb_build_object('ok', false, 'reason', 'no_host'); end if;
   if e.status = 'cancelled' then return jsonb_build_object('ok', false, 'reason', 'cancelled'); end if;
   if e.status not in ('live', 'unlisted') then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
   if e.visibility = 'community' and not public._ev_in_room(e.room_id, p_user) then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
@@ -317,7 +339,7 @@ begin
   select x.id, x.name, x.price_naira into t from public._ev_types(p_event) x where x.id = p_type;
   if t.id is null then return jsonb_build_object('ok', false, 'reason', 'bad_ticket'); end if;
   if t.price_naira <= 0 then return jsonb_build_object('ok', false, 'reason', 'not_paid_type'); end if;
-  v_host := coalesce(e.host_id, e.created_by);
+  v_host := e.host_id;
   select h.bachs_account_id into v_acct from public.ev_host_payouts h where h.user_id = v_host and h.can_sell;
   if v_acct is null then return jsonb_build_object('ok', false, 'reason', 'not_ready'); end if;
 
@@ -505,13 +527,15 @@ begin
   end if;
   if v_kobo > o.gross_kobo then v_flag := 'overpaid'; end if;
 
+  -- An event that is cancelled, hidden, pending or rejected issues nothing, on every path (on time or late): the money is owed back.
+  if not exists (select 1 from public.events e where e.id = o.event_id and e.status in ('live', 'unlisted')) then
+    v_refund := true;
+  end if;
   if o.status in ('expired', 'failed') or (o.status = 'open' and o.expires_at + interval '2 minutes' < now()) then
     -- A late payment (the hold ran out, expired or not yet swept): take the seats again if they are free (this order no longer holds any).
     v_late := true;
     v_left := public._ev_type_left(o.event_id, o.ticket_type_id);
-    if (v_left is not null and v_left < o.quantity) or not exists (select 1 from public.events e where e.id = o.event_id and e.status in ('live', 'unlisted')) then
-      v_refund := true;
-    end if;
+    if v_left is not null and v_left < o.quantity then v_refund := true; end if;
   end if;
   if not v_refund then
     v_issued := public._ev_pay_issue(o.id);
@@ -521,7 +545,10 @@ begin
   update public.ev_orders
      set status = 'paid', paid_at = now(), bachs_charge_id = coalesce(nullif(p_charge, ''), bachs_charge_id), payment_method = v_method,
          processing_fee_kobo = coalesce(p_fee_kobo, processing_fee_kobo), flag_review = coalesce(v_flag, flag_review),
-         needs_refund = v_refund, needs_manual_refund = (v_refund and v_method = 'bank_transfer'),
+         -- A refund owed with the method not known yet (checkout.completed can arrive before collection.succeeded, and has no method) is manual
+         -- until the method says card (ev_pay_order_details then hands a card payment to the automatic refund). coalesce: true and null is null.
+         needs_refund = v_refund, needs_manual_refund = coalesce(v_refund and v_method is distinct from 'card', false), reconcile = false,
+         refund_reason = case when v_refund and v_late then 'late' else null end,
          issued_seats = case when v_refund then 0 else issued_seats end, updated_at = clock_timestamp()
    where id = o.id;
   return jsonb_build_object('ok', true, 'order_id', o.id, 'issued', not v_refund, 'late', v_late, 'needs_refund', v_refund,
@@ -543,9 +570,14 @@ begin
          payment_method = coalesce(case when p_method in ('card', 'bank_transfer') then p_method end, payment_method),
          updated_at = clock_timestamp()
    where id = o.id returning * into o;
-  -- A refund that was waiting only for the method: a bank transfer cannot be refunded through Bachs.
-  if o.needs_refund and o.payment_method = 'bank_transfer' and not o.needs_manual_refund then
+  -- A refund that was waiting only for the method: a bank transfer cannot be refunded through Bachs (manual), a card payment can: an unknown
+  -- method was held as manual, and once it says card (and nobody has started a manual refund) it is handed to the automatic refund.
+  if o.status = 'paid' and o.needs_refund and o.payment_method = 'bank_transfer' and not o.needs_manual_refund then
     update public.ev_orders set needs_manual_refund = true where id = o.id;
+  elsif o.status = 'paid' and o.needs_refund and o.payment_method = 'card' and o.needs_manual_refund
+        and not exists (select 1 from public.ev_refunds f where f.order_id = o.id and f.method = 'manual') then
+    update public.ev_orders set needs_manual_refund = false, updated_at = clock_timestamp() where id = o.id;
+    return jsonb_build_object('ok', true, 'order_id', o.id, 'status', o.status, 'refund_by_card', true);
   end if;
   return jsonb_build_object('ok', true, 'order_id', o.id, 'status', o.status);
 exception when unique_violation then
@@ -574,15 +606,43 @@ create or replace function public.ev_pay_sweep() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_out jsonb;
 begin
+  -- Open orders past their hold, and orders an event cancel already expired (reconcile): both come back so the route asks Bachs about the checkout.
   with gone as (
-    update public.ev_orders set status = 'expired', updated_at = clock_timestamp()
-     where id in (select x.id from public.ev_orders x where x.status = 'open' and x.expires_at + interval '2 minutes' < now() order by x.expires_at limit 500 for update skip locked)
+    update public.ev_orders set status = case when status = 'open' then 'expired' else status end, reconcile = false, updated_at = clock_timestamp()
+     where id in (select x.id from public.ev_orders x
+                   where (x.status = 'open' and x.expires_at + interval '2 minutes' < now()) or (x.reconcile and x.status = 'expired')
+                   order by x.expires_at limit 500 for update skip locked)
     returning id, bachs_checkout_id)
   select coalesce(jsonb_agg(jsonb_build_object('order_id', g.id, 'checkout_id', g.bachs_checkout_id)), '[]'::jsonb) into v_out from gone g;
   return jsonb_build_object('ok', true, 'expired', v_out);
 end $$;
 
 -- ============================ SERVICE ROLE: refunds and disputes (Sequence D) ============================
+-- Void the order's valid tickets and give its seats back (the registration's quantity). Idempotent: a second call finds nothing to do. Used tickets
+-- stay used. The caller holds the event and order locks. Returns true when something changed.
+create or replace function public._ev_pay_void_seats(p_order uuid) returns boolean
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  o       public.ev_orders;
+  v_n     integer;
+  v_moved boolean := false;
+begin
+  select * into o from public.ev_orders where id = p_order;
+  update public.ev_tickets set status = 'void', void_reason = 'refund' where order_id = o.id and status = 'valid';
+  get diagnostics v_n = row_count;
+  v_moved := v_n > 0;
+  if o.issued_seats > 0 and o.registration_id is not null then
+    update public.ev_registrations
+       set quantity = greatest(0, quantity - o.issued_seats),
+           status = case when quantity - o.issued_seats <= 0 then 'cancelled' else status end, updated_at = clock_timestamp()
+     where id = o.registration_id;
+    update public.ev_orders set issued_seats = 0 where id = o.id;
+    v_moved := true;
+  end if;
+  return v_moved;
+end $$;
+revoke all on function public._ev_pay_void_seats(uuid) from public, anon, authenticated;
+
 -- Start a refund. Card: refund_pending, the route calls Bachs with the returned reference. Bank transfer: no Bachs call, a manual task.
 -- Either way the order's tickets are void at once and the seats go back. p_actor null = the system (an automatic refund of a late payment).
 create or replace function public.ev_pay_refund_start(p_order uuid, p_actor uuid default null) returns jsonb
@@ -616,21 +676,14 @@ begin
   if v_card and o.bachs_charge_id is null then return jsonb_build_object('ok', false, 'reason', 'no_charge'); end if;
 
   -- Tickets void, seats back.
-  update public.ev_tickets set status = 'void', void_reason = 'refund' where order_id = o.id and status = 'valid';
-  if o.issued_seats > 0 and o.registration_id is not null then
-    update public.ev_registrations
-       set quantity = greatest(0, quantity - o.issued_seats),
-           status = case when quantity - o.issued_seats <= 0 then 'cancelled' else status end, updated_at = clock_timestamp()
-     where id = o.registration_id;
-    update public.ev_orders set issued_seats = 0 where id = o.id;
-  end if;
+  perform public._ev_pay_void_seats(o.id);
 
   select count(*)::int into v_n from public.ev_refunds where order_id = o.id;
   v_ref := 'rf_' || replace(o.id::text, '-', '') || case when v_n > 0 then '_' || (v_n + 1)::text else '' end;
   insert into public.ev_refunds (order_id, reference, amount_kobo, method, status, created_by)
   values (o.id, v_ref, o.gross_kobo, case when v_card then 'card' else 'manual' end, case when v_card then 'requested' else 'manual_needed' end, p_actor);
   if v_card then
-    update public.ev_orders set status = 'refund_pending', needs_refund = false, needs_manual_refund = false, updated_at = clock_timestamp() where id = o.id;
+    update public.ev_orders set status = 'refund_pending', needs_refund = false, needs_manual_refund = false, refund_reason = null, updated_at = clock_timestamp() where id = o.id;
   else
     update public.ev_orders set needs_refund = true, needs_manual_refund = true, updated_at = clock_timestamp() where id = o.id;
   end if;
@@ -656,18 +709,22 @@ begin
   select event_id into v_ev from public.ev_orders where id = f.order_id;
   perform 1 from public.events where id = v_ev for update;
   select * into f from public.ev_refunds where id = f.id for update;
-  -- Never go backwards: a paid refund stays paid, a created event after a paid one is ignored.
-  if f.status = 'paid' or (f.status = 'failed' and v_st = 'processing') or f.method = 'manual' then
+  -- Never go backwards: a paid refund stays paid (a late "failed" or "created" never undoes it), a failed one is not failed again or reopened
+  -- by a "created" event. Only a "paid" can follow a "failed" (the money did go out after all).
+  if f.status = 'paid' or (f.status = 'failed' and v_st in ('processing', 'failed')) or f.method = 'manual' then
     return jsonb_build_object('ok', true, 'order_id', f.order_id, 'status', f.status, 'changed', false);
   end if;
   update public.ev_refunds set status = v_st, bachs_refund_id = coalesce(bachs_refund_id, nullif(p_refund_id, '')), updated_at = clock_timestamp() where id = f.id;
   if v_st = 'paid' then
-    update public.ev_orders set status = 'refunded', refunded_at = now(), needs_refund = false, needs_manual_refund = false, updated_at = clock_timestamp() where id = f.order_id;
+    update public.ev_orders set status = 'refunded', refunded_at = now(), needs_refund = false, needs_manual_refund = false, refund_reason = null, updated_at = clock_timestamp() where id = f.order_id;
+    -- The money is out, so no ticket of this order may be valid: void them again (a "failed" in between may have brought them back). Idempotent.
+    if public._ev_pay_void_seats(f.order_id) then perform public._ev_fill_waitlist(v_ev); end if;
   elsif v_st = 'failed' then
     -- The refund failed (for example Bachs INSUFFICIENT_BALANCE on the host's balance): the order goes back to paid, the refund is owed again (a new
     -- one can be started, or the sweeper retries it), and the tickets the refund voided come back, if their seats are still free.
     select * into o from public.ev_orders where id = f.order_id for update;
-    if o.status = 'refund_pending' then
+    -- Only while this is the refund that is under way: a second refund of the order (after an earlier failed one) that is still open keeps it pending.
+    if o.status = 'refund_pending' and not exists (select 1 from public.ev_refunds x where x.order_id = o.id and x.id <> f.id and x.status in ('requested', 'processing', 'paid')) then
       select count(*)::int into v_n from public.ev_tickets t where t.order_id = o.id and t.status = 'void' and t.void_reason = 'refund';
       v_left := public._ev_type_left(o.event_id, o.ticket_type_id);
       if v_n > 0 and (v_left is null or v_left >= v_n) then
@@ -676,12 +733,28 @@ begin
          where id = o.registration_id;
         v_back := v_n;
       end if;
-      update public.ev_orders set status = 'paid', needs_refund = true, issued_seats = issued_seats + v_back, updated_at = clock_timestamp() where id = o.id;
+      update public.ev_orders set status = 'paid', needs_refund = true, refund_reason = 'failed', issued_seats = issued_seats + v_back, updated_at = clock_timestamp() where id = o.id;
     end if;
   else
     update public.ev_orders set status = 'refund_pending', updated_at = clock_timestamp() where id = f.order_id and status = 'paid';
   end if;
   return jsonb_build_object('ok', true, 'order_id', f.order_id, 'status', v_st, 'changed', true, 'tickets_restored', v_back);
+end $$;
+
+-- A card refund whose outcome is unknown (the call timed out, 5xx, no answer): record the try and leave everything as it is (order refund_pending,
+-- tickets void). After 10 tries the order is flagged refund_stuck for a person to look at. Settled later by refund.paid / refund.failed, or by the
+-- sweeper asking Bachs. { ok, attempts } or { ok: false, reason: not_found } (no open refund with that reference).
+create or replace function public.ev_pay_refund_attempt(p_reference text, p_error text default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare f public.ev_refunds;
+begin
+  update public.ev_refunds set attempts = attempts + 1, last_attempt_at = clock_timestamp(), last_error = left(coalesce(p_error, ''), 200), updated_at = clock_timestamp()
+   where reference = p_reference and status in ('requested', 'processing') returning * into f;
+  if f.id is null then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
+  if f.attempts >= 10 then
+    update public.ev_orders set flag_review = coalesce(flag_review, 'refund_stuck'), updated_at = clock_timestamp() where id = f.order_id;
+  end if;
+  return jsonb_build_object('ok', true, 'attempts', f.attempts, 'order_id', f.order_id);
 end $$;
 
 -- dispute.created / dispute.updated: a flag on the order for a person to look at. Nothing is voided automatically.
@@ -780,6 +853,7 @@ declare
   o  public.ev_orders;
   v_ev public.events;
 begin
+  if not public._ev_open() then return 'not_open'; end if;
   if me is null then return 'no_session'; end if;
   select * into o from public.ev_orders where id = p_order;
   if o.id is null then return 'not_found'; end if;
@@ -794,7 +868,7 @@ begin
     values (o.id, 'rf_' || replace(o.id::text, '-', '') || '_m', o.gross_kobo, 'manual', 'manual_done', me)
     on conflict (reference) do nothing;
   end if;
-  update public.ev_orders set status = 'refunded', refunded_at = now(), needs_refund = false, needs_manual_refund = false, updated_at = clock_timestamp() where id = o.id;
+  update public.ev_orders set status = 'refunded', refunded_at = now(), needs_refund = false, needs_manual_refund = false, refund_reason = null, updated_at = clock_timestamp() where id = o.id;
   return 'ok';
 end $$;
 
@@ -807,7 +881,7 @@ begin
      where n.nspname = 'public' and p.proname in (
        'ev_pay_host_save_account', 'ev_pay_host_apply_capability', 'ev_pay_host_apply_requirements', 'ev_pay_order_reserve', 'ev_pay_order_attach',
        'ev_pay_order_release', 'ev_pay_event_record', 'ev_pay_event_processed', 'ev_pay_order_paid', 'ev_pay_order_details', 'ev_pay_order_expire',
-       'ev_pay_sweep', 'ev_pay_refund_start', 'ev_pay_refund_apply', 'ev_pay_dispute_flag', 'ev_pay_host_status', 'ev_pay_my_order',
+       'ev_pay_sweep', 'ev_pay_refund_start', 'ev_pay_refund_apply', 'ev_pay_refund_attempt', 'ev_pay_dispute_flag', 'ev_pay_host_status', 'ev_pay_my_order',
        'ev_pay_my_orders', 'ev_pay_event_orders', 'ev_pay_sales', 'ev_pay_mark_manual_refund')
   loop
     execute format('revoke all on function %s from public, anon, authenticated', f.sig);

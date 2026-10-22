@@ -2,13 +2,12 @@ import { NextResponse } from "next/server";
 import { createAccountLink, createConnectedAccount } from "@/lib/bachs/api";
 import { BachsError, bachsConfig } from "@/lib/bachs/client";
 import type { PayDb } from "@/lib/bachs/db";
-import { fail, isResponse, json, limiter, refreshValid, safePath, sameOrigin, serviceDb, sessionOf, signRefresh, siteOrigin, UUID } from "@/lib/bachs/http";
+import { fail, isResponse, json, limiter, REFRESH_MINUTES, refreshValid, safePath, sameOrigin, serviceDb, sessionOf, signRefresh, siteOrigin, UUID } from "@/lib/bachs/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const slowDown = limiter(6);
-const REFRESH_DAYS = 7;
 
 /**
  * Host payout setup (Bachs Connect, spec section 2). Each host is their own merchant: their own Bachs account, created once, and
@@ -19,7 +18,8 @@ const REFRESH_DAYS = 7;
  *        the host pays Bachs's fee) and saves it with ev_pay_host_save_account; later calls reuse it. The host is sent to `url`.
  *   GET  ?u=<user>&r=<returnPath>&e=<expiry>&s=<signature> is the refresh_url. Bachs sends the host's browser here when the link
  *        was used or has expired; the signed query says whose it is (there is no session header on a redirect). It makes a new link
- *        and redirects to it. A link older than 7 days, or with a bad signature, goes back to the site instead.
+ *        and redirects to it. A link older than 15 minutes, or with a bad signature, goes back to the site instead (the host taps the
+ *        button again). It is a bearer link for those 15 minutes: see the note in http.ts.
  * Whether the host can sell is never decided here: capability.updated and account.updated webhooks fill ev_host_payouts.
  */
 export async function POST(req: Request) {
@@ -69,7 +69,7 @@ async function ensureAccount(db: PayDb, userId: string, email: string, name: str
 /** A fresh single-use link. A new link kills the old one, so this runs on click only, never in advance. */
 async function linkFor(req: Request, userId: string, account: string, returnPath: string): Promise<string> {
   const origin = siteOrigin(req);
-  const exp = Math.floor(Date.now() / 1000) + REFRESH_DAYS * 86400;
+  const exp = Math.floor(Date.now() / 1000) + REFRESH_MINUTES * 60;
   const refresh = `${origin}/api/events-r1/pay/onboard?${new URLSearchParams({ u: userId, r: returnPath, e: String(exp), s: signRefresh(userId, returnPath, exp) })}`;
   const link = await createAccountLink(account, { refreshUrl: refresh, returnUrl: `${origin}${returnPath}`, type: "onboarding" });
   return link.url;

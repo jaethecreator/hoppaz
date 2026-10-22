@@ -168,10 +168,18 @@ export function canOpen(e: EventRec): boolean {
 /** Open reports at which an event drops out of the lists until staff have checked it. */
 export const HIDE_AT_REPORTS = 3;
 
-/** May this viewer see the event in lists? Hosts see their own whatever the visibility. Staff still see an event hidden by reports. */
+/** Has anyone paid for this event (an order that reached paid, now paid, refunding or refunded)? */
+const hasPaidOrders = (eventId: string): boolean =>
+  Object.values(S().orders).some((o) => o.event_id === eventId && (o.status === "paid" || o.status === "refund_pending" || o.status === "refunded"));
+
+/**
+ * May this viewer see the event in lists? Hosts see their own whatever the visibility. Staff still see an event hidden by
+ * reports. Reports hide an event from the lists only: the door still scans, and an event with paid orders is never hidden
+ * by reports (staff decide), like the SQL.
+ */
 export function canList(e: EventRec): boolean {
   if (isHostOf(e)) return true;
-  if (!viewer()?.staff && Object.values(S().reports).filter((r) => r.event_id === e.id && r.status === "open").length >= HIDE_AT_REPORTS) return false;
+  if (!viewer()?.staff && !hasPaidOrders(e.id) && Object.values(S().reports).filter((r) => r.event_id === e.id && r.status === "open").length >= HIDE_AT_REPORTS) return false;
   if (e.visibility === "invite") return false;
   if (e.visibility === "community") return isMember(e.room_id);
   return true;

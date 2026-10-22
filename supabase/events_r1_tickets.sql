@@ -54,8 +54,9 @@
 --   ev_set_ticket_secret(secret, replace)   see above.
 --
 -- Door staff see the names and emails of people who are going (the name search), like the host does.
--- A cancelled or hidden event: every scan is not_valid / void. Scanning is for the host and the door staff only; nobody else can read
--- tickets or scans.
+-- A cancelled (or pending, rejected) event: every scan is not_valid / void. A HIDDEN event still scans: hidden only takes an event off the lists
+-- (three reports, or staff), and a report must never be able to shut a door. The door is not behind the events_r1 switch either: a ticket
+-- already sold must scan. Scanning is for the host and the door staff only; nobody else can read tickets or scans.
 -- ============================================================================
 begin;
 
@@ -285,7 +286,8 @@ begin
   if me is null then return '[]'::jsonb; end if;
   select * into r from public.ev_registrations where event_id = p_event and user_id = me and status in ('going', 'checked_in');
   if r.id is null then return '[]'::jsonb; end if;
-  perform public.ev_issue_ticket(r.id);
+  -- Missing tickets are made only while Release 1 is on; the ones that exist are always shown.
+  if public._ev_open() then perform public.ev_issue_ticket(r.id); end if;
   return coalesce((
     select jsonb_agg(jsonb_build_object(
              'id', t.id, 'event_id', t.event_id, 'holder_name', t.holder_name, 'ticket_name', t.ticket_name, 'code', t.code,
@@ -375,7 +377,7 @@ begin
     return jsonb_build_object('ok', false, 'kind', 'already_used', 'name', r.name, 'at', coalesce(t.used_at, r.checked_in_at, clock_timestamp()));
   end if;
   if r.status not in ('going', 'checked_in') then return public._ev_not_valid(p_event, me, v_mode, p_offline, p_at, 'not_going', t.id); end if;
-  if e.status not in ('live', 'unlisted') then return public._ev_not_valid(p_event, me, v_mode, p_offline, p_at, 'void', t.id); end if;
+  if e.status not in ('live', 'unlisted', 'hidden') then return public._ev_not_valid(p_event, me, v_mode, p_offline, p_at, 'void', t.id); end if;
 
   if v_mode = 'standard' then
     c := public._ev_door_counts(p_event);
@@ -414,7 +416,7 @@ begin
   select * into r from public.ev_registrations where id = p_registration and event_id = p_event for update;
   if r.id is null then return public._ev_not_valid(p_event, me, 'manual', false, null, 'unknown'); end if;
   if r.status not in ('going', 'checked_in') then return public._ev_not_valid(p_event, me, 'manual', false, null, 'not_going'); end if;
-  if e.status not in ('live', 'unlisted') then return public._ev_not_valid(p_event, me, 'manual', false, null, 'void'); end if;
+  if e.status not in ('live', 'unlisted', 'hidden') then return public._ev_not_valid(p_event, me, 'manual', false, null, 'void'); end if;
   perform public.ev_issue_ticket(r.id);
   -- The next ticket of this person that has not been used. None left: everyone of theirs is in already.
   select * into t from public.ev_tickets x where x.registration_id = r.id and x.status = 'valid' order by x.seat limit 1 for update;
@@ -473,6 +475,7 @@ end $$;
 create or replace function public.ev_set_door_staff(p_event uuid, p_user uuid, p_on boolean) returns text
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
+  if not public._ev_open() then return 'not_open'; end if;
   if auth.uid() is null then return 'no_session'; end if;
   perform 1 from public.events where id = p_event for update;
   if not found then return 'not_found'; end if;

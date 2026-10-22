@@ -3,6 +3,8 @@
 -- Ends with ALL EVENTS R1 EVENTS TESTS PASSED.
 --   docker exec -i supabase_db_hoppaz-local psql -U postgres -d <a throwaway hoppaz_ev_ database> -q -v ON_ERROR_STOP=1 < supabase/tests/events_r1_events_test.sql
 begin;
+-- Release 1 is switched on for the test (rolled back with everything else). The "off" cases switch it off again inside the test.
+select public.ev_set_setting('events_r1', 'on');
 create function pg_temp.ok(v boolean, label text) returns void language plpgsql as $$
 begin
   if v is not true then raise exception 'FAILED: %', label; end if;
@@ -390,7 +392,8 @@ begin
   perform pg_temp.ok(jsonb_array_length(e -> 'ticket_types') = 1 and e -> 'ticket_types' -> 0 ->> 'name' = 'General' and e -> 'ticket_types' -> 0 ->> 'id' = md5('ticket-type:' || id1::text)::uuid::text
                      and (select count(*) from public.ev_ticket_types where event_id = id1) = 0, 'an old event reads as one derived General and is not backfilled');
   e := pg_temp.get(s, id2::text);
-  perform pg_temp.ok((e ->> 'price_naira')::int = 300 and (e -> 'ticket_types' -> 0 ->> 'price_naira')::int = 300, 'an old paid event''s derived General has its price');
+  perform pg_temp.ok((e ->> 'price_naira')::int = 0 and (e -> 'ticket_types' -> 0 ->> 'price_naira')::int = 0, 'an old listing with a door price of 300 has a FREE derived General (the door price is information only)');
+  perform pg_temp.ok((select price_naira from public.events where id = id2) = 300, 'and its listed door price is kept in events.price_naira');
   -- Out of the room.
   insert into public.crews (id, name, created_by, visibility) values (gen_random_uuid(), 'Evt Types Room', st, 'open') returning id into idt;
   insert into public.crew_members (crew_id, user_id, role) values (idt, st, 'owner');
@@ -410,6 +413,35 @@ begin
   perform pg_temp.ok((r ->> 'ok')::boolean and r -> 'event' ->> 'room_id' = idt::text, 'it can become a community event in the room');
   perform pg_temp.ok(pg_temp.upd(st, ida, '{"add_to_room":false}') ->> 'reason' = 'need_room', 'a community event cannot leave its room');
   perform pg_temp.ok(pg_temp.upd(s, ida, '{"add_to_room":true}') ->> 'reason' = 'not_allowed', 'and a stranger cannot move it');
+
+  -- The old listings (no host_id): the Hopper who dropped one is not its host. Only staff edit or cancel it.
+  insert into public.events (title, venue_name, starts_at, status, created_by, price_naira) values ('Dropped listing', 'Somewhere', now() + interval '3 days', 'live', s, 2000) returning id into id3;
+  perform pg_temp.ok(pg_temp.upd(s, id3, '{"title":"Rewritten by the dropper"}') ->> 'reason' = 'not_allowed' and (select title from public.events where id = id3) = 'Dropped listing',
+                     'the Hopper who dropped an old listing cannot edit it');
+  perform pg_temp.ok(pg_temp.j(s, format('select public.ev_cancel_event(%L)', id3)) ->> 'reason' = 'not_allowed' and (select status from public.events where id = id3) = 'live',
+                     'and cannot cancel it');
+  r := pg_temp.upd(st, id3, '{"title":"Edited by staff"}');
+  perform pg_temp.ok((r ->> 'ok')::boolean and (select title from public.events where id = id3) = 'Edited by staff'
+                     and (select price_naira from public.events where id = id3) = 2000, 'staff can edit it (the listed door price is untouched)');
+  r := pg_temp.j(st, format('select public.ev_cancel_event(%L)', id3));
+  perform pg_temp.ok((r ->> 'ok')::boolean and (select status from public.events where id = id3) = 'cancelled', 'and cancel it');
+  -- The host of a Release 1 event is not affected.
+  r := pg_temp.mk(h, '{"title":"Hosted after the switch"}');
+  id4 := (r -> 'event' ->> 'id')::uuid;
+  perform pg_temp.ok((pg_temp.upd(h, id4, '{"title":"Hosted, edited"}') ->> 'ok')::boolean, 'the host of a Release 1 event still edits it');
+
+  -- The switch: ev_set_setting knows events_r1, and with it off every write answers not_open while reads work.
+  perform pg_temp.ok(public.ev_set_setting('events_r1', 'maybe') = 'bad_value' and public.ev_set_setting('nope', 'on') = 'bad_key' and public.ev_set_setting('events_r1', 'off') = 'ok', 'ev_set_setting: events_r1 takes on or off, other keys are bad_key');
+  perform pg_temp.ok((select value from public.ev_settings where key = 'events_r1') = 'off', 'the setting is stored');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"Not yet"}') ->> 'reason' = 'not_open' and not exists (select 1 from public.events where title = 'Not yet'), 'events_r1 off: create answers not_open and writes nothing');
+  r := pg_temp.upd(h, id4, '{"title":"Not yet either"}');
+  perform pg_temp.ok(r ->> 'reason' = 'not_open' and (select title from public.events where id = id4) <> 'Not yet either', 'events_r1 off: update answers not_open and changes nothing');
+  perform pg_temp.ok(pg_temp.j(h, format('select public.ev_cancel_event(%L)', id4)) ->> 'reason' = 'not_open' and (select status from public.events where id = id4) = 'live', 'events_r1 off: cancel answers not_open');
+  perform pg_temp.ok(pg_temp.j(h, format('select public.ev_clone_event(%L)', id4)) ->> 'reason' = 'not_open', 'events_r1 off: clone answers not_open');
+  perform pg_temp.ok(pg_temp.get(s, id4::text) ->> 'id' = id4::text and pg_temp.listed(s, id4) and jsonb_array_length(pg_temp.j(h, 'select public.ev_my_events()')) >= 1, 'events_r1 off: get, list and my events still read');
+  perform public.ev_set_setting('events_r1', 'on');
+  r := pg_temp.upd(h, id4, '{"title":"Back on"}');
+  perform pg_temp.ok((r ->> 'ok')::boolean, 'events_r1 on again: it works ' || coalesce(r::text, ''));
 
   -- Access: only get and list are open to a visitor with no account.
   declare f record;

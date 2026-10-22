@@ -76,6 +76,22 @@ export async function sessionOf(req: Request): Promise<Session | NextResponse> {
 
 export const isResponse = (v: unknown): v is NextResponse => v instanceof NextResponse;
 
+/**
+ * A Supabase client that acts as the CALLER: their bearer token when they sent one, otherwise the anonymous key. For questions the
+ * database answers by who is asking (ev_get_event hides a community or invite only event from people who may not open it). Null when
+ * Supabase is not configured.
+ */
+export function viewerClient(req: Request) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const publishable = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !publishable) return null;
+  const bearer = bearerFrom(req);
+  return createClient(url, publishable, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    ...(bearer ? { global: { headers: { Authorization: `Bearer ${bearer}` } } } : {}),
+  });
+}
+
 /** The service-key database alone (webhook, sweeper). Null when Supabase is not configured. */
 export function serviceDb(): PayDb | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -97,7 +113,13 @@ export function cronAllowed(req: Request): boolean {
 /**
  * A short-lived signed token for the onboarding refresh_url. Bachs redirects the host's browser there with no Hoppaz session
  * header, so the link itself carries who and where, signed with a key made from BACHS_SECRET_KEY (never sent anywhere).
+ *
+ * RESIDUAL RISK: it is a bearer link. For its lifetime (REFRESH_MINUTES, 15) anyone who has the URL (browser history, a screenshot, a
+ * shared screen) can open it and be sent to a fresh Bachs onboarding page for that host's account (identity and payout bank details).
+ * A plain link GET carries no Hoppaz cookie or bearer (the session lives in the page's storage, not a cookie), so the session cannot
+ * be required here; the lifetime is kept short instead. The host who needs a new link after 15 minutes taps the button again (POST).
  */
+export const REFRESH_MINUTES = 15;
 const signingKey = () => createHmac("sha256", "hoppaz-onboard-refresh").update(process.env.BACHS_SECRET_KEY ?? "").digest();
 export function signRefresh(userId: string, returnPath: string, expiresAt: number): string {
   return createHmac("sha256", signingKey()).update(`${userId}|${returnPath}|${expiresAt}`).digest("hex");

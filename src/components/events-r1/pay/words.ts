@@ -12,9 +12,13 @@ export const BALANCE_WORD = "A refund comes out of your Bachs balance and your b
 /** The one line on the Get paid card: who sells and who pays for a refund. */
 export const SELLER_NOTE = "You are the seller. Refunds and disputes are charged to your Bachs balance. Hoppaz's fee is not returned on a refund.";
 
+/** The server code for "events are switched off on this server" (events_r1 setting), as a plain line. */
+const NOT_OPEN = /events?_r1_off|r1_off|not_open_yet/i;
+
 /** An error from the pay layer as one plain line for a buyer. Messages that are already plain pass through. */
 export function buyError(e: unknown): string {
   const m = e instanceof Error ? e.message : "";
+  if (NOT_OPEN.test(m)) return "Not open yet";
   if (/payouts?_not_ready|not_ready|not finished setting up/i.test(m)) return "The host has not finished setting up payments yet.";
   if (/payment open|order_open/i.test(m)) return "You already have a payment open for this event.";
   if (/^sold.?out$/i.test(m.trim())) return "Sold out. Try fewer tickets, or check back later.";
@@ -25,6 +29,7 @@ export function buyError(e: unknown): string {
 /** An error from the pay layer as one plain line for a host (refunds, payouts). */
 export function hostPayError(e: unknown): string {
   const m = e instanceof Error ? e.message : "";
+  if (NOT_OPEN.test(m)) return "Not open yet";
   if (/payouts?_not_ready/i.test(m)) return "Set up payouts first";
   if (/balance/i.test(m)) return BALANCE_WORD;
   if (/tickets_used|checked.?in|used/i.test(m)) return "Tickets already checked in";

@@ -99,10 +99,19 @@ export default function ReturnPage() {
   return shell(<Body order={order} slow={slow} onRefresh={() => setRound((n) => n + 1)} />);
 }
 
+/**
+ * An order with needs_refund is either a payment that landed after the hold with no seat left, or a paid order whose refund
+ * failed. Order has no field that says which, so it is told by the time: only a late payment was paid after expires_at.
+ */
+function arrivedLate(o: Order): boolean {
+  const paid = o.paid_at ? Date.parse(o.paid_at) : NaN;
+  return Number.isFinite(paid) && paid > Date.parse(o.expires_at);
+}
+
 function Body({ order, slow, onRefresh }: { order: Order | null; slow: boolean; onRefresh: () => void }) {
   const { data: event } = useR1Event(order?.event_id);
   const head = useRef<HTMLParagraphElement>(null);
-  const state = !order ? "wait" : order.needs_refund ? "late" : order.status === "paid" ? "paid" : order.status === "open" ? "wait" : order.status === "expired" || order.status === "failed" ? "gone" : "refund";
+  const state = !order ? "wait" : order.needs_refund ? (arrivedLate(order) ? "late" : "owed") : order.status === "paid" ? "paid" : order.status === "open" ? "wait" : order.status === "expired" || order.status === "failed" ? "gone" : "refund";
   const seen = useRef("");
   // Move focus to the answer when it changes, so a screen reader hears it.
   useEffect(() => {
@@ -185,6 +194,21 @@ function Body({ order, slow, onRefresh }: { order: Order | null; slow: boolean; 
           Your payment arrived late
         </p>
         <p className="mt-2 font-body text-[15px] text-dim">Your payment arrived after your seats were released and no seat is left. You will be refunded.</p>
+        {line && <p className="mt-3 font-body text-[14px] text-dim">{line}</p>}
+        <Link href={back()} className="btn mt-5 px-6 normal-case">
+          Back to the event
+        </Link>
+      </div>
+    );
+  }
+
+  if (state === "owed") {
+    return (
+      <div aria-live="polite">
+        <p ref={head} tabIndex={-1} className={title}>
+          A refund is owed to you
+        </p>
+        <p className="mt-2 font-body text-[15px] text-dim">Your money is on its way back. Ask the host if it has not reached you in a few days.</p>
         {line && <p className="mt-3 font-body text-[14px] text-dim">{line}</p>}
         <Link href={back()} className="btn mt-5 px-6 normal-case">
           Back to the event

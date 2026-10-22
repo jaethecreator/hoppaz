@@ -17,6 +17,7 @@
 --   ev_registration_settings   the host's questions and the three messages (Pending, Going, Declined), one small jsonb row per
 --                              event, on a closed table. No row means the defaults.
 --
+-- ev_viewer_state answers signedIn only for a person with an account (has_account()): a guest has an auth.uid() but is not signed in.
 -- Statuses: requested (free, approval on, waiting for the host), going, waitlisted, declined, cancelled, checked_in.
 -- Places (capacity) are counted from going and checked_in only. Someone waiting for approval, on the waitlist, declined or
 -- cancelled does not use a place.
@@ -26,7 +27,7 @@
 --                                       place. Outcome: going (a place and no approval), requested (approval on), waitlisted (full
 --                                       and the waitlist is on). Full with no waitlist: full. { ok, registration } or { ok: false,
 --                                       reason }. Registering again while registered returns the same registration.
---                                       reasons: no_session, need_account, not_found, cancelled, event_over, declined, full, type_full,
+--                                       reasons: not_open (the events_r1 switch is off; every write below answers it too), no_session, need_account, not_found, cancelled, event_over, declined, full, type_full,
 --                                       bad_ticket, use_checkout, currently_unavailable, answer_needed (with the question), too_many_answers, answer_too_long.
 --                                       TICKET TYPES: opts.ticketTypeId picks a type (bad_ticket if it is not one of the event's). With none given
 --                                       the person gets the first free type that has room, else the first free type (it is full). A paid type is
@@ -39,7 +40,7 @@
 --                                       on, the next waitlisted person moves to requested and the host decides (as in the fake layer).
 --   ev_decide(registration, action)     host or staff. action approve | decline. Approving someone when the event is full puts them on
 --                                       the waitlist instead. { ok, registration } or { ok: false, reason: not_found | not_allowed |
---                                       bad_action | nothing_to_approve | already_checked_in }.
+--                                       bad_action | nothing_to_approve | already_checked_in | paid_use_refund (declining a registration that holds a paid order: refund the order instead) }.
 --   ev_promote(registration)            host or staff: a waitlisted person goes in now. no_free_place when THEIR ticket type is full (raise its
 --                                       capacity, or the event's). The waitlist fill is per type: a full type is skipped, and a spare place in
 --                                       another type does not move someone waiting for the full one.
@@ -271,6 +272,7 @@ declare
   v_on      boolean;
   k         text;
 begin
+  if not public._ev_open() then return 'not_open'; end if;
   if auth.uid() is null then return 'no_session'; end if;
   perform 1 from public.events where id = p_event for update;
   if not found then return 'not_found'; end if;
@@ -344,6 +346,7 @@ declare
   a         record;
   q         jsonb;
 begin
+  if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   if me is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
   if not public.has_account() then return jsonb_build_object('ok', false, 'reason', 'need_account'); end if;
   if jsonb_typeof(v_opts) <> 'object' then v_opts := '{}'::jsonb; end if;
@@ -445,6 +448,7 @@ declare
   r       public.ev_registrations;
   v_was   boolean;
 begin
+  if not public._ev_open() then return 'not_open'; end if;
   if me is null then return 'no_session'; end if;
   perform 1 from public.events where id = p_event for update;
   if not found then return 'not_found'; end if;
@@ -475,7 +479,9 @@ declare
   v_event uuid;
   r       public.ev_registrations;
   v_was   boolean;
+  v_paid  boolean := false;
 begin
+  if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   if auth.uid() is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
   if p_action is null or p_action not in ('approve', 'decline') then return jsonb_build_object('ok', false, 'reason', 'bad_action'); end if;
   select event_id into v_event from public.ev_registrations where id = p_registration;
@@ -496,6 +502,13 @@ begin
     perform public._ev_renumber_waitlist(v_event);
   else
     if r.status = 'checked_in' then return jsonb_build_object('ok', false, 'reason', 'already_checked_in'); end if;
+    -- A registration that holds a paid order is not declined: the host refunds the order (events_r1_pay.sql), which gives the seats back.
+    -- (Declining would void the paid tickets and keep the money.) The orders table comes with the pay file, which may not be loaded yet.
+    if to_regclass('public.ev_orders') is not null then
+      execute 'select exists (select 1 from public.ev_orders o where o.event_id = $1 and o.buyer_id = $2 and o.status in (''paid'', ''refund_pending''))'
+        into v_paid using v_event, r.user_id;
+      if v_paid then return jsonb_build_object('ok', false, 'reason', 'paid_use_refund'); end if;
+    end if;
     if r.status not in ('cancelled', 'declined') then
       v_was := r.status = 'going';
       update public.ev_registrations set status = 'declined', waitlist_pos = null, updated_at = now() where id = r.id;
@@ -517,6 +530,7 @@ declare
   v_event uuid;
   r       public.ev_registrations;
 begin
+  if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   if auth.uid() is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
   select event_id into v_event from public.ev_registrations where id = p_registration;
   if v_event is null then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
@@ -610,7 +624,8 @@ begin
   end if;
 
   return jsonb_build_object(
-    'signedIn', me is not null,
+    -- A guest (the app's anonymous session) has an auth.uid() but no account: not signed in, so the screens open the sign-in sheet.
+    'signedIn', me is not null and public.has_account(),
     'isHost', v_host,
     'interested', me is not null and exists (select 1 from public.swipes s where s.user_id = me and s.event_id = p_event and s.decision = 'in'),
     'registration', case when v_active then public._ev_reg_json(r) else null end,

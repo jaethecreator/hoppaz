@@ -57,6 +57,7 @@ function mapOrder(j: Row): Order {
     checkout_url: (j.checkout_url as string | null) ?? null,
     needs_refund: !!j.needs_refund,
     needs_manual_refund: !!j.needs_manual_refund,
+    refund_reason: j.refund_reason === "late" || j.refund_reason === "failed" ? j.refund_reason : null,
   };
 }
 
@@ -126,7 +127,7 @@ export const pay: PayApi = {
     const code = await rpc<string | null>("ev_pay_mark_manual_refund", { p_order: orderId(id) });
     if (code !== "ok") {
       throw new Error(
-        ({ no_session: "Sign in first", not_found: "Order not found", not_allowed: "Not allowed", nothing_to_mark: "Nothing to mark" } as Record<string, string>)[String(code)] ??
+        ({ no_session: "Sign in first", not_found: "Order not found", not_allowed: "Not allowed", nothing_to_mark: "Nothing to mark", not_open: "Not open yet" } as Record<string, string>)[String(code)] ??
           "That did not work. Try again"
       );
     }

@@ -1,7 +1,7 @@
 /** Real events: ev_list_events, ev_get_event, ev_create_event and friends (supabase/events_r1_events.sql, events_r1_registrations.sql). */
 import type { EventsApi } from "../api";
 import type { R1Event, ViewerState } from "../types";
-import { client, emit, rpc, rpcOk, rpcText, subscribe, userId } from "./core";
+import { client, emit, ready, rpc, rpcOk, rpcText, subscribe, userId, who } from "./core";
 import { cleanQuestions, mapEvent, mapRegistration } from "./map";
 import { eventIdOf, roomIdOf } from "./ids";
 
@@ -81,7 +81,9 @@ export const events: EventsApi = {
   async viewerState(id) {
     const j = await rpc<Record<string, unknown> | null>("ev_viewer_state", { p_event: await eventIdOf(id) });
     if (!j) throw new Error("Event not found");
-    return { ...(j as unknown as ViewerState), registration: j.registration ? mapRegistration(j.registration) : null };
+    // A guest (the app's anonymous session) has an auth.uid() but no account: the database says signedIn false for them, and so do we.
+    await ready();
+    return { ...(j as unknown as ViewerState), signedIn: j.signedIn === true && who() !== null, registration: j.registration ? mapRegistration(j.registration) : null };
   },
 
   async getRegistrationSettings(id) {

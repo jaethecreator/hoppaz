@@ -4,6 +4,8 @@
 -- Ends with ALL EVENTS R1 TICKETS TESTS PASSED.
 --   docker exec -i supabase_db_hoppaz-local psql -U postgres -d <a throwaway hoppaz_ev_ database> -q -v ON_ERROR_STOP=1 < supabase/tests/events_r1_tickets_test.sql
 begin;
+-- Release 1 is switched on for the test (rolled back with everything else). The "off" cases switch it off again inside the test.
+select public.ev_set_setting('events_r1', 'on');
 -- pgcrypto is in the extensions schema on Supabase; the check of the signature below uses hmac() directly.
 set local search_path = public, extensions;
 create function pg_temp.ok(v boolean, label text) returns void language plpgsql as $$
@@ -249,6 +251,38 @@ begin
   perform pg_temp.ok(pg_temp.scan(h, e2, code) ->> 'reason' = 'void', 'a cancelled event: every scan is void');
   perform pg_temp.ok((select count(*) from public.ev_scans where event_id = e1 and result = 'not_valid') >= 8 and (select count(*) from public.ev_scans where event_id = e1 and result = 'checked_in') = 2,
                      'every scan, good or bad, is in the log');
+
+  -- A HIDDEN event (three reports, or staff) still scans and checks in: hidden is for the lists, it never shuts a door.
+  e3 := pg_temp.ev(h, 'Hidden door night');
+  perform pg_temp.reg(a, e3); perform pg_temp.reg(b, e3);
+  tok := pg_temp.mine(a, e3) ->> 'token';
+  code := pg_temp.mine(b, e3) ->> 'code';
+  update public.events set status = 'hidden' where id = e3;
+  r := pg_temp.scan(h, e3, tok, 'express');
+  perform pg_temp.ok((r ->> 'ok')::boolean and r ->> 'kind' = 'checked_in', 'a hidden event: the QR scan still checks the person in');
+  r := pg_temp.j(h, format('select public.ev_checkin_manual(%L, %L)', e3, pg_temp.rid(e3, b)));
+  perform pg_temp.ok((r ->> 'ok')::boolean and r ->> 'kind' = 'checked_in', 'a hidden event: the manual check in works');
+  r := pg_temp.j(h, format('select public.ev_door_counts(%L)', e3));
+  perform pg_temp.ok((r ->> 'ok')::boolean and (r ->> 'going')::int = 2 and (r ->> 'checked_in')::int = 2, 'a hidden event: the door counts work');
+  update public.events set status = 'cancelled' where id = e3;
+  update public.events set status = 'live' where id = e3;
+  perform pg_temp.reg(c, e3);
+  code := pg_temp.mine(c, e3) ->> 'code';
+  update public.events set status = 'cancelled' where id = e3;
+  perform pg_temp.ok(pg_temp.scan(h, e3, code) ->> 'reason' = 'void', 'while a cancelled event still refuses every scan');
+
+  -- The switch: with events_r1 off the door keeps working (a ticket already sold must scan), door staff cannot be added, no new ticket is made.
+  e3 := pg_temp.ev(h, 'Switch door night');
+  perform pg_temp.reg(a, e3); perform pg_temp.reg(b, e3);
+  tok := pg_temp.mine(a, e3) ->> 'token';
+  delete from public.ev_tickets where registration_id = pg_temp.rid(e3, b);
+  perform public.ev_set_setting('events_r1', 'off');
+  r := pg_temp.scan(h, e3, tok, 'express');
+  perform pg_temp.ok((r ->> 'ok')::boolean and r ->> 'kind' = 'checked_in', 'events_r1 off: the door still scans a ticket already sold');
+  perform pg_temp.ok(pg_temp.mine(b, e3) is null and (select count(*) from public.ev_tickets where registration_id = pg_temp.rid(e3, b)) = 0, 'events_r1 off: a going person with no ticket yet is not issued one by looking');
+  perform pg_temp.ok(pg_temp.t(h, format('select public.ev_set_door_staff(%L, %L, true)', e3, c)) = 'not_open', 'events_r1 off: adding door staff answers not_open');
+  perform public.ev_set_setting('events_r1', 'on');
+  perform pg_temp.ok(pg_temp.mine(b, e3) is not null, 'events_r1 on: the ticket is made when they look');
 
   -- Ticket types: the ticket carries the type and its name.
   ety := pg_temp.ev(h, 'Typed night');

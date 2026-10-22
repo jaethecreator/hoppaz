@@ -31,7 +31,7 @@ const { bachsRequest, BachsError, guardRequest } = await import("../src/lib/bach
 const api = await import("../src/lib/bachs/api.ts");
 const { routeBachsEvent } = await import("../src/lib/bachs/webhookRouter.ts");
 const { handleWebhook } = await import("../src/lib/bachs/webhook.ts");
-const { startRefund } = await import("../src/lib/bachs/refunds.ts");
+const { startRefund, reconcileRefund } = await import("../src/lib/bachs/refunds.ts");
 const { makeDb } = await import("./bachs-stub-db.mts");
 
 let pass = 0;
@@ -176,6 +176,20 @@ await test("guard: a charge without a valid X-Account-Id never leaves the buildi
   await throws(() => api.createCheckout({ ...base, platformFeeKobo: 500000 }, { config, fetchImpl: f.impl, log: quiet }), /below the gross/, "fee equal to gross");
   eq(f.calls.length, 0, "no request was sent");
   guardRequest("GET", "/v1/accounts/me", undefined); // a GET without an account is allowed (platform calls)
+});
+await test("guard: refunds and balances name the host too, whatever the method", async () => {
+  const f = fakeFetch([{ status: 200, body: {} }]);
+  const d = { config, fetchImpl: f.impl, log: quiet, sleep: async () => {} };
+  await throws(() => bachsRequest("POST", "/v1/refunds", { body: {}, idempotencyKey: "k" }, d), /needs X-Account-Id/, "refund without account");
+  await throws(() => bachsRequest("GET", "/v1/refunds/rfnd_1", {}, d), /needs X-Account-Id/, "reading a refund without account");
+  await throws(() => bachsRequest("GET", "/v1/balances", {}, d), /needs X-Account-Id/, "balances without account");
+  await throws(() => api.getAvailableNairaKobo("", d), /X-Account-Id/, "balances with an empty account");
+  await throws(() => api.getRefund("rfnd_1", "org_nope", d), /X-Account-Id/, "a bad account id");
+  await throws(() => api.createRefund({ chargeId: "ch_1", reference: "rf_1", idempotencyKey: "k", accountId: undefined as never }, d), /needs X-Account-Id/, "createRefund with no account at all");
+  eq(f.calls.length, 0, "nothing was sent");
+  guardRequest("GET", "/v1/platform_fees", undefined); // platform calls without a host stay allowed
+  await api.getRefund("rfnd_1", ACCT, d);
+  eq(f.calls[0].headers["X-Account-Id"], ACCT, "with the account it goes");
 });
 await test("createCheckout: sends the direct-charge request Bachs expects", async () => {
   const f = fakeFetch([{ status: 201, body: { checkout_id: "chk_1", checkout_url: "https://c.test/x", status: "open" } }]);
@@ -424,6 +438,80 @@ await test("refund: Bachs refusing puts the order back to owed (refund_apply fai
   eq(r, { ok: false, reason: "insufficient_host_balance" }, "reason");
   ok(db.log.includes("refund_apply null rf_ord1 failed"), "restored");
 });
+const balanceOk = { status: 200, body: { balances: [{ currency: "NGN", available_balance: "9350.00" }] } };
+await test("refund: a timeout or 5xx is an UNKNOWN outcome: nothing is undone, the try is recorded, the order is not put back to paid", async () => {
+  for (const bad of [{ status: 0, throws: true }, { status: 503, body: {} }]) {
+    const f = fakeFetch([balanceOk, bad]);
+    const db = makeDb({ status: "paid", method: "card", charge: "ch_1" });
+    const r = await startRefund(db as never, { orderId: "ord-1", actor: "u9" }, { config, fetchImpl: f.impl, log: quiet, sleep: async () => {} }, quiet);
+    eq(r, { ok: true, method: "card", status: "refund_pending", orderId: "ord-1", unconfirmed: true }, "pending, unconfirmed");
+    ok(!db.log.some((l) => l.includes("failed")), `refund_apply failed must not be called: ${db.log.join(" | ")}`);
+    ok(db.log.some((l) => l.startsWith("refund_attempt rf_ord1")), "the attempt is recorded");
+    eq(db.order.status, "refund_pending", "the order stays refund_pending");
+    const posts = f.calls.filter((c) => c.method === "POST");
+    ok(posts.length >= 1 && posts.every((c) => c.headers["Idempotency-Key"] === "refund:rf_ord1"), "every send used the same key");
+  }
+});
+await test("refund: timeout, then refund.paid arrives: the refund is paid, never failed", async () => {
+  const f = fakeFetch([balanceOk, { status: 0, throws: true }]);
+  const db = makeDb({ status: "paid", method: "card", charge: "ch_1" });
+  await startRefund(db as never, { orderId: "ord-1", actor: "u9" }, { config, fetchImpl: f.impl, log: quiet, sleep: async () => {} }, quiet);
+  const res = await routeBachsEvent({ id: "evt_rp", type: "refund.paid", data: { refund_id: "rfnd_7", reference: "rf_ord1" } } as never, db as never, {}, quiet);
+  eq(res.action, "refund_paid", "routed as paid");
+  ok(db.log.includes("refund_apply rfnd_7 rf_ord1 paid") && !db.log.some((l) => l.endsWith(" failed")), `log: ${db.log.join(" | ")}`);
+});
+await test("refund: timeout, then the sweeper retries with the SAME reference and the SAME idempotency key (never a new one)", async () => {
+  const db = makeDb({ status: "paid", method: "card", charge: "ch_1" });
+  const g = fakeFetch([{ status: 201, body: { refund_id: "rfnd_9", status: "processing" } }]);
+  const pending = { orderId: "ord-1", reference: "rf_ord1", bachsRefundId: null, chargeId: "ch_1", hostAccount: ACCT, attempts: 1 };
+  eq(await reconcileRefund(db as never, pending, { config, fetchImpl: g.impl, log: quiet, sleep: async () => {} }, quiet), "processing", "answered");
+  const c = g.calls[0];
+  const body = JSON.parse(c.body!);
+  eq([c.method, c.url.endsWith("/v1/refunds"), c.headers["Idempotency-Key"], c.headers["X-Account-Id"], body.reference, body.charge_id], ["POST", true, "refund:rf_ord1", ACCT, "rf_ord1", "ch_1"], "same reference, same key, as the host");
+  ok(db.log.includes("refund_apply rfnd_9 rf_ord1 processing"), "recorded with the id Bachs gave");
+  // Still no answer: recorded again, still pending.
+  const h = fakeFetch([{ status: 502, body: {} }]);
+  eq(await reconcileRefund(db as never, pending, { config, fetchImpl: h.impl, log: quiet, sleep: async () => {} }, quiet), "unknown", "no answer");
+  ok(db.log.filter((l) => l.startsWith("refund_attempt rf_ord1")).length === 1 && !db.log.some((l) => l.endsWith(" failed")), "attempt recorded, nothing undone");
+  // A retry that Bachs REFUSES for another reason (for example "already refunded") does not undo anything: the first try may have gone through.
+  const k = fakeFetch([{ status: 400, body: { error_code: "VALIDATION_ERROR", detail: "charge already refunded" } }]);
+  eq(await reconcileRefund(db as never, pending, { config, fetchImpl: k.impl, log: quiet, sleep: async () => {} }, quiet), "unknown", "a refusal on a retry is still unknown");
+  ok(!db.log.some((l) => l.endsWith(" failed")), "and still nothing undone");
+  // Only INSUFFICIENT_BALANCE is a sure no, even on a retry.
+  const m = fakeFetch([{ status: 400, body: { error_code: "INSUFFICIENT_BALANCE", detail: "Insufficient balance to refund" } }]);
+  eq(await reconcileRefund(db as never, pending, { config, fetchImpl: m.impl, log: quiet, sleep: async () => {} }, quiet), "failed", "insufficient balance on a retry");
+  ok(db.log.includes("refund_apply null rf_ord1 failed"), "that one restores the order");
+});
+await test("refund: the sweeper asks Bachs by refund id when it has one (GET /v1/refunds/{id} as the host)", async () => {
+  const db = makeDb({ status: "paid", method: "card", charge: "ch_1" });
+  const pending = { orderId: "ord-1", reference: "rf_ord1", bachsRefundId: "rfnd_5", chargeId: "ch_1", hostAccount: ACCT, attempts: 2 };
+  const paid = fakeFetch([{ status: 200, body: { refund_id: "rfnd_5", status: "paid" } }]);
+  eq(await reconcileRefund(db as never, pending, { config, fetchImpl: paid.impl, log: quiet }, quiet), "paid", "paid");
+  eq([paid.calls[0].method, paid.calls[0].url.endsWith("/v1/refunds/rfnd_5"), paid.calls[0].headers["X-Account-Id"]], ["GET", true, ACCT], "a GET as the host, no POST");
+  ok(db.log.includes("refund_apply rfnd_5 rf_ord1 paid"), "recorded paid");
+  const failed = fakeFetch([{ status: 200, body: { refund_id: "rfnd_5", status: "failed" } }]);
+  eq(await reconcileRefund(db as never, pending, { config, fetchImpl: failed.impl, log: quiet }, quiet), "failed", "Bachs says failed");
+  const still = fakeFetch([{ status: 200, body: { refund_id: "rfnd_5", status: "processing" } }]);
+  eq(await reconcileRefund(db as never, pending, { config, fetchImpl: still.impl, log: quiet }, quiet), "processing", "still processing");
+  const down = fakeFetch([{ status: 500, body: {} }]);
+  eq(await reconcileRefund(db as never, pending, { config, fetchImpl: down.impl, log: quiet, sleep: async () => {} }, quiet), "unknown", "Bachs down");
+});
+await test("refund: a definite Bachs refusal on the first try (400 bad request) undoes it; the 502 text no longer says the tickets stay void", async () => {
+  const f = fakeFetch([balanceOk, { status: 400, body: { error_code: "VALIDATION_ERROR", detail: "bad request" } }]);
+  const db = makeDb({ status: "paid", method: "card", charge: "ch_1" });
+  eq(await startRefund(db as never, { orderId: "ord-1", actor: "u9" }, { config, fetchImpl: f.impl, log: quiet }, quiet), { ok: false, reason: "bachs_refused" }, "refused");
+  ok(db.log.includes("refund_apply null rf_ord1 failed"), "restored");
+  const src = (await import("node:fs")).readFileSync(new URL("../src/app/api/events-r1/pay/refund/route.ts", import.meta.url), "utf8");
+  ok(!/bachs_refused: \[.*stay void/.test(src) && /bachs_refused: \[502, ".*valid again/.test(src), "the misleading text is gone");
+});
+await test("router: collection.succeeded that says card for a payment held as a manual refund hands it to the automatic card refund", async () => {
+  const db = makeDb({ status: "paid", method: "card", charge: "ch_1", needs_refund: true });
+  db.orderDetails = async () => ({ ok: true, order_id: "ord-1", refund_by_card: true });
+  const f = fakeFetch([balanceOk, { status: 201, body: { refund_id: "rfnd_3", status: "processing" } }]);
+  const r = await routeBachsEvent({ id: "evt_s1", type: "collection.succeeded", account: ACCT, data: { checkout_id: "chk_1", charge_id: "ch_1", payment_method_details: { type: "card" } } } as never, db as never, { config, fetchImpl: f.impl, log: quiet }, quiet);
+  eq(r.action, "details_saved_refund_card", "routed");
+  ok(db.log.some((l) => l.startsWith("refund_start ord-1")) && db.log.includes("refund_apply rfnd_3 rf_ord1 processing"), `log: ${db.log.join(" | ")}`);
+});
 await test("refund: a stranger is refused before Bachs or the database is asked", async () => {
   const db = makeDb({ status: "paid", method: "card", charge: "ch_1" });
   db.canRefund = async () => false;
@@ -477,6 +565,15 @@ await test("routes: no session is 401, a foreign Origin is 403, bad input is 400
   }
   eq((await quoteRoute.POST(post(url + "quote", { eventId: "x" }))).status, 400, "quote bad input");
   eq((await quoteRoute.POST(post(url + "quote", { eventId: UID, ticketTypeId: UID, quantity: 9 }))).status, 400, "quote quantity 9");
+});
+await test("onboarding refresh link: it lives 15 minutes, not days", async () => {
+  const { REFRESH_MINUTES, refreshValid: valid } = await import("../src/lib/bachs/http.ts");
+  eq(REFRESH_MINUTES, 15, "lifetime in minutes");
+  const now = Math.floor(Date.now() / 1000);
+  const fresh = now + REFRESH_MINUTES * 60;
+  ok(valid(UID, "/x", fresh, signRefresh(UID, "/x", fresh)), "valid inside the window");
+  ok(!valid(UID, "/x", now - 1, signRefresh(UID, "/x", now - 1)), "invalid right after it");
+  ok(!valid(UID, "/x", fresh, signRefresh(UID, "/y", fresh)), "and bound to its return path");
 });
 await test("route onboard refresh: a bad or expired signed link goes back to the site, never to Bachs", async () => {
   const exp = Math.floor(Date.now() / 1000) + 3600;

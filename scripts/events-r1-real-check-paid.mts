@@ -11,7 +11,8 @@ import { createServer } from "node:http";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Ctx = any;
 
-const MOCK = "http://127.0.0.1:3415";
+// 3415 unless MOCK_PORT says otherwise (another project may hold 3415: then start the mock with PORT=<free port> and run this with the same MOCK_PORT).
+const MOCK = `http://127.0.0.1:${process.env.MOCK_PORT || 3415}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function run(c: Ctx) {

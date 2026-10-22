@@ -165,6 +165,7 @@ export function completeCheckout(orderId: string, method: PayMethod): Order {
   else {
     o.needs_refund = method === "card";
     o.needs_manual_refund = method === "bank_transfer";
+    o.refund_reason = "late"; // the only way here is a payment that landed after the hold, with no seat left
   }
   emit();
   return view(o, false);

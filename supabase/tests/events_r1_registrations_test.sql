@@ -8,6 +8,8 @@
 -- unique (event_id, user_id). To see it with real sessions, run two psql sessions that each call ev_register for the last place of
 -- the same event with a begin; and no commit, and watch the second one wait.
 begin;
+-- Release 1 is switched on for the test (rolled back with everything else). The "off" cases switch it off again inside the test.
+select public.ev_set_setting('events_r1', 'on');
 create function pg_temp.ok(v boolean, label text) returns void language plpgsql as $$
 begin
   if v is not true then raise exception 'FAILED: %', label; end if;
@@ -303,7 +305,10 @@ begin
   ex := pg_temp.ev(h, 'Cancelled soon'); update public.events set status = 'cancelled' where id = ex;
   perform pg_temp.ok(pg_temp.reg(a, ex) ->> 'reason' = 'cancelled' and pg_temp.vs(a, ex) ->> 'button' = 'closed', 'a cancelled event: cancelled, and the button is closed');
   ex := pg_temp.ev(h, 'Paid one'); update public.events set price_naira = 5000 where id = ex;
-  perform pg_temp.ok(pg_temp.reg(a, ex) ->> 'reason' = 'currently_unavailable' and pg_temp.vs(a, ex) ->> 'button' = 'get_ticket', 'an old paid event (derived paid General): refused with currently_unavailable, and the button is get_ticket');
+  perform pg_temp.ok(pg_temp.vs(a, ex) ->> 'button' = 'register', 'an old listing with a door price of 5000: the button is register');
+  r := pg_temp.reg(a, ex);
+  perform pg_temp.ok((r ->> 'ok')::boolean and (select price_naira from public.ev_ticket_types where event_id = ex) = 0,
+                     'an old listing with a door price of 5000 has a FREE derived General: the button is register, and registering works (the door price is information only)');
   ex := pg_temp.ev(h, 'Hidden one'); update public.events set status = 'hidden' where id = ex;
   perform pg_temp.ok(pg_temp.reg(a, ex) ->> 'reason' = 'not_found' and pg_temp.vs(a, ex) is null, 'a hidden event cannot be registered for or opened');
   insert into public.crews (id, name, created_by, visibility) values (room, 'Reg Room', h, 'open');
@@ -435,6 +440,32 @@ begin
   r := pg_temp.reg(x, ey);
   perform pg_temp.ok(r -> 'registration' ->> 'status' = 'waitlisted' and r -> 'registration' ->> 'ticket_name' = 'Free', 'and registering with no type waits for the first free type');
   perform pg_temp.ok(not has_table_privilege('authenticated', 'public.ev_ticket_types', 'select') and not has_table_privilege('authenticated', 'public.ev_registrations', 'update'), 'the type and registration tables are still closed');
+
+  -- A guest (the app's anonymous session) is not signed in: the screens must open the sign-in sheet. Nobody at all is not signed in either.
+  e1 := pg_temp.ev(h, 'Guest button');
+  perform pg_temp.ok((pg_temp.vs(a, e1) ->> 'signedIn')::boolean, 'viewer state: a person with an account is signedIn');
+  perform pg_temp.ok(not (pg_temp.vs(g, e1) ->> 'signedIn')::boolean and pg_temp.vs(g, e1) ->> 'button' = 'register', 'viewer state: a guest session (auth.uid() but no account) is NOT signedIn');
+  perform pg_temp.anon();
+  r := public.ev_viewer_state(e1);
+  perform pg_temp.admin();
+  perform pg_temp.ok(not (r ->> 'signedIn')::boolean, 'viewer state: no session at all is not signedIn');
+  perform pg_temp.ok(pg_temp.reg(g, e1) ->> 'reason' = 'need_account', 'and a guest who registers anyway is told need_account');
+
+  -- The switch: with events_r1 off every write answers not_open and changes nothing; reads still work.
+  e2 := pg_temp.ev(h, 'Switch test', 1, false, true);
+  perform pg_temp.reg(a, e2);
+  perform pg_temp.reg(b, e2);
+  perform pg_temp.ok(pg_temp.st(e2, b) = 'waitlisted', 'switch test setup: a is going, b is waitlisted');
+  perform public.ev_set_setting('events_r1', 'off');
+  perform pg_temp.ok(pg_temp.reg(c, e2) ->> 'reason' = 'not_open' and pg_temp.st(e2, c) is null, 'events_r1 off: register answers not_open and writes nothing');
+  perform pg_temp.ok(pg_temp.cancel(a, e2) = 'not_open' and pg_temp.st(e2, a) = 'going', 'events_r1 off: cancel answers not_open');
+  perform pg_temp.ok(pg_temp.decide(h, pg_temp.rid(e2, b), 'decline') ->> 'reason' = 'not_open' and pg_temp.st(e2, b) = 'waitlisted', 'events_r1 off: decide answers not_open');
+  perform pg_temp.ok(pg_temp.j(h, format('select public.ev_promote(%L)', pg_temp.rid(e2, b))) ->> 'reason' = 'not_open', 'events_r1 off: promote answers not_open');
+  perform pg_temp.ok(pg_temp.t(h, format('select public.ev_set_registration_settings(%L, %L::jsonb)', e2, '{"messages":{"going":"Hi"}}')) = 'not_open', 'events_r1 off: registration settings answer not_open');
+  perform pg_temp.ok(pg_temp.vs(a, e2) ->> 'button' = 'going' and pg_temp.j(a, format('select public.ev_audience(%L)', e2)) ->> 'reason' = 'not_allowed' and
+                     (pg_temp.j(h, format('select public.ev_audience(%L)', e2)) ->> 'ok')::boolean, 'events_r1 off: reads (viewer state, audience) keep working');
+  perform public.ev_set_setting('events_r1', 'on');
+  perform pg_temp.ok(pg_temp.cancel(a, e2) = 'ok' and pg_temp.st(e2, b) = 'going', 'events_r1 on again: it all works');
 
   -- Access.
   for f in select p.oid, p.oid::regprocedure as sig, p.proname as name

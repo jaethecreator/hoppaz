@@ -22,6 +22,9 @@ registerHooks({
 
 const { fakeApi: api, fakeDev } = await import("../src/lib/events-r1/fake/index.ts");
 
+const { icsEscape } = await import("../src/components/events-r1/page/icsEscape.ts");
+const { eventPageUrl, siteOrigin } = await import("../src/lib/events-r1/siteUrl.ts");
+const { roomCopyAllowed } = await import("../src/lib/events-r1/popRoom.ts");
 const { paidTicketsOn } = await import("../src/lib/events-r1/flags.ts");
 const { platformFeeNaira, processingFeeNaira } = await import("../src/lib/events-r1/payFee.ts");
 const { PAID_UNAVAILABLE } = await import("../src/lib/events-r1/constants.ts");
@@ -312,7 +315,7 @@ await test("Pops are one way: an event Pop reaches the room, a room announcement
   ok(seen.includes("Bring water please"), "the Pop shows on the event for a going person");
   ok(!seen.includes("Plain room note"), "plain note not on the event (guest)");
   as("Lagos Run Club");
-  eq(await api.pops.shareText(pop.id), `Bring water please\n\nhttps://hoppaz.fun/e/${ev.slug}`, "share text");
+  eq(await api.pops.shareText(pop.id), `Bring water please\n\nhttps://hoppaz.fun/event/${ev.slug}`, "share text");
   await rejects(api.pops.send({ eventId: ev.id, body: "  ", audience: "going", alsoRoom: false }), "Write a message first", "empty Pop");
 });
 
@@ -1294,6 +1297,99 @@ await test("seeded paid event Afro Beach is buyable once the switch is on, and c
     await api.pay.checkout(mixed.id, mixed.ticket_types[1].id, 2);
     await newPerson();
     await rejects(api.registrations.register(mixed.id, { ticketTypeId: mixed.ticket_types[0].id }), "This event is full", "held seats fill the event for free tickets too");
+  });
+});
+
+/* ---------------------------------------------------- review fixes (UI) -- */
+
+await test("share links use <site>/event/<slug>, never /e/", async () => {
+  const was = process.env.NEXT_PUBLIC_SITE_URL;
+  try {
+    delete process.env.NEXT_PUBLIC_SITE_URL;
+    eq(siteOrigin(), "https://hoppaz.fun", "fallback with no window");
+    process.env.NEXT_PUBLIC_SITE_URL = "https://staging.hoppaz.test/";
+    eq(siteOrigin(), "https://staging.hoppaz.test", "env wins, no trailing slash");
+    eq(eventPageUrl({ slug: "open-mic-3fa", id: "x" }), "https://staging.hoppaz.test/event/open-mic-3fa", "slug link");
+    eq(eventPageUrl({ slug: "", id: "abc" }), "https://staging.hoppaz.test/event/abc", "id when there is no slug");
+  } finally {
+    if (was === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = was;
+  }
+  const ev = await kredeteEvent();
+  const text = await api.pops.shareText((await api.pops.send({ eventId: ev.id, body: "Hello", audience: "going", alsoRoom: false })).id);
+  ok(text.includes(`/event/${ev.slug}`) && !text.includes("/e/"), `Pop share text: ${text}`);
+});
+
+await test(".ics text escapes backslash, semicolon, comma and every line break", async () => {
+  eq(icsEscape("a;b,c\\d"), "a\\;b\\,c\\\\d", "semicolon, comma, backslash");
+  eq(icsEscape("one\r\ntwo\rthree\nfour"), "one\\ntwo\\nthree\\nfour", "CRLF, CR and LF");
+  eq(icsEscape("Plain text"), "Plain text", "plain text is left alone");
+});
+
+await test("Pops: an invite only event never copies to the room; a community event only for going or everyone", async () => {
+  eq([roomCopyAllowed("invite", "going"), roomCopyAllowed("invite", "everyone")], [false, false], "invite");
+  eq([roomCopyAllowed("community", "going"), roomCopyAllowed("community", "everyone"), roomCopyAllowed("community", "pending"), roomCopyAllowed("community", "waitlist")], [true, true, false, false], "community");
+  eq(roomCopyAllowed("public", "pending"), true, "public is unchanged");
+
+  const inv = await kredeteEvent({ visibility: "invite" });
+  ok(inv.room_id, "the invite event sits in the room");
+  const before = (await api.rooms.announcements(inv.room_id!)).length;
+  eq((await api.pops.send({ eventId: inv.id, body: "Gate code 4411", audience: "going", alsoRoom: true })).also_room, false, "not marked");
+  const at = new Date(Date.now() + HOUR).toISOString();
+  await api.pops.send({ eventId: inv.id, body: "Gate code later", audience: "going", alsoRoom: true, sendAt: at });
+  fakeDev.advance(2 * HOUR);
+  eq((await api.rooms.announcements(inv.room_id!)).length, before, "nothing reached the room, now or when scheduled");
+
+  const com = await kredeteEvent({ visibility: "community" });
+  const cBefore = (await api.rooms.announcements(com.room_id!)).length;
+  eq((await api.pops.send({ eventId: com.id, body: "For pending", audience: "pending", alsoRoom: true })).also_room, false, "pending: not copied");
+  eq((await api.pops.send({ eventId: com.id, body: "For going", audience: "going", alsoRoom: true })).also_room, true, "going: copied");
+  eq((await api.rooms.announcements(com.room_id!)).length, cBefore + 1, "one copy");
+});
+
+await test("decline: a paid registration cannot be declined (use Refund); a free one can", async () => {
+  await withPaid(true, async () => {
+    const ev = await paidEvent(1500);
+    const o = await buy(ev, 1);
+    fakeDev.completeCheckout(o.order_id, "card");
+    as("Kredete");
+    const reg = (await api.registrations.list(ev.id))[0];
+    await rejects(api.registrations.decline(reg.id), "This ticket was paid for. Use Refund instead.", "paid decline");
+    eq((await api.registrations.list(ev.id))[0].status, "going", "still going");
+    await api.pay.refund(o.order_id);
+    await api.registrations.decline(reg.id); // the refund voided the tickets: nothing is left to refuse
+  });
+  const free = await kredeteEvent({ requires_approval: true });
+  await newPerson();
+  await api.registrations.register(free.id);
+  as("Kredete");
+  const r = (await api.registrations.list(free.id))[0];
+  eq((await api.registrations.decline(r.id)).status, "declined", "free request declined");
+});
+
+await test("reports: a hidden event still scans at the door, and an event with paid orders is never hidden", async () => {
+  const report3 = async (id: string) => {
+    for (let i = 0; i < 3; i++) {
+      await newPerson();
+      await api.reports.report(id, "wrong_place", `Report ${i}`);
+    }
+  };
+  const ev = await kredeteEvent();
+  await newPerson();
+  await api.registrations.register(ev.id);
+  const [t] = await api.registrations.ticketsFor(ev.id);
+  await report3(ev.id);
+  eq((await api.events.list()).some((e) => e.id === ev.id), false, "hidden from lists");
+  as("Kredete");
+  const scan = await api.door.scan(ev.id, t.token, "express");
+  eq([scan.ok, scan.ok && scan.kind], [true, "checked_in"], "the door still scans");
+
+  await withPaid(true, async () => {
+    const paid = await paidEvent(1000);
+    const o = await buy(paid, 1);
+    fakeDev.completeCheckout(o.order_id, "card");
+    await report3(paid.id);
+    eq((await api.events.list()).some((e) => e.id === paid.id), true, "an event with a paid order stays listed");
   });
 });
 

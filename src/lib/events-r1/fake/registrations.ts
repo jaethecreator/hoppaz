@@ -44,6 +44,9 @@ function regById(id: string): Registration {
   return r;
 }
 
+/** A ticket that came from a paid order and is still good: the money was taken. */
+const holdsPaidTicket = (regId: string): boolean => Object.values(S().tickets).some((t) => t.reg_id === regId && t.order_id && t.status !== "void");
+
 /** The short code a door person types for a ticket: seat 1 uses the registration's code; the other seats use their own id. */
 export const ticketCode = (reg: Registration, t: TicketRec): string =>
   (t.seq ?? 1) <= 1 ? registrationCode(reg) : t.id.replace(/-/g, "").slice(0, 8).toUpperCase();
@@ -152,7 +155,7 @@ export const registrations: RegistrationsApi = {
     if (!e || !reg || reg.status === "cancelled") return;
     if (reg.status === "checked_in") throw new Error("You are already checked in");
     // A paid order is undone by a refund from the host, not by the buyer.
-    if (isGoing(reg.status) && Object.values(S().tickets).some((t) => t.reg_id === reg.id && t.order_id && t.status !== "void")) {
+    if (isGoing(reg.status) && holdsPaidTicket(reg.id)) {
       throw new Error("You paid for this ticket. Ask the host for a refund.");
     }
     const wasGoing = isGoing(reg.status);
@@ -184,6 +187,8 @@ export const registrations: RegistrationsApi = {
     const reg = regById(registrationId);
     const e = assertManage(S().events[reg.event_id]);
     if (reg.status === "cancelled" || reg.status === "declined") return clone(reg);
+    // Like the SQL (paid_use_refund): money was taken, so the way out is a refund, never a decline.
+    if (holdsPaidTicket(reg.id)) throw new Error("This ticket was paid for. Use Refund instead.");
     const wasGoing = isGoing(reg.status);
     reg.status = "declined";
     reg.waitlist_pos = null;

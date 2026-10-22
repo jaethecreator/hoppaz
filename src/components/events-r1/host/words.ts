@@ -77,4 +77,6 @@ export function countsOf(regs: Registration[] | null | undefined): Counts {
   return c;
 }
 
-export const errWord = (e: unknown, fallback = "That did not work. Try again.") => (e instanceof Error && e.message ? e.message : fallback);
+/** A raw "events are off" code from the server reads as "Not open yet"; any other message is already plain. */
+export const errWord = (e: unknown, fallback = "That did not work. Try again.") =>
+  e instanceof Error && e.message ? (/events?_r1_off|r1_off|not_open_yet/i.test(e.message) ? "Not open yet" : e.message) : fallback;

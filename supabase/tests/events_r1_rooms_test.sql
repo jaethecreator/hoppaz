@@ -4,6 +4,8 @@
 -- and events_r1_rooms.sql loaded. Ends with ALL EVENTS R1 ROOMS TESTS PASSED.
 --   docker exec -i supabase_db_hoppaz-local psql -U postgres -d <a throwaway hoppaz_ev_ database> -q -v ON_ERROR_STOP=1 < supabase/tests/events_r1_rooms_test.sql
 begin;
+-- Release 1 is switched on for the test (rolled back with everything else). The "off" cases switch it off again inside the test.
+select public.ev_set_setting('events_r1', 'on');
 create function pg_temp.ok(v boolean, label text) returns void language plpgsql as $$
 begin
   if v is not true then raise exception 'FAILED: %', label; end if;
@@ -328,6 +330,17 @@ begin
   perform pg_temp.ok(sres = 'ok' and not public.ev_room_3d_allowed(hq), 'and off');
   perform pg_temp.ok(pg_temp.t(st, format('select public.ev_set_room_3d(%L, false)', rdisc)) = 'not_allowed', 'but an owner who is not staff cannot touch other rooms');
   update public.profiles set is_admin = true where id = st;
+
+  -- The switch: with events_r1 off the 3D switch and the HQ join write nothing; reads work. (The desk, service role only, is not switched.)
+  perform public.ev_set_setting('events_r1', 'off');
+  perform pg_temp.ok(pg_temp.t(st, format('select public.ev_set_room_3d(%L, true)', room)) = 'not_open', 'events_r1 off: ev_set_room_3d answers not_open');
+  sres := pg_temp.svc(format('select public.ev_admin_set_room_3d(%L, true)', room));
+  perform pg_temp.ok(sres = '"ok"', 'events_r1 off: the staff desk route still works');
+  select count(*) into n from public.crew_members where crew_id = hq and user_id = x;
+  perform pg_temp.ok(pg_temp.j(x, 'select to_jsonb(public.ev_ensure_hq())') = to_jsonb(hq) and (select count(*) from public.crew_members where crew_id = hq and user_id = x) = n,
+                     'events_r1 off: ev_ensure_hq returns the HQ room and does not join anyone');
+  perform pg_temp.ok(pg_temp.j(a, 'select public.ev_rooms_for_me()') is not null, 'events_r1 off: the Roomz list still reads');
+  perform public.ev_set_setting('events_r1', 'on');
 
   -- The staff list.
   r := pg_temp.j(st, 'select public.ev_admin_rooms()');

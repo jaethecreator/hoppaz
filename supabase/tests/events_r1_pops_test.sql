@@ -4,6 +4,8 @@
 -- If Ola's own Pops tables replace this file, this test shows the shapes the front end expects from them.
 --   docker exec -i supabase_db_hoppaz-local psql -U postgres -d <a throwaway hoppaz_ev_ database> -q -v ON_ERROR_STOP=1 < supabase/tests/events_r1_pops_test.sql
 begin;
+-- Release 1 is switched on for the test (rolled back with everything else). The "off" cases switch it off again inside the test.
+select public.ev_set_setting('events_r1', 'on');
 create function pg_temp.ok(v boolean, label text) returns void language plpgsql as $$
 begin
   if v is not true then raise exception 'FAILED: %', label; end if;
@@ -270,6 +272,46 @@ begin
     perform pg_temp.ok(exists (select 1 from public.ev_pops where event_id = ec and auto = 'hour_before' and status = 'scheduled'
                                and abs(extract(epoch from (send_at - (now() + interval '6 days' - interval '1 hour')))) < 5), 'a switched-off automatic Pop follows the new start');
   end;
+
+  -- Invite only and community events: what may reach a room's Announcements.
+  ea := pg_temp.ev(h, 'Secret address party', now() + interval '2 days', room);
+  update public.events set visibility = 'invite' where id = ea;
+  perform pg_temp.reg(ea, a, 'going');
+  r := pg_temp.send(h, ea, 'Address is 12 X Street, gate code 4411');
+  perform pg_temp.ok((r ->> 'ok')::boolean and not (r -> 'pop' ->> 'also_room')::boolean, 'an invite only event: also_room is ignored (stored false) even though the host asked');
+  perform pg_temp.ok(not exists (select 1 from public.ev_announcement_event where event_id = ea) and not exists (select 1 from public.crew_announcements where body like '%gate code 4411%'),
+                     'an invite only Pop is never copied to the room');
+  perform pg_temp.ok(pg_temp.has(a, ea, 'Address is 12 X Street, gate code 4411'), 'but the people who are going still read it on the event page');
+  -- A copy that already exists (made before the rule) is hidden from the room, for members; staff still see it.
+  insert into public.crew_announcements (id, crew_id, author_id, body) values ('00000000-0000-4000-8000-0000000000a1', room, h, 'Old copy of an invite Pop');
+  insert into public.ev_announcement_event (announcement_id, event_id) values ('00000000-0000-4000-8000-0000000000a1', ea);
+  r := pg_temp.j(m, format('select public.ev_room_announcements(%L)', room));
+  perform pg_temp.ok(not exists (select 1 from jsonb_array_elements(r) q where q ->> 'body' like '%Old copy%' or q ->> 'event_title' = 'Secret address party'),
+                     'an older copy of an invite only Pop is not shown in the room: no title and no text');
+  -- Community: going and everyone are copied, pending and waitlist are not.
+  ec := pg_temp.ev(h, 'Community night', now() + interval '2 days', room);
+  update public.events set visibility = 'community' where id = ec;
+  perform pg_temp.reg(ec, a, 'going'); perform pg_temp.reg(ec, b, 'requested');
+  perform pg_temp.send(h, ec, 'Community going note', 'going', true);
+  perform pg_temp.send(h, ec, 'Community everyone note', 'everyone', true);
+  r := pg_temp.send(h, ec, 'Community pending note', 'pending', true);
+  perform pg_temp.ok(not (r -> 'pop' ->> 'also_room')::boolean, 'a community Pop for pending people: also_room is ignored');
+  perform pg_temp.send(h, ec, 'Community waitlist note', 'waitlist', true);
+  r := pg_temp.j(m, format('select public.ev_room_announcements(%L)', room));
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(r) q where q ->> 'body' = 'Community going note')
+                     and exists (select 1 from jsonb_array_elements(r) q where q ->> 'body' = 'Community everyone note')
+                     and not exists (select 1 from jsonb_array_elements(r) q where q ->> 'body' in ('Community pending note', 'Community waitlist note')),
+                     'a community event: Pops for going and everyone reach the room, pending and waitlist ones do not');
+
+  -- The switch: with events_r1 off every write answers not_open, and the dispatcher does nothing.
+  perform public.ev_set_setting('events_r1', 'off');
+  perform pg_temp.ok(pg_temp.send(h, e1, 'Sent while off') ->> 'reason' = 'not_open' and not exists (select 1 from public.ev_pops where body = 'Sent while off'), 'events_r1 off: send answers not_open');
+  perform pg_temp.ok(pg_temp.j(h, format('select public.ev_set_auto_pop(%L, %L, true)', e1, 'hour_before')) ->> 'reason' = 'not_open', 'events_r1 off: set auto Pop answers not_open');
+  perform pg_temp.ok(pg_temp.j(h, format('select public.ev_edit_auto_pop(%L, %L, %L)', e1, 'hour_before', 'x')) ->> 'reason' = 'not_open', 'events_r1 off: edit auto Pop answers not_open');
+  perform pg_temp.ok(pg_temp.j(h, format('select public.ev_cancel_pop(%L)', pid)) ->> 'reason' = 'not_open', 'events_r1 off: cancel Pop answers not_open');
+  perform pg_temp.ok(pg_temp.dispatch() = 0, 'events_r1 off: the dispatcher does nothing');
+  perform pg_temp.ok(jsonb_array_length(pg_temp.seen(a, e1)) >= 1, 'events_r1 off: reading Pops still works');
+  perform public.ev_set_setting('events_r1', 'on');
 
   -- Access.
   for f in select p.oid, p.oid::regprocedure as sig, p.proname as name

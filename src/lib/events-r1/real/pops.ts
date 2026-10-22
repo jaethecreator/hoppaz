@@ -2,6 +2,7 @@
 import type { PopsApi } from "../api";
 import type { Pop } from "../types";
 import { emit, rpc, rpcOk } from "./core";
+import { eventPageUrl } from "../siteUrl";
 import { eventIdOf } from "./ids";
 import { mapPop } from "./map";
 
@@ -56,7 +57,7 @@ export const pops: PopsApi = {
     const p = seen.get(popId);
     if (!p) throw new Error("Pop not found");
     const e = await rpc<{ slug?: string } | null>("ev_get_event", { p_id_or_slug: p.event });
-    return `${p.body}\n\nhttps://hoppaz.fun/e/${e?.slug ?? p.event}`;
+    return `${p.body}\n\n${eventPageUrl({ slug: e?.slug, id: p.event })}`;
   },
 
   async cancelScheduled(popId) {
