@@ -128,7 +128,12 @@ begin
   perform pg_temp.ok(res->'room'->>'template' = 'emergency-room' and (res->'room'->>'version')::int > 1, 'the owner picks the Emergency Room template');
   perform pg_temp.ok((select x = 15 and y = 17 from public.crew_room_presence where crew_id = crew and user_id = a), 'the walker is back at the new entrance');
   perform pg_temp.actor(b); res := public.crew_room_enter(crew, sb); perform pg_temp.admin();
-  perform pg_temp.ok(res->'room'->>'template' = 'emergency-room' and (res->'self'->>'x')::int = 15 and (res->'self'->>'y')::int = 17, 'a member enters at the entrance of the Emergency Room');
+  -- The owner already stands on the spawn tile, so the server puts the new walker on the nearest free tile beside it.
+  perform pg_temp.ok(res->'room'->>'template' = 'emergency-room'
+                     and abs((res->'self'->>'x')::int - 15) <= 2 and abs((res->'self'->>'y')::int - 17) <= 2
+                     and not ((res->'self'->>'x')::int = 15 and (res->'self'->>'y')::int = 17)
+                     and public._crew_room_walkable('emergency-room', 30, (res->'self'->>'x')::int, (res->'self'->>'y')::int),
+                     'a member enters on a free walkable tile beside the entrance of the Emergency Room');
   -- A member walks the lane from the gate towards the deck, one batch, then is turned back by the deck.
   perform pg_temp.place(crew, b, 15, 17);
   res := pg_temp.mv(b, crew, sb, 1, '[{"x":15,"y":16},{"x":15,"y":15},{"x":15,"y":14},{"x":15,"y":13}]');
