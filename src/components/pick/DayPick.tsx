@@ -45,6 +45,7 @@ export default function DayPick({
   onNext,
   onDay,
   onPickEvent,
+  r1 = false,
 }: {
   mode: "next" | "day";
   /** The picked day (a night key) while mode is "day". */
@@ -59,6 +60,8 @@ export default function DayPick({
   onNext: () => void;
   onDay: (date: string) => void;
   onPickEvent: (event: EventRow) => void;
+  /** Release 1 wording and day list. Only the Map asks for it; Events keeps its own look. */
+  r1?: boolean;
 }) {
   const [list, setList] = useState(false);
   const [cal, setCal] = useState(false);
@@ -125,8 +128,8 @@ export default function DayPick({
 
       {list && (
         <NextCard
-          heading={EVENTS_R1 ? EVENTS_TITLE : isNext ? `Next ${NEXT_COUNT}` : dayHeading(date, now)}
-          sub={EVENTS_R1 ? (isNext ? NEXT_LINE : n === 0 ? "Nothing listed" : nOn) : isNext ? `${nOn} coming up` : n === 0 ? "Nothing listed" : `${nOn} on`}
+          heading={EVENTS_R1 && r1 ? EVENTS_TITLE : isNext ? `Next ${NEXT_COUNT}` : dayHeading(date, now)}
+          sub={EVENTS_R1 && r1 ? (isNext ? NEXT_LINE : n === 0 ? "Nothing listed" : nOn) : isNext ? `${nOn} coming up` : n === 0 ? "Nothing listed" : `${nOn} on`}
           events={sorted}
           now={now}
           withDay={isNext}
@@ -135,6 +138,7 @@ export default function DayPick({
           onClose={() => setList(false)}
           anchorRef={anchorRef}
           openerRef={chip}
+          r1={r1}
         />
       )}
       {cal && (

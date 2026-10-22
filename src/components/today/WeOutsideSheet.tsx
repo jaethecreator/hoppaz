@@ -8,7 +8,6 @@ import type { EventGroup } from "@/lib/chat";
 import { dayLabel } from "@/lib/filters";
 import { eventTitle } from "@/lib/geo";
 import type { EventRow } from "@/lib/types";
-import { EVENTS_R1 } from "@/lib/events-r1/flags";
 import { hasEnded } from "./helpers";
 
 export type Liked = { event: EventRow; saved: boolean };
@@ -45,18 +44,18 @@ export default function WeOutsideSheet({
   const unsaved = items.some((i) => !i.saved);
 
   return (
-    <Sheet open={open} onClose={onClose} label={EVENTS_R1 ? "Interested" : "We outside"}>
-      <h2 className="font-display text-[24px] font-black leading-none">{EVENTS_R1 ? "Interested" : "We outside"}</h2>
-      <p className="hint mt-1.5 pr-10">{EVENTS_R1 ? "Events you swiped right on. Open one to register." : "Everything you swiped right on. Open one, or jump in its group chat."}</p>
+    <Sheet open={open} onClose={onClose} label="We outside">
+      <h2 className="font-display text-[24px] font-black leading-none">We outside</h2>
+      <p className="hint mt-1.5 pr-10">Everything you swiped right on. Open one, or jump in its group chat.</p>
 
       {unsaved && (
         <button type="button" onClick={onSignUp} className="btn mt-4 w-full text-[12.5px]">
-          {EVENTS_R1 ? "SIGN UP TO SAVE THESE" : "SIGN UP TO SAVE THESE AND GET THE CHATS"}
+          SIGN UP TO SAVE THESE AND GET THE CHATS
         </button>
       )}
 
       {items.length === 0 ? (
-        <p className="hint mt-6 pb-4 text-center">{EVENTS_R1 ? "Nothing yet. Swipe right on an event and it lands here." : "Nothing yet. Swipe right on a night and it lands here."}</p>
+        <p className="hint mt-6 pb-4 text-center">Nothing yet. Swipe right on a night and it lands here.</p>
       ) : (
         <ul className="mt-3">
           {items.map(({ event: e, saved }) => {

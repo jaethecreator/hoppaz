@@ -386,6 +386,7 @@ export default function MapPage() {
               onDay={(date) => pickDay({ kind: "night", date })}
               // What a tap on its pin does: select it, and the map flies there and opens its card.
               onPickEvent={(e) => setSelected(e.id)}
+              r1
             />
           }
           types={shownTypes}

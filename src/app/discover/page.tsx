@@ -49,19 +49,13 @@ import { useEvents, useHop } from "@/lib/useEvents";
 import { useGoing } from "@/lib/useGoing";
 import { useSession } from "@/lib/useSession";
 import type { EventRow } from "@/lib/types";
-import { EVENTS_R1, EVENTS_R1_FAKE } from "@/lib/events-r1/flags";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
 import CreateButton from "@/components/events-r1/CreateButton";
-import DayList from "@/components/events-r1/DayList";
-import { eventsLine } from "@/components/events-r1/EventsHeading";
-import { EVENTS_TITLE, realGoing } from "@/components/events-r1/words";
 
 // One stable empty list, so memo deps do not change on every render.
 const NO_TYPES: string[] = [];
 /** With the Hopper's real location, events this close (km) go to the front of the deck. */
 const NEAR_KM = 12;
-/** Release 1: a right swipe means interested only. The fake data layer takes it instead of Supabase. */
-const FAKE_R1 = EVENTS_R1 && EVENTS_R1_FAKE;
-const WE_OUTSIDE = EVENTS_R1 ? "Saved to Interested." : "We outside. You're in its room in Chat.";
 
 /**
  * TODAY (the /discover route): the night as a pile of big flyer cards you
@@ -176,14 +170,7 @@ export default function TodayPage() {
   );
   const nextBusy = useMemo(() => nextBusyDay(counts, dayKey), [counts, dayKey]);
 
-  // Release 1: a row that carries the real going count (people who registered) shows that, never the swipe count.
-  const goingOf = useCallback(
-    (e: EventRow) => {
-      const real = EVENTS_R1 ? realGoing(e) : null;
-      return real !== null ? real : Math.max(0, (e.swipes_in ?? 0) + (delta[e.id] ?? 0));
-    },
-    [delta]
-  );
+  const goingOf = useCallback((e: EventRow) => Math.max(0, (e.swipes_in ?? 0) + (delta[e.id] ?? 0)), [delta]);
   const distanceLabel = useCallback((e: EventRow) => {
     if (!fix || !Number.isFinite(e.distance_m)) return null;
     return e.distance_m < 1000 ? `${Math.round(e.distance_m)} M` : `${(e.distance_m / 1000).toFixed(1)} KM`;
@@ -322,6 +309,7 @@ export default function TodayPage() {
   }, [openId]);
 
   /* ------------------------------------------------- WE OUTSIDE on a card -- */
+  const WE_OUTSIDE = "We outside. You're in its room in Chat.";
   // A guest's tap opens the sign-up sheet and finishes on its own after sign-up (useGoing remembers it);
   // when the going lands, fold it into the count here and say so.
   const awaiting = useRef<Set<string>>(new Set());
@@ -363,8 +351,7 @@ export default function TodayPage() {
   const toldOnce = useRef(false);
   const swipeIn = async (e: EventRow) => {
     if (going.isGoing(e.id) || going.busy[e.id]) return;
-    // Release 1 with the fake layer: a guest can swipe, there is no account to ask for.
-    if (!FAKE_R1 && !requireAccount(EVENTS_R1 ? "save your Interested list" : "save your WE OUTSIDE list and get the group chats", { quiet: asked.current })) {
+    if (!requireAccount("save your WE OUTSIDE list and get the group chats", { quiet: asked.current })) {
       asked.current = true;
       guest.add(e.id);
       return;
@@ -376,7 +363,7 @@ export default function TodayPage() {
     }
     if (e.id !== openIdRef.current) setDelta((d) => ({ ...d, [e.id]: (d[e.id] ?? 0) + 1 }));
     // Said once a visit: on an endless deck a line on every swipe would be noise.
-    if (!toldOnce.current) say(EVENTS_R1 ? "Saved to Interested. Register on the event page to go." : "We outside. It's on your list, and you're in its room in Chat.", "ok");
+    if (!toldOnce.current) say("We outside. It's on your list, and you're in its room in Chat.", "ok");
     toldOnce.current = true;
   };
   const swipeInRef = useRef(swipeIn);
@@ -491,9 +478,7 @@ export default function TodayPage() {
     ? "Checking what's on…"
     : empty
       ? "Nothing listed for this night yet."
-      : EVENTS_R1
-        ? eventsLine(mode, dayKey)
-        : conductorLine({ events: deckEvents, dropIds: dropSet, dayKey: mode === "next" ? "" : dayKey, now, goingOf });
+      : conductorLine({ events: deckEvents, dropIds: dropSet, dayKey: mode === "next" ? "" : dayKey, now, goingOf });
 
 
   return (
@@ -512,7 +497,7 @@ export default function TodayPage() {
           {/* -------------------------------------------------------- header -- */}
           <header ref={headerRef} className="pad-top flex-none px-4 pb-3">
             <div className="flex items-center gap-1">
-              <h1 className={`mr-auto min-w-0 truncate font-display font-black leading-none tracking-[-0.01em] ${EVENTS_R1 ? "text-[22px] md:text-[26px]" : "text-[34px]"}`}>{EVENTS_R1 ? EVENTS_TITLE : "Events"}</h1>
+              <h1 className="mr-auto min-w-0 truncate font-display text-[34px] font-black leading-none tracking-[-0.01em]">Events</h1>
               {mounted && (
                 <DayPick
                   key={today}
@@ -535,10 +520,10 @@ export default function TodayPage() {
                 <button
                   type="button"
                   onClick={() => setListOpen(true)}
-                  aria-label={EVENTS_R1 ? `Interested: ${liked.length} event${liked.length === 1 ? "" : "s"} you swiped right on` : `We outside: ${liked.length} event${liked.length === 1 ? "" : "s"} you swiped right on`}
+                  aria-label={`We outside: ${liked.length} event${liked.length === 1 ? "" : "s"} you swiped right on`}
                   className="inline-flex h-[34px] flex-none items-center gap-1.5 rounded-full border border-line bg-ink-2/70 px-3 font-mono text-[9.5px] font-medium uppercase tracking-[0.12em] text-cream transition-transform active:scale-[0.94]"
                 >
-                  {EVENTS_R1 ? "Interested" : "We outside"}
+                  We outside
                   <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-orange px-1 text-[10px] font-medium tabular-nums text-brand-ink">
                     {likedUpcoming}
                   </span>
@@ -671,13 +656,7 @@ export default function TodayPage() {
           </div>
 
           {/* --------------------------------------------- the moving strip -- */}
-          {/* Release 1: the events as plain text under day headings, instead of the drifting strip. */}
-          {!loading && !noLiveEvents && EVENTS_R1 && (
-            <section aria-label="Events" className="flex-none border-t border-line px-1 pb-2 pt-1">
-              <DayList events={mode === "next" ? next.list : dayEvents} now={now} onPick={openFromList} />
-            </section>
-          )}
-          {!loading && !noLiveEvents && !EVENTS_R1 && <Marquee events={next.list} now={now} onPick={jump} />}
+          {!loading && !noLiveEvents && <Marquee events={next.list} now={now} onPick={jump} />}
 
           {!loading && mine.length > 0 && <YourDays
               events={mine}
@@ -688,11 +667,11 @@ export default function TodayPage() {
                 setOpen(true);
               }}
             />}
-          <div className={EVENTS_R1 ? "h-20 flex-none" : "h-3 flex-none"} />
+          <div className="h-3 flex-none" />
         </div>
       </div>
 
-      {/* Release 1: the same orange + Create as the Map, bottom right above the tab bar. It steps aside while a card is open. */}
+      {/* Release 1: the orange + Create, the same as the Map. Steps aside while a card is open. */}
       {EVENTS_R1 && mounted && !event && (
         <div className="pointer-events-none absolute bottom-2.5 right-3.5 z-20">
           <CreateButton />

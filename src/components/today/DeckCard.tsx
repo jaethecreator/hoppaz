@@ -7,8 +7,6 @@ import { demoFlyer } from "@/components/event/demo";
 import { dayLabel } from "@/lib/filters";
 import { clockShort, eventPrice, eventTitle, isEventLead } from "@/lib/geo";
 import type { EventRow } from "@/lib/types";
-import { EVENTS_R1 } from "@/lib/events-r1/flags";
-import { isOnline } from "@/components/events-r1/words";
 import { HOUR, hasEnded } from "./helpers";
 import m from "./today.module.css";
 
@@ -81,8 +79,7 @@ function DeckCard({
   const time = lead ? "TBC" : clockShort(event.starts_at);
   const day = lead ? "" : (dayLabel(event.starts_at, now).split(" · ")[0] ?? "");
   const price = eventPrice(event);
-  // Release 1: an online event has no place to name.
-  const where = EVENTS_R1 && isOnline(event) ? "ONLINE" : event.area?.toUpperCase() || event.venue_name.toUpperCase();
+  const where = event.area?.toUpperCase() || event.venue_name.toUpperCase();
 
   // Flyers load for the middle card and its neighbours; a card that has been near keeps its flyer.
   const [seen, setSeen] = useState(near);
@@ -157,15 +154,13 @@ function DeckCard({
             onClick={() => onGoing(event)}
             disabled={busy}
             aria-pressed={going}
-            aria-label={EVENTS_R1 ? (going ? "Interested. Tap to undo." : "Interested. Save it to your list.") : going ? "You're going. Tap to undo." : "We outside. Say you're going."}
+            aria-label={going ? "You're going. Tap to undo." : "We outside. Say you're going."}
             className={clsx(m.out, narrow && m.outSm, going && m.outOn)}
           >
             {going ? (
               <>
-                <Check size={narrow ? 11 : 12} strokeWidth={3.4} aria-hidden /> {EVENTS_R1 ? "INTERESTED" : "YOU'RE IN"}
+                <Check size={narrow ? 11 : 12} strokeWidth={3.4} aria-hidden /> YOU&apos;RE IN
               </>
-            ) : EVENTS_R1 ? (
-              "INTERESTED"
             ) : (
               "WE OUTSIDE"
             )}

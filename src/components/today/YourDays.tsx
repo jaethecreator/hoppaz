@@ -5,7 +5,6 @@ import { dayLabel } from "@/lib/filters";
 import { eventTitle } from "@/lib/geo";
 import { themeForEvent } from "@/lib/theme";
 import type { EventRow } from "@/lib/types";
-import { EVENTS_R1 } from "@/lib/events-r1/flags";
 
 /**
  * The nights you said you are going to, soonest first, as small stubs you can
@@ -24,8 +23,8 @@ export default function YourDays({
   onOpen: (event: EventRow) => void;
 }) {
   return (
-    <section aria-label={EVENTS_R1 ? "Interested" : "You're going"} className="mt-5">
-      <p className="seclabel mb-2 px-4">{EVENTS_R1 ? "INTERESTED" : "YOU'RE GOING"}</p>
+    <section aria-label="You're going" className="mt-5">
+      <p className="seclabel mb-2 px-4">YOU&apos;RE GOING</p>
       <ul className="flex gap-2.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {events.map((e) => {
           const day = themeForEvent(e.starts_at) === "day";

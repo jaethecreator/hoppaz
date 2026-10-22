@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { Check, X } from "lucide-react";
-import { EVENTS_R1 } from "@/lib/events-r1/flags";
 
 /**
  * The Today deck, Tinder and Bumble style: one big card on top, the next two
@@ -23,8 +22,6 @@ import { EVENTS_R1 } from "@/lib/events-r1/flags";
  */
 
 export type SwipeDir = "in" | "pass";
-/** Release 1: a right swipe is "interested" only (registering is the commitment). */
-const IN_WORD = EVENTS_R1 ? "INTERESTED" : "WE OUTSIDE";
 /** Which way is going. Right, as on Tinder and Bumble. Flip to -1 to make left the going side. */
 const IN_SIDE = 1;
 
@@ -276,7 +273,7 @@ export default function SwipeStack({
       stopHint();
       markSwiped();
       justLeft.current = id;
-      setFlyer({ id, dir, x: from.x, y: from.y, n: Date.now(), text: dir === "pass" ? "NAH" : IN_WORD });
+      setFlyer({ id, dir, x: from.x, y: from.y, n: Date.now(), text: dir === "pass" ? "NAH" : "WE OUTSIDE" });
       onSwipeRef.current(id, dir);
     },
     [flyer, stopHint]
@@ -395,7 +392,7 @@ export default function SwipeStack({
       kind="in"
       disabled={!top || !!flyer}
       onClick={() => commit("in")}
-      label={EVENTS_R1 ? "Interested. Save it to your list." : "We outside. You're going."}
+      label="We outside. You're going."
     />
   );
 
@@ -446,7 +443,7 @@ export default function SwipeStack({
               {slide(id, { active, near: true, narrow })}
               {active && (
                 <>
-                  <Stamp refFn={(el) => (stamps.current.in = el)} kind="in" text={IN_WORD} />
+                  <Stamp refFn={(el) => (stamps.current.in = el)} kind="in" text="WE OUTSIDE" />
                   <Stamp refFn={(el) => (stamps.current.pass = el)} kind="pass" text="NAH" />
                 </>
               )}

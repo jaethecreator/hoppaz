@@ -3,8 +3,6 @@ import { dayLabel, nightOf } from "@/lib/filters";
 import { eventPrice, isEventLead } from "@/lib/geo";
 import { themeForEvent } from "@/lib/theme";
 import type { EventRow } from "@/lib/types";
-import { EVENTS_R1 } from "@/lib/events-r1/flags";
-import { realGoing } from "@/components/events-r1/words";
 
 /**
  * Small pure helpers for the Today tab. Kept out of the components so the
@@ -36,9 +34,7 @@ export function dateTag(dayKey: string) {
 
 /** Most Hoppers going first, then the earliest start. */
 export function byGoingThenStart(a: EventRow, b: EventRow) {
-  // Release 1: the real going count when the row has one (the swipe count is only interest).
-  const n = (e: EventRow) => (EVENTS_R1 ? realGoing(e) : null) ?? e.swipes_in ?? 0;
-  return n(b) - n(a) || Date.parse(a.starts_at) - Date.parse(b.starts_at);
+  return (b.swipes_in ?? 0) - (a.swipes_in ?? 0) || Date.parse(a.starts_at) - Date.parse(b.starts_at);
 }
 
 /** The next day after dayKey that has something on, with how many. */
