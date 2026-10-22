@@ -6,10 +6,12 @@ import { useEffect, useState } from "react";
 import { Check, ChevronDown, Send, Share2, UserPlus } from "lucide-react";
 import CoverPicker from "@/components/events-r1/create/CoverPicker";
 import { Choice } from "@/components/events-r1/create/Fields";
+import DateTimePicker from "@/components/events-r1/DateTimePicker";
+import { endError, lagosIso, moveEnd } from "@/components/events-r1/dateTime";
 import { cleanLink, detectLinkType, LINK_LABEL } from "@/components/events-r1/create/helpers";
 import { copyText, eventUrl, shareOrCopy } from "@/components/events-r1/page/share";
 import { AREAS, areaByName } from "@/lib/geo";
-import { useR1Api } from "@/lib/events-r1/hooks";
+import { useR1Api, useR1Now } from "@/lib/events-r1/hooks";
 import type { EventDraft, LinkType, R1Event, Registration } from "@/lib/events-r1/types";
 import type { TabId } from "./HostDashboard";
 import { CARD, ErrorLine, useFlash } from "./ui";
@@ -210,7 +212,10 @@ function Stat({ n, label }: { n: number; label: string }) {
 /** The small edit under a checklist line. Name, place or link, description, cover. */
 function Edit({ event, item, onDone }: { event: R1Event; item: Exclude<ItemId, "price">; onDone: () => void }) {
   const api = useR1Api();
+  const clock = useR1Now();
   const [title, setTitle] = useState(event.title);
+  const [start, setStart] = useState(() => lagosIso(Date.parse(event.starts_at)));
+  const [end, setEnd] = useState(() => lagosIso(event.ends_at ? Date.parse(event.ends_at) : Date.parse(event.starts_at) + 3 * 3.6e6));
   const [place, setPlace] = useState(event.venue_name);
   const [area, setArea] = useState(event.area ?? "");
   const [linkType, setLinkType] = useState<LinkType | null>(event.link_type);
@@ -218,6 +223,8 @@ function Edit({ event, item, onDone }: { event: R1Event; item: Exclude<ItemId, "
   const [about, setAbout] = useState(event.description);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  const timeBad = endError(start, end);
 
   const save = async (patch: Partial<EventDraft>) => {
     if (!api || busy) return;
@@ -259,7 +266,12 @@ function Edit({ event, item, onDone }: { event: R1Event; item: Exclude<ItemId, "
       {item === "name" && (
         <>
           <input value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Event name" maxLength={120} autoComplete="off" />
-          <SaveRow busy={busy} disabled={!title.trim()} onSave={() => void save({ title: title.trim() })} />
+          <div className="rounded-hz border border-line bg-ink-3/40 px-4">
+            <DateTimePicker label="Starts" value={start} onChange={(v) => { setEnd(moveEnd(start, end, v)); setStart(v); }} now={clock} />
+            <div className="h-px bg-line" />
+            <DateTimePicker label="Ends" value={end} onChange={setEnd} min={start} error={timeBad} now={clock} />
+          </div>
+          <SaveRow busy={busy} disabled={!title.trim() || !!timeBad} onSave={() => void save({ title: title.trim(), starts_at: start, ends_at: end })} />
         </>
       )}
       {item === "place" && (
