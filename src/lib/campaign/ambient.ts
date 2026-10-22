@@ -208,6 +208,7 @@ export class AmbientRunner {
   private raf = 0;
   private timer = 0;
   private prev = 0;
+  private slept = false;
   private on = false;
 
   constructor(layout: CampaignLayout, cast: readonly AmbientMember[], private tile: number, private walkClass: string, rand?: () => number) {
@@ -247,8 +248,11 @@ export class AmbientRunner {
 
   private frame = (now: number) => {
     this.raf = 0;
-    const ms = Math.min(100, Math.max(0, now - this.prev));
+    // A frame counts at most 100 ms (a stalled tab must not fast-forward a walk); after a sleep the whole sleep counts, since
+    // nobody was walking and only the waits run down.
+    const ms = Math.min(this.slept ? 600 : 100, Math.max(0, now - this.prev));
     this.prev = now;
+    this.slept = false;
     const moving = this.crowd.tick(ms);
     this.paint();
     if (!this.on) return;
@@ -259,13 +263,14 @@ export class AmbientRunner {
   private wake = () => {
     this.timer = 0;
     if (!this.on) return;
-    this.prev = performance.now();
+    this.slept = true;
     this.raf = requestAnimationFrame(this.frame);
   };
 
   start() {
     if (this.on) return;
     this.on = true;
+    this.prev = performance.now();
     this.paint();
     this.wake();
   }

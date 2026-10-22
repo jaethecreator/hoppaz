@@ -40,13 +40,13 @@ export function lagosHqLayout(width: 30 | 36): CampaignLayout {
     walls: [],
     zones: [
       // The north row. Lagoon side: the promenade beside the water (the water itself is a solid prop).
-      zone("lagoon", "LAGOON SIDE", "Water, wind, a jetty", "paving", B(1, 9, 1, 8), T(4, 6), T(3, 7)),
+      zone("lagoon", "LAGOON SIDE", "Water, wind, a jetty", "paving", B(1, 9, 1, 8), T(4, 6), T(5, 7)),
       zone("stage", "THE STAGE", "Music on the street", "paving", B(10, 19, 1, 8), T(13, 7), T(13, 6)),
-      zone("market", "MARKET", "Akara, phones, cloth", "paving", B(20, 28, 1, 8), T(24, 4), T(23, 4)),
+      zone("market", "MARKET", "Akara, phones, cloth", "paving", B(20, 28, 1, 8), T(24, 4), T(24, 5)),
       // The south row, the road included.
-      zone("busstop", "BUS STOP", "Danfos and okadas", "paving", B(1, 10, 9, 10), T(4, 16), T(4, 17)),
+      zone("busstop", "BUS STOP", "Danfos and okadas", "paving", B(1, 10, 9, 10), T(4, 16), T(4, 18)),
       zone("junction", "THE JUNCTION", "The way to the map", "paving", B(11, 18, 9, 10), T(15, 14), T(16, 14)),
-      zone("suya", "SUYA SPOT", "Smoke and stools", "paving", B(19, 28, 9, 10), T(23, 16), T(23, 17)),
+      zone("suya", "SUYA SPOT", "Smoke and stools", "paving", B(19, 28, 9, 10), T(23, 16), T(23, 18)),
     ],
     props: [
       // ---- Lagoon side: two bodies of water and a jetty between them (the jetty is floor you can walk out on).
