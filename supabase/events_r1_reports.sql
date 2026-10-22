@@ -131,6 +131,8 @@ end $$;
 -- ----------------------------------------------------------------- access ---
 revoke all on function public.ev_report_event(uuid, text, text), public.ev_admin_reports(), public.ev_admin_review_report(uuid, boolean) from public, anon;
 grant execute on function public.ev_report_event(uuid, text, text) to authenticated;
+-- Supabase gives service_role execute on new public functions by default; reporting needs a signed-in person, so take it back.
+revoke all on function public.ev_report_event(uuid, text, text) from service_role;
 revoke all on function public.ev_admin_reports(), public.ev_admin_review_report(uuid, boolean) from authenticated;
 grant execute on function public.ev_admin_reports(), public.ev_admin_review_report(uuid, boolean) to service_role;
 
