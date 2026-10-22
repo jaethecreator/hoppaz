@@ -22,7 +22,8 @@ registerHooks({
 
 const { fakeApi: api, fakeDev } = await import("../src/lib/events-r1/fake/index.ts");
 
-const { PAID_TICKETS } = await import("../src/lib/events-r1/flags.ts");
+const { paidTicketsOn } = await import("../src/lib/events-r1/flags.ts");
+const { platformFeeNaira, processingFeeNaira } = await import("../src/lib/events-r1/payFee.ts");
 const { PAID_UNAVAILABLE } = await import("../src/lib/events-r1/constants.ts");
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -206,7 +207,7 @@ await test("paid event: button get_ticket and register throws, no approval", asy
   const ev = seeded("Afro Beach Day Party");
   await newPerson();
   eq((await api.events.viewerState(ev.id)).button, "get_ticket", "button");
-  await rejects(api.registrations.register(ev.id), PAID_UNAVAILABLE, "register");
+  await rejects(api.registrations.register(ev.id), paidTicketsOn() ? "use_checkout" : PAID_UNAVAILABLE, "register");
 });
 
 await test("one registration per person per event", async () => {
@@ -613,10 +614,10 @@ await test("ticket types: free with two types, per-type capacity, the register c
   ok(copy.ticket_types[0].id !== gen.id, "with new ids");
 });
 
-await test(`ticket types: paid is ${PAID_TICKETS ? "saved (flag on)" : "rejected (flag off)"}, and never bought`, async () => {
+await test(`ticket types: paid is ${paidTicketsOn() ? "saved (switch on)" : "rejected (switch off)"}, and never registered`, async () => {
   as("Kredete");
   const paidDraft = { title: "Paid night", tickets: [{ name: "General", price_naira: 0, capacity: null }, { name: "Table", price_naira: 5000, capacity: 4 }] };
-  if (!PAID_TICKETS) {
+  if (!paidTicketsOn()) {
     await rejects(api.events.create(paidDraft), PAID_UNAVAILABLE, "paid type while the flag is off");
     const own = await kredeteEvent();
     await rejects(api.events.update(own.id, { tickets: paidDraft.tickets }), PAID_UNAVAILABLE, "update too");
@@ -630,13 +631,13 @@ await test(`ticket types: paid is ${PAID_TICKETS ? "saved (flag on)" : "rejected
     eq([e.price_naira, e.ticket_types.map((t) => t.price_naira)], [0, [0, 5000]], "saved, lowest price is free");
     const table = e.ticket_types[1];
     await newPerson();
-    await rejects(api.registrations.register(e.id, { ticketTypeId: table.id }), PAID_UNAVAILABLE, "register on a paid type, flag on");
+    await rejects(api.registrations.register(e.id, { ticketTypeId: table.id }), "use_checkout", "register on a paid type, switch on");
     eq((await api.registrations.register(e.id)).ticket_name, "General", "default skips the paid type");
     as("Kredete");
     const allPaid = await api.events.create({ title: "All paid", tickets: [{ name: "Table", price_naira: 5000, capacity: null }] });
     await newPerson();
     eq([allPaid.price_naira, (await api.events.viewerState(allPaid.id)).button], [5000, "get_ticket"], "every type paid: Get ticket");
-    await rejects(api.registrations.register(allPaid.id), PAID_UNAVAILABLE, "register, all paid");
+    await rejects(api.registrations.register(allPaid.id), "use_checkout", "register, all paid");
     as("Kredete");
     eq((await api.events.clone(allPaid.id)).ticket_types[0].price_naira, 5000, "clone keeps prices");
   }
@@ -837,6 +838,404 @@ await test("clone, update and cancel", async () => {
   eq((await api.events.viewerState(ev.id)).button, "closed", "closed after cancel");
   await newPerson();
   await rejects(api.events.cancel(copy.id), "Not allowed", "a guest cannot cancel");
+});
+
+/* ------------------------------------------------------- paid tickets -- */
+
+/** Run a test body with the paid switch forced on or off, then put it back. */
+async function withPaid(on: boolean, fn: () => Promise<void>) {
+  const was = process.env.HZ_PAID;
+  process.env.HZ_PAID = on ? "1" : "";
+  try {
+    await fn();
+  } finally {
+    if (was === undefined) delete process.env.HZ_PAID;
+    else process.env.HZ_PAID = was;
+  }
+}
+const PAID_TYPE = (price: number, capacity: number | null = null) => [{ name: "General", price_naira: price, capacity }];
+/** Kredete (payouts Ready) makes a paid event and stays signed in as that host. */
+async function paidEvent(price = 1000, capacity: number | null = null, extra: Record<string, unknown> = {}) {
+  as("Kredete");
+  return api.events.create({ title: `Paid ${++n}`, tickets: PAID_TYPE(price, capacity), ...extra });
+}
+/** Sign in as a new person and open an order. */
+async function buy(ev: { id: string; ticket_types: { id: string }[] }, quantity: number) {
+  await newPerson();
+  return api.pay.checkout(ev.id, ev.ticket_types[0].id, quantity);
+}
+const MINUTE = 60_000;
+
+await test("pay fees: platform 4.5 percent half up and clamped, bank 1.5 percent capped at 2000, card 2 percent", async () => {
+  eq(platformFeeNaira(3000), 135, "4.5 percent of 3000");
+  eq(platformFeeNaira(1001), 45, "45.045 rounds down");
+  eq(platformFeeNaira(100), 5, "half up: exactly 4.5 rounds up to 5");
+  eq(platformFeeNaira(1012), 46, "45.54 rounds up");
+  eq(platformFeeNaira(10), 1, "never 0 (0.45 rounds to 0, clamped to 1)");
+  eq(platformFeeNaira(2, 99.9), 1, "always below the gross");
+  eq(platformFeeNaira(1000, 4.5, 100), 145, "plus a fixed amount");
+  eq(processingFeeNaira(10_000, "bank_transfer"), 150, "bank under the cap");
+  eq(processingFeeNaira(200_000, "bank_transfer"), 2000, "bank capped");
+  eq(processingFeeNaira(10_000, "card"), 200, "card");
+});
+
+await test("paid switch off: paid type, quote, checkout and register all say Currently unavailable", async () => {
+  await withPaid(false, async () => {
+    eq(paidTicketsOn(), false, "switch is off");
+    const beach = seeded("Afro Beach Day Party");
+    await newPerson();
+    await rejects(api.pay.quote(beach.id, beach.ticket_types[0].id, 1), PAID_UNAVAILABLE, "quote");
+    await rejects(api.pay.checkout(beach.id, beach.ticket_types[0].id, 1), PAID_UNAVAILABLE, "checkout");
+    await rejects(api.registrations.register(beach.id), PAID_UNAVAILABLE, "register");
+    as("Kredete");
+    await rejects(api.events.create({ title: "Paid", tickets: PAID_TYPE(1000) }), PAID_UNAVAILABLE, "create");
+  });
+});
+
+await test("paid switch on, payouts not ready: a paid type cannot be saved or bought (payouts_not_ready)", async () => {
+  await withPaid(true, async () => {
+    // A new host starts as Not started.
+    const me = await newPerson();
+    eq((await api.pay.hostPayout()).status, "not_started", "new host");
+    eq((await api.pay.hostPayout()).can_sell, false, "cannot sell");
+    ok((await api.pay.hostPayout()).requirements_due.includes("Upload your ID"), "plain words");
+    await rejects(api.events.create({ title: "Mine", tickets: PAID_TYPE(1000) }), "payouts_not_ready", "create");
+    for (const st of ["in_progress", "restricted"] as const) {
+      fakeDev.setPayoutOf(me.id, st);
+      eq((await api.pay.hostPayout()).can_sell, false, `${st} cannot sell`);
+      await rejects(api.events.create({ title: "Mine", tickets: PAID_TYPE(1000) }), "payouts_not_ready", `create when ${st}`);
+    }
+    eq((await api.pay.startOnboarding("/host/x")).url, "/dev/fake-bachs/onboarding?return=%2Fhost%2Fx", "onboarding link");
+    fakeDev.setPayoutOf(me.id, "ready");
+    const hp = await api.pay.hostPayout();
+    eq([hp.can_sell, hp.status, hp.requirements_due.length, hp.dashboard_url], [true, "ready", 0, "https://dashboard.bachs.io"], "ready");
+    eq((await api.events.create({ title: "Mine", tickets: PAID_TYPE(1000) })).ticket_types[0].price_naira, 1000, "saved when ready");
+    // The host loses the setup after the event exists: nobody can buy.
+    const ev = await api.events.create({ title: "Mine 2", tickets: PAID_TYPE(1000) });
+    fakeDev.setPayoutOf(me.id, "restricted");
+    await newPerson();
+    await rejects(api.pay.checkout(ev.id, ev.ticket_types[0].id, 1), "payouts_not_ready", "checkout");
+    // Seeded: Rooftop Sessions and Kredete are Ready, others are not.
+    eq(["Rooftop Sessions", "Kredete", "Lagos Run Club", "360Playlist"].map((h) => fakeDev.payoutStatus(user(h).id)), ["ready", "ready", "not_started", "not_started"], "seed");
+  });
+});
+
+await test("checkout: sign in first, paid type only, quantity 1 to 5, reserves seats, last seat cannot be reserved twice", async () => {
+  await withPaid(true, async () => {
+    const ev = await paidEvent(1000, 3);
+    const type = ev.ticket_types[0];
+    await api.auth.signOut();
+    await rejects(api.pay.checkout(ev.id, type.id, 1), "Sign in first", "signed out");
+    await newPerson();
+    await rejects(api.pay.checkout(ev.id, type.id, 0), "Pick 1 to 5 tickets", "zero");
+    await rejects(api.pay.checkout(ev.id, type.id, 6), "Pick 1 to 5 tickets", "six");
+    await rejects(api.pay.checkout(ev.id, type.id, 1.5), "Pick 1 to 5 tickets", "not whole");
+    await rejects(api.pay.checkout(ev.id, "nope", 1), "Pick a ticket", "unknown type");
+    as("Kredete");
+    const freeEv = await api.events.create({ title: `Free ${++n}` });
+    await newPerson();
+    await rejects(api.pay.checkout(freeEv.id, freeEv.ticket_types[0].id, 1), "This ticket is free. Use Register.", "free type");
+
+    // 3 seats: A takes 2, B asks for 2 and only 1 is left, B takes 1, C finds it sold out.
+    const a = await buy(ev, 2);
+    eq([a.checkout_url, Date.parse(a.expires_at) - Date.now() > 14 * MINUTE], [`/dev/fake-bachs/checkout/${a.order_id}`, true], "checkout_url and 15 minute hold");
+    const after = (await api.events.get(ev.id))!;
+    eq([after.ticket_types[0].spots_left, after.ticket_types[0].sold, after.going], [1, 0, 0], "held seats count against capacity, nothing sold or going yet");
+    eq(await api.registrations.ticketsFor(ev.id), [], "no ticket before the payment");
+    await newPerson();
+    await rejects(api.pay.checkout(ev.id, type.id, 2), "Only 1 left", "two asked, one left");
+    await api.pay.checkout(ev.id, type.id, 1);
+    await newPerson();
+    await rejects(api.pay.checkout(ev.id, type.id, 1), "Sold out", "last seat reserved twice");
+    eq((await api.events.get(ev.id))!.ticket_types[0].spots_left, 0, "type full");
+    await rejects(api.pay.quote(ev.id, type.id, 6), "Pick 1 to 5 tickets", "quote quantity");
+    eq(await api.pay.quote(ev.id, type.id, 3), { gross_naira: 3000, platform_fee_naira: 135, quantity: 3, unit_price_naira: 1000 }, "quote");
+  });
+});
+
+await test("pay by card: N tickets with seats, ONE registration, a second order adds, fees and host net", async () => {
+  await withPaid(true, async () => {
+    const ev = await paidEvent(3000, null);
+    const o1 = await buy(ev, 2);
+    const buyer = api.auth.current()!;
+    // The webhook, not the checkout, makes the tickets.
+    const paid = fakeDev.completeCheckout(o1.order_id, "card");
+    eq([paid.status, paid.payment_method, paid.gross_naira, paid.platform_fee_naira, paid.processing_fee_naira, paid.host_net_naira], ["paid", "card", 6000, 270, 120, 5610], "paid order and fees");
+    const order = await api.pay.order(o1.order_id);
+    eq([order.status, order.checkout_url, order.quantity, order.needs_refund], ["paid", null, 2, false], "buyer reads it");
+    const tickets = await api.registrations.ticketsFor(ev.id);
+    eq(tickets.map((t) => [t.seat_no, t.seats, t.ticket_name, t.status]), [[1, 2, "General", "valid"], [2, 2, "General", "valid"]], "two tickets, seats 1 of 2 and 2 of 2");
+    ok(new Set(tickets.map((t) => t.token)).size === 2 && new Set(tickets.map((t) => t.code)).size === 2, "own token and code each");
+    eq((await api.registrations.ticketFor(ev.id))!.id, tickets[0].id, "ticketFor is the first");
+    const state = await api.events.viewerState(ev.id);
+    eq([state.button, state.registration!.quantity, state.registration!.status], ["going", 2, "going"], "going with quantity 2");
+    eq([(await api.events.get(ev.id))!.going, (await api.events.get(ev.id))!.ticket_types[0].sold], [2, 2], "going and sold count tickets");
+    // A second order adds to the same registration.
+    const o2 = await api.pay.checkout(ev.id, ev.ticket_types[0].id, 1);
+    fakeDev.completeCheckout(o2.order_id, "card");
+    as("Kredete");
+    const list = (await api.registrations.list(ev.id)).filter((r) => r.user_id === buyer.id);
+    eq(list.map((r) => [r.quantity, r.status]), [[3, "going"]], "one registration, quantity 3");
+    fakeDev.signInAs(buyer.id);
+    eq((await api.registrations.ticketsFor(ev.id)).map((t) => [t.seat_no, t.seats]), [[1, 3], [2, 3], [3, 3]], "three tickets now");
+    eq((await api.pay.myOrders()).map((o) => o.status), ["paid", "paid"], "my orders");
+    // Paying the same order again changes nothing.
+    fakeDev.completeCheckout(o1.order_id, "bank_transfer");
+    eq((await api.registrations.ticketsFor(ev.id)).length, 3, "paying twice makes no extra tickets");
+    eq((await api.pay.order(o1.order_id)).payment_method, "card", "and keeps the method");
+  });
+});
+
+await test("pay by bank transfer: 1.5 percent processing fee, capped at 2000", async () => {
+  await withPaid(true, async () => {
+    const small = await paidEvent(10_000);
+    const o = await buy(small, 1);
+    const p = fakeDev.completeCheckout(o.order_id, "bank_transfer");
+    eq([p.processing_fee_naira, p.platform_fee_naira, p.host_net_naira], [150, 450, 9400], "10,000 gross: matches the spec example (host gets 9,400)");
+    const big = await paidEvent(200_000);
+    const o2 = await buy(big, 1);
+    const p2 = fakeDev.completeCheckout(o2.order_id, "bank_transfer");
+    eq([p2.processing_fee_naira, p2.host_net_naira], [2000, 200_000 - 9000 - 2000], "capped at 2000");
+  });
+});
+
+await test("failed payment frees the seats; the buyer can start again", async () => {
+  await withPaid(true, async () => {
+    const ev = await paidEvent(1000, 1);
+    const o = await buy(ev, 1);
+    eq((await api.events.get(ev.id))!.ticket_types[0].spots_left, 0, "held");
+    eq(fakeDev.failCheckout(o.order_id).status, "failed", "failed");
+    eq((await api.events.get(ev.id))!.ticket_types[0].spots_left, 1, "seat back");
+    await rejects(Promise.resolve().then(() => fakeDev.completeCheckout(o.order_id, "card")), "This payment already failed", "cannot pay a failed order");
+    eq((await api.pay.checkout(ev.id, ev.ticket_types[0].id, 1)).order_id === o.order_id, false, "a new order");
+  });
+});
+
+await test("an order runs out after 15 minutes: seats are free again, the order reads expired, no pay link", async () => {
+  await withPaid(true, async () => {
+    const ev = await paidEvent(1000, 2);
+    const o = await buy(ev, 2);
+    eq((await api.events.get(ev.id))!.ticket_types[0].spots_left, 0, "held");
+    fakeDev.advance(14 * MINUTE);
+    eq((await api.events.get(ev.id))!.ticket_types[0].spots_left, 0, "still held at 14 minutes");
+    eq((await api.pay.order(o.order_id)).status, "open", "still open");
+    fakeDev.advance(2 * MINUTE);
+    eq((await api.events.get(ev.id))!.ticket_types[0].spots_left, 2, "free at 16 minutes");
+    const after = await api.pay.order(o.order_id);
+    eq([after.status, after.checkout_url], ["expired", null], "expired, no link");
+    eq((await api.pay.myOrders())[0].status, "expired", "my orders agree");
+    // Someone else can take the seats now.
+    await buy(ev, 2);
+    // Let it expire by hand.
+    const ev2 = await paidEvent(1000, 2);
+    const o2 = await buy(ev2, 1);
+    eq(fakeDev.expireCheckout(o2.order_id).status, "expired", "expired by hand");
+    eq((await api.events.get(ev2.id))!.ticket_types[0].spots_left, 2, "seat back");
+  });
+});
+
+await test("late payment: seats still free means tickets; seats gone means a refund is owed (card) or a manual one (bank)", async () => {
+  await withPaid(true, async () => {
+    const ev = await paidEvent(1000, 2);
+    // Free seats: the late payment takes them.
+    const o1 = await buy(ev, 2);
+    const first = api.auth.current()!;
+    fakeDev.expireCheckout(o1.order_id);
+    const late = fakeDev.completeCheckout(o1.order_id, "card");
+    eq([late.status, late.needs_refund, late.needs_manual_refund], ["paid", false, false], "late but seats free");
+    eq((await api.registrations.ticketsFor(ev.id)).length, 2, "tickets issued");
+    // No seats: someone else holds them.
+    const ev2 = await paidEvent(1000, 2);
+    const o2 = await buy(ev2, 2);
+    const slow = api.auth.current()!;
+    fakeDev.expireCheckout(o2.order_id);
+    const o3 = await buy(ev2, 2);
+    fakeDev.completeCheckout(o3.order_id, "card");
+    const lateCard = fakeDev.completeCheckout(o2.order_id, "card");
+    eq([lateCard.status, lateCard.needs_refund, lateCard.needs_manual_refund], ["paid", true, false], "card: refund owed");
+    fakeDev.signInAs(slow.id);
+    eq((await api.registrations.ticketsFor(ev2.id)), [], "no tickets for the late buyer");
+    // Bank transfer, same story.
+    const ev3 = await paidEvent(1000, 1);
+    const o4 = await buy(ev3, 1);
+    const slow2 = api.auth.current()!;
+    fakeDev.expireCheckout(o4.order_id);
+    const o5 = await buy(ev3, 1);
+    fakeDev.completeCheckout(o5.order_id, "card");
+    const lateBank = fakeDev.completeCheckout(o4.order_id, "bank_transfer");
+    eq([lateBank.needs_refund, lateBank.needs_manual_refund], [false, true], "bank: manual refund");
+    // The host sees both as owed and neither as sold.
+    as("Kredete");
+    const s2 = await api.pay.sales(ev2.id);
+    eq([s2.totals.sold, s2.refunds_owed], [2, 1], "sales: the late card order is owed, not sold");
+    eq((await api.pay.sales(ev3.id)).refunds_owed, 1, "bank owed");
+    void first;
+    void slow2;
+  });
+});
+
+await test("refund: card voids the tickets at once then settles; bank needs a manual refund; the seats come back", async () => {
+  await withPaid(true, async () => {
+    const ev = await paidEvent(2000, 4);
+    const o = await buy(ev, 2);
+    const buyer = api.auth.current()!;
+    fakeDev.completeCheckout(o.order_id, "card");
+    const [t1] = await api.registrations.ticketsFor(ev.id);
+    as("Kredete");
+    eq((await api.events.get(ev.id))!.ticket_types[0].spots_left, 2, "two seats sold");
+    await rejects(api.pay.refund("nope"), "Order not found", "unknown order");
+    eq(await api.pay.refund(o.order_id), { method: "card", status: "refund_pending" }, "card refund");
+    const mid = (await api.pay.eventOrders(ev.id))[0];
+    eq([mid.status, mid.needs_manual_refund], ["refund_pending", false], "pending");
+    eq((await api.events.get(ev.id))!.ticket_types[0].spots_left, 4, "seats back at once");
+    eq((await api.door.scan(ev.id, t1.token, "express")).ok, false, "the QR is dead");
+    await rejects(api.pay.refund(o.order_id), "A refund is already on its way.", "twice");
+    eq((await api.pay.sales(ev.id)).totals.refunded_naira, 4000, "refunded gross counts");
+    fakeDev.advance(2 * MINUTE);
+    eq((await api.pay.eventOrders(ev.id))[0].status, "refunded", "refunded a minute later");
+    await rejects(api.pay.refund(o.order_id), "This order was already refunded.", "again");
+    fakeDev.signInAs(buyer.id);
+    eq([(await api.events.viewerState(ev.id)).button, await api.registrations.ticketsFor(ev.id)], ["get_ticket", []], "no tickets left, can buy again");
+    await rejects(api.pay.refund(o.order_id), "Not allowed", "the buyer cannot refund");
+
+    // Bank transfer: tickets void, the host pays by hand.
+    const o2 = await buy(ev, 1);
+    fakeDev.completeCheckout(o2.order_id, "bank_transfer");
+    as("Kredete");
+    eq(await api.pay.refund(o2.order_id), { method: "manual", status: "manual_needed" }, "bank refund");
+    const row = (await api.pay.eventOrders(ev.id)).find((x) => x.id === o2.order_id)!;
+    eq([row.status, row.needs_manual_refund], ["paid", true], "manual task open");
+    eq((await api.pay.sales(ev.id)).refunds_owed, 1, "owed");
+    await rejects(api.pay.refund(o2.order_id), "A refund is already on its way.", "twice");
+    await api.pay.markManualRefundDone(o2.order_id);
+    const done = (await api.pay.eventOrders(ev.id)).find((x) => x.id === o2.order_id)!;
+    eq([done.status, done.needs_manual_refund], ["refunded", false], "marked done");
+    await rejects(api.pay.markManualRefundDone(o2.order_id), "There is nothing to mark.", "nothing to mark");
+    // Staff may refund too.
+    await buy(ev, 1).then((x) => fakeDev.completeCheckout(x.order_id, "card"));
+    const o3 = (await api.pay.myOrders())[0];
+    as("Hoppaz Staff");
+    eq((await api.pay.refund(o3.id)).status, "refund_pending", "staff refund");
+  });
+});
+
+await test("refund is refused when a ticket was checked in (tickets_used); a refund above the host balance is refused", async () => {
+  await withPaid(true, async () => {
+    const ev = await paidEvent(2000);
+    const o = await buy(ev, 2);
+    fakeDev.completeCheckout(o.order_id, "card");
+    const tickets = await api.registrations.ticketsFor(ev.id);
+    as("Kredete");
+    const scan = await api.door.scan(ev.id, tickets[1].token, "express");
+    eq([scan.ok, scan.ok && scan.kind, scan.ok && scan.seat_no, scan.ok && scan.seats], [true, "checked_in", 2, 2], "scan reports the seat");
+    await rejects(api.pay.refund(o.order_id), "tickets_used", "one ticket used");
+    eq((await api.pay.eventOrders(ev.id))[0].status, "paid", "nothing changed");
+
+    // A host whose only money is this sale cannot refund it: Hoppaz's fee is not returned, so the balance is short.
+    const me = await newPerson();
+    fakeDev.setPayoutOf(me.id, "ready");
+    const mine = await api.events.create({ title: "Mine", tickets: PAID_TYPE(1000) });
+    const o2 = await buy(mine, 1);
+    fakeDev.completeCheckout(o2.order_id, "card");
+    eq(fakeDev.hostBalance(me.id), 1000 - 45 - 20, "balance is the net");
+    fakeDev.signInAs(me.id);
+    await rejects(api.pay.refund(o2.order_id), "Not enough balance to refund yet", "balance too low");
+    eq((await api.pay.eventOrders(mine.id))[0].status, "paid", "nothing changed");
+  });
+});
+
+await test("door: check-in is per ticket; counts are tickets; a typed code finds one ticket; seats of an order check in alone", async () => {
+  await withPaid(true, async () => {
+    const ev = await paidEvent(2000);
+    const o = await buy(ev, 3);
+    fakeDev.completeCheckout(o.order_id, "card");
+    const buyer = api.auth.current()!;
+    const tickets = await api.registrations.ticketsFor(ev.id);
+    as("Kredete");
+    eq(await api.door.counts(ev.id), { going: 3, checked_in: 0, pending: 0, waitlist: 0 }, "three tickets going");
+    const c1 = await api.door.scan(ev.id, tickets[0].token, "express");
+    eq(c1.ok && [c1.seat_no, c1.seats, c1.checked_in, c1.total], [1, 3, 1, 3], "seat 1 of 3");
+    const again = await api.door.scan(ev.id, tickets[0].token, "express");
+    eq(again.ok === false && again.kind === "already_used" && [again.seat_no, again.seats], [1, 3], "same QR twice");
+    eq((await api.door.scan(ev.id, tickets[2].code, "standard")).ok && "confirm", "confirm", "typed code of seat 3 asks for confirmation");
+    const c3 = await api.door.confirm(ev.id, tickets[2].code);
+    eq(c3.ok && [c3.seat_no, c3.checked_in], [3, 2], "seat 3 by code");
+    eq(await api.door.counts(ev.id), { going: 3, checked_in: 2, pending: 0, waitlist: 0 }, "two of three in");
+    const reg = (await api.registrations.list(ev.id)).find((r) => r.user_id === buyer.id)!;
+    eq([reg.status, reg.checked_in_count], ["going", 2], "not fully checked in yet");
+    const byId = await api.door.checkInById(ev.id, reg.id);
+    eq(byId.ok && [byId.seat_no, byId.checked_in], [2, 3], "by name: the next unused ticket");
+    eq((await api.registrations.list(ev.id)).find((r) => r.user_id === buyer.id)!.status, "checked_in", "all three in");
+    eq((await api.door.checkInById(ev.id, reg.id)).ok, false, "nothing left to check in");
+  });
+});
+
+await test("sales: rows per type with both fees and net, totals add up, open orders counted", async () => {
+  await withPaid(true, async () => {
+    as("Kredete");
+    const ev = await api.events.create({
+      title: `Two types ${++n}`,
+      tickets: [{ name: "Early", price_naira: 1000, capacity: null }, { name: "Table", price_naira: 5000, capacity: 4 }],
+    });
+    const [early, table] = ev.ticket_types;
+    await newPerson();
+    fakeDev.completeCheckout((await api.pay.checkout(ev.id, early.id, 3)).order_id, "card");
+    await newPerson();
+    fakeDev.completeCheckout((await api.pay.checkout(ev.id, table.id, 1)).order_id, "bank_transfer");
+    await newPerson();
+    fakeDev.completeCheckout((await api.pay.checkout(ev.id, table.id, 2)).order_id, "card");
+    await newPerson();
+    await api.pay.checkout(ev.id, early.id, 1); // left open
+    as("Kredete");
+    const s = await api.pay.sales(ev.id);
+    eq(s.rows.map((r) => [r.name, r.sold, r.gross_naira, r.platform_fee_naira, r.processing_fee_naira, r.net_naira]), [
+      ["Early", 3, 3000, 135, 60, 2805],
+      ["Table", 3, 15_000, 675, 275, 14_050],
+    ], "rows");
+    const sum = (k: "sold" | "gross_naira" | "platform_fee_naira" | "processing_fee_naira" | "net_naira") => s.rows.reduce((n, r) => n + r[k], 0);
+    eq(s.totals, { sold: sum("sold"), gross_naira: sum("gross_naira"), platform_fee_naira: sum("platform_fee_naira"), processing_fee_naira: sum("processing_fee_naira"), net_naira: sum("net_naira"), refunded_naira: 0 }, "totals are the sum of the rows");
+    eq(s.totals.gross_naira - s.totals.platform_fee_naira - s.totals.processing_fee_naira, s.totals.net_naira, "gross less fees is net");
+    eq([s.open_orders, s.refunds_owed], [1, 0], "one order still open");
+    await newPerson();
+    await rejects(api.pay.sales(ev.id), "Not allowed", "a guest cannot read sales");
+    await rejects(api.pay.eventOrders(ev.id), "Not allowed", "nor the orders");
+  });
+});
+
+await test("orders are private: the buyer, the host and staff only; the pay link goes only to the buyer", async () => {
+  await withPaid(true, async () => {
+    const ev = await paidEvent(1000);
+    const o = await buy(ev, 1);
+    eq((await api.pay.order(o.order_id)).checkout_url, o.checkout_url, "buyer has the link");
+    await newPerson();
+    await rejects(api.pay.order(o.order_id), "Order not found", "a stranger");
+    as("Kredete");
+    eq((await api.pay.order(o.order_id)).checkout_url, null, "host does not get the link");
+    as("Hoppaz Staff");
+    eq((await api.pay.order(o.order_id)).status, "open", "staff can read");
+    await api.auth.signOut();
+    await rejects(api.pay.myOrders(), "Sign in first", "signed out");
+  });
+});
+
+await test("seeded paid event Afro Beach is buyable once the switch is on, and capacity counts held seats", async () => {
+  await withPaid(true, async () => {
+    const beach = seeded("Afro Beach Day Party");
+    await newPerson();
+    eq((await api.events.viewerState(beach.id)).button, "get_ticket", "get ticket");
+    const o = await api.pay.checkout(beach.id, beach.ticket_types[0].id, 2);
+    eq((await api.pay.order(o.order_id)).gross_naira, 6000, "2 x 3000");
+    fakeDev.completeCheckout(o.order_id, "card");
+    eq((await api.events.get(beach.id))!.going, beach.going + 2, "going counts tickets");
+    eq((await api.events.viewerState(beach.id)).button, "going", "going");
+    // Free register on a full event counts held seats: a 1 seat free event with a paid type held elsewhere is not a thing, so check the free path.
+    as("Kredete");
+    const mixed = await api.events.create({ title: `Mixed ${++n}`, capacity: 2, tickets: [{ name: "Free", price_naira: 0, capacity: null }, { name: "Paid", price_naira: 1000, capacity: null }] });
+    await newPerson();
+    await api.pay.checkout(mixed.id, mixed.ticket_types[1].id, 2);
+    await newPerson();
+    await rejects(api.registrations.register(mixed.id, { ticketTypeId: mixed.ticket_types[0].id }), "This event is full", "held seats fill the event for free tickets too");
+  });
 });
 
 await test("reset clears user-made changes", async () => {
