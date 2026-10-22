@@ -42,6 +42,11 @@ export type RoomTemplate = {
   description: string;
   /** A picture under /public for the picker card. */
   thumbnail: string;
+  /**
+   * False: the MANAGE picker does not offer it (a room set up by hand, such as Lagos HQ). It stays a full template: the layouts,
+   * the SQL and templateFor() know it, and a room already on it still shows it. Missing means pickable.
+   */
+  pickable?: boolean;
   /** The layout at a width (30 compact, 36 roomy). */
   layout: (width: RoomWidth) => CampaignLayout;
 };
@@ -62,6 +67,7 @@ export const ROOM_TEMPLATES: RoomTemplate[] = [
     name: "Lagos HQ",
     description: "A bright Lagos street by the lagoon: a stage under the billboard, a market, a bus stop, a suya spot and a road of danfos and okadas.",
     thumbnail: "/templates/lagos-hq.jpg",
+    pickable: false,
     layout: (width) => lagosHqLayout(width),
   },
 ];

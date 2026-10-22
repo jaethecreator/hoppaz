@@ -270,8 +270,12 @@ for (const room of HOTSPOT_ROOMS) {
 // ---- The Lagos HQ crew template (src/lib/campaign/rooms/lagosHq.ts): both widths, the contract, and its scenery people. ----
 const LAGOS_IDS = ["hq-billboard", "stage-platform", "dj-booth", "courtyard-fountain", "entry-map-table", "danfo-1", "keke-1", "hop-bus", "okada-1", "bus-shelter", "suya-stall", "stall-akara", "stall-phones", "stall-cloth", "lagoon-l", "lagoon-r", "jetty"];
 const lagos = ROOM_TEMPLATES.find((t) => t.key === "lagos-hq");
-check("Lagos HQ is a crew template with a picker card", () => {
+check("Lagos HQ is a crew template with a picker card, and the MANAGE picker does not offer it", () => {
   assert.ok(lagos, "lagos-hq is not in ROOM_TEMPLATES");
+  assert.equal(lagos.pickable, false, "lagos-hq must be pickable: false");
+  assert.ok(ROOM_TEMPLATES.filter((t) => t.key !== "lagos-hq").every((t) => t.pickable !== false), "only hand-set-up templates are pickable: false");
+  const manage = fs.readFileSync(new URL("../../src/components/crew-room/ManageCrew.tsx", import.meta.url), "utf8");
+  assert.ok(/ROOM_TEMPLATES\.filter\(\(t\) => t\.pickable !== false/.test(manage), "ManageCrew must filter the picker by pickable");
   assert.equal(templateFor("lagos-hq").key, "lagos-hq");
   assert.equal(roomTemplate("lagos-hq", 36).grid.width, 36);
   assert.equal(roomTemplate("lagos-hq", 99).grid.width, 30);
