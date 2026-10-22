@@ -7,7 +7,10 @@ import VerifiedBadge from "@/components/VerifiedBadge";
 import { useViewerState } from "@/lib/events-r1/hooks";
 import type { R1Event } from "@/lib/events-r1/types";
 import { eventTitle } from "@/lib/geo";
-import { registerLabel } from "./labels";
+import { linkLabel } from "./page/link";
+import PageSections from "./page/PageSections";
+import RegisterButton from "./page/RegisterButton";
+import { useFreshEvent } from "./page/useFreshEvent";
 import { isOnline, placeLine, priceWord, whenRange } from "./words";
 
 /**
@@ -15,19 +18,28 @@ import { isOnline, placeLine, priceWord, whenRange } from "./words";
  * Name, who hosts it, when, where, the price, how many are going, a short description and two buttons.
  * The cover is the card's own flyer art, above this. Check-in, quests, the drop and photos follow below it, as before.
  *
- * Register opens the event page with ?register=1 (the event page does the real registering). The label follows the
- * viewer: Register, Request to join, Join waitlist, You're in, Pending, Closed; a paid event shows Get ticket, off.
+ * The button is RegisterButton: a tap runs the flow right here (sign in, the host's questions, register). Its label follows
+ * the viewer: Register, Request to join, Join waitlist, You're in, Pending, Closed; a paid event shows Get ticket, off.
+ * On the event page the area under the facts is the status card, the host's updates and About this event.
  */
-export default function EventBlock({ event, placement }: { event: R1Event; placement: "sheet" | "side" | "page" }) {
+export default function EventBlock({ event: given, placement }: { event: R1Event; placement: "sheet" | "side" | "page" }) {
   const side = placement === "side";
   const page = placement === "page";
+  // The list this card came from is older than a Register done a moment ago: read the event again.
+  const event = useFreshEvent(given);
   const { data: viewer } = useViewerState(event.id);
-  const reg = registerLabel(viewer, event);
 
   const online = isOnline(event);
   const hybrid = event.kind === "hybrid";
+  const hasLink = online || hybrid;
+  // The kind of link is public ("Zoom", "WhatsApp call"); the link itself comes after registering.
+  const onlineWord = event.link_type ? `Online · ${linkLabel(event)}` : "Online";
   // Someone who can have the link (registered, or the host) needs no reminder that it comes after registering.
-  const linkNote = hybrid && !viewer?.canSeeOnlineLink ? "Online link after you register" : null;
+  const linkNote = hasLink && !viewer?.canSeeOnlineLink ? "Online link after you register" : null;
+  const crowd = [
+    event.going > 0 ? `${event.going} going` : "",
+    event.capacity !== null ? (event.spots_left === 0 ? "Full" : `${event.spots_left} spot${event.spots_left === 1 ? "" : "s"} left`) : "",
+  ].filter(Boolean);
 
   const row = "flex items-start gap-2.5 text-[14px] leading-snug text-cream";
   const icon = "mt-[3px] flex-none text-dim";
@@ -51,43 +63,46 @@ export default function EventBlock({ event, placement }: { event: R1Event; place
         <li className={row}>
           {online ? <Video size={16} className={icon} aria-hidden /> : <MapPin size={16} className={icon} aria-hidden />}
           <span className="min-w-0">
-            {placeLine(event) || "Place to be announced"}
-            {linkNote && <span className="block text-[13px] text-dim">{linkNote}</span>}
+            {online ? onlineWord : placeLine(event) || "Place to be announced"}
+            {online && linkNote && <span className="block text-[13px] text-dim">{linkNote}</span>}
           </span>
         </li>
+        {hybrid && (
+          <li className={row}>
+            <Video size={16} className={icon} aria-hidden />
+            <span className="min-w-0">
+              {onlineWord}
+              {linkNote && <span className="block text-[13px] text-dim">{linkNote}</span>}
+            </span>
+          </li>
+        )}
         <li className={row}>
           <Ticket size={16} className={icon} aria-hidden />
           <span>{priceWord(event)}</span>
         </li>
-        {event.going > 0 && (
+        {crowd.length > 0 && (
           <li className={row}>
             <Users size={16} className={icon} aria-hidden />
-            <span>{event.going} going</span>
+            <span>{crowd.join(" · ")}</span>
           </li>
         )}
       </ul>
 
-      {event.description && <p className="mt-3.5 line-clamp-2 font-body text-[14px] leading-snug text-dim">{event.description}</p>}
+      {/* On the page the whole description sits under the card (About this event). */}
+      {!page && event.description && <p className="mt-3.5 line-clamp-2 font-body text-[14px] leading-snug text-dim">{event.description}</p>}
 
-      <div className={clsx("mt-4 gap-2", side ? "grid" : "flex")}>
-        {reg.disabled ? (
-          <button type="button" disabled className={clsx("btn normal-case", !side && "flex-1")}>
-            {reg.text}
-          </button>
-        ) : (
-          <Link
-            href={`/event/${encodeURIComponent(event.id)}?register=1`}
-            className={clsx("btn normal-case", reg.status && "btn-ghost border-keke text-keke", !side && "flex-1")}
-          >
-            {reg.text}
-          </Link>
-        )}
-        {!page && (
-          <Link href={`/event/${encodeURIComponent(event.id)}`} className={clsx("btn btn-ghost normal-case", !side && "flex-1")}>
-            Open event page
-          </Link>
-        )}
-      </div>
+      <RegisterButton
+        event={event}
+        placement={placement}
+        trailing={
+          !page && (
+            <Link href={`/event/${encodeURIComponent(event.id)}`} className={clsx("btn btn-ghost normal-case", !side && "flex-1")}>
+              Open event page
+            </Link>
+          )
+        }
+      />
+      {page && <PageSections event={event} />}
     </div>
   );
 }

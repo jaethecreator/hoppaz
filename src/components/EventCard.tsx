@@ -20,6 +20,7 @@ import { themeForEvent } from "@/lib/theme";
 import { clockShort, eventPrice, eventTitle, hasVenue, isEventLead } from "@/lib/geo";
 import { EVENTS_R1 } from "@/lib/events-r1/flags";
 import EventBlock from "@/components/events-r1/EventBlock";
+import EventTabs from "@/components/events-r1/page/EventTabs";
 import { asR1, isOnline } from "@/components/events-r1/words";
 import { dayLabel } from "@/lib/filters";
 import type { EventRow } from "@/lib/types";
@@ -176,6 +177,7 @@ function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, i
       }
       footer={<GoingFoot event={event} userId={userId} compact={side} />}
     >
+      {r1 && page && <EventTabs event={r1} />}
       <ArtPanel tall={page} compact={side} flyer={flyer} alt={`${title} flyer`} vibe={event.vibe} tone={theme === "day" ? "ink" : "cream"} />
 
       {/* ----------------------------------------------- title and the facts -- */}
