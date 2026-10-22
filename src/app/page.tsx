@@ -37,6 +37,7 @@ import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
 import { closeHotspots, useHotspotNav } from "@/lib/hotspots/open";
 import YouMarker from "@/components/map/YouMarker";
+import { claimBusIntro } from "@/lib/opening/busIntro";
 
 // MapLibre touches window on import, so it stays out of the server bundle.
 const NightMap = dynamic(() => import("@/components/map/NightMap"), {
@@ -50,6 +51,9 @@ const NightMap = dynamic(() => import("@/components/map/NightMap"), {
 
 // The hotspot pins hang on the map, and MapLibre touches window on import: also client only, in its own chunk.
 const MainHotspots = dynamic(() => import("@/components/hotspots/MainHotspots"), { ssr: false });
+
+// Only a first-time visitor ever loads the city title.
+const TitleSequence = dynamic(() => import("@/components/TitleSequence"), { ssr: false });
 
 // One stable empty list, so memo deps do not change on every render.
 const NO_TYPES: string[] = [];
@@ -87,6 +91,14 @@ export default function MapPage() {
   // reads it waits a tick, or the server HTML would disagree with the first paint.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // First time on this device: the city title (the bus crossing Lagos) plays first, once, and the camera swoops in after it
+  // (src/lib/opening/busIntro.ts). null until asked; false for everyone else, who swoop in as soon as the page is up.
+  const [titles, setTitles] = useState<boolean | null>(null);
+  useEffect(() => setTitles(claimBusIntro()), []);
+  const signNames = useMemo(
+    () => (titles ? [...allEvents].sort((a, b) => b.heat - a.heat).slice(0, 12).map((e) => e.title) : []),
+    [titles, allEvents]
+  );
 
   // Clocks: the bus and the scrubber re-place themselves every half minute.
   const [now, setNow] = useState(() => Date.now());
@@ -345,7 +357,7 @@ export default function MapPage() {
           onBus={() => setHopOpen(true)}
           hudTop={hud.top}
           hudBottom={hud.bottom}
-          swoop={mounted}
+          swoop={mounted && titles === false}
           onMapReady={onMapReady}
           onMapUnavailable={onMapUnavailable}
           sidePanel={!!event}
@@ -467,6 +479,7 @@ export default function MapPage() {
         />
       )}
       {hopOpen && <HopSheet hop={hop} fix={fix} onClose={() => setHopOpen(false)} />}
+      {titles && <TitleSequence signs={signNames} onDone={() => setTitles(false)} />}
     </div>
   );
 }

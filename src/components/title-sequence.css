@@ -1,0 +1,107 @@
+/* ------------------------------------------------- title sequence ----- */
+/*
+ * Timings: START 0.3s, PAN 3.4s, about 4.5s in all with the hold on the lockup.
+ * TitleSequence.tsx owns the numbers and hands them down as --ts-start / --ts-pan;
+ * the fallbacks here are the same values, so the two stay in step.
+ * Stamps, not springs: every curve is a hard ease-out, nothing overshoots.
+ */
+.ts-cam {
+  animation: ts-pan var(--ts-pan, 3.4s) cubic-bezier(0.37, 0, 0.63, 1) var(--ts-start, 0.3s) both;
+}
+.ts-cam-back {
+  animation: ts-pan-back var(--ts-pan, 3.4s) cubic-bezier(0.37, 0, 0.63, 1) var(--ts-start, 0.3s) both;
+}
+.ts-rise {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: ts-rise 0.26s cubic-bezier(0.2, 0.9, 0.3, 1) var(--d) both;
+}
+.ts-pop {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: ts-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) var(--d) both;
+}
+/* A rooftop sign that flips to another name, like the logos in the show */
+.ts-pop.ts-flip-out {
+  animation:
+    ts-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) var(--d) both,
+    ts-flip 0.14s cubic-bezier(0.2, 0.9, 0.3, 1) var(--d2) forwards;
+}
+.ts-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: ts-draw 0.4s cubic-bezier(0.2, 0.9, 0.3, 1) var(--d) forwards;
+}
+.ts-bus {
+  animation: ts-drive 2.2s cubic-bezier(0.3, 0, 0.7, 1) var(--d) both;
+}
+.ts-blimp {
+  animation: ts-drift 3.6s ease-in-out both;
+}
+@keyframes ts-pan {
+  to {
+    transform: translateX(var(--pan));
+  }
+}
+@keyframes ts-pan-back {
+  to {
+    transform: translateX(var(--pan-back));
+  }
+}
+@keyframes ts-rise {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+/* A sign stamps onto its roof: lands from a little above and a little off square. */
+@keyframes ts-pop {
+  from {
+    opacity: 0;
+    transform: scale(1.4) rotate(-3deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ts-flip {
+  to {
+    transform: scaleY(0);
+  }
+}
+@keyframes ts-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes ts-drive {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(900px);
+  }
+}
+@keyframes ts-drift {
+  from {
+    transform: translate(-60px, 8px);
+  }
+  to {
+    transform: translate(80px, -6px);
+  }
+}
+/* The lockup: wordmark, then mascot. Scales down hard, lands a degree off square. */
+@keyframes ts-stamp {
+  from {
+    opacity: 0;
+    transform: scale(1.5) rotate(-4deg);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-1deg);
+  }
+}
+
