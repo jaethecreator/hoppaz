@@ -114,7 +114,7 @@ function checkRateLimit(host: UserRec): void {
 
 function makeEvent(host: UserRec, draft: EventDraft): EventRec {
   checkRateLimit(host);
-  const room = hostRoom(host.id);
+  const room = draft.add_to_room === false ? null : hostRoom(host.id);
   const f = normalize(draft, room?.id ?? null);
   const id = newId();
   let slug = slugFor(f.title, id);

@@ -409,6 +409,8 @@ await test("create: a name is enough; online has no pin; WhatsApp defaults to 32
   await rejects(api.events.create({ title: "" }), "Give your event a name", "no name");
   await rejects(api.events.create({ title: "Far", lat: 51.5, lng: -0.1 }), "Hoppaz is Lagos only for now", "outside Lagos");
   ok((await api.events.list()).some((x) => x.id === e.id), "appears in the list");
+  eq([e.room_id !== null, (await api.events.create({ title: "Out of the room", add_to_room: false })).room_id], [true, null], "add_to_room defaults on, false keeps it out");
+  await rejects(api.events.create({ title: "No room, community", visibility: "community", add_to_room: false }), "Community events need a room. Create a room first.", "community needs the room");
 });
 
 await test("auth: six digits, any code, Google signs in as Ada Obi, sign out", async () => {

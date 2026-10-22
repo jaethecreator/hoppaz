@@ -216,6 +216,8 @@ export type EventDraft = {
   visibility?: Visibility;
   cover_url?: string | null;
   vibe?: string;
+  /** Put the event in the host's room. Default true when the host has a room; false keeps it out. */
+  add_to_room?: boolean;
 };
 
 export type RoomDraft = { name: string; description?: string };
