@@ -169,8 +169,9 @@ declare
 begin
   select * into h from public.ev_host_payouts where user_id = p_user for update;
   if h.user_id is null then return; end if;
-  v_sell := ((h.capabilities ->> 'bank_transfer') = 'active' or (h.capabilities ->> 'ngn_card_collection') = 'active')
-            and (h.capabilities ->> 'payouts') = 'active';
+  -- coalesce: a missing capability reads as null, and null and true is null (the column is not null).
+  v_sell := coalesce(((h.capabilities ->> 'bank_transfer') = 'active' or (h.capabilities ->> 'ngn_card_collection') = 'active')
+                     and (h.capabilities ->> 'payouts') = 'active', false);
   v_any := exists (select 1 from jsonb_each_text(h.capabilities) c where c.value = 'active');
   update public.ev_host_payouts
      set can_sell = v_sell,

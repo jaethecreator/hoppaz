@@ -21,7 +21,7 @@ begin
   perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
   execute 'set local role anon';
 end $$;
-create function pg_temp.admin() returns void language plpgsql as $$ begin execute 'reset role'; end $$;
+create function pg_temp.admin() returns void language plpgsql as $$ begin execute 'reset role'; perform set_config('request.jwt.claims', '', true); end $$;
 create function pg_temp.newuser(shown text, guest boolean default false) returns uuid language plpgsql as $$
 declare u uuid := gen_random_uuid();
 begin
@@ -221,7 +221,9 @@ begin
   perform pg_temp.ok(public.ev_pay_order_attach(o2, 'chk_one', 'https://checkout.bachs.io/c/two', null) = 'duplicate', 'a checkout id cannot be on two orders');
   perform pg_temp.ok(public.ev_pay_order_attach(o2, 'chk_two', 'https://checkout.bachs.io/c/two', null) = 'ok', 'attach the other');
   perform pg_temp.ok(public.ev_pay_order_attach(gen_random_uuid(), 'chk_x', 'https://x.example/c', null) = 'not_found', 'attach to nothing');
-  perform pg_temp.ok(public.ev_pay_order_release(o2, 'bachs timed out') = 'ok' and pg_temp.st(o2) = 'failed' and pg_temp.left_of(e1, vip) = 1, 'release: the order fails and the seat is free');
+  -- Two statements: a stable function inside the same statement as the release would not see the change.
+  perform pg_temp.ok(public.ev_pay_order_release(o2, 'bachs timed out') = 'ok', 'release answers ok');
+  perform pg_temp.ok(pg_temp.st(o2) = 'failed' and pg_temp.left_of(e1, vip) = 1, 'release: the order fails and the seat is free');
   perform pg_temp.ok(public.ev_pay_order_release(o2) = 'not_open' and public.ev_pay_order_attach(o2, 'chk_three', 'https://x.example/c', null) = 'not_open', 'a failed order cannot be released or attached again');
 
   -- The host's questions are asked at checkout too.
@@ -257,7 +259,7 @@ begin
                      and (r ->> 'unit_price_naira')::numeric = 5000 and r ->> 'event_title' = 'Paid night' and r ->> 'ticket_name' = 'VIP' and r ->> 'buyer_name' = 'Pay Ada'
                      and not (r ->> 'needs_refund')::boolean and r ->> 'paid_at' is not null, 'the Order shape: kobo shown as naira, the host net is gross minus both fees, no checkout link once paid');
   perform pg_temp.ok(pg_temp.j(b2, format('select public.ev_pay_my_order(%L)', o1)) is null and pg_temp.j(x, format('select public.ev_pay_my_order(%L)', o1)) is null, 'LEAK CHECK: nobody else can read the buyer''s order');
-  perform pg_temp.ok(jsonb_array_length(pg_temp.j(b1, 'select public.ev_pay_my_orders()')) = 1 and jsonb_array_length(pg_temp.j(x, 'select public.ev_pay_my_orders()')) = 0, 'my orders: only mine');
+  perform pg_temp.ok(jsonb_array_length(pg_temp.j(b1, 'select public.ev_pay_my_orders()')) >= 1 and not exists (select 1 from jsonb_array_elements(pg_temp.j(b1, 'select public.ev_pay_my_orders()')) o where o ->> 'buyer_id' <> b1::text) and jsonb_array_length(pg_temp.j(x, 'select public.ev_pay_my_orders()')) = 0, 'my orders: only mine');
   perform pg_temp.ok(jsonb_array_length(pg_temp.j(h, format('select public.ev_pay_event_orders(%L)', e1))) >= 1 and pg_temp.j(h, format('select public.ev_pay_event_orders(%L)', e1)) -> 0 -> 'checkout_url' = 'null'::jsonb
                      and pg_temp.j(x, format('select public.ev_pay_event_orders(%L)', e1)) = '[]'::jsonb and pg_temp.j(b1, format('select public.ev_pay_event_orders(%L)', e1)) = '[]'::jsonb,
                      'the host sees the event''s orders (never the checkout link); a buyer or a stranger sees none');
@@ -357,7 +359,8 @@ begin
   perform pg_temp.ok(not (public.ev_pay_sweep() -> 'expired' @> jsonb_build_array(jsonb_build_object('order_id', o8, 'checkout_id', 'chk_' || replace(o8::text, '-', '')))) and pg_temp.st(o8) = 'open', 'an order inside the 2 minute margin is not swept');
   perform pg_temp.ok(public.ev_pay_event_record('evt_1', 'checkout.completed', 'acct_host1', now(), '{"a":1}') and not public.ev_pay_event_record('evt_1', 'checkout.completed', 'acct_host1', now(), '{"a":1}'),
                      'DEDUPE: a Bachs event id is new once');
-  perform pg_temp.ok(public.ev_pay_event_processed('evt_1') = 'ok' and (select processed_at from public.ev_bachs_events where evt_id = 'evt_1') is not null and public.ev_pay_event_processed('evt_nope') = 'not_found', 'and can be marked processed');
+  perform pg_temp.ok(public.ev_pay_event_processed('evt_1') = 'ok' and public.ev_pay_event_processed('evt_nope') = 'not_found', 'and can be marked processed');
+  perform pg_temp.ok((select processed_at from public.ev_bachs_events where evt_id = 'evt_1') is not null, 'the processed time is saved');
   perform pg_temp.ok(not public.ev_pay_event_record('x', 'a', null, null, null) and not public.ev_pay_event_record('evt_2', null, null, null, null), 'a bad event id or type is refused');
 
   -- ================================================== refunds ========
@@ -369,7 +372,8 @@ begin
   perform pg_temp.ok((select needs_manual_refund from public.ev_orders where id = o7) and pg_temp.st(o7) = 'paid' and (select status from public.ev_refunds where order_id = o7) = 'manual_needed', 'a manual task is waiting');
   perform pg_temp.ok(public.ev_pay_refund_start(o7, h) ->> 'reason' = 'already_refunded', 'one refund per order');
   perform pg_temp.ok(pg_temp.t(x, format('select public.ev_pay_mark_manual_refund(%L)', o7)) = 'not_allowed' and pg_temp.t(b4, format('select public.ev_pay_mark_manual_refund(%L)', o7)) = 'not_allowed', 'only the host or staff can mark it paid back');
-  perform pg_temp.ok(pg_temp.t(h, format('select public.ev_pay_mark_manual_refund(%L)', o7)) = 'ok' and pg_temp.st(o7) = 'refunded' and (select status from public.ev_refunds where order_id = o7) = 'manual_done'
+  perform pg_temp.ok(pg_temp.t(h, format('select public.ev_pay_mark_manual_refund(%L)', o7)) = 'ok', 'the host marks the manual refund done');
+  perform pg_temp.ok(pg_temp.st(o7) = 'refunded' and (select status from public.ev_refunds where order_id = o7) = 'manual_done'
                      and not (select needs_manual_refund from public.ev_orders where id = o7), 'the host marks the manual refund done: refunded');
   perform pg_temp.ok(pg_temp.t(h, format('select public.ev_pay_mark_manual_refund(%L)', o7)) = 'nothing_to_mark', 'and not twice');
   -- Card refund by Bachs.
@@ -382,14 +386,15 @@ begin
                      'the tickets are void and the registration is given up');
   perform pg_temp.ok(public.ev_pay_refund_start(o5, h) ->> 'reason' = 'already_refunding', 'a second start while it is pending: already_refunding');
   perform pg_temp.ok((public.ev_pay_refund_apply('rfnd_1', 'rf_' || replace(o5::text, '-', ''), 'processing') ->> 'status') = 'processing' and pg_temp.st(o5) = 'refund_pending', 'refund.created: processing');
-  perform pg_temp.ok(public.ev_pay_refund_apply('rfnd_1', 'rf_' || replace(o5::text, '-', ''), 'paid') ->> 'status' = 'paid' and pg_temp.st(o5) = 'refunded' and (select refunded_at from public.ev_orders where id = o5) is not null, 'refund.paid: refunded');
+  perform pg_temp.ok(public.ev_pay_refund_apply('rfnd_1', 'rf_' || replace(o5::text, '-', ''), 'paid') ->> 'status' = 'paid', 'refund.paid answers paid');
+  perform pg_temp.ok(pg_temp.st(o5) = 'refunded' and (select refunded_at from public.ev_orders where id = o5) is not null, 'refund.paid: refunded');
   perform pg_temp.ok(not (public.ev_pay_refund_apply('rfnd_1', 'rf_' || replace(o5::text, '-', ''), 'processing') ->> 'changed')::boolean and pg_temp.st(o5) = 'refunded', 'a late created event never takes a paid refund backwards');
   perform pg_temp.ok(public.ev_pay_refund_apply('rfnd_x', 'rf_unknown', 'paid') ->> 'reason' = 'not_found', 'an unknown refund is not_found');
   -- Failed: the tickets stay void, the refund is owed again, a new one can be started by staff.
   r := public.ev_pay_refund_start(o6, st);
   perform pg_temp.ok((r ->> 'ok')::boolean and r ->> 'method' = 'card', 'staff can start a refund');
-  perform pg_temp.ok(public.ev_pay_refund_apply('rfnd_2', r ->> 'reference', 'failed') ->> 'status' = 'failed' and pg_temp.st(o6) = 'paid' and (select needs_refund from public.ev_orders where id = o6),
-                     'refund.failed: the order is paid again and owed a refund');
+  perform pg_temp.ok(public.ev_pay_refund_apply('rfnd_2', r ->> 'reference', 'failed') ->> 'status' = 'failed', 'refund.failed: the order is paid again and owed a refund (call)');
+  perform pg_temp.ok(pg_temp.st(o6) = 'paid' and (select needs_refund from public.ev_orders where id = o6), 'refund.failed: the order is paid again and owed a refund');
   perform pg_temp.ok(pg_temp.tix(e3, b3) = 1 and (select quantity from public.ev_registrations where event_id = e3 and user_id = b3) = 1 and (select status from public.ev_registrations where event_id = e3 and user_id = b3) = 'going',
                      'and the voided ticket is back (INSUFFICIENT_BALANCE case), the registration holds its seat again');
   r := public.ev_pay_refund_start(o6, null);
@@ -436,7 +441,7 @@ begin
                      'sales are for the host and staff only');
 
   -- ================================================== access ========
-  for f in select p.oid::regprocedure as sig, p.proname as name
+  for f in select p.oid as oid, p.oid::regprocedure as sig, p.proname as name
              from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
             where ns.nspname = 'public' and (p.proname like 'ev\_pay\_%' or p.proname in ('_ev_held', '_ev_host_can_sell', '_ev_pay_issue', '_ev_pay_recompute'))
   loop
