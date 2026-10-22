@@ -1,5 +1,6 @@
 import { CLUBHOUSE, clubhouseWidth, type CampaignLayout } from "./layout";
 import { emergencyRoomLayout } from "./rooms/emergencyRoom";
+import { lagosHqLayout } from "./rooms/lagosHq";
 import { EVENT_INDOOR } from "./rooms/eventIndoor";
 import { EVENT_THEATRE } from "./rooms/eventTheatre";
 import { EVENT_POOL } from "./rooms/eventPool";
@@ -21,7 +22,7 @@ import { HOTSPOT_IKORODU } from "./rooms/hotspotIkorodu";
  * the database by scripts/crew-room/export-layouts.mjs, so a template added here needs that run and a SQL load before
  * a crew can pick it.
  *
- * Crew templates (ROOM_TEMPLATES; the MANAGE picker shows the ones that are not `pickable: false`, so the clubhouse only: the Emergency Room (Emergency Room by SOS) is locked to its own crew). Each one has its own backdrop
+ * Crew templates (ROOM_TEMPLATES; the MANAGE picker shows the ones that are not `pickable: false`, so the clubhouse only: the Emergency Room is locked to its own crew and Lagos HQ is set up by hand). Each one has its own backdrop
  * component (ClubhouseArt draws the clubhouse and nothing else; see roomArt.tsx) and its own stable prop ids.
  *
  * Place rooms (PLACE_ROOMS, below) are not crew templates and never reach the picker: the event rooms (a template per kind
@@ -42,14 +43,13 @@ export type RoomTemplate = {
   description: string;
   /** A picture under /public for the picker card. */
   thumbnail: string;
-  /** The layout at a width (30 compact, 36 roomy). */
-  layout: (width: RoomWidth) => CampaignLayout;
   /**
-   * False: the MANAGE CREW picker does not offer this template to anyone. It stays a valid template (a room already on it
-   * keeps opening, templateFor finds it) and is put on a room by hand in the database. Missing means offered. The server
-   * side of a locked template is supabase/emergency_room_template.sql (crew_room_template_locks).
+   * False: the MANAGE picker does not offer it (a room set up by hand, such as Lagos HQ, or one locked to its crew, such as the Emergency Room: see crew_room_template_locks in supabase/emergency_room_template.sql). It stays a full template: the layouts,
+   * the SQL and templateFor() know it, and a room already on it still shows it. Missing means pickable.
    */
   pickable?: boolean;
+  /** The layout at a width (30 compact, 36 roomy). */
+  layout: (width: RoomWidth) => CampaignLayout;
 };
 
 export const ROOM_WIDTHS: RoomWidth[] = [30, 36];
@@ -71,6 +71,14 @@ export const ROOM_TEMPLATES: RoomTemplate[] = [
     layout: (width) => emergencyRoomLayout(width),
     // Locked to the Emergency Room crew: set up by hand (supabase/setup_emergencyroom.sql), never offered in MANAGE CREW.
     pickable: false,
+  },
+  {
+    key: "lagos-hq",
+    name: "Lagos HQ",
+    description: "A bright Lagos street by the lagoon: a stage under the billboard, a market, a bus stop, a suya spot and a road of danfos and okadas.",
+    thumbnail: "/templates/lagos-hq.jpg",
+    pickable: false,
+    layout: (width) => lagosHqLayout(width),
   },
 ];
 

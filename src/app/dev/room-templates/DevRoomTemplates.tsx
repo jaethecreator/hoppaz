@@ -106,14 +106,14 @@ function Walk({ entry, count, look }: { entry: Entry; count: number; look: unkno
     () => ({ peers, circles: [], selfId: "me", circleId: null, areaId: null, watching: false, observedAt, reset, onStep: () => true }),
     [peers, observedAt, reset]
   );
-  const isPlace = entry.group !== "CREW";
+  const isPlace = entry.group !== "CREW" && entry.group !== "TEMPLATE";
   return (
     <>
       <CampaignWorld
         key={entry.key}
         layout={entry.layout}
         look={look}
-        brand={isPlace ? entry.name : "360Playlist"}
+        brand={isPlace || entry.group === "TEMPLATE" ? entry.name : "360Playlist"}
         social={social}
         placeId={isPlace ? entry.key : undefined}
         roomContent={entry.group === "EVENT" ? SAMPLE : undefined}
@@ -134,11 +134,11 @@ function DevZonePill({ layout }: { layout: CampaignLayout }) {
 }
 
 function Still({ entry }: { entry: Entry }) {
-  const isPlace = entry.group !== "CREW";
+  const isPlace = entry.group !== "CREW" && entry.group !== "TEMPLATE";
   return (
     <div className="grid h-full place-items-center overflow-auto bg-[#15171a] p-2">
       <div className="w-full max-w-[960px] [&>svg]:h-auto [&>svg]:w-full">
-        <RoomArt layout={entry.layout} uid="still" brand={isPlace ? entry.name : "360Playlist"} content={entry.group === "EVENT" ? SAMPLE : undefined} />
+        <RoomArt layout={entry.layout} uid="still" brand={isPlace || entry.group === "TEMPLATE" ? entry.name : "360Playlist"} content={entry.group === "EVENT" ? SAMPLE : undefined} />
       </div>
     </div>
   );

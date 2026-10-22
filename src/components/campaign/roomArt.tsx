@@ -15,6 +15,7 @@ import HotspotAlimoshoArt from "./art/HotspotAlimoshoArt";
 import HotspotOjoBadagryArt from "./art/HotspotOjoBadagryArt";
 import HotspotIkoroduArt from "./art/HotspotIkoroduArt";
 import EmergencyRoomArt from "./art/EmergencyRoomArt";
+import LagosHqArt from "./art/LagosHqArt";
 
 import type { RoomArtContent, RoomArtProps } from "./art/kit";
 import type { CampaignLayout } from "@/lib/campaign/layout";
@@ -43,6 +44,8 @@ const ART: Record<string, ComponentType<RoomArtProps>> = {
   "hotspot-ikorodu": HotspotIkoroduArt,
   // The Emergency Room crew template (both widths draw from the layout).
   "emergency-room": EmergencyRoomArt,
+  // The Lagos HQ crew template (both widths draw from the layout).
+  "lagos-hq": LagosHqArt,
 };
 
 export function hasRoomArt(layoutId: string) {
