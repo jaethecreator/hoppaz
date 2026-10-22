@@ -673,7 +673,10 @@ begin
   if v_vis = 'community' and p_room is null then return jsonb_build_object('ok', false, 'reason', 'need_room'); end if;
 
   v_cover := nullif(btrim(coalesce(d ->> 'cover_url', '')), '');
-  if v_cover is not null and (char_length(v_cover) > 500 or v_cover !~ '^(https://|/)[^[:space:]]+$') then
+  -- An https link or a path. The one http exception is a file in this stack's own public storage on the local machine (the local dev stack
+  -- serves storage on http://127.0.0.1); no other plain http link is accepted.
+  if v_cover is not null and (char_length(v_cover) > 500 or (v_cover !~ '^(https://|/)[^[:space:]]+$'
+      and v_cover !~ '^http://(localhost|127\.0\.0\.1)(:[0-9]{1,5})?/storage/v1/object/public/[^[:space:]]+$')) then
     return jsonb_build_object('ok', false, 'reason', 'bad_cover');
   end if;
 

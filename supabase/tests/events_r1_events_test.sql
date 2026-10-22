@@ -162,6 +162,15 @@ begin
   perform pg_temp.ok(pg_temp.mk(h, '{"title":"Backwards","starts_at":"2030-01-02T20:00:00Z","ends_at":"2030-01-02T19:00:00Z"}') ->> 'reason' = 'end_before_start', 'it cannot end before it starts');
   perform pg_temp.ok(pg_temp.mk(h, '{"title":"Odd zone","timezone":"Mars/Olympus"}') ->> 'reason' = 'bad_timezone', 'an unknown time zone is refused');
   perform pg_temp.ok(pg_temp.mk(h, '{"title":"Odd cover","cover_url":"javascript:alert(1)"}') ->> 'reason' = 'bad_cover', 'a cover must be an https link or a path');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"Plain http cover","cover_url":"http://example.com/storage/v1/object/public/crew-images/event-covers/x/a.jpg"}') ->> 'reason' = 'bad_cover', 'a plain http cover from any other host is refused');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"Local other path","cover_url":"http://127.0.0.1:54321/etc/passwd"}') ->> 'reason' = 'bad_cover', 'a local http link outside public storage is refused');
+  e := pg_temp.mk(h, '{"title":"Uploaded cover","cover_url":"https://x.supabase.co/storage/v1/object/public/crew-images/event-covers/u/a.jpg"}') -> 'event';
+  perform pg_temp.ok(e ->> 'flyer_url' = 'https://x.supabase.co/storage/v1/object/public/crew-images/event-covers/u/a.jpg', 'an https storage cover is kept as the flyer');
+  e := pg_temp.mk(h, '{"title":"Local cover","cover_url":"http://127.0.0.1:54321/storage/v1/object/public/crew-images/event-covers/u/a.jpg"}') -> 'event';
+  perform pg_temp.ok(e ->> 'flyer_url' like 'http://127.0.0.1:54321/storage/%', 'the local stack public storage link is accepted (dev only in practice)');
+  e := pg_temp.upd(h, (e ->> 'id')::uuid, '{"cover_url":"https://x.supabase.co/storage/v1/object/public/crew-images/event-covers/u/b.jpg"}') -> 'event';
+  perform pg_temp.ok(e ->> 'flyer_url' like '%/b.jpg', 'an update replaces the cover');
+  perform pg_temp.ok(pg_temp.upd(h, (e ->> 'id')::uuid, '{"cover_url":"data:image/jpeg;base64,AAAA"}') ->> 'reason' = 'bad_cover', 'an update with a data URL cover is refused');
 
   -- The silent limit: 5 an hour, then try_again_later. The 5 above were the host, so use a new person.
   for i in 1..5 loop

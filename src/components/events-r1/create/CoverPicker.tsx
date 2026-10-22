@@ -5,7 +5,8 @@
 import { ImagePlus } from "lucide-react";
 import { useRef, useState } from "react";
 import Wordmark from "@/components/Wordmark";
-import { coverFromFile } from "./cover";
+import { useR1Api } from "@/lib/events-r1/hooks";
+import { coverFromFile, uploadCoverFile } from "./cover";
 
 /**
  * Luma style cover at the top of the create page: a 16:9 box. Tap it to pick from the gallery or take a photo (no capture
@@ -13,6 +14,7 @@ import { coverFromFile } from "./cover";
  * branded strip then.
  */
 export default function CoverPicker({ cover, onChange }: { cover: string | null; onChange: (url: string | null) => void }) {
+  const real = useR1Api()?.mode === "real";
   const file = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -23,7 +25,7 @@ export default function CoverPicker({ cover, onChange }: { cover: string | null;
     setBusy(true);
     setError("");
     try {
-      onChange(await coverFromFile(f));
+      onChange(await (real ? uploadCoverFile(f) : coverFromFile(f)));
     } catch (e) {
       setError(e instanceof Error ? e.message : "That picture won't open. Try another.");
     } finally {
@@ -44,14 +46,14 @@ export default function CoverPicker({ cover, onChange }: { cover: string | null;
         {cover ? (
           <>
             <img src={cover} alt="" className="h-full w-full object-cover" />
-            <span className="absolute bottom-2 right-2 rounded-full bg-brand-ink/70 px-3 py-1 font-body text-[13px] text-brand-cream">{busy ? "Working" : "Change"}</span>
+            <span className="absolute bottom-2 right-2 rounded-full bg-brand-ink/70 px-3 py-1 font-body text-[13px] text-brand-cream">{busy ? (real ? "Uploading" : "Working") : "Change"}</span>
           </>
         ) : (
           <span className="flex h-full w-full flex-col items-center justify-center gap-3">
             <Wordmark size={15} tone="cream" className="opacity-25" />
             <span className="inline-flex items-center gap-2 font-body text-[15px] text-dim">
               <ImagePlus size={18} aria-hidden />
-              {busy ? "Working" : "Add cover"}
+              {busy ? (real ? "Uploading" : "Working") : "Add cover"}
             </span>
           </span>
         )}

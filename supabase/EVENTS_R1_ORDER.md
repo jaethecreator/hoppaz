@@ -28,6 +28,7 @@ Then the new files, in this order, each one once (they are safe to run again):
 | 5 | `events_r1_reports.sql` | as file 1 | file 1 |
 | 7 | `events_r1_pay.sql` | all six new files; `auth.users` | files 1 to 6 (see `EVENTS_R1_PAY.md`) |
 | 6 | `events_r1_rooms.sql` | `crews`, `crew_members`, `crew_rooms`, `crew_announcement_seen`, `crew_announcement_seen()` | files 1, 2 and 4 |
+| 8 | `events_r1_covers.sql` | `crew_rooms.sql` (the public `crew-images` bucket), `chat_accounts.sql` (`has_account()`) | nothing, but run it after file 1: a cover link is saved through `ev_create_event` / `ev_update_event` (see 2d) |
 
 Files 1 and 2 leave small stubs for functions that later files fill in (the going count, the waitlist fill, the ticket issue and void,
 the HQ test). A stub is written only when the real function is missing, so running a file again never puts a stub back over the real one.
@@ -85,6 +86,10 @@ select public.ev_set_setting('events_r1', 'on');    -- at launch; 'off' is the e
 ```
 
 Only the service role and the SQL editor can run it. Separately, an event with no `host_id` (the old curated and /drop listings) can be edited or cancelled by staff only: the Hopper who dropped it is not its host. The text of `not_open` in the app is "Not open yet".
+
+## 2d. Event cover pictures (file 8)
+
+`events_r1_covers.sql` lets a host with an account upload a cover to the existing public `crew-images` bucket, in their own folder: `event-covers/<user id>/<file>.jpg` (2 MB, jpeg, png or webp: the bucket's own limits, unchanged). It adds three storage policies (`events_r1_cover_upload`, `_read`, `_remove`) and one helper (`_ev_cover_path_owner`); the older crew picture policies only match a file straight under a crew id, so they are not touched. The app keeps the full public link as `cover_url` (saved as `flyer_url`), because every card, the map and the share card use `flyer_url` as an image address as is. `events_r1_events.sql` changed in one line: the cover check in `_ev_create_core` also accepts a plain `http://localhost` or `http://127.0.0.1` link into `/storage/v1/object/public/` (the local stack serves storage on http); any other plain http link is still `bad_cover`. Cover files are not removed when an event is deleted or the account is deleted (`/api/account/delete` clears `event-photos` and `chat-images`, not this folder). Test: `tests/events_r1_covers_test.sql`.
 
 ## 3. The cron line (Pops)
 
@@ -218,11 +223,11 @@ docker exec supabase_db_hoppaz-local pg_dump -U postgres -d postgres -s | docker
 # the schema dump has no rows: the rooms test needs the two room layouts that crew_rooms.sql inserts (read only from postgres)
 docker exec supabase_db_hoppaz-local pg_dump -U postgres -d postgres -a -t public.crew_room_layouts | docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q
 # then, in this order, each file twice (the second run checks they are safe to run again):
-for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms events_r1_pay; do
+for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms events_r1_pay events_r1_covers; do
   for i in 1 2; do docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q -v ON_ERROR_STOP=1 < supabase/$f.sql; done
 done
 # then each test (one transaction that rolls back; each ends with ALL ... TESTS PASSED):
-for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms events_r1_pay; do
+for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms events_r1_pay events_r1_covers; do
   docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q -v ON_ERROR_STOP=1 < supabase/tests/${f}_test.sql
 done
 docker exec supabase_db_hoppaz-local psql -U postgres -d postgres -c "drop database hoppaz_ev_t1"
