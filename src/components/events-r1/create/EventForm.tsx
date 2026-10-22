@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import SignInSheet from "@/components/events-r1/SignInSheet";
 import { AREAS, areaByName } from "@/lib/geo";
-import { useMyRooms, useR1Api, useR1Now } from "@/lib/events-r1/hooks";
+import { useMyRooms, useR1Api, useR1Auth, useR1Now } from "@/lib/events-r1/hooks";
 import type { EventDraft, EventKind, LinkType, Visibility } from "@/lib/events-r1/types";
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
 import { Choice, Row, Toggle } from "./Fields";
@@ -14,6 +14,8 @@ import Tickets, { newTicket, ticketsDraft, ticketsError, ticketsSummary } from "
 import type { TicketForm } from "./Tickets";
 import DateTimePicker from "../DateTimePicker";
 import { endError, lagosIso, moveEnd } from "../dateTime";
+import GlowButton from "./GlowButton";
+import { bool, clearDraft, patchDraft, readDraft, str } from "./draft";
 import { cleanLink, DEFAULT_LENGTH, defaultStart, detectLinkType, LINK_LABEL, TIMEZONE } from "./helpers";
 
 const KINDS: Array<{ value: EventKind; label: string }> = [
@@ -36,24 +38,43 @@ export default function EventForm({ cover }: { cover: string | null }) {
   const api = useR1Api();
   const clock = useR1Now();
 
-  const [title, setTitle] = useState("");
-  const [start, setStart] = useState(() => lagosIso(defaultStart(Date.now())));
-  const [end, setEnd] = useState(() => lagosIso(defaultStart(Date.now()) + DEFAULT_LENGTH));
-  const touched = useRef(false);
-  const [kind, setKind] = useState<EventKind>("in_person");
-  const [place, setPlace] = useState("");
-  const [area, setArea] = useState("");
-  const [linkType, setLinkType] = useState<LinkType | null>(null);
-  const [link, setLink] = useState("");
-  const [about, setAbout] = useState("");
-  const [approval, setApproval] = useState(false);
-  const [capacity, setCapacity] = useState("");
-  const capAuto = useRef(false);
-  const [waitlist, setWaitlist] = useState(false);
-  const [paid, setPaid] = useState(false);
-  const [tickets, setTickets] = useState<TicketForm[]>(() => [newTicket("General")]);
-  const [visibility, setVisibility] = useState<Visibility>("public");
-  const [addToRoom, setAddToRoom] = useState(true);
+  // What was typed before a reload or a trip out to Google (see draft.ts). Read once.
+  const [saved] = useState(() => readDraft());
+  const [d0] = useState<Record<string, unknown>>(() => saved.event ?? {});
+  const resume = useRef(saved.pending === "event");
+  const resumed = useRef(false);
+  const { user } = useR1Auth();
+
+  const [title, setTitle] = useState(() => str(d0.title));
+  const [start, setStart] = useState(() => (d0.touched === true && str(d0.start) ? str(d0.start) : lagosIso(defaultStart(Date.now()))));
+  const [end, setEnd] = useState(() => (d0.touched === true && str(d0.end) ? str(d0.end) : lagosIso(defaultStart(Date.now()) + DEFAULT_LENGTH)));
+  const touched = useRef(d0.touched === true);
+  const [kind, setKind] = useState<EventKind>(() => (KINDS.some((k) => k.value === d0.kind) ? (d0.kind as EventKind) : "in_person"));
+  const [place, setPlace] = useState(() => str(d0.place));
+  const [area, setArea] = useState(() => str(d0.area));
+  const [linkType, setLinkType] = useState<LinkType | null>(() => (LINKS.some((k) => k.value === d0.linkType) ? (d0.linkType as LinkType) : null));
+  const [link, setLink] = useState(() => str(d0.link));
+  const [about, setAbout] = useState(() => str(d0.about));
+  const [approval, setApproval] = useState(() => bool(d0.approval));
+  const [capacity, setCapacity] = useState(() => str(d0.capacity));
+  const capAuto = useRef(d0.capAuto === true);
+  const [waitlist, setWaitlist] = useState(() => bool(d0.waitlist));
+  const [paid, setPaid] = useState(() => bool(d0.paid));
+  const [tickets, setTickets] = useState<TicketForm[]>(() => {
+    const t = d0.tickets;
+    if (Array.isArray(t) && t.length > 0) {
+      const rows = t.map((x: Record<string, unknown>) => {
+        const row = newTicket(str(x?.name));
+        row.price = str(x?.price);
+        row.capacity = str(x?.capacity);
+        return row;
+      });
+      return rows;
+    }
+    return [newTicket("General")];
+  });
+  const [visibility, setVisibility] = useState<Visibility>(() => (WHO.some((w) => w.value === d0.visibility) ? (d0.visibility as Visibility) : "public"));
+  const [addToRoom, setAddToRoom] = useState(() => bool(d0.addToRoom, true));
   const [open, setOpen] = useState<"tickets" | "approval" | "who" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -72,6 +93,17 @@ export default function EventForm({ cover }: { cover: string | null }) {
     // Once, when the clock first answers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
+
+  // Keep the draft as it is typed.
+  useEffect(() => {
+    patchDraft({
+      mode: "event",
+      event: {
+        title, start, end, touched: touched.current, kind, place, area, linkType, link, about, approval, capacity,
+        capAuto: capAuto.current, waitlist, paid, tickets, visibility, addToRoom,
+      },
+    });
+  }, [title, start, end, kind, place, area, linkType, link, about, approval, capacity, waitlist, paid, tickets, visibility, addToRoom]);
 
   // The host's room (if any): the first room they own.
   const mine = useMyRooms();
@@ -168,8 +200,10 @@ export default function EventForm({ cover }: { cover: string | null }) {
     setError("");
     try {
       const made = await api.events.create(draft());
+      clearDraft();
       router.push(`/host/${made.id}?new=1`);
     } catch (e) {
+      patchDraft({ pending: null });
       setError(paid ? hostPayError(e) : e instanceof Error ? e.message : "Try again later");
       setBusy(false);
     }
@@ -189,11 +223,32 @@ export default function EventForm({ cover }: { cover: string | null }) {
       return;
     }
     if (!api.auth.current()) {
+      // Sign up wall; the draft is marked so the event is made at once after sign up, even after the trip out to Google.
+      patchDraft({ pending: "event" });
       setSheet(true);
       return;
     }
     void create();
   };
+
+  // Back from Google (the page reloaded) with the sign up waiting: make the event now, from the restored draft.
+  useEffect(() => {
+    if (!resume.current || resumed.current || !api) return;
+    if (user) {
+      resumed.current = true;
+      resume.current = false;
+      patchDraft({ pending: null });
+      submit();
+      return;
+    }
+    const id = window.setTimeout(() => {
+      resume.current = false;
+      patchDraft({ pending: null });
+    }, 6000);
+    return () => window.clearTimeout(id);
+    // Only when the sign in state answers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, user]);
 
   const capacityText = capacity ? capacity : "None";
 
@@ -305,9 +360,9 @@ export default function EventForm({ cover }: { cover: string | null }) {
       {room && roomName && <Toggle on={addToRoom} onChange={changeAddToRoom} label={`Add to ${roomName}`} />}
 
       <div className="flex flex-col gap-2 pb-2">
-        <button type="button" className="btn w-full normal-case" onClick={submit} disabled={busy || !title.trim() || !api || blocked}>
+        <GlowButton ready={!busy && !!title.trim() && !!api && !blocked} className="btn w-full normal-case" onClick={submit} disabled={busy || !title.trim() || !api || blocked}>
           {blocked && gate.state === "off" ? PAID_UNAVAILABLE : blocked && gate.state === "needs" ? "Set up payouts first" : busy ? "Creating" : "Create event"}
-        </button>
+        </GlowButton>
         {error && (
           <p ref={errorRef} role="alert" className="px-1 font-body text-[14px] text-fireant">
             {error}
@@ -317,8 +372,11 @@ export default function EventForm({ cover }: { cover: string | null }) {
 
       <SignInSheet
         open={sheet}
-        reason="Create your event"
-        onClose={() => setSheet(false)}
+        reason="Sign up to create your event"
+        onClose={() => {
+          setSheet(false);
+          patchDraft({ pending: null });
+        }}
         onSignedIn={() => {
           setSheet(false);
           void create();
