@@ -10,6 +10,8 @@ import type { Pop, PopAudience, PopAuto } from "../types";
 import { AUTO_KINDS, autoSendAt } from "./defaults";
 import { assertManage, findEvent, isGoing, isHostOf, regOf, regsOf, userById } from "./rules";
 import { emit, now, S, viewer } from "./store";
+import { roomCopyAllowed } from "../popRoom";
+import { eventPageUrl } from "../siteUrl";
 import { clone, newId, seedId } from "./util";
 
 /** The longest a Pop may be, like a room announcement. */
@@ -27,7 +29,7 @@ export function recipientsFor(eventId: string, audience: PopAudience): number {
 /** Copy a sent Pop into its room's Announcements, tagged with the event. */
 function copyToRoom(pop: Pop): void {
   const e = S().events[pop.event_id];
-  if (!pop.also_room || !e?.room_id) return;
+  if (!pop.also_room || !e?.room_id || !roomCopyAllowed(e.visibility, pop.audience)) return;
   const id = seedId(`pop-ann:${pop.id}`);
   S().announcements[id] = {
     id,
@@ -117,7 +119,7 @@ export const pops: PopsApi = {
       author_name: author,
       body: text,
       audience,
-      also_room: alsoRoom && !!e.room_id,
+      also_room: alsoRoom && !!e.room_id && roomCopyAllowed(e.visibility, audience),
       send_at: later ? new Date(when).toISOString() : null,
       sent_at: later ? null : new Date(now()).toISOString(),
       status: later ? "scheduled" : "sent",
@@ -134,7 +136,7 @@ export const pops: PopsApi = {
     const p = S().pops[popId];
     if (!p) throw new Error("Pop not found");
     const e = S().events[p.event_id];
-    return `${p.body}\n\nhttps://hoppaz.fun/e/${e?.slug ?? p.event_id}`;
+    return `${p.body}\n\n${eventPageUrl({ slug: e?.slug, id: p.event_id })}`;
   },
 
   async cancelScheduled(popId) {

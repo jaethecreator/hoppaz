@@ -9,6 +9,7 @@ import { lagosIso } from "@/components/events-r1/dateTime";
 import { eventUrl } from "@/components/events-r1/page/share";
 import { popWhen } from "@/components/events-r1/page/time";
 import { useR1Api } from "@/lib/events-r1/hooks";
+import { roomCopyAllowed } from "@/lib/events-r1/popRoom";
 import type { PopAudience, R1Event } from "@/lib/events-r1/types";
 import { ErrorLine, Section, useFlash } from "../ui";
 import { errWord } from "../words";
@@ -42,6 +43,8 @@ export default function Composer({ event, counts, now }: { event: R1Event; count
   const start = Date.parse(event.starts_at);
   const canSchedule = start > now;
   const hasRoom = !!event.room_id;
+  // Invite only events never copy a Pop to the room; community events only for those going (the address and codes stay private).
+  const canRoom = hasRoom && roomCopyAllowed(event.visibility, to);
   const roomName = event.host.roomName;
   const n = counts[to];
   const clean = text.trim();
@@ -71,7 +74,7 @@ export default function Composer({ event, counts, now }: { event: R1Event; count
         eventId: event.id,
         body: clean,
         audience: to,
-        alsoRoom: hasRoom && also,
+        alsoRoom: canRoom && also,
         sendAt: mode === "later" ? new Date(whenMs).toISOString() : null,
       });
       setText("");
@@ -125,10 +128,10 @@ export default function Composer({ event, counts, now }: { event: R1Event; count
         {text.length}/{POP_MAX}
       </p>
 
-      <div className="mt-1 border-t border-line pt-1">
-        {hasRoom ? (
+      <div className={clsx("mt-1", (canRoom || !hasRoom) && "border-t border-line pt-1")}>
+        {canRoom ? (
           <Toggle on={also} onChange={setAlso} label={`Also post in ${roomName ?? "your room"} Announcements`} />
-        ) : (
+        ) : hasRoom ? null : (
           <p className="hint py-2">
             {event.host.roomId ? `Add this event to ${roomName ?? "your room"} in the Roomz tab to also post in Announcements.` : "You have no Roomz yet. This Pop reaches the event only."}
           </p>
