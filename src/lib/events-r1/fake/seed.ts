@@ -284,9 +284,9 @@ export function buildSeed(now: number): FakeState {
   for (const [id, slug, name, kind, owner, base, verified, logo, description] of rooms) {
     st.rooms[id] = {
       id, slug, name, kind, logo_url: logo, wallpaper_url: null, verified, owner_id: owner, description, base_members: base,
-      // 360Playlist and the brand rooms have a walkable room and it is switched on. Lagos HQ can have one but it is off until its room
-      // is ready (chat first, so nothing can fill a walker cap): it takes the default, off. A plain crew has none in the fake.
-      has_3d: kind !== "crew", ...(kind === "brand" ? { three_d_on: true } : {}), online: kind === "hq" ? 320 : 0,
+      // 360Playlist, Lagos HQ (its lagos-hq room) and the brand rooms have a walkable room and it is switched on by default. Chat stays
+      // the main thing: when the walker cap is reached people keep the chat. A plain crew has none in the fake.
+      has_3d: kind !== "crew", ...(kind !== "crew" ? { three_d_on: true } : {}), online: kind === "hq" ? 320 : 0,
     };
   }
   st.memberships[`${U.ada}:${R.p360}`] = true;

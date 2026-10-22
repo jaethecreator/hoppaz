@@ -35,8 +35,9 @@
 --   ev_set_room_3d(room, on)  the owner of the room (crew_members role owner) or staff (profiles.is_admin) switches the walkable 3D room on or
 --                             off. Off = chat only. Answers 'ok', or a reason: need_account, bad_value, not_allowed, not_found.
 --   ev_room_3d_allowed(room)  is the 3D room switched on for this room? The default, when nobody has set it: ON for a room that has a layout
---                             (every crew does: the walkable room is made on first entry from the default template), OFF for Lagos HQ until
---                             its owner or staff switch it on. The ENTRY function must ask it: see "THE 3D ROOM SWITCH" below.
+--                             (every crew does: the walkable room is made on first entry from the default template), Lagos HQ included (its
+--                             room uses the lagos-hq template, see LAGOS HQ). Owner or staff can still switch it off. The ENTRY function must
+--                             ask it: see "THE 3D ROOM SWITCH" below.
 --   ev_admin_rooms()          staff only (profiles.is_admin): every room as a room summary (null for anyone else), Lagos HQ first, then the biggest.
 --   ev_admin_set_room_3d(room, on) and ev_admin_list_rooms()   the same two for the /admin desk, which has the shared token and no account: service
 --                             role only, no one to check (the route /api/admin/event-rooms checks the token). set answers ok, bad_value or not_found.
@@ -52,7 +53,11 @@
 --     A signed-in guest with no account cannot make it (the crews table asks for an account); the SQL editor and the service role can.
 --   * adds the caller as a member if they have an account (a guest is not added: chat needs an account anyway). So every account joins
 --     the first time it opens the Rooms tab. ev_hq_backfill() does it for everyone at once.
---   * makes the HQ room row with capacity 500.
+--   * makes the HQ room row with capacity 500, and sets its template to 'lagos-hq' (the walkable Lagos street, supabase/lagos_hq_template.sql)
+--     when that template's layout rows exist at the room's width. A room still on the default 'clubhouse' is moved over (its fountain circles
+--     are cleared and anyone walking is put back at the spawn, as crew_room_set_template does); a template the owner picked later is left
+--     alone. If lagos_hq_template.sql has not run yet it keeps the clubhouse and says so in a NOTICE, and moves over on the first call after
+--     the template is loaded. The 3D switch is ON for HQ by default (chat stays the main thing: the walker cap only limits who walks).
 -- What Ola must know about the walker cap. crew_rooms.capacity is the number of WALKERS in the 3D room (60 by default, a check allows 1 to
 -- 500). It does not limit members and it does not limit chat: General chat (crew_room_send with scope general) needs only membership
 -- and an account, and a member who enters a full room is let in to watch. So chat first never meets the cap. HQ is set to 500, the most the
@@ -96,6 +101,8 @@ declare
   me      uuid := auth.uid();
   v_crew  uuid;
   v_owner uuid;
+  v_width integer;
+  v_spawn jsonb;
 begin
   -- A signed-in person while Release 1 is off: nothing is made and nobody joins; the room is only reported if it exists.
   if me is not null and not public._ev_open() then return (select h.crew_id from public.ev_hq h); end if;
@@ -120,6 +127,19 @@ begin
                                              'artistTitle', '', 'artistNote', '', 'awards', '[]'::jsonb), 500)
       on conflict (crew_id) do update set capacity = greatest(crew_rooms.capacity, 500);
       insert into public.ev_hq (id, crew_id) values (true, v_crew) on conflict (id) do nothing;
+    end if;
+  end if;
+  -- HQ's walkable room is the lagos-hq template, when its layout rows exist; else it stays on the clubhouse and says so.
+  select r.width into v_width from public.crew_rooms r where r.crew_id = v_crew and r.template = 'clubhouse';
+  if v_width is not null then
+    select l.data -> 'spawn' into v_spawn from public.crew_room_layouts l where l.template = 'lagos-hq' and l.width = v_width;
+    if v_spawn is null then
+      raise notice 'ev_ensure_hq: the lagos-hq room template is not loaded (run supabase/lagos_hq_template.sql); Lagos HQ keeps the clubhouse for now';
+    else
+      update public.crew_rooms set template = 'lagos-hq', version = version + 1, updated_at = clock_timestamp()
+       where crew_id = v_crew and template = 'clubhouse';
+      delete from public.crew_room_circles where crew_id = v_crew;
+      update public.crew_room_presence set x = (v_spawn ->> 'x')::int, y = (v_spawn ->> 'y')::int where crew_id = v_crew;
     end if;
   end if;
   -- Under its old name: rename it (the crew and the room's brand line), once.
@@ -172,12 +192,12 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke all on function public._ev_room_has_layout(uuid) from public, anon, authenticated;
 
--- Is the 3D room switched on? A saved switch wins. With none: on for a room with a layout, off for Lagos HQ (until its room is ready and
--- its owner or staff switch it on), off for a room that does not exist. This is the function the entry function asks.
+-- Is the 3D room switched on? A saved switch wins. With none: on for a room with a layout (Lagos HQ too: it uses the lagos-hq template),
+-- off for a room that does not exist. This is the function the entry function asks.
 create or replace function public.ev_room_3d_allowed(p_room uuid) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
   select public._ev_room_has_layout(p_room)
-     and coalesce((select s.three_d_on from public.ev_room_settings s where s.room_id = p_room), not public._ev_is_hq(p_room));
+     and coalesce((select s.three_d_on from public.ev_room_settings s where s.room_id = p_room), true);
 $$;
 
 -- Owner or staff. Answers ok, or a reason: need_account (a guest or nobody), bad_value, not_allowed, not_found.

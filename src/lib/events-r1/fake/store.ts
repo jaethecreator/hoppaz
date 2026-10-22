@@ -37,7 +37,7 @@ export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "lates
   owner_id: string | null;
   /** Missing means no walkable 3D room (the fake has none; a tester can switch one on with fakeDev.setHas3d). */
   has_3d?: boolean;
-  /** The 3D room switch. Missing means the default: on when there is a 3D room, except Lagos HQ (off until someone switches it on). */
+  /** The 3D room switch. Missing means the default: on when there is a 3D room, Lagos HQ included. */
   three_d_on?: boolean;
   /** Missing means not counted. */
   online?: number;

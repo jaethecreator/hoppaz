@@ -187,7 +187,7 @@ export type RoomSummary = {
   /**
    * The 3D room is switched on (the owner or staff set it, see RoomsApi.setThreeD). Enter room shows only when has_3d and
    * three_d_on are both true; off means chat only (Announcements, General, event chats). Default on for rooms that have a
-   * 3D room, off for Lagos HQ until its room is ready.
+   * 3D room, Lagos HQ included (its lagos-hq room).
    */
   three_d_on: boolean;
   /** People in the room right now (shown on Lagos HQ). 0 when not counted. */

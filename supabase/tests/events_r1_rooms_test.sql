@@ -111,6 +111,24 @@ begin
                      'the first read makes Lagos HQ: kind hq, verified, and the reader is in');
   perform pg_temp.ok(exists (select 1 from public.crews where id = hq and verified and visibility = 'open' and created_by = st and name = 'Lagos HQ')
                      and (select capacity from public.crew_rooms where crew_id = hq) = 500 and (select count(*) from public.ev_hq) = 1, 'it is an open verified crew owned by the staff account, with the largest walker capacity the check allows');
+  -- The walkable room: HQ uses the lagos-hq template when its layout rows exist, else the clubhouse (with a NOTICE).
+  if exists (select 1 from public.crew_room_layouts where template = 'lagos-hq' and width = 30) then
+    perform pg_temp.ok((select template from public.crew_rooms where crew_id = hq) = 'lagos-hq', 'Lagos HQ''s room uses the lagos-hq template');
+    update public.crew_rooms set template = 'clubhouse' where crew_id = hq;
+    update public.crew_room_layouts set template = 'lagos-hq-held' where template = 'lagos-hq';
+    perform public.ev_ensure_hq();
+    perform pg_temp.ok((select template from public.crew_rooms where crew_id = hq) = 'clubhouse' and public.ev_room_3d_allowed(hq),
+                       'with the template not loaded HQ keeps the clubhouse (and the 3D room still works)');
+    update public.crew_room_layouts set template = 'lagos-hq' where template = 'lagos-hq-held';
+    perform public.ev_ensure_hq();
+    perform pg_temp.ok((select template from public.crew_rooms where crew_id = hq) = 'lagos-hq', 'and it moves over once the template is loaded');
+    update public.crew_rooms set template = 'emergency-room' where crew_id = hq and exists (select 1 from public.crew_room_layouts where template = 'emergency-room' and width = 30);
+    perform public.ev_ensure_hq();
+    perform pg_temp.ok((select template from public.crew_rooms where crew_id = hq) in ('lagos-hq', 'emergency-room'), 'a template chosen by the owner is left alone');
+    update public.crew_rooms set template = 'lagos-hq' where crew_id = hq;
+  else
+    perform pg_temp.ok((select template from public.crew_rooms where crew_id = hq) = 'clubhouse', 'lagos_hq_template.sql not loaded here: Lagos HQ keeps the clubhouse');
+  end if;
   perform pg_temp.ok(exists (select 1 from public.crew_members where crew_id = hq and user_id = st and role = 'owner') and exists (select 1 from public.crew_members where crew_id = hq and user_id = a and role = 'member'),
                      'the staff account owns it, the reader is a member');
   perform pg_temp.ok(public._ev_is_hq(hq) and not public._ev_is_hq(gen_random_uuid()), 'the HQ test knows it');
@@ -268,12 +286,12 @@ begin
   -- Defaults. A crew with no switch row and no crew_rooms row yet is made on first entry from the default layout, so it is ON.
   perform pg_temp.ok(not exists (select 1 from public.ev_room_settings where room_id in (room, rdisc, rpriv, hq)), 'nobody has set a switch yet');
   perform pg_temp.ok(public.ev_room_3d_allowed(room) and public.ev_room_3d_allowed(rdisc) and public.ev_room_3d_allowed(rpriv), 'default: a room with a layout is ON');
-  perform pg_temp.ok(not public.ev_room_3d_allowed(hq), 'default: Lagos HQ is OFF until it is switched on');
+  perform pg_temp.ok(public.ev_room_3d_allowed(hq), 'default: Lagos HQ is ON too (its room is the lagos-hq template)');
   perform pg_temp.ok(not public.ev_room_3d_allowed(gen_random_uuid()) and not public.ev_room_3d_allowed(null), 'a room that does not exist is OFF');
   r := pg_temp.j(m, format('select public.ev_room(%L)', room));
   perform pg_temp.ok((r ->> 'has_3d')::boolean and (r ->> 'three_d_on')::boolean, 'ev_room says has_3d and three_d_on for an ordinary room');
   r := pg_temp.j(a, 'select public.ev_rooms_for_me()') -> 'hq';
-  perform pg_temp.ok((r ->> 'has_3d')::boolean and not (r ->> 'three_d_on')::boolean, 'the Rooms tab says Lagos HQ has a room (has_3d) but it is off');
+  perform pg_temp.ok((r ->> 'has_3d')::boolean and (r ->> 'three_d_on')::boolean, 'the Rooms tab says Lagos HQ has a room (has_3d) and it is on');
   perform pg_temp.ok((pg_temp.mine_of(m, room) ->> 'three_d_on')::boolean, 'ev_rooms_for_me lists mine with three_d_on');
 
   -- Who may switch. The owner (crew_members role owner) and staff; nobody else.
@@ -315,19 +333,20 @@ begin
   delete from public.ev_room_settings where room_id = room;
   perform pg_temp.ok(public.ev_room_3d_allowed(room), 'with the row gone the default comes back (on)');
 
-  -- Lagos HQ: off until its owner or staff switch it on. st is staff and the owner.
-  sres := pg_temp.t(a, format('select public.ev_set_room_3d(%L, true)', hq));
-  perform pg_temp.ok(sres = 'not_allowed' and not public.ev_room_3d_allowed(hq), 'an ordinary member cannot switch Lagos HQ on');
+  -- Lagos HQ: on by default; its owner or staff can switch it off. st is staff and the owner.
+  sres := pg_temp.t(a, format('select public.ev_set_room_3d(%L, false)', hq));
+  perform pg_temp.ok(sres = 'not_allowed' and public.ev_room_3d_allowed(hq), 'an ordinary member cannot switch Lagos HQ off');
+  sres := pg_temp.t(st, format('select public.ev_set_room_3d(%L, false)', hq));
+  perform pg_temp.ok(sres = 'ok' and not public.ev_room_3d_allowed(hq), 'staff switch Lagos HQ off');
+  perform pg_temp.ok(not (pg_temp.j(a, 'select public.ev_rooms_for_me()') -> 'hq' ->> 'three_d_on')::boolean, 'and the Rooms tab shows it off');
   sres := pg_temp.t(st, format('select public.ev_set_room_3d(%L, true)', hq));
-  perform pg_temp.ok(sres = 'ok' and public.ev_room_3d_allowed(hq), 'staff switch Lagos HQ on');
-  perform pg_temp.ok((pg_temp.j(a, 'select public.ev_rooms_for_me()') -> 'hq' ->> 'three_d_on')::boolean, 'and the Rooms tab shows it on');
-  sres := pg_temp.t(st, format('select public.ev_set_room_3d(%L, false)', hq));
-  perform pg_temp.ok(sres = 'ok' and not public.ev_room_3d_allowed(hq), 'and off again');
-  -- An owner who is not staff, on a room that has no row.
+  perform pg_temp.ok(sres = 'ok' and public.ev_room_3d_allowed(hq), 'and on again');
+  -- An owner who is not staff, on a room that has a row.
   update public.profiles set is_admin = false where id = st;
-  perform pg_temp.ok(pg_temp.t(st, format('select public.ev_set_room_3d(%L, true)', hq)) = 'ok', 'the owner of Lagos HQ can switch it with no staff flag');
   sres := pg_temp.t(st, format('select public.ev_set_room_3d(%L, false)', hq));
-  perform pg_temp.ok(sres = 'ok' and not public.ev_room_3d_allowed(hq), 'and off');
+  perform pg_temp.ok(sres = 'ok' and not public.ev_room_3d_allowed(hq), 'the owner of Lagos HQ can switch it off with no staff flag');
+  sres := pg_temp.t(st, format('select public.ev_set_room_3d(%L, true)', hq));
+  perform pg_temp.ok(sres = 'ok' and public.ev_room_3d_allowed(hq), 'and on');
   perform pg_temp.ok(pg_temp.t(st, format('select public.ev_set_room_3d(%L, false)', rdisc)) = 'not_allowed', 'but an owner who is not staff cannot touch other rooms');
   update public.profiles set is_admin = true where id = st;
 
@@ -348,7 +367,7 @@ begin
   perform pg_temp.ok(exists (select 1 from jsonb_array_elements(r) q where q ->> 'id' = room::text) and exists (select 1 from jsonb_array_elements(r) q where q ->> 'id' = rpriv::text)
                      and exists (select 1 from jsonb_array_elements(r) q where q ->> 'id' = rdisc::text), 'staff list: including the ones staff are not in, and private ones');
   perform pg_temp.ok(jsonb_array_length(r) = (select count(*) from public.crews), 'staff list: as many as there are crews');
-  perform pg_temp.ok((select (q ->> 'three_d_on')::boolean from jsonb_array_elements(r) q where q ->> 'id' = room::text) and not (r -> 0 ->> 'three_d_on')::boolean, 'staff list: each room carries its switch');
+  perform pg_temp.ok((select (q ->> 'three_d_on')::boolean from jsonb_array_elements(r) q where q ->> 'id' = room::text) and (r -> 0 ->> 'three_d_on')::boolean, 'staff list: each room carries its switch');
   perform pg_temp.ok(pg_temp.j(h, 'select public.ev_admin_rooms()') is null and pg_temp.j(m, 'select public.ev_admin_rooms()') is null, 'anyone who is not staff gets null, even a room owner');
 
   -- The staff desk's two (service role, no account).

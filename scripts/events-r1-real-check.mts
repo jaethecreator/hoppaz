@@ -184,16 +184,16 @@ const hqId = lst0?.hq.id as string;
 out(!!hqId && hqId !== "hq" && lst0?.hq.kind === "hq", "HQ is a real room", hqId);
 await step("rooms.get('hq') resolves the short address", async () => (await api.rooms.get("hq"))?.id === hqId, (v) => String(v));
 out(lst0?.hq.name === "Lagos HQ", "the HQ room is called Lagos HQ", String(lst0?.hq.name));
-eq("Lagos HQ: a room exists but it is off by default", [lst0?.hq.has_3d, lst0?.hq.three_d_on], [true, false]);
-eq("the entry function's check (ev_room_3d_allowed) says off for Lagos HQ", (await admin.rpc("ev_room_3d_allowed", { p_room: hqId })).data, false);
-await step("staff switch Lagos HQ on (setThreeD)", async () => {
-  await api.rooms.setThreeD(hqId, true);
+eq("Lagos HQ: a room exists and it is on by default", [lst0?.hq.has_3d, lst0?.hq.three_d_on], [true, true]);
+eq("the entry function's check (ev_room_3d_allowed) says on for Lagos HQ", (await admin.rpc("ev_room_3d_allowed", { p_room: hqId })).data, true);
+await step("staff switch Lagos HQ off (setThreeD)", async () => {
+  await api.rooms.setThreeD(hqId, false);
   const g = await api.rooms.get("hq");
   const l = await api.rooms.list();
   return `get=${g?.three_d_on} list=${l.hq.three_d_on} allowed=${(await admin.rpc("ev_room_3d_allowed", { p_room: hqId })).data}`;
 }, (v) => v);
-await step("staff switch Lagos HQ off again", async () => {
-  await api.rooms.setThreeD("hq", false);
+await step("staff switch Lagos HQ on again", async () => {
+  await api.rooms.setThreeD("hq", true);
   return `get=${(await api.rooms.get("hq"))?.three_d_on} allowed=${(await admin.rpc("ev_room_3d_allowed", { p_room: hqId })).data}`;
 }, (v) => v);
 
@@ -220,7 +220,7 @@ eq("off in the database too", await roomOn(), false);
 await login(bea);
 eq("another person sees it off", (await api.rooms.get(room!.id))?.three_d_on, false);
 await login(host_);
-await refuses("the owner cannot switch Lagos HQ", () => api.rooms.setThreeD(hqId, true), "Not allowed");
+await refuses("the owner cannot switch Lagos HQ", () => api.rooms.setThreeD(hqId, false), "Not allowed");
 await refuses("the owner cannot list every room", () => api.rooms.listForStaff(), "Not allowed");
 await login(staff);
 const all = await step("staff: listForStaff", () => api.rooms.listForStaff(), (l) => `${l.length} rooms, first=${l[0]?.name} (${l[0]?.kind}), mine is in it=${l.some((r) => r.id === room!.id)}`);

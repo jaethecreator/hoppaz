@@ -15,9 +15,9 @@ export const roomPath = (r: Pick<RoomSummary, "slug" | "kind">) => `/rooms/${r.k
 /** The walkable room can be entered: it exists and the owner or staff have it switched on. Off means chat only. */
 export const walkable = (r: Pick<RoomSummary, "has_3d" | "three_d_on">) => r.has_3d && r.three_d_on;
 
-/** Where Enter room goes: the walkable room when it is on, else the General chat. Lagos HQ is chat first: never the walkable room from here. */
+/** Where Enter room goes: the walkable room when it is on (Lagos HQ too, same as any room), else the General chat. */
 export const enterPath = (r: Pick<RoomSummary, "slug" | "kind" | "id" | "has_3d" | "three_d_on">) =>
-  walkable(r) && r.kind !== "hq" ? `/crew/${r.id}/room` : `${roomPath(r)}/general`;
+  walkable(r) ? `/crew/${r.id}/room` : `${roomPath(r)}/general`;
 
 export const memberWord = (n: number) => `${n.toLocaleString("en-NG")} ${n === 1 ? "member" : "members"}`;
 

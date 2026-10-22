@@ -186,9 +186,9 @@ export function mapRoom(j: J, extra: Partial<Pick<RoomSummary, "is_owner" | "can
     is_owner: extra.is_owner ?? false,
     can_post: extra.can_post ?? false,
     // The database says whether a walkable room can be made (a layout exists: every crew, Lagos HQ too) and whether the owner or
-    // staff have it switched on (ev_room_3d_allowed: on by default, except Lagos HQ). An older answer without them: on, except Lagos HQ.
+    // staff have it switched on (ev_room_3d_allowed: on by default, Lagos HQ included). An older answer without them: on.
     has_3d: typeof j.has_3d === "boolean" ? j.has_3d : (extra.has_3d ?? true),
-    three_d_on: typeof j.three_d_on === "boolean" ? j.three_d_on : (extra.three_d_on ?? kind !== "hq"),
+    three_d_on: typeof j.three_d_on === "boolean" ? j.three_d_on : (extra.three_d_on ?? true),
     online: extra.online ?? 0,
   };
 }
