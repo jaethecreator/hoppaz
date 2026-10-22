@@ -302,7 +302,14 @@ export const events: EventsApi = {
       merged.lng = null;
     }
     const before = { start: e.starts_at, capacity: e.capacity, approval: e.requires_approval };
-    Object.assign(e, normalize(merged, e.room_id, { id: e.id, types: typesOf(e) }));
+    // Add to the host's room, or take it out. Community events live in the room, so they stay in it.
+    let roomId = e.room_id;
+    if (patch.add_to_room !== undefined) {
+      roomId = patch.add_to_room ? (hostRoom(e.host_id)?.id ?? null) : null;
+      if (!roomId && e.visibility === "community") throw new Error("Community events need a room");
+    }
+    Object.assign(e, normalize(merged, roomId, { id: e.id, types: typesOf(e) }));
+    e.room_id = roomId;
     if (e.starts_at !== before.start) retimeAutoPops(e);
     if ((e.capacity === null || (before.capacity !== null && e.capacity > before.capacity)) || e.requires_approval !== before.approval) {
       fillFromWaitlist(e.id);

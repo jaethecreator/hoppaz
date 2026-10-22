@@ -168,7 +168,7 @@ export default function EventForm({ cover }: { cover: string | null }) {
     setError("");
     try {
       const made = await api.events.create(draft());
-      router.push(`/event/${made.id}?new=1`);
+      router.push(`/host/${made.id}?new=1`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Try again later");
       setBusy(false);
