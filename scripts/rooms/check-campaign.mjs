@@ -299,7 +299,9 @@ for (const width of ROOM_WIDTHS) {
     assert.ok(door.x + 2 === l.spawn.x && door.y === 16 && door.w === 2 && door.h === 1, "the door sits two tiles left of the spawn");
     const fountain = l.props.find((p) => p.id === "courtyard-fountain");
     assert.equal(fountain.kind, "fountain");
-    assert.ok(fountain.solid && fountain.w * fountain.h >= 2);
+    // Not solid: the admin of a Game Time lists the solid props as places to hide a box, so the featured event's plinth never hides one.
+    assert.ok(!fountain.solid && fountain.w * fountain.h >= 2, "the fountain plinth is a floor prop of at least 2 tiles");
+    assert.ok(!l.props.some((p) => p.solid && p.kind === "fountain"), "no solid fountain");
     for (const z of l.zones) {
       assert.ok(canWalkScene(l, z.stop) && scenePath(l, l.spawn, z.stop), `${z.id} stop is not walkable or reachable`);
       assert.ok(canWalkScene(l, z.plaque), `${z.id} tag tile is not on open floor`);

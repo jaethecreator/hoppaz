@@ -77,11 +77,13 @@ begin
     perform pg_temp.ok(not public._crew_room_walkable('emergency-room', w, sx - 2, 16) and not public._crew_room_walkable('emergency-room', w, sx - 1, 16)
                        and public._crew_room_walkable('emergency-room', w, sx - 2, 17) and public._crew_room_walkable('emergency-room', w, sx - 1, 17),
                        format('the entry door blocks and the tiles in front of it walk at width %s', w));
-    -- The deck, the lit plinth at its foot and the outer wall block; the lane between the gate and the deck walks.
-    perform pg_temp.ok(not public._crew_room_walkable('emergency-room', w, sx - 1, 9) and not public._crew_room_walkable('emergency-room', w, sx - 1, 12)
+    -- The deck and the outer wall block; the lane between the gate and the deck walks, and so does the plinth at the deck's foot
+    -- (a floor prop: it is not solid, so Game Time never hides a box in it).
+    perform pg_temp.ok(not public._crew_room_walkable('emergency-room', w, sx - 1, 9) and not public._crew_room_walkable('emergency-room', w, sx, 11)
                        and not public._crew_room_walkable('emergency-room', w, 0, 5) and not public._crew_room_walkable('emergency-room', w, w - 1, 5)
-                       and public._crew_room_walkable('emergency-room', w, sx, 14) and public._crew_room_walkable('emergency-room', w, sx, 13),
-                       format('the deck and the plinth block, the lane to them walks at width %s', w));
+                       and public._crew_room_walkable('emergency-room', w, sx, 14) and public._crew_room_walkable('emergency-room', w, sx, 13)
+                       and public._crew_room_walkable('emergency-room', w, sx - 1, 12) and public._crew_room_walkable('emergency-room', w, sx, 12),
+                       format('the deck blocks, the lane to it and the plinth at its foot walk at width %s', w));
     perform pg_temp.ok(jsonb_array_length(l.data->'zones') = 7 and exists (select 1 from jsonb_array_elements(l.data->'zones') q where q->>'id' = 'stage'),
                        format('seven zones, and the deck is the stage zone at width %s', w));
     -- Every tile reachable from the spawn (two sealed tiles allowed) and every zone stop among them.
@@ -124,14 +126,13 @@ begin
   perform pg_temp.ok((select x = 15 and y = 17 from public.crew_room_presence where crew_id = crew and user_id = a), 'the walker is back at the new entrance');
   perform pg_temp.actor(b); res := public.crew_room_enter(crew, sb); perform pg_temp.admin();
   perform pg_temp.ok(res->'room'->>'template' = 'emergency-room' and (res->'self'->>'x')::int = 15 and (res->'self'->>'y')::int = 17, 'a member enters at the entrance of the Emergency Room');
-  -- A member walks the lane from the gate towards the deck, one batch, then is turned back by the plinth and the deck.
+  -- A member walks the lane from the gate towards the deck, one batch, then is turned back by the deck.
   perform pg_temp.place(crew, b, 15, 17);
   res := pg_temp.mv(b, crew, sb, 1, '[{"x":15,"y":16},{"x":15,"y":15},{"x":15,"y":14},{"x":15,"y":13}]');
   perform pg_temp.ok((res->>'x')::int = 15 and (res->>'y')::int = 13 and (res->>'seq')::int = 1, 'a member walks the lane from the gate to the foot of the deck');
-  perform pg_temp.fail_as(b, format('select public.crew_room_move(%L,%L,2,%L)', crew, sb, '[{"x":15,"y":12}]'), 'invalid_movement');
-  res := pg_temp.mv(b, crew, sb, 2, '[{"x":14,"y":13},{"x":13,"y":13},{"x":13,"y":12},{"x":13,"y":11}]');
-  perform pg_temp.fail_as(b, format('select public.crew_room_move(%L,%L,3,%L)', crew, sb, '[{"x":14,"y":11}]'), 'invalid_movement');
-  perform pg_temp.ok((res->>'x')::int = 13 and (res->>'y')::int = 11, 'the ring beside the deck walks, the plinth and the deck block');
+  res := pg_temp.mv(b, crew, sb, 2, '[{"x":15,"y":12},{"x":14,"y":12},{"x":13,"y":12},{"x":12,"y":12}]');
+  perform pg_temp.ok((res->>'x')::int = 12 and (res->>'y')::int = 12, 'the plinth at the foot of the deck and the ring beside it walk');
+  perform pg_temp.fail_as(b, format('select public.crew_room_move(%L,%L,3,%L)', crew, sb, '[{"x":13,"y":12},{"x":13,"y":11}]'), 'invalid_movement');
   -- The wide room: the owner makes the room 36 wide; the walkers go back to the new spawn and walk it.
   perform pg_temp.actor(a);
   res := public.crew_room_settings(crew, 36, jsonb_build_object('brand', 'Emergency Room by SOS'));
@@ -141,7 +142,7 @@ begin
   perform pg_temp.place(crew, b, 18, 17);
   res := pg_temp.mv(b, crew, sb, 1, '[{"x":18,"y":16},{"x":18,"y":15},{"x":18,"y":14},{"x":18,"y":13}]');
   perform pg_temp.ok((res->>'x')::int = 18 and (res->>'y')::int = 13, 'a member walks the wide room too');
-  perform pg_temp.fail_as(b, format('select public.crew_room_move(%L,%L,2,%L)', crew, sb, '[{"x":18,"y":12}]'), 'invalid_movement');
+  perform pg_temp.fail_as(b, format('select public.crew_room_move(%L,%L,2,%L)', crew, sb, '[{"x":18,"y":12},{"x":18,"y":11}]'), 'invalid_movement');
   -- The same grid answers through the old entry point an open phone may still call.
   perform pg_temp.actor(b); res := public.crew_room_state(crew); perform pg_temp.admin();
   perform pg_temp.ok(res->'room'->>'template' = 'emergency-room', 'the room snapshot says which template it is');

@@ -9,7 +9,7 @@ import { floorProp, prop, room, wall, zone } from "./build";
  * and floor guide lines lead to them. Left: EXPERIENCES (their Instagram, the zone's pill opens it) and AFROTECH HEALING (a calm
  * lounge). Right: MERCH (clothes). The back wall: PERFORMERS ON DUTY (the next event's DJs), the HALL OF FAME and their logo in a
  * lightbox. ENTRANCE (where tickets will be) beside the gate. A small lit NEXT UP plinth at the foot of the deck is the
- * `courtyard-fountain` prop, where the crew's featured event sticker sits.
+ * `courtyard-fountain` prop, where the crew's featured event sticker sits (a floor prop: no Game Time box hides in it).
  *
  * Prop ids are stable: main-stage (the deck), tickets-desk (Entrance), brand-page (Experiences), merch, doctors-on-duty
  * (Performers on Duty), hall-of-fame, courtyard-fountain, entry-map-table. The zone id `stage` is the deck (stage voice).
@@ -55,8 +55,10 @@ export function emergencyRoomLayout(width: 30 | 36): CampaignLayout {
       floorProp("dj-booth", "erbooth", 13 + m, 8, 4, 1),
       prop("hub-speaker-l", "erspeaker", 11 + m, 8, 1, 3),
       prop("hub-speaker-r", "erspeaker", 18 + m, 8, 1, 3),
-      // The featured event's sticker sits on this plinth (FountainSticker finds the prop of kind fountain).
-      prop("courtyard-fountain", "fountain", 14 + m, 12, 2, 1),
+      // The featured event's sticker sits on this plinth (FountainSticker finds the prop of kind fountain). It is a floor prop, not
+      // solid: you can stand on it, and because it is not solid it is not one of the objects Game Time may hide a box in
+      // (the admin lists the solid props, and starts with all of them ticked).
+      floorProp("courtyard-fountain", "fountain", 14 + m, 12, 2, 1),
 
       prop("brand-page", "experiences", 2, 7, 5, 4),
       prop("recovery", "healing", 2, 13, 5, 4),
