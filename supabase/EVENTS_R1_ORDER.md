@@ -174,7 +174,7 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
 
 The app turns `room_off` into "The 3D room is off", and the client also hides Enter room when `three_d_on` is false. People already walking when it is switched off are not thrown out (`crew_room_step` is not changed); nobody new comes in. `tests/events_r1_rooms_test.sql` puts this exact line into the live function inside its own rolled-back transaction and shows: a member enters a room that is on, is refused with `room_off` when it is off (the owner too), and Lagos HQ is refused until staff switch it on.
 
-Staff in the app: `ev_set_room_3d` and `ev_admin_rooms` use the signed-in account's `profiles.is_admin` (not the shared token the reports desk uses). If the /admin page should work with the token alone, it needs a small route that calls them with the service role; they would then need a staff id to check, so say if you want that.
+Staff in the app: `ev_set_room_3d` and `ev_admin_rooms` use the signed-in account's `profiles.is_admin`. The /admin desk has the shared token and no account, so it has its own two, in the same file: `ev_admin_set_room_3d(room, on)` (answers `ok`, `bad_value` or `not_found`) and `ev_admin_list_rooms()` (every room, Lagos HQ first, nobody "joined"). Both are service role only (revoked from everyone else, tested) and are called by the route `src/app/api/admin/event-rooms/route.ts` after it checks `HOPPAZ_ADMIN_TOKEN`, like the reports route. Nothing else changes for Ola: the file loads twice cleanly.
 
 ## 6. Deliberately not included
 

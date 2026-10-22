@@ -39,6 +39,17 @@ begin
   perform pg_temp.admin();
   return r;
 end $$;
+-- Run one query as the service role (the staff desk's route), as jsonb text.
+create function pg_temp.svc(q text) returns text language plpgsql as $$
+declare r text;
+begin
+  execute 'reset role';
+  perform set_config('request.jwt.claims', json_build_object('role', 'service_role')::text, true);
+  execute 'set local role service_role';
+  execute 'select to_jsonb(x.v)::text from (' || q || ') as x(v)' into r;
+  perform pg_temp.admin();
+  return r;
+end $$;
 create function pg_temp.t(u uuid, q text) returns text language plpgsql as $$
 declare r text;
 begin
@@ -78,7 +89,7 @@ declare
   st uuid := pg_temp.newuser('Room Staff'); h uuid := pg_temp.newuser('Room Host'); a uuid := pg_temp.newuser('Room Ada');
   b uuid := pg_temp.newuser('Room Bola'); c uuid := pg_temp.newuser('Room Chike'); m uuid := pg_temp.newuser('Room Member');
   x uuid := pg_temp.newuser('Room Stranger'); g uuid := pg_temp.newuser('Room Guest', true);
-  u1 uuid := pg_temp.newuser('Room U1'); u2 uuid := pg_temp.newuser('Room U2');
+  u uuid; u1 uuid := pg_temp.newuser('Room U1'); u2 uuid := pg_temp.newuser('Room U2');
   room uuid := gen_random_uuid(); rdisc uuid := gen_random_uuid(); rpriv uuid := gen_random_uuid();
   hq uuid; hq2 uuid; e uuid; ecom uuid; einv uuid; ecan uuid; epast uuid; eapp uuid; eold uuid; eclosed uuid; ediscgo uuid; enoroom uuid;
   r jsonb; n int; ann uuid; f record; j jsonb; k int; sres text;
@@ -327,6 +338,38 @@ begin
   perform pg_temp.ok((select (q ->> 'three_d_on')::boolean from jsonb_array_elements(r) q where q ->> 'id' = room::text) and not (r -> 0 ->> 'three_d_on')::boolean, 'staff list: each room carries its switch');
   perform pg_temp.ok(pg_temp.j(h, 'select public.ev_admin_rooms()') is null and pg_temp.j(m, 'select public.ev_admin_rooms()') is null, 'anyone who is not staff gets null, even a room owner');
 
+  -- The staff desk's two (service role, no account).
+  sres := pg_temp.svc(format('select public.ev_admin_set_room_3d(%L, false)', room));
+  perform pg_temp.ok(sres = '"ok"' and not public.ev_room_3d_allowed(room), 'desk: the service role switches a room off');
+  sres := pg_temp.svc(format('select public.ev_admin_set_room_3d(%L, true)', room));
+  perform pg_temp.ok(sres = '"ok"' and public.ev_room_3d_allowed(room), 'desk: and on');
+  sres := pg_temp.svc(format('select public.ev_admin_set_room_3d(%L, true)', hq));
+  perform pg_temp.ok(sres = '"ok"' and public.ev_room_3d_allowed(hq), 'desk: Lagos HQ on');
+  sres := pg_temp.svc(format('select public.ev_admin_set_room_3d(%L, false)', hq));
+  perform pg_temp.ok(sres = '"ok"' and not public.ev_room_3d_allowed(hq), 'desk: and off');
+  perform pg_temp.ok(pg_temp.svc(format('select public.ev_admin_set_room_3d(%L, null)', room)) = '"bad_value"'
+                     and pg_temp.svc(format('select public.ev_admin_set_room_3d(%L, true)', gen_random_uuid())) = '"not_found"', 'desk: a missing value is bad_value, an unknown room not_found');
+  r := pg_temp.svc('select public.ev_admin_list_rooms()');
+  perform pg_temp.ok(jsonb_typeof(r) = 'array' and r -> 0 ->> 'kind' = 'hq' and jsonb_array_length(r) = (select count(*) from public.crews), 'desk list: every room, Lagos HQ first');
+  perform pg_temp.ok((select (q ->> 'three_d_on')::boolean from jsonb_array_elements(r) q where q ->> 'id' = room::text) and not (r -> 0 ->> 'three_d_on')::boolean
+                     and not (r -> 0 ->> 'joined')::boolean, 'desk list: each room carries its switch, and nobody is "joined"');
+  perform pg_temp.ok(pg_temp.t(st, format('select public.ev_set_room_3d(%L, true)', room)) = 'ok', 'desk: the account route still works after');
+  foreach u in array array[h, st, m] loop
+    begin
+      perform pg_temp.t(u, format('select public.ev_admin_set_room_3d(%L, false)', room));
+      raise exception 'FAILED: a signed-in account ran ev_admin_set_room_3d';
+    exception when insufficient_privilege then
+      perform pg_temp.admin();
+    end;
+    begin
+      perform pg_temp.j(u, 'select public.ev_admin_list_rooms()');
+      raise exception 'FAILED: a signed-in account ran ev_admin_list_rooms';
+    exception when insufficient_privilege then
+      perform pg_temp.admin();
+    end;
+  end loop;
+  perform pg_temp.ok(true, 'desk: a signed-in account (owner, staff, member) cannot call the desk functions');
+
   -- The table is closed.
   perform pg_temp.ok(not exists (select 1 from information_schema.table_privileges where table_name = 'ev_room_settings' and grantee in ('anon', 'authenticated')), 'the switch table is closed to anon and authenticated');
   perform pg_temp.actor(h);
@@ -396,7 +439,7 @@ begin
             where ns.nspname = 'public'
               and p.proname in ('ev_event_chat', 'ev_room_events', 'ev_room', 'ev_rooms_for_me', 'ev_room_mark_read', 'ev_ensure_hq', 'ev_hq_backfill',
                                 '_ev_chat_can_enter', '_ev_chat_json', '_ev_room_json', '_ev_is_hq', '_ev_room_has_layout',
-                                'ev_room_3d_allowed', 'ev_set_room_3d', 'ev_admin_rooms')
+                                'ev_room_3d_allowed', 'ev_set_room_3d', 'ev_admin_rooms', 'ev_admin_set_room_3d', 'ev_admin_list_rooms')
   loop
     perform pg_temp.ok(has_function_privilege('anon', f.oid, 'execute') = (f.name in ('ev_event_chat', 'ev_room_events', 'ev_room')),
                        f.sig || ': anon access is as designed');
@@ -404,6 +447,7 @@ begin
                                                                               'ev_room_3d_allowed', 'ev_set_room_3d', 'ev_admin_rooms')),
                        f.sig || ': authenticated access is as designed');
   end loop;
+  perform pg_temp.ok(has_function_privilege('service_role', 'public.ev_admin_set_room_3d(uuid, boolean)', 'execute') and has_function_privilege('service_role', 'public.ev_admin_list_rooms()', 'execute'), 'the service role can run the two desk functions');
   perform pg_temp.ok(has_function_privilege('service_role', 'public.ev_hq_backfill()', 'execute') and has_function_privilege('service_role', 'public.ev_ensure_hq()', 'execute'), 'the service role can run the backfill and ensure HQ');
   raise notice 'ALL EVENTS R1 ROOMS TESTS PASSED';
 end $$;

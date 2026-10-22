@@ -38,6 +38,8 @@
 --                             (every crew does: the walkable room is made on first entry from the default template), OFF for Lagos HQ until
 --                             its owner or staff switch it on. The ENTRY function must ask it: see "THE 3D ROOM SWITCH" below.
 --   ev_admin_rooms()          staff only (profiles.is_admin): every room as a room summary (null for anyone else), Lagos HQ first, then the biggest.
+--   ev_admin_set_room_3d(room, on) and ev_admin_list_rooms()   the same two for the /admin desk, which has the shared token and no account: service
+--                             role only, no one to check (the route /api/admin/event-rooms checks the token). set answers ok, bad_value or not_found.
 --   _ev_room_json now also says  has_3d (a walkable room can be made: there is a layout) and  three_d_on (the switch). Enter room shows
 --                             only when both are true.
 --
@@ -377,6 +379,25 @@ begin
   ), '[]'::jsonb);
 end $$;
 
+-- The staff desk (/admin, the shared token) has no signed-in account, so it calls these two with the service role, like the reports desk.
+-- Same answers as ev_set_room_3d and ev_admin_rooms, with nobody to check: only the service role can run them (the route checks the token).
+create or replace function public.ev_admin_set_room_3d(p_room uuid, p_on boolean) returns text
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if p_on is null then return 'bad_value'; end if;
+  if not exists (select 1 from public.crews c where c.id = p_room) then return 'not_found'; end if;
+  insert into public.ev_room_settings (room_id, three_d_on, updated_by, updated_at) values (p_room, p_on, null, now())
+  on conflict (room_id) do update set three_d_on = excluded.three_d_on, updated_by = excluded.updated_by, updated_at = excluded.updated_at;
+  return 'ok';
+end $$;
+
+create or replace function public.ev_admin_list_rooms() returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(jsonb_agg(public._ev_room_json(t.id, null) order by t.is_hq desc, t.members desc, t.name, t.id), '[]'::jsonb)
+    from (select c.id, c.name, public._ev_is_hq(c.id) as is_hq, (select count(*) from public.crew_members m where m.crew_id = c.id) as members
+            from public.crews c order by 3 desc, 4 desc, c.name, c.id limit 500) t;
+$$;
+
 -- ----------------------------------------------------------------- access ---
 revoke all on function public.ev_event_chat(uuid), public.ev_room_events(uuid), public.ev_room(uuid), public.ev_rooms_for_me(),
   public.ev_room_mark_read(uuid), public.ev_ensure_hq(), public.ev_hq_backfill(),
@@ -388,6 +409,9 @@ grant execute on function public.ev_rooms_for_me(), public.ev_room_mark_read(uui
 -- The backfill is for Ola (the SQL editor) and the service role.
 revoke all on function public.ev_hq_backfill() from authenticated;
 grant execute on function public.ev_hq_backfill() to service_role;
+-- The desk's two are for the service role only (the route /api/admin/event-rooms checks HOPPAZ_ADMIN_TOKEN first).
+revoke all on function public.ev_admin_set_room_3d(uuid, boolean), public.ev_admin_list_rooms() from public, anon, authenticated;
+grant execute on function public.ev_admin_set_room_3d(uuid, boolean), public.ev_admin_list_rooms() to service_role;
 
 notify pgrst, 'reload schema';
 commit;
