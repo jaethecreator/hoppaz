@@ -1,10 +1,16 @@
 -- The Emergency Room room template (supabase/emergency_room_template.sql) and its brand crew (supabase/setup_emergencyroom.sql).
 -- LOCAL ONLY: every fixture user, crew and room rolls back. Ends with ALL EMERGENCY ROOM TEMPLATE TESTS PASSED.
 -- Needs, loaded in this order: crew_rooms.sql, crew_rails.sql, crew_reactions.sql, game_time.sql, crew_rooms_scale.sql,
--- emergency_room_template.sql (run it twice if you like). The setup file is run from a copy with the owner email filled in:
+-- emergency_room_template.sql (run it twice if you like). The Emergency Room is locked to its own crew (crew_room_template_locks and
+-- the trigger on crew_rooms, both in emergency_room_template.sql; the setup file adds the crew's lock row): the section "the lock"
+-- below tries it from another crew, from the Emergency Room crew, on a template with no lock rows, and from SQL.
+-- The setup file is run from a copy with the owner email filled in:
 --   sed "s/OWNER_EMAIL_HERE/roomtest-er-owner@roomtest.invalid/g" supabase/setup_emergencyroom.sql \
 --     | docker exec -i supabase_db_hoppaz-local sh -c 'cat > /tmp/er_setup.sql'
 --   docker exec -i supabase_db_hoppaz-local psql -U postgres -d <a throwaway db> -v ON_ERROR_STOP=1 < supabase/tests/emergency_room_template_test.sql
+-- Second mode, for a database where the setup file has been run for real (committed) and then crew_rooms.sql, crew_rooms_scale.sql and
+-- emergency_room_template.sql were run again, in that order (notes/emergency-room/replay_er.sh does this): add  -v after_rerun=1  and
+-- only the section "the lock after a re-run" runs (it rolls back). It ends with ALL EMERGENCY ROOM LOCK RE-RUN TESTS PASSED.
 \set setup `cat /tmp/er_setup.sql`
 begin;
 create function pg_temp.ok(v boolean, label text) returns void language plpgsql as $$
@@ -57,6 +63,47 @@ begin
 exception when others then
   return sqlerrm;
 end $$;
+
+-- Run a statement as the database owner and say whether it raised `want`.
+create function pg_temp.admin_fail(q text, want text) returns void language plpgsql as $$
+declare reason text;
+begin
+  perform pg_temp.admin();
+  begin execute q; exception when others then reason := sqlerrm; end;
+  perform pg_temp.ok(reason like '%' || want || '%', 'sql rejects ' || want || coalesce(' (got: ' || reason || ')', ' (no error)'));
+end $$;
+
+-- ------------------------------------------------------------------------------------- the lock after a re-run ---
+-- Mode 2 (-v after_rerun=1): the committed Emergency Room crew from a real setup run, after crew_rooms.sql, crew_rooms_scale.sql and
+-- emergency_room_template.sql were run again. The lock must still work: a trigger sits on the table, so replacing functions does not remove it.
+\if :{?after_rerun}
+do $$
+declare
+  crew uuid := (select id from public.crews where regexp_replace(lower(name), '[^a-z0-9]', '', 'g') = 'emergencyroom');
+  own uuid := (select created_by from public.crews where regexp_replace(lower(name), '[^a-z0-9]', '', 'g') = 'emergencyroom');
+  so uuid := pg_temp.newuser(); sc uuid := gen_random_uuid(); res jsonb;
+begin
+  perform pg_temp.ok(crew is not null and exists (select 1 from public.crew_rooms where crew_id = crew and template = 'emergency-room'),
+                     'the Emergency Room crew from the real setup run is there, on its template');
+  perform pg_temp.ok((select count(*) from public.crew_room_template_locks where template = 'emergency-room') = 1
+                     and exists (select 1 from public.crew_room_template_locks where template = 'emergency-room' and crew_id = crew),
+                     'after crew_rooms.sql, crew_rooms_scale.sql and the template file again: still one lock row, the Emergency Room crew''s');
+  perform pg_temp.ok(exists (select 1 from pg_trigger where tgrelid = 'public.crew_rooms'::regclass and tgname = 'crew_room_template_lock' and not tgisinternal and tgenabled = 'O'),
+                     'the lock trigger is still on crew_rooms and enabled');
+  insert into public.crews (id, name, created_by) values (sc, 'Rerun stranger crew', so);
+  insert into public.crew_members (crew_id, user_id, role) values (sc, so, 'owner');
+  perform pg_temp.actor(so); res := public.crew_room_enter(sc, gen_random_uuid()); perform pg_temp.admin();
+  perform pg_temp.fail_as(so, format('select public.crew_room_set_template(%L,%L)', sc, 'emergency-room'), 'template_locked');
+  perform pg_temp.ok((select template from public.crew_rooms where crew_id = sc) = 'clubhouse', 'the other crew''s room stays on the clubhouse');
+  perform pg_temp.actor(own); res := public.crew_room_set_template(crew, 'clubhouse'); perform pg_temp.admin();
+  perform pg_temp.actor(own); res := public.crew_room_set_template(crew, 'emergency-room'); perform pg_temp.admin();
+  perform pg_temp.ok(res->'room'->>'template' = 'emergency-room', 'the Emergency Room crew can still leave its template and come back');
+  perform pg_temp.admin_fail(format('update public.crew_rooms set template = %L where crew_id = %L', 'emergency-room', sc), 'template_locked');
+  raise notice 'ALL EMERGENCY ROOM LOCK RE-RUN TESTS PASSED';
+end $$;
+rollback;
+\q
+\endif
 
 -- psql does not substitute variables inside a $$ body, so the setup file's facts go in through settings first.
 select set_config('er.setup_len', char_length(:'setup')::text, true), set_config('er.setup_placeholder', position('OWNER_EMAIL_HERE' in :'setup')::text, true);
@@ -111,6 +158,7 @@ begin
 end $$;
 
 -- ------------------------------------------------------------------------------------- picking it, walking in it ---
+-- No lock row exists yet at this point (the setup file adds it further down), so any crew can pick the template to walk in it.
 do $$
 declare
   a uuid := pg_temp.newuser(); b uuid := pg_temp.newuser(); c uuid := pg_temp.newuser();
@@ -196,6 +244,85 @@ begin
   perform pg_temp.ok((select template from public.crew_rooms where crew_id = crew) = 'clubhouse', 'the owner moved the room to the clubhouse');
   perform set_config('er.version', (select version from public.crew_rooms where crew_id = crew)::text, true);
 end $$;
+
+-- ----------------------------------------------------------------------------------------------------- the lock ---
+-- The setup file has run twice: the Emergency Room crew is the only crew locked in, and its room is on the clubhouse right now.
+do $$
+declare
+  own uuid := current_setting('er.owner')::uuid;
+  crew uuid := (select id from public.crews where regexp_replace(lower(name), '[^a-z0-9]', '', 'g') = 'emergencyroom');
+  wc uuid := (select id from public.crews where name = 'ER template test crew');
+  wo uuid := (select created_by from public.crews where name = 'ER template test crew');
+  so uuid := pg_temp.newuser(); sc uuid := gen_random_uuid(); nc uuid := gen_random_uuid();
+  res jsonb; reason text; ver int;
+begin
+  perform pg_temp.ok((select count(*) from public.crew_room_template_locks where template = 'emergency-room') = 1
+                     and exists (select 1 from public.crew_room_template_locks where template = 'emergency-room' and crew_id = crew)
+                     and not exists (select 1 from public.crew_room_template_locks where template = 'clubhouse'),
+                     'the setup file, run twice, left one lock row: the Emergency Room crew on emergency-room, and none on the clubhouse');
+  -- The table is closed to the app: row security on with no policies, and no grants for anon or authenticated.
+  perform pg_temp.ok((select relrowsecurity from pg_class where oid = 'public.crew_room_template_locks'::regclass)
+                     and not exists (select 1 from pg_policy where polrelid = 'public.crew_room_template_locks'::regclass)
+                     and not has_table_privilege('anon', 'public.crew_room_template_locks', 'select')
+                     and not has_table_privilege('authenticated', 'public.crew_room_template_locks', 'select'),
+                     'the lock table has row security on, no policies and no grants for the app');
+  perform pg_temp.fail_as(so, 'select count(*) from public.crew_room_template_locks', 'permission denied');
+  perform pg_temp.fail_as(so, 'insert into public.crew_room_template_locks(template, crew_id) values (''emergency-room'', gen_random_uuid())', 'permission denied');
+  begin
+    execute 'reset role'; execute 'set local role anon';
+    perform count(*) from public.crew_room_template_locks;
+  exception when others then reason := sqlerrm; end;
+  perform pg_temp.admin();
+  perform pg_temp.ok(reason like 'permission denied%', 'anon cannot read the lock table either');
+  -- The trigger fires on insert and on a write to the template column only, before the row, once per row.
+  perform pg_temp.ok(exists (select 1 from pg_trigger t where t.tgrelid = 'public.crew_rooms'::regclass and t.tgname = 'crew_room_template_lock' and not t.tgisinternal
+                             and t.tgtype & 1 = 1 and t.tgtype & 2 = 2 and t.tgtype & 4 = 4 and t.tgtype & 16 = 16 and t.tgtype & (8 | 32) = 0
+                             and t.tgattr::text = (select attnum::text from pg_attribute where attrelid = 'public.crew_rooms'::regclass and attname = 'template')),
+                     'the lock is a row trigger before insert or update of template on crew_rooms, and nothing else');
+
+  -- Another crew's owner cannot put the room on the Emergency Room, however they ask; the room is left as it was.
+  insert into public.crews (id, name, created_by) values (sc, 'Stranger crew', so);
+  insert into public.crew_members (crew_id, user_id, role) values (sc, so, 'owner');
+  perform pg_temp.actor(so); res := public.crew_room_enter(sc, gen_random_uuid()); perform pg_temp.admin();
+  ver := (res->'room'->>'version')::int;
+  perform pg_temp.fail_as(so, format('select public.crew_room_set_template(%L,%L)', sc, 'emergency-room'), 'template_locked');
+  perform pg_temp.ok((select template = 'clubhouse' and version = ver from public.crew_rooms where crew_id = sc), 'the other crew''s room is still on the clubhouse, untouched');
+  -- Not even from SQL, and not by making the room with that template either.
+  perform pg_temp.admin_fail(format('update public.crew_rooms set template = %L where crew_id = %L', 'emergency-room', sc), 'template_locked');
+  insert into public.crews (id, name, created_by) values (nc, 'Another new crew', so);
+  perform pg_temp.admin_fail(format('insert into public.crew_rooms(crew_id, template) values (%L, %L)', nc, 'emergency-room'), 'template_locked');
+  insert into public.crew_rooms(crew_id) values (nc);
+  perform pg_temp.ok((select template from public.crew_rooms where crew_id = nc) = 'clubhouse', 'a room made without a template is a clubhouse as before');
+
+  -- A template with no lock rows (the clubhouse, and a spare one made for this test) works for every crew, the locked-out ones included.
+  perform pg_temp.actor(so); res := public.crew_room_set_template(sc, 'clubhouse'); perform pg_temp.admin();
+  perform pg_temp.ok(res->'room'->>'template' = 'clubhouse', 'the clubhouse (no lock rows) works for the other crew');
+  insert into public.crew_room_layouts(template, width, data) select 'zz-open', width, data from public.crew_room_layouts where template = 'clubhouse';
+  perform pg_temp.actor(so); res := public.crew_room_set_template(sc, 'zz-open'); perform pg_temp.admin();
+  perform pg_temp.ok(res->'room'->>'template' = 'zz-open', 'a template with no lock rows can be picked by the other crew');
+  perform pg_temp.actor(so); res := public.crew_room_set_template(sc, 'clubhouse'); perform pg_temp.admin();
+  perform pg_temp.actor(own); res := public.crew_room_set_template(crew, 'zz-open'); perform pg_temp.admin();
+  perform pg_temp.ok(res->'room'->>'template' = 'zz-open', 'the Emergency Room crew can use an unlocked template too');
+  perform pg_temp.actor(own); res := public.crew_room_set_template(crew, 'clubhouse'); perform pg_temp.admin();
+
+  -- The Emergency Room crew (it has the lock row) can have its room on the Emergency Room, leave it and come back.
+  perform pg_temp.actor(own); res := public.crew_room_set_template(crew, 'emergency-room'); perform pg_temp.admin();
+  perform pg_temp.ok(res->'room'->>'template' = 'emergency-room', 'the Emergency Room crew picks the Emergency Room template');
+  perform pg_temp.actor(own); res := public.crew_room_set_template(crew, 'clubhouse'); perform pg_temp.admin();
+  perform pg_temp.ok((select template from public.crew_rooms where crew_id = crew) = 'clubhouse', 'and can leave it again (the setup run below puts it back)');
+
+  -- A room that was on the template before the lock stays valid: other writes, even a write of the same template, are not blocked.
+  perform pg_temp.ok((select template from public.crew_rooms where crew_id = wc) = 'emergency-room', 'the earlier test crew''s room is on the Emergency Room, not in the lock');
+  update public.crew_rooms set template = template where crew_id = wc;
+  update public.crew_rooms set version = version + 1 where crew_id = wc;
+  perform pg_temp.actor(wo); res := public.crew_room_settings(wc, 30, jsonb_build_object('brand', 'Emergency Room by SOS')); perform pg_temp.admin();
+  perform pg_temp.ok(res->'room'->>'template' = 'emergency-room' and (res->'room'->>'width')::int = 30, 'a room already on the template keeps working: settings, versions and rewrites of the same template pass');
+  perform pg_temp.actor(wo); res := public.crew_room_set_template(wc, 'clubhouse'); perform pg_temp.admin();
+  perform pg_temp.fail_as(wo, format('select public.crew_room_set_template(%L,%L)', wc, 'emergency-room'), 'template_locked');
+  perform pg_temp.ok((select template from public.crew_rooms where crew_id = wc) = 'clubhouse', 'once it leaves, a locked-out crew cannot come back');
+
+  perform set_config('er.version', (select version from public.crew_rooms where crew_id = crew)::text, true);
+end $$;
 select set_config('er.rerun', pg_temp.run_setup(:'setup'), true);
 do $$
 declare
@@ -209,6 +336,7 @@ begin
   -- It never takes over somebody else's crew of that name.
   delete from public.crews where id = crew;
   perform pg_temp.ok(pg_temp.er_crews() = 0, 'the test removed the brand crew to try the takeover case');
+  perform pg_temp.ok(exists (select 1 from public.crew_room_template_locks where template = 'emergency-room' and crew_id = crew), 'its lock row stays when the crew is deleted, so the template does not open to everyone');
   perform set_config('er.stranger_crew', gen_random_uuid()::text, true);
   insert into public.crews (id, name, created_by) values (current_setting('er.stranger_crew')::uuid, 'EMERGENCY  room!', pg_temp.newuser());
   perform pg_temp.ok(true, 'another account has a crew with that name');

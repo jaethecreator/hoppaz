@@ -286,6 +286,18 @@ check("The Emergency Room is a crew template with a picker card", () => {
   assert.equal(roomTemplate("emergency-room", 99).grid.width, 30);
   assert.ok(TEMPLATE_KEYS.includes("emergency-room"));
 });
+check("The Emergency Room is locked to its crew: not pickable, still a valid template, the picker respects the flag", () => {
+  assert.equal(erTemplate.pickable, false, "emergency-room must carry pickable: false");
+  assert.ok(TEMPLATE_KEYS.includes("emergency-room"), "a locked template stays valid for rooms already on it");
+  assert.equal(templateFor("emergency-room").key, "emergency-room");
+  assert.equal(roomTemplate("emergency-room").id, "emergency-room");
+  const offered = ROOM_TEMPLATES.filter((t) => t.pickable !== false).map((t) => t.key);
+  assert.ok(offered.includes("clubhouse"), "the clubhouse is always offered");
+  assert.ok(!offered.includes("emergency-room"), "the picker must not offer the Emergency Room");
+  for (const t of ROOM_TEMPLATES) assert.ok(t.pickable === undefined || typeof t.pickable === "boolean", `${t.key}: pickable is a boolean`);
+  const manage = fs.readFileSync(new URL("../../src/components/crew-room/ManageCrew.tsx", import.meta.url), "utf8");
+  assert.match(manage, /ROOM_TEMPLATES\.filter\(\(t\) => t\.pickable !== false\)/, "ManageCrew.tsx must list only the pickable templates");
+});
 for (const width of ROOM_WIDTHS) {
   check(`Emergency Room at ${width}: stable ids, the stage zone, open floor, every stop and tag tile walkable, the door and the Instagram link`, () => {
     const l = erTemplate.layout(width);

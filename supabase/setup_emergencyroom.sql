@@ -5,7 +5,13 @@
 -- Before running:
 --   1. The Emergency Room owner's account must exist. They sign up in the app once with this email.
 --   2. Replace OWNER_EMAIL_HERE below with that email.
---   3. supabase/emergency_room_template.sql must have been run (it holds the room layout the crew's room uses).
+--   3. supabase/emergency_room_template.sql must have been run (it holds the room layout the crew's room uses, and the template
+--      lock this file adds the crew to).
+--
+-- The Emergency Room template is locked to this crew (Jae: "Emergency Room is going to be locked to their own crew"): this file
+-- adds the crew's row to crew_room_template_locks (on conflict do nothing), BEFORE it puts the room on the template, and the
+-- lock trigger on crew_rooms (emergency_room_template.sql) then refuses every other crew with template_locked. Rooms are set
+-- up by hand like this for now.
 --
 -- It makes the crew open and verified, makes the account its owner, sets the round logo (/brands/emergency-room-sos.jpg, the
 -- file ships with the app), creates the room on the emergency-room template with the owner content (brand "Emergency Room by SOS",
@@ -41,6 +47,10 @@ begin
      or not exists (select 1 from public.crew_room_layouts where template = 'emergency-room' and width = 36) then
     raise exception 'The emergency-room room layout is not loaded. Run supabase/emergency_room_template.sql first.';
   end if;
+  if to_regclass('public.crew_room_template_locks') is null
+     or not exists (select 1 from pg_trigger where tgrelid = 'public.crew_rooms'::regclass and tgname = 'crew_room_template_lock' and not tgisinternal) then
+    raise exception 'The template lock is not loaded. Run supabase/emergency_room_template.sql first.';
+  end if;
 
   -- The brand crew: the one this owner made.
   select id into v_crew from public.crews
@@ -67,6 +77,9 @@ begin
     on conflict (crew_id, user_id) do update set role = 'owner';
 
   update public.crews set logo_url = '/brands/emergency-room-sos.jpg' where id = v_crew;
+
+  -- The lock row first: this crew may have the template, every other crew may not. Before the room is put on it, below.
+  insert into public.crew_room_template_locks (template, crew_id) values ('emergency-room', v_crew) on conflict do nothing;
 
   select * into v_room from public.crew_rooms where crew_id = v_crew;
   if not found then
