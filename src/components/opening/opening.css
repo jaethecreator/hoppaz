@@ -1,0 +1,63 @@
+/*
+ * The Hoppaz opening (OpeningCover.tsx). Not drawn until html[data-opening] is set; "out" is its last 0.2 s, a fade.
+ * Timeline (1.65 s): skyline rises 0 to 0.55, the wordmark drops and bounces 0.1 to 0.95, LAGOS 0.62, the okada crosses 0.25 to 1.4,
+ * the fade starts at 1.45. OPENING_MS in src/lib/opening/timing.ts must match.
+ */
+  .hz-open {
+    display: none; position: fixed; inset: 0; z-index: 2000; overflow: hidden; background: #0E0B0A; cursor: pointer;
+    --ink: #0E0B0A; --ink2: #17110F; --ink3: #231915; --line: #2E211C; --orange: #FF4D00; --ember: #B83600; --cream: #F5EBDD; --dim: #9C9087;
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    color: var(--cream); font-family: var(--font-mono), ui-monospace, Menlo, monospace;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  html[data-opening] .hz-open { display: block; }
+  /* It ends itself, with no script: the fade starts at 1.45 s (0.75 s with reduced motion) and the cover is gone (not hit-tested) after it. */
+  html[data-opening="in"] .hz-open { animation: hz-open-end .2s ease-in 1.45s forwards; }
+  html[data-opening="out"] .hz-open { animation: hz-open-out .2s ease-in forwards; }
+  .hz-open-sky { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .hz-open-glow { position: absolute; left: 0; right: 0; bottom: 0; height: 62%; background: linear-gradient(to top, rgba(255, 77, 0, .16), rgba(255, 77, 0, 0) 78%); }
+
+  .hz-open-city { position: absolute; left: 50%; bottom: calc(86px + var(--safe-b)); width: min(100%, 560px); margin-left: calc(min(100%, 560px) / -2); aspect-ratio: 390 / 300; }
+  .hz-open-city svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  @media (min-width: 561px) { .hz-open-city { -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent); mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent); } }
+  .hz-open-rise { animation: hz-open-rise .5s cubic-bezier(.2, .9, .3, 1) .05s both; }
+
+  .hz-open-road { position: absolute; left: 0; right: 0; bottom: 0; height: calc(86px + var(--safe-b)); background: var(--ink2); border-top: 2px solid rgba(245, 235, 221, .22); }
+  .hz-open-road::after { content: ""; position: absolute; left: 0; right: 0; top: 40px; height: 3px; background: repeating-linear-gradient(90deg, rgba(245, 235, 221, .28) 0 26px, transparent 26px 50px); }
+
+  .hz-open-mark { position: absolute; left: 0; right: 0; top: 27%; display: flex; flex-direction: column; align-items: center; pointer-events: none; }
+  .hz-open-mark img { display: block; width: min(76vw, 320px); height: auto; transform-origin: 50% 100%; animation: hz-open-drop .85s linear .1s both; will-change: transform; }
+  .hz-open-mark p { margin-top: 14px; font-size: 12px; font-weight: 500; letter-spacing: .6em; text-indent: .6em; color: var(--cream); opacity: .8; animation: hz-open-in .3s ease-out .62s both; }
+
+  .hz-open-okada { position: absolute; left: 0; bottom: calc(18px + var(--safe-b)); width: 132px; margin-left: -132px; animation: hz-open-ride 1.15s cubic-bezier(.4, 0, .55, 1) .25s both; will-change: transform; pointer-events: none; }
+  .hz-open-okada svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .hz-open-bob { animation: hz-open-bob .16s ease-in-out infinite alternate; }
+  .hz-open-spin { transform-box: fill-box; transform-origin: 50% 50%; animation: hz-open-spin .22s linear infinite; }
+  .hz-open-blink { animation: hz-open-blink 1.1s ease-in-out infinite; }
+
+  @keyframes hz-open-drop {
+    0%   { transform: translateY(-62vh); animation-timing-function: cubic-bezier(.5, 0, .9, .55); }
+    36%  { transform: translateY(0) scale(1.12, .84); animation-timing-function: cubic-bezier(.2, .7, .4, 1); }
+    52%  { transform: translateY(-28px) scale(.96, 1.05); animation-timing-function: cubic-bezier(.5, 0, .9, .55); }
+    66%  { transform: translateY(0) scale(1.06, .93); animation-timing-function: cubic-bezier(.2, .7, .4, 1); }
+    78%  { transform: translateY(-9px) scale(.99, 1.02); animation-timing-function: cubic-bezier(.5, 0, .9, .55); }
+    90%  { transform: translateY(0) scale(1.015, .985); }
+    100% { transform: none; }
+  }
+  @keyframes hz-open-in { from { opacity: 0; transform: translateY(6px); } to { opacity: .8; transform: none; } }
+  @keyframes hz-open-rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+  @keyframes hz-open-ride { from { transform: translateX(0); } to { transform: translateX(calc(100vw + 264px)); } }
+  @keyframes hz-open-bob { from { transform: translateY(0); } to { transform: translateY(-2px); } }
+  @keyframes hz-open-spin { to { transform: rotate(360deg); } }
+  @keyframes hz-open-blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+  @keyframes hz-open-out { to { opacity: 0; visibility: hidden; } }
+  @keyframes hz-open-end { to { opacity: 0; visibility: hidden; } }
+
+  /* Reduced motion: one still frame, no ride, no drop, no bob. */
+  @media (prefers-reduced-motion: reduce) {
+    .hz-open-mark img, .hz-open-mark p, .hz-open-rise, .hz-open-bob, .hz-open-spin, .hz-open-blink { animation: none; }
+    .hz-open-mark p { opacity: .8; }
+    .hz-open-okada { animation: none; margin-left: 0; left: 56%; }
+    html[data-opening="in"] .hz-open { animation-delay: .75s; }
+    html[data-opening="out"] .hz-open { animation-duration: .15s; }
+  }
