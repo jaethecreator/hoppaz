@@ -21,7 +21,7 @@ begin
   perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
   execute 'set local role anon';
 end $$;
-create function pg_temp.admin() returns void language plpgsql as $$ begin execute 'reset role'; end $$;
+create function pg_temp.admin() returns void language plpgsql as $$ begin execute 'reset role'; perform set_config('request.jwt.claims', '', true); end $$;
 create function pg_temp.newuser(shown text, guest boolean default false) returns uuid language plpgsql as $$
 declare u uuid := gen_random_uuid();
 begin
@@ -229,7 +229,7 @@ begin
   perform pg_temp.ok(n = 2, 'and for a going Pop the 2');
 
   -- Access.
-  for f in select p.oid::regprocedure as sig, p.proname as name
+  for f in select p.oid, p.oid::regprocedure as sig, p.proname as name
              from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
             where ns.nspname = 'public'
               and p.proname in ('ev_send_pop', 'ev_event_pops', 'ev_host_pops', 'ev_room_announcements', 'ev_dispatch_due_pops', 'ev_pop_recipient_ids',

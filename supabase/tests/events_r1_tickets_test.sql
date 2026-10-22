@@ -23,7 +23,7 @@ begin
   perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
   execute 'set local role anon';
 end $$;
-create function pg_temp.admin() returns void language plpgsql as $$ begin execute 'reset role'; end $$;
+create function pg_temp.admin() returns void language plpgsql as $$ begin execute 'reset role'; perform set_config('request.jwt.claims', '', true); end $$;
 create function pg_temp.newuser(shown text, guest boolean default false) returns uuid language plpgsql as $$
 declare u uuid := gen_random_uuid();
 begin
@@ -247,7 +247,7 @@ begin
                      'every scan, good or bad, is in the log');
 
   -- Access.
-  for f in select p.oid::regprocedure as sig, p.proname as name
+  for f in select p.oid, p.oid::regprocedure as sig, p.proname as name
              from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
             where ns.nspname = 'public'
               and p.proname in ('ev_my_ticket', 'ev_scan', 'ev_checkin_manual', 'ev_door_search', 'ev_door_counts', 'ev_valid_tickets', 'ev_set_door_staff',

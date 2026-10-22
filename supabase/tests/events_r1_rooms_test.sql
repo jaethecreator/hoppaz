@@ -21,7 +21,7 @@ begin
   perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
   execute 'set local role anon';
 end $$;
-create function pg_temp.admin() returns void language plpgsql as $$ begin execute 'reset role'; end $$;
+create function pg_temp.admin() returns void language plpgsql as $$ begin execute 'reset role'; perform set_config('request.jwt.claims', '', true); end $$;
 create function pg_temp.newuser(shown text, guest boolean default false) returns uuid language plpgsql as $$
 declare u uuid := gen_random_uuid();
 begin
@@ -231,7 +231,7 @@ begin
   perform pg_temp.ok(pg_temp.j(m, format('select public.ev_room(%L)', gen_random_uuid())) is null, 'an unknown room is null');
 
   -- Access.
-  for f in select p.oid::regprocedure as sig, p.proname as name
+  for f in select p.oid, p.oid::regprocedure as sig, p.proname as name
              from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
             where ns.nspname = 'public'
               and p.proname in ('ev_event_chat', 'ev_room_events', 'ev_room', 'ev_rooms_for_me', 'ev_room_mark_read', 'ev_ensure_hq', 'ev_hq_backfill',
