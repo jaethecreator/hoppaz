@@ -40,6 +40,7 @@ import YouMarker from "@/components/map/YouMarker";
 import { EVENTS_R1, ROOMS_SEAL } from "@/lib/events-r1/flags";
 import CreateButton from "@/components/events-r1/CreateButton";
 import EventsHeading from "@/components/events-r1/EventsHeading";
+import LagosHqMarker from "@/components/events-r1/map/LagosHqMarker";
 
 // MapLibre touches window on import, so it stays out of the server bundle.
 const NightMap = dynamic(() => import("@/components/map/NightMap"), {
@@ -362,6 +363,9 @@ export default function MapPage() {
 
       {/* You: your own mini avatar at your location. Nothing to tap. */}
       {mounted && map && <YouMarker map={map} fix={fix} look={profile?.avatar ?? look} />}
+
+      {/* Release 1: the Lagos HQ marker, out on the lagoon. Shows with the hotspots sealed or not. */}
+      {EVENTS_R1 && mounted && map && <LagosHqMarker map={map} />}
 
       {/* Hotspots: a pin on each open one, the Hotspots button and list, the sheet and the room. Placed under the chrome's measured height. */}
       {/* Release 1: sealed behind NEXT_PUBLIC_ROOMS_SEAL, nothing deleted. */}
