@@ -24,7 +24,7 @@ const WHO_NAME: Record<Visibility, string> = { public: "Public", community: "Com
 const WA_MAX = 32;
 
 /** Release 1 one page create, event side. A name is enough; every other field has a default (see the data layer). */
-export default function EventForm() {
+export default function EventForm({ cover }: { cover: string | null }) {
   const router = useRouter();
   const api = useR1Api();
   const { user } = useR1Auth();
@@ -138,6 +138,7 @@ export default function EventForm() {
       requires_approval: approval,
       waitlist_on: waitlist,
       visibility,
+      cover_url: cover,
     };
     if (inPerson) {
       d.place_name = place.trim();
