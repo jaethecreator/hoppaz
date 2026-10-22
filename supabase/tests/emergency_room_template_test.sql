@@ -58,12 +58,15 @@ exception when others then
   return sqlerrm;
 end $$;
 
+-- psql does not substitute variables inside a $$ body, so the setup file's facts go in through settings first.
+select set_config('er.setup_len', char_length(:'setup')::text, true), set_config('er.setup_placeholder', position('OWNER_EMAIL_HERE' in :'setup')::text, true);
+
 -- ---------------------------------------------------------------------------------------------- the layouts ---
 do $$
 declare
-  w int; l record; z jsonb; sx int; sy int; walkable int; reached int; ok boolean;
+  w int; l record; z jsonb; sx int; sy int; walkable int; reached int; hit boolean; all_ok boolean;
 begin
-  perform pg_temp.ok(char_length(:'setup') > 500 and position('OWNER_EMAIL_HERE' in :'setup') = 0,
+  perform pg_temp.ok(current_setting('er.setup_len')::int > 500 and current_setting('er.setup_placeholder')::int = 0,
     'the setup file copy is there with the owner email filled in (see the header)');
   for w in select unnest(array[30, 36]) loop
     select * into l from public.crew_room_layouts where template = 'emergency-room' and width = w;
@@ -92,15 +95,15 @@ begin
     r(x, y) as (select sx, sy union select c.x, c.y from r join cells c on abs(c.x - r.x) + abs(c.y - r.y) = 1)
     select (select count(*) from cells), (select count(*) from r) into walkable, reached;
     perform pg_temp.ok(walkable >= 120 and walkable - reached <= 2, format('the whole floor is reachable from the spawn (%s of %s) at width %s', reached, walkable, w));
-    ok := true;
+    all_ok := true;
     for z in select * from jsonb_array_elements(l.data->'zones') loop
       with recursive cells as (
         select x, y from generate_series(0, l.gw - 1) x cross join generate_series(0, l.gh - 1) y where substr(l.walk, y * l.gw + x + 1, 1) = '1'),
       r(x, y) as (select sx, sy union select c.x, c.y from r join cells c on abs(c.x - r.x) + abs(c.y - r.y) = 1)
-      select exists (select 1 from r where x = (z->'stop'->>'x')::int and y = (z->'stop'->>'y')::int) into reached;
-      ok := ok and reached::int = 1;
+      select exists (select 1 from r where x = (z->'stop'->>'x')::int and y = (z->'stop'->>'y')::int) into hit;
+      all_ok := all_ok and hit;
     end loop;
-    perform pg_temp.ok(ok, format('every zone stop is reachable from the spawn at width %s', w));
+    perform pg_temp.ok(all_ok, format('every zone stop is reachable from the spawn at width %s', w));
     perform pg_temp.ok(((select z2->'link' from jsonb_array_elements(l.data->'zones') z2 where z2->>'id' = 'experiences')->>'url') = 'https://www.instagram.com/emergencyroombysos/',
                        format('the Experiences zone carries the Instagram link as data at width %s', w));
   end loop;
@@ -152,25 +155,25 @@ end $$;
 create function pg_temp.er_crews() returns bigint language sql as $$
   select count(*) from public.crews where regexp_replace(lower(name), '[^a-z0-9]', '', 'g') = 'emergencyroom';
 $$;
-select pg_temp.newuser('roomtest-er-owner@roomtest.invalid') as er_owner \gset
-select set_config('er.owner', :'er_owner', true);
-select pg_temp.run_setup(:'setup') as first_run \gset
-select pg_temp.run_setup(:'setup') as second_run \gset
-select pg_temp.run_setup(replace(:'setup', 'roomtest-er-owner@roomtest.invalid', 'nobody-here@roomtest.invalid')) as no_owner \gset
+select set_config('er.owner', pg_temp.newuser('roomtest-er-owner@roomtest.invalid')::text, true);
+select set_config('er.first', pg_temp.run_setup(:'setup'), true);
+select set_config('er.second', pg_temp.run_setup(:'setup'), true);
+select set_config('er.no_owner', pg_temp.run_setup(replace(:'setup', 'roomtest-er-owner@roomtest.invalid', 'nobody-here@roomtest.invalid')), true);
 
 do $$
 declare
-  owner uuid := current_setting('er.owner')::uuid;
+  own uuid := current_setting('er.owner')::uuid;
   crew uuid; r public.crew_rooms; c public.crews; res jsonb; v int;
 begin
-  perform pg_temp.ok(:'first_run' = 'ok' and :'second_run' = 'ok', format('the setup file runs, and runs again (%s / %s)', :'first_run', :'second_run'));
-  perform pg_temp.ok(:'no_owner' like '%owner account not found%', 'it stops when the owner account does not exist');
+  perform pg_temp.ok(current_setting('er.first') = 'ok' and current_setting('er.second') = 'ok',
+    format('the setup file runs, and runs again (%s / %s)', current_setting('er.first'), current_setting('er.second')));
+  perform pg_temp.ok(current_setting('er.no_owner') like '%owner account not found%', 'it stops when the owner account does not exist');
   perform pg_temp.ok(pg_temp.er_crews() = 1, 'running it twice leaves one Emergency Room crew');
   select * into c from public.crews where regexp_replace(lower(name), '[^a-z0-9]', '', 'g') = 'emergencyroom';
   crew := c.id;
-  perform pg_temp.ok(c.name = 'Emergency Room' and c.created_by = owner and c.visibility = 'open' and c.verified and c.logo_url = '/brands/emergency-room-sos.jpg'
+  perform pg_temp.ok(c.name = 'Emergency Room' and c.created_by = own and c.visibility = 'open' and c.verified and c.logo_url = '/brands/emergency-room-sos.jpg'
                      and c.header_images = '{}', 'the crew is open, verified, owned by the account, with the round logo and no header pictures');
-  perform pg_temp.ok((select role = 'owner' from public.crew_members where crew_id = crew and user_id = owner) and (select count(*) from public.crew_members where crew_id = crew) = 1,
+  perform pg_temp.ok((select role = 'owner' from public.crew_members where crew_id = crew and user_id = own) and (select count(*) from public.crew_members where crew_id = crew) = 1,
                      'the owner is the only member, as owner');
   select * into r from public.crew_rooms where crew_id = crew;
   perform pg_temp.ok(r.template = 'emergency-room' and r.width = 30 and r.capacity = 90 and r.featured_event_id is null,
@@ -181,13 +184,20 @@ begin
   perform pg_temp.ok(not exists (select 1 from public.game_times where crew_id = crew), 'no Game Time was made');
   perform pg_temp.ok((select invite_code from public.crews where id = crew) is not null, 'the crew has an invite code for the link it prints');
   -- A run again keeps what the owner typed, and puts a room that was moved back on the template.
-  perform pg_temp.actor(owner);
+  perform pg_temp.actor(own);
   res := public.crew_room_settings(crew, 30, jsonb_build_object('brand', 'Emergency Room by SOS', 'strapline', 'Our own line', 'eventKeywords', 'Emergency Room, SOS, Afrotech'));
   perform pg_temp.admin();
-  perform pg_temp.actor(owner); res := public.crew_room_set_template(crew, 'clubhouse'); perform pg_temp.admin();
+  perform pg_temp.actor(own); res := public.crew_room_set_template(crew, 'clubhouse'); perform pg_temp.admin();
   perform pg_temp.ok((select template from public.crew_rooms where crew_id = crew) = 'clubhouse', 'the owner moved the room to the clubhouse');
-  v := (select version from public.crew_rooms where crew_id = crew);
-  perform pg_temp.ok(pg_temp.run_setup(:'setup') = 'ok', 'the setup file runs again over a changed room');
+  perform set_config('er.version', (select version from public.crew_rooms where crew_id = crew)::text, true);
+end $$;
+select set_config('er.rerun', pg_temp.run_setup(:'setup'), true);
+do $$
+declare
+  crew uuid := (select id from public.crews where regexp_replace(lower(name), '[^a-z0-9]', '', 'g') = 'emergencyroom');
+  r public.crew_rooms; v int := current_setting('er.version')::int;
+begin
+  perform pg_temp.ok(current_setting('er.rerun') = 'ok', 'the setup file runs again over a changed room');
   select * into r from public.crew_rooms where crew_id = crew;
   perform pg_temp.ok(r.template = 'emergency-room' and r.version > v and r.content->>'strapline' = 'Our own line' and r.content->>'eventKeywords' = 'Emergency Room, SOS, Afrotech'
                      and not exists (select 1 from public.crew_room_presence where crew_id = crew), 'the template is back, the owner''s own words stay, nobody stays on the old floor');
@@ -198,10 +208,10 @@ begin
   insert into public.crews (id, name, created_by) values (current_setting('er.stranger_crew')::uuid, 'EMERGENCY  room!', pg_temp.newuser());
   perform pg_temp.ok(true, 'another account has a crew with that name');
 end $$;
-select pg_temp.run_setup(:'setup') as takeover \gset
+select set_config('er.takeover', pg_temp.run_setup(:'setup'), true);
 do $$
 begin
-  perform pg_temp.ok(:'takeover' like '%already exists and is not this owner%' and :'takeover' like '%' || current_setting('er.stranger_crew') || '%',
+  perform pg_temp.ok(current_setting('er.takeover') like '%already exists and is not this owner%' and current_setting('er.takeover') like '%' || current_setting('er.stranger_crew') || '%',
                      'it refuses to take over a crew of that name owned by someone else, and prints its id');
   perform pg_temp.ok(pg_temp.er_crews() = 1 and not exists (select 1 from public.crews c where c.created_by = current_setting('er.owner')::uuid),
                      'and it made nothing for the owner');
