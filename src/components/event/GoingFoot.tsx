@@ -10,6 +10,8 @@ import { useToast } from "@/lib/store";
 import type { EventRow } from "@/lib/types";
 import { shareEvent } from "./share";
 import { useMyLook } from "./useMyLook";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import { asR1, realGoing } from "@/components/events-r1/words";
 
 const HOUR = 3.6e6;
 
@@ -48,10 +50,14 @@ export default function GoingFoot({
   const look = useMyLook(userId);
   const going = isGoing(event.id);
   const saving = !!busy[event.id];
+  // Release 1: an event with the new fields is joined with Register (in the block above), so no I'M GOING here, and a
+  // right swipe is only interest. Its count is the real going count, never the swipe count.
+  const r1 = EVENTS_R1 ? asR1(event) : null;
 
   // The count comes from the last load (events_near.swipes_in). Your own tap shows at once:
   // adjust it by one until a fresh load brings the real number.
-  const loaded = event.swipes_in ?? 0;
+  const real = EVENTS_R1 ? realGoing(event) : null;
+  const loaded = real ?? event.swipes_in ?? 0;
   const [adj, setAdj] = useState({ base: loaded, delta: 0 });
   const delta = adj.base === loaded ? adj.delta : 0;
   const count = Math.max(0, loaded + delta);
@@ -99,6 +105,7 @@ export default function GoingFoot({
           {/* TODO(back end): crew faces. Who in your crew is going to this event is not readable
               client side (swipes are private; crew RSVPs carry no avatars). It needs an RPC that
               returns crewmates' avatars for an event id. Render them here, before your own face. */}
+          {!r1 && (
           <div className="flex flex-col items-center gap-1">
             {going ? (
               <span
@@ -113,10 +120,12 @@ export default function GoingFoot({
             )}
             <span className={clsx("font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-dim", compact && "short:hidden")}>YOU</span>
           </div>
+          )}
         </div>
       </div>
 
       {/* --------------------------------------------------- the one button -- */}
+      {!r1 && (
       <div className={clsx("mt-3", compact && "short:mt-2")}>
         {ended ? (
           <button className="btn w-full disabled:border disabled:border-line" disabled>
@@ -142,11 +151,13 @@ export default function GoingFoot({
           </button>
         )}
       </div>
+      )}
 
       {/* -------------------------------------------------- the secondary row -- */}
       <div
         className={clsx(
-          "mt-2 overflow-hidden rounded-hz border border-line",
+          r1 ? "mt-3" : "mt-2",
+          "overflow-hidden rounded-hz border border-line",
           // Narrow: a two-column grid whose 1px gaps show the hairline; the chat link takes a row of its own when it is the odd one out.
           // On a short phone it is one row of three (the arrows and the word "event" go), to give the card's body its room.
           compact ? "grid grid-cols-2 gap-px bg-line short:flex [&>*]:bg-ink-2" : "flex divide-x divide-line"

@@ -17,7 +17,10 @@ import { useToast } from "@/lib/store";
 import { loadDropReceipts, useEventCollectibles } from "@/lib/useCollectibles";
 import { useGameDrops } from "@/lib/game";
 import { themeForEvent } from "@/lib/theme";
-import { clockShort, eventPrice, eventTitle, isEventLead } from "@/lib/geo";
+import { clockShort, eventPrice, eventTitle, hasVenue, isEventLead } from "@/lib/geo";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import EventBlock from "@/components/events-r1/EventBlock";
+import { asR1, isOnline } from "@/components/events-r1/words";
 import { dayLabel } from "@/lib/filters";
 import type { EventRow } from "@/lib/types";
 
@@ -79,6 +82,8 @@ function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, i
   const [submitted, setSubmitted] = useState(false);
 
   const theme = themeForEvent(event.starts_at);
+  // Release 1: an event that carries the new fields gets the Luma style block in place of the old title and facts.
+  const r1 = EVENTS_R1 ? asR1(event) : null;
   const lead = isEventLead(event);
   const title = eventTitle(event);
   const flyer = useMemo(() => demoFlyer(event), [event]);
@@ -88,7 +93,8 @@ function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, i
   const closeEnough = !!fix && event.distance_m <= CHECKIN_RADIUS_M;
   // Check-in is about the night itself; a listing weeks away has no use for the strip unless you are standing there.
   const aroundNow = now > start - 18 * HOUR && now < start + 12 * HOUR;
-  const showCheckIn = !lead && (checkedIn || closeEnough || aroundNow);
+  // An online event has no door to check in at.
+  const showCheckIn = !lead && !(r1 && isOnline(event)) && (checkedIn || closeEnough || aroundNow);
 
   /* ---------------------------------------------------------- the facts -- */
   const when = lead ? "TIME TBC" : dayLabel(event.starts_at);
@@ -156,13 +162,15 @@ function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, i
                 <ChevronRight size={20} strokeWidth={2.6} aria-hidden />
               </span>
             </button>
-            {/* Up here it stays in sight however far the card scrolls. */}
-            <Link
-              href={`/event/${event.id}`}
-              className="ml-auto inline-flex min-h-[40px] items-center gap-1 whitespace-nowrap font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-cream underline decoration-orange decoration-2 underline-offset-4"
-            >
-              FULL LISTING <ArrowRight size={13} className="text-orange" aria-hidden />
-            </Link>
+            {/* Up here it stays in sight however far the card scrolls. (The Release 1 block has its own Open event page.) */}
+            {!r1 && (
+              <Link
+                href={`/event/${event.id}`}
+                className="ml-auto inline-flex min-h-[40px] items-center gap-1 whitespace-nowrap font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-cream underline decoration-orange decoration-2 underline-offset-4"
+              >
+                FULL LISTING <ArrowRight size={13} className="text-orange" aria-hidden />
+              </Link>
+            )}
           </>
         ) : undefined
       }
@@ -171,10 +179,15 @@ function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, i
       <ArtPanel tall={page} compact={side} flyer={flyer} alt={`${title} flyer`} vibe={event.vibe} tone={theme === "day" ? "ink" : "cream"} />
 
       {/* ----------------------------------------------- title and the facts -- */}
-      <div className="px-5 pt-4">
-        <h2 className={`font-display font-black leading-[1.05] tracking-[-0.01em] ${side ? "pr-6 text-[22px]" : page ? "text-[34px]" : "text-[30px]"}`}>{title}</h2>
-        <p className="mt-2.5 font-mono text-[12px] font-medium uppercase leading-snug tracking-[0.04em] text-cream [text-wrap:balance]">{line}</p>
-        <p className="mt-1 font-body text-[14px] text-dim">{event.venue_name}</p>
+      {r1 && <EventBlock event={r1} placement={placement} />}
+      <div className={r1 ? "px-5" : "px-5 pt-4"}>
+        {!r1 && (
+          <>
+            <h2 className={`font-display font-black leading-[1.05] tracking-[-0.01em] ${side ? "pr-6 text-[22px]" : page ? "text-[34px]" : "text-[30px]"}`}>{title}</h2>
+            <p className="mt-2.5 font-mono text-[12px] font-medium uppercase leading-snug tracking-[0.04em] text-cream [text-wrap:balance]">{line}</p>
+            <p className="mt-1 font-body text-[14px] text-dim">{event.venue_name}</p>
+          </>
+        )}
         {showOnMap && (
           <Link href={`/?e=${encodeURIComponent(event.id)}`} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full border border-line px-4 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-cream transition-colors hover:border-orange">
             <MapPin size={15} className="text-orange" aria-hidden />
@@ -192,7 +205,7 @@ function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, i
           </p>
         )}
         {lead && <p className="hint mt-3">Community lead. Times and prices can move, so check the listing before you go.</p>}
-        {page ? (
+        {page ? (r1 && !hasVenue(event)) ? null : (
           <p className="mt-3">
             <a
               href={`https://www.google.com/maps/dir/?api=1&destination=${event.lat},${event.lng}`}
@@ -203,7 +216,7 @@ function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, i
               DIRECTIONS <ArrowRight size={14} className="text-orange" aria-hidden />
             </a>
           </p>
-        ) : side && (onPrev || onNext) ? null : (
+        ) : (side && (onPrev || onNext)) || r1 ? null : (
         <p className="mt-3">
           <Link
             href={`/event/${event.id}`}
