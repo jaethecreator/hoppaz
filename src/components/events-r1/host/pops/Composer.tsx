@@ -94,7 +94,17 @@ export default function Composer({ event, counts, now }: { event: R1Event; count
       <p className="hint -mt-1">Pops reach people in the app. Share to WhatsApp to reach everyone.</p>
 
       <p className="mt-4 font-body text-[13px] text-dim">To</p>
-      <Choice label="To" value={to} options={AUDIENCES} onChange={(v) => setTo(v)} className="mt-1.5" />
+      <Choice
+        label="To"
+        value={to}
+        options={AUDIENCES}
+        onChange={(v) => {
+          setTo(v);
+          // A note to pending or waitlisted people is not for the whole room: Announcements start off for them.
+          setAlso(v === "going");
+        }}
+        className="mt-1.5"
+      />
       <p className="hint mt-2" aria-live="polite">
         Sends to {peopleWord(n)}
       </p>
@@ -120,7 +130,7 @@ export default function Composer({ event, counts, now }: { event: R1Event; count
           <Toggle on={also} onChange={setAlso} label={`Also post in ${roomName ?? "your room"} Announcements`} />
         ) : (
           <p className="hint py-2">
-            {event.host.roomId ? `Add this event to ${roomName ?? "your room"} in the Roomz tab to also post in Announcements.` : "No room yet, so this Pop stays on the event."}
+            {event.host.roomId ? `Add this event to ${roomName ?? "your room"} in the Roomz tab to also post in Announcements.` : "You have no Roomz yet. This Pop reaches the event only."}
           </p>
         )}
       </div>
