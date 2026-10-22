@@ -7,6 +7,8 @@ import { NEED_ACCOUNT, requireAccount } from "./accountGate";
 import { useSessionStore } from "./useSession";
 import { sfx } from "./sound/sfx";
 import { haptics } from "./haptics";
+import { EVENTS_R1, EVENTS_R1_FAKE } from "./events-r1/flags";
+import { loadApi } from "./events-r1";
 
 /**
  * "I'm going", shared by the event page, the Today list and the swipe mode.
@@ -99,6 +101,17 @@ export function useGoing(userId: string | null) {
    */
   const decide = useCallback(
     async (eventId: string, decision: Decision | null): Promise<string | null> => {
+      // Release 1 with the fake data layer: a right swipe means interested only, and it goes to the data layer, not to swipes.
+      if (EVENTS_R1 && EVENTS_R1_FAKE) {
+        try {
+          await (await loadApi()).events.setInterested(eventId, decision === "in");
+        } catch {
+          return "That didn't save. Try again.";
+        }
+        setDecision(eventId, decision);
+        if (decision === "in") weOutside();
+        return null;
+      }
       const sb = getSupabase();
       if (!sb) {
         setDecision(eventId, decision);
