@@ -722,7 +722,7 @@ await test("rooms: is_owner, can_post, has_3d, online, HQ short address and mine
   eq(await api.rooms.mine(), [], "signed out owns nothing");
   as("Ada Obi");
   const l = await api.rooms.list();
-  eq([l.hq.is_owner, l.hq.can_post, l.hq.has_3d, l.hq.three_d_on, l.hq.online], [false, false, true, false, 320], "HQ for a guest: a room exists but it is off (chat first), people online");
+  eq([l.hq.is_owner, l.hq.can_post, l.hq.has_3d, l.hq.three_d_on, l.hq.online], [false, false, true, true, 320], "HQ for a guest: a room exists and it is on (chat stays first), people online");
   eq((await api.rooms.get("hq"))?.id, l.hq.id, "/rooms/hq finds Lagos HQ");
   eq((await api.rooms.get("lagos-hq"))?.id, l.hq.id, "and its own slug");
   eq(l.mine.map((r) => [r.name, r.is_owner, r.can_post]).sort(), [["360Playlist", false, false], ["Lagos Run Club", false, false]], "a member is not an owner");
@@ -753,14 +753,14 @@ await test("rooms: the 3D room switch (defaults, who may set it, Enter room need
   const hq = await get("hq");
   const kred = await get("kredete");
   eq([p360.has_3d, p360.three_d_on, roof.has_3d, roof.three_d_on], [true, true, true, true], "default: 360Playlist and the brand rooms have a 3D room and it is on");
-  eq([hq.has_3d, hq.three_d_on, enter(hq)], [true, false, false], "default: Lagos HQ has a room but it is off, so no Enter room");
+  eq([hq.has_3d, hq.three_d_on, enter(hq)], [true, true, true], "default: Lagos HQ has a room and it is on, so Enter room shows");
   eq([kred.has_3d, kred.three_d_on, enter(kred)], [false, false, false], "a crew with no 3D room: nothing to enter");
   eq([enter(p360), enter(roof)], [true, true], "Enter room shows for the brand rooms");
   eq((await api.rooms.list()).mine.find((r) => r.name === "360Playlist")?.three_d_on, true, "the Rooms tab carries the switch");
 
   // A member who does not own it cannot.
   await rejects(api.rooms.setThreeD(p360.id, false), "Not allowed", "a member");
-  await rejects(api.rooms.setThreeD(hq.id, true), "Not allowed", "a member, on HQ");
+  await rejects(api.rooms.setThreeD(hq.id, false), "Not allowed", "a member, on HQ");
   eq((await get("360playlist")).three_d_on, true, "nothing changed");
   await rejects(api.rooms.listForStaff(), "Not allowed", "a member may not list for staff");
 
@@ -783,10 +783,10 @@ await test("rooms: the 3D room switch (defaults, who may set it, Enter room need
 
   // Staff can, for any room.
   as("Hoppaz Staff");
-  await api.rooms.setThreeD(hq.id, true);
-  eq([(await get("hq")).three_d_on, (await api.rooms.list()).hq.three_d_on], [true, true], "staff switch Lagos HQ on (the get and the list agree)");
   await api.rooms.setThreeD(hq.id, false);
-  eq((await get("hq")).three_d_on, false, "and off");
+  eq([(await get("hq")).three_d_on, (await api.rooms.list()).hq.three_d_on], [false, false], "staff switch Lagos HQ off (the get and the list agree)");
+  await api.rooms.setThreeD(hq.id, true);
+  eq((await get("hq")).three_d_on, true, "and on again");
   await api.rooms.setThreeD(roof.id, false);
   eq((await get("rooftop-sessions")).three_d_on, false, "staff switch a brand room off");
   await api.rooms.setThreeD(roof.id, true);

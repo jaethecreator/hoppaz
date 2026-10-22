@@ -71,19 +71,20 @@ function Home({ room }: { room: RoomSummary }) {
       <div className="mx-auto w-full max-w-[760px]">
         <RoomHeader room={room} />
         <div className="px-4">
-          {/* HQ is chat first: no Enter room, the sections and the optional 3D button are the way in. A room with its 3D room off is chat only. */}
-          {!hq &&
-            (room.joined ? (
-              walkable(room) && (
-                <Link href={enterPath(room)} className="btn mt-4 w-full text-[15px] normal-case" data-enter-room>
-                  <DoorOpen size={18} aria-hidden /> Enter room
-                </Link>
-              )
-            ) : (
-              <button type="button" className="btn mt-4 w-full text-[15px] normal-case" onClick={join} disabled={busy || !api} data-join>
-                <DoorOpen size={18} aria-hidden /> Join
-              </button>
-            ))}
+          {/* Enter room opens the walkable room, Lagos HQ's too (its lagos-hq room). Chat stays the main thing: the sections below are
+              always here, so a full room or a failed entry (the walker cap) never leaves HQ without its chat. A room with its 3D room
+              off is chat only. Lagos HQ has no Join: everyone is in it. */}
+          {room.joined || hq ? (
+            walkable(room) && (
+              <Link href={enterPath(room)} className="btn mt-4 w-full text-[15px] normal-case" data-enter-room>
+                <DoorOpen size={18} aria-hidden /> Enter room
+              </Link>
+            )
+          ) : (
+            <button type="button" className="btn mt-4 w-full text-[15px] normal-case" onClick={join} disabled={busy || !api} data-join>
+              <DoorOpen size={18} aria-hidden /> Join
+            </button>
+          )}
 
           <nav aria-label="Sections" className="mt-3 flex flex-wrap gap-2">
             <Link href={`${base}/announcements`} className="btn btn-ghost min-h-[44px] normal-case" data-section="announcements">
@@ -101,8 +102,6 @@ function Home({ room }: { room: RoomSummary }) {
               </Link>
             ))}
           </nav>
-
-          {hq && <WalkButton room={room} />}
 
           <Latest room={room} />
 
@@ -125,28 +124,6 @@ function Home({ room }: { room: RoomSummary }) {
         </div>
       </div>
       <SignInSheet open={signin} reason={`Join ${room.name}`} onClose={() => setSignin(false)} onSignedIn={() => setSignin(false)} />
-    </div>
-  );
-}
-
-/** Lagos HQ's optional walkable room. Off until the owner or staff switch it on; it never opens by itself. */
-function WalkButton({ room }: { room: RoomSummary }) {
-  if (room.has_3d) {
-    if (!room.three_d_on) return null;
-    return (
-      <div className="mt-3">
-        <Link href={`/crew/${room.id}/room`} className="btn btn-ghost w-full normal-case" data-walk>
-          Walk the 3D room (optional)
-        </Link>
-      </div>
-    );
-  }
-  return (
-    <div className="mt-3">
-      <button type="button" className="btn btn-ghost w-full normal-case" disabled data-walk>
-        Walk the 3D room (optional)
-      </button>
-      <p className="hint mt-1.5 text-center">Opens when the 3D room is ready</p>
     </div>
   );
 }

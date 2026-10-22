@@ -173,7 +173,7 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
 
 - table `ev_room_settings` (room_id primary key, three_d_on, updated_by, updated_at), closed like the other `ev_` tables;
 - `ev_set_room_3d(room, on)` answers `ok`, `need_account`, `bad_value`, `not_allowed` or `not_found`; owner or staff only;
-- `ev_room_3d_allowed(room)` answers whether it is on: a saved switch wins; with none it is on for a room with a layout (every crew has one: the room is made on first entry from the default template) and off for Lagos HQ until it is switched on;
+- `ev_room_3d_allowed(room)` answers whether it is on: a saved switch wins; with none it is on for a room with a layout (every crew has one: the room is made on first entry from the default template) and on for Lagos HQ too (its room uses the `lagos-hq` template; `ev_ensure_hq()` moves it over from the clubhouse once `lagos_hq_template.sql` has run, and says so in a NOTICE if it has not);
 - `ev_rooms_for_me`, `ev_room` and `ev_admin_rooms` return `has_3d` (a layout exists) and `three_d_on` (the switch) for every room;
 - `ev_admin_rooms()` is staff only (null for anyone else): every room, Lagos HQ first, then the biggest.
 

@@ -338,6 +338,7 @@ check("The Emergency Room's wide layout keeps every section of the narrow one an
   assert.equal(JSON.stringify(a.props.map((p) => [p.id, p.kind, p.w, p.h]).sort()), JSON.stringify(b.props.map((p) => [p.id, p.kind, p.w, p.h]).sort()));
   assert.equal(JSON.stringify(a.zones.map((z) => z.id)), JSON.stringify(b.zones.map((z) => z.id)));
   for (const z of a.zones) assert.equal(z.name, b.zones.find((q) => q.id === z.id).name);
+});
 // ---- The Lagos HQ crew template (src/lib/campaign/rooms/lagosHq.ts): both widths, the contract, and its scenery people. ----
 const LAGOS_IDS = ["hq-billboard", "stage-platform", "dj-booth", "courtyard-fountain", "entry-map-table", "danfo-1", "keke-1", "hop-bus", "okada-1", "bus-shelter", "suya-stall", "stall-akara", "stall-phones", "stall-cloth", "lagoon-l", "lagoon-r", "jetty"];
 const lagos = ROOM_TEMPLATES.find((t) => t.key === "lagos-hq");

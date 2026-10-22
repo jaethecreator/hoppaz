@@ -189,6 +189,7 @@ function RoomGate({ crewId, room }: { crewId: string; room: CrewRoomConnection }
         <button type="button" onClick={room.retry}>
           Try again
         </button>
+        <Link href={`/rooms/${crewId}/general`}>Open the chat</Link>
         <Link href="/crew">Back to ROOMZ</Link>
       </nav>
     </div>
