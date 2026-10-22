@@ -33,10 +33,12 @@ export type EventRec = Omit<
   "going" | "spots_left" | "host" | "distance_m" | "heat" | "checkins" | "swipes_in" | "here_now" | "ticket_types"
 > & { host_id: string; ticket_types?: TicketTypeRec[] };
 
-export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "latest_announcement" | "is_owner" | "can_post" | "has_3d" | "online"> & {
+export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "latest_announcement" | "is_owner" | "can_post" | "has_3d" | "three_d_on" | "online"> & {
   owner_id: string | null;
   /** Missing means no walkable 3D room (the fake has none; a tester can switch one on with fakeDev.setHas3d). */
   has_3d?: boolean;
+  /** The 3D room switch. Missing means the default: on when there is a 3D room, except Lagos HQ (off until someone switches it on). */
+  three_d_on?: boolean;
   /** Missing means not counted. */
   online?: number;
   description: string;

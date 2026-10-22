@@ -92,7 +92,7 @@ export const useViewerState = (eventId: string | null | undefined) =>
 
 export const useRooms = () => useR1Query((api) => api.rooms.list(), []);
 
-/** One room by id or slug ("hq" is Hoppaz HQ). null when there is none. */
+/** One room by id or slug ("hq" is Lagos HQ). null when there is none. */
 export const useRoom = (idOrSlug: string | null | undefined) =>
   useR1Query((api) => (idOrSlug ? api.rooms.get(idOrSlug) : Promise.resolve(null)), [idOrSlug]);
 

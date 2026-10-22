@@ -1,5 +1,5 @@
 -- DRAFT FOR OLA, NOT RUN ON PRODUCTION. Release 1 rooms (supabase/events_r1_rooms.sql). LOCAL ONLY: everything rolls back, including the
--- Hoppaz HQ room and the staff flags this test clears so it starts from "no HQ yet".
+-- Lagos HQ room and the staff flags this test clears so it starts from "no HQ yet".
 -- Needs schema.sql, chat_accounts.sql, crew_rooms.sql, crew_announcements.sql, events_r1_events.sql, events_r1_registrations.sql, events_r1_pops.sql
 -- and events_r1_rooms.sql loaded. Ends with ALL EVENTS R1 ROOMS TESTS PASSED.
 --   docker exec -i supabase_db_hoppaz-local psql -U postgres -d <a throwaway hoppaz_ev_ database> -q -v ON_ERROR_STOP=1 < supabase/tests/events_r1_rooms_test.sql
@@ -81,12 +81,12 @@ declare
   u1 uuid := pg_temp.newuser('Room U1'); u2 uuid := pg_temp.newuser('Room U2');
   room uuid := gen_random_uuid(); rdisc uuid := gen_random_uuid(); rpriv uuid := gen_random_uuid();
   hq uuid; hq2 uuid; e uuid; ecom uuid; einv uuid; ecan uuid; epast uuid; eapp uuid; eold uuid; eclosed uuid; ediscgo uuid; enoroom uuid;
-  r jsonb; n int; ann uuid; f record; j jsonb; k int;
+  r jsonb; n int; ann uuid; f record; j jsonb; k int; sres text;
 begin
-  -- ===================================================== Hoppaz HQ ========
+  -- ===================================================== Lagos HQ ========
   update public.profiles set is_admin = false where is_admin;
   delete from public.ev_hq;
-  delete from public.crews where lower(btrim(name)) = 'hoppaz hq';
+  delete from public.crews where lower(btrim(name)) in ('hoppaz hq', 'lagos hq');
   perform pg_temp.ok(public.ev_ensure_hq() is null, 'with no staff account there is nobody to own HQ: null');
   perform pg_temp.ok(pg_temp.j(a, 'select public.ev_rooms_for_me()') -> 'hq' = 'null'::jsonb, 'and the Rooms tab says no HQ rather than failing');
   update public.profiles set is_admin = true where id = st;
@@ -94,15 +94,15 @@ begin
   -- The first read by someone with an account makes HQ and joins them.
   r := pg_temp.j(a, 'select public.ev_rooms_for_me()');
   hq := (r -> 'hq' ->> 'id')::uuid;
-  perform pg_temp.ok(hq is not null and r -> 'hq' ->> 'kind' = 'hq' and r -> 'hq' ->> 'name' = 'Hoppaz HQ' and (r -> 'hq' ->> 'verified')::boolean and (r -> 'hq' ->> 'joined')::boolean,
-                     'the first read makes Hoppaz HQ: kind hq, verified, and the reader is in');
-  perform pg_temp.ok(exists (select 1 from public.crews where id = hq and verified and visibility = 'open' and created_by = st and name = 'Hoppaz HQ')
+  perform pg_temp.ok(hq is not null and r -> 'hq' ->> 'kind' = 'hq' and r -> 'hq' ->> 'name' = 'Lagos HQ' and (r -> 'hq' ->> 'verified')::boolean and (r -> 'hq' ->> 'joined')::boolean,
+                     'the first read makes Lagos HQ: kind hq, verified, and the reader is in');
+  perform pg_temp.ok(exists (select 1 from public.crews where id = hq and verified and visibility = 'open' and created_by = st and name = 'Lagos HQ')
                      and (select capacity from public.crew_rooms where crew_id = hq) = 500 and (select count(*) from public.ev_hq) = 1, 'it is an open verified crew owned by the staff account, with the largest walker capacity the check allows');
   perform pg_temp.ok(exists (select 1 from public.crew_members where crew_id = hq and user_id = st and role = 'owner') and exists (select 1 from public.crew_members where crew_id = hq and user_id = a and role = 'member'),
                      'the staff account owns it, the reader is a member');
   perform pg_temp.ok(public._ev_is_hq(hq) and not public._ev_is_hq(gen_random_uuid()), 'the HQ test knows it');
   hq2 := public.ev_ensure_hq();
-  perform pg_temp.ok(hq2 = hq and (select count(*) from public.crews where lower(btrim(name)) = 'hoppaz hq') = 1, 'asking again gives the same room, never a second one');
+  perform pg_temp.ok(hq2 = hq and (select count(*) from public.crews where lower(btrim(name)) in ('hoppaz hq', 'lagos hq')) = 1, 'asking again gives the same room, never a second one');
   hq2 := pg_temp.t(b, 'select public.ev_ensure_hq()')::uuid;
   perform pg_temp.ok(hq2 = hq and exists (select 1 from public.crew_members where crew_id = hq and user_id = b), 'every account joins on its first read');
   hq2 := pg_temp.t(b, 'select public.ev_ensure_hq()')::uuid;
@@ -116,8 +116,29 @@ begin
   -- Adopting a crew Ola made by hand.
   delete from public.ev_hq;
   hq2 := public.ev_ensure_hq();
-  perform pg_temp.ok(hq2 = hq and (select count(*) from public.ev_hq) = 1 and (select count(*) from public.crews where lower(btrim(name)) = 'hoppaz hq') = 1,
-                     'if the pointer is lost but a verified crew called Hoppaz HQ exists, it is adopted, not duplicated');
+  perform pg_temp.ok(hq2 = hq and (select count(*) from public.ev_hq) = 1 and (select count(*) from public.crews where lower(btrim(name)) in ('hoppaz hq', 'lagos hq')) = 1,
+                     'if the pointer is lost but a verified crew called Lagos HQ exists, it is adopted, not duplicated');
+
+  -- The old name: a crew still called Hoppaz HQ is renamed, whether the pointer is there or not.
+  update public.crews set name = 'Hoppaz HQ' where id = hq;
+  update public.crew_rooms set content = jsonb_set(content, '{brand}', '"Hoppaz HQ"') where crew_id = hq;
+  hq2 := public.ev_ensure_hq();
+  perform pg_temp.ok(hq2 = hq and (select name from public.crews where id = hq) = 'Lagos HQ' and (select content ->> 'brand' from public.crew_rooms where crew_id = hq) = 'Lagos HQ',
+                     'a pointed-to crew still called Hoppaz HQ is renamed Lagos HQ, and so is the room''s brand line');
+  update public.crews set name = 'Hoppaz HQ' where id = hq;
+  delete from public.ev_hq;
+  hq2 := public.ev_ensure_hq();
+  perform pg_temp.ok(hq2 = hq and (select name from public.crews where id = hq) = 'Lagos HQ' and (select count(*) from public.ev_hq) = 1,
+                     'with the pointer lost, a verified crew called Hoppaz HQ is adopted and renamed Lagos HQ');
+  -- A crew already called Lagos HQ wins over one still called Hoppaz HQ.
+  update public.crews set name = 'Hoppaz HQ' where id = hq;
+  insert into public.crews (name, created_by, visibility, verified) values ('Lagos HQ', st, 'open', true) returning id into hq2;
+  delete from public.ev_hq;
+  perform pg_temp.ok(public.ev_ensure_hq() = hq2 and (select name from public.crews where id = hq) = 'Hoppaz HQ', 'a crew already called Lagos HQ is adopted before one called Hoppaz HQ');
+  delete from public.crews where id = hq2;
+  delete from public.ev_hq;
+  hq2 := public.ev_ensure_hq();
+  perform pg_temp.ok(hq2 = hq and (select name from public.crews where id = hq) = 'Lagos HQ' and (select count(*) from public.ev_hq) = 1, 'and we are back to one Lagos HQ');
 
   -- The backfill.
   n := public.ev_hq_backfill();
@@ -230,16 +251,157 @@ begin
   perform pg_temp.ok(pg_temp.j(m, format('select public.ev_room(%L)', rpriv)) is null and pg_temp.j(x, format('select public.ev_room(%L)', rpriv)) ->> 'name' = 'Room Private', 'a private room is shown to its members only');
   perform pg_temp.ok(pg_temp.j(m, format('select public.ev_room(%L)', gen_random_uuid())) is null, 'an unknown room is null');
 
+  -- ===================================================== the 3D room switch ========
+  -- Defaults. A crew with no switch row and no crew_rooms row yet is made on first entry from the default layout, so it is ON.
+  perform pg_temp.ok(not exists (select 1 from public.ev_room_settings where room_id in (room, rdisc, rpriv, hq)), 'nobody has set a switch yet');
+  perform pg_temp.ok(public.ev_room_3d_allowed(room) and public.ev_room_3d_allowed(rdisc) and public.ev_room_3d_allowed(rpriv), 'default: a room with a layout is ON');
+  perform pg_temp.ok(not public.ev_room_3d_allowed(hq), 'default: Lagos HQ is OFF until it is switched on');
+  perform pg_temp.ok(not public.ev_room_3d_allowed(gen_random_uuid()) and not public.ev_room_3d_allowed(null), 'a room that does not exist is OFF');
+  r := pg_temp.j(m, format('select public.ev_room(%L)', room));
+  perform pg_temp.ok((r ->> 'has_3d')::boolean and (r ->> 'three_d_on')::boolean, 'ev_room says has_3d and three_d_on for an ordinary room');
+  r := pg_temp.j(a, 'select public.ev_rooms_for_me()') -> 'hq';
+  perform pg_temp.ok((r ->> 'has_3d')::boolean and not (r ->> 'three_d_on')::boolean, 'the Rooms tab says Lagos HQ has a room (has_3d) but it is off');
+  perform pg_temp.ok((pg_temp.mine_of(m, room) ->> 'three_d_on')::boolean, 'ev_rooms_for_me lists mine with three_d_on');
+
+  -- Who may switch. The owner (crew_members role owner) and staff; nobody else.
+  sres := pg_temp.t(x, format('select public.ev_set_room_3d(%L, false)', room));
+  perform pg_temp.ok(sres = 'not_allowed' and public.ev_room_3d_allowed(room), 'a stranger cannot switch a room off');
+  sres := pg_temp.t(m, format('select public.ev_set_room_3d(%L, false)', room));
+  perform pg_temp.ok(sres = 'not_allowed' and public.ev_room_3d_allowed(room), 'a member who is not the owner cannot either');
+  perform pg_temp.ok(pg_temp.t(h, format('select public.ev_set_room_3d(%L, false)', rdisc)) = 'not_allowed', 'the owner of one room cannot switch another');
+  perform pg_temp.ok(pg_temp.t(g, format('select public.ev_set_room_3d(%L, false)', room)) = 'need_account', 'a guest with no account is told to sign in');
+  perform pg_temp.anon();
+  begin
+    perform public.ev_set_room_3d(room, false);
+    perform pg_temp.admin();
+    perform pg_temp.ok(false, 'a visitor with no session must not be able to call the switch');
+  exception when insufficient_privilege then
+    perform pg_temp.admin();
+    perform pg_temp.ok(true, 'a visitor with no session cannot call the switch at all');
+  end;
+  perform pg_temp.ok(pg_temp.t(h, format('select public.ev_set_room_3d(%L, null)', room)) = 'bad_value', 'a missing on/off value is refused');
+  perform pg_temp.ok(not exists (select 1 from public.ev_room_settings where room_id = room), 'and nothing was written by any of those');
+
+  sres := pg_temp.t(h, format('select public.ev_set_room_3d(%L, false)', room));
+  perform pg_temp.ok(sres = 'ok' and not public.ev_room_3d_allowed(room), 'the owner can switch it off');
+  perform pg_temp.ok((select updated_by from public.ev_room_settings where room_id = room) = h and (select count(*) from public.ev_room_settings where room_id = room) = 1, 'the row records who did it');
+  r := pg_temp.j(m, format('select public.ev_room(%L)', room));
+  perform pg_temp.ok((r ->> 'has_3d')::boolean and not (r ->> 'three_d_on')::boolean, 'everyone sees it off (has_3d stays true: the room is there)');
+  perform pg_temp.ok(not (pg_temp.mine_of(m, room) ->> 'three_d_on')::boolean, 'and so does the Rooms tab');
+  perform pg_temp.ok(public.ev_room_3d_allowed(rdisc) and public.ev_room_3d_allowed(rpriv), 'other rooms are not touched');
+  sres := pg_temp.t(h, format('select public.ev_set_room_3d(%L, true)', room));
+  perform pg_temp.ok(sres = 'ok' and public.ev_room_3d_allowed(room) and (select count(*) from public.ev_room_settings where room_id = room) = 1,
+                     'the owner can switch it back on (still one row)');
+  sres := pg_temp.t(st, format('select public.ev_set_room_3d(%L, false)', room));
+  perform pg_temp.ok(sres = 'ok' and not public.ev_room_3d_allowed(room) and (select updated_by from public.ev_room_settings where room_id = room) = st,
+                     'staff can switch any room off');
+  sres := pg_temp.t(st, format('select public.ev_set_room_3d(%L, true)', room));
+  perform pg_temp.ok(sres = 'ok' and public.ev_room_3d_allowed(room), 'and on');
+  perform pg_temp.ok(pg_temp.t(st, format('select public.ev_set_room_3d(%L, true)', gen_random_uuid())) = 'not_found', 'staff get not_found for a room that does not exist');
+  perform pg_temp.ok(pg_temp.t(h, format('select public.ev_set_room_3d(%L, true)', gen_random_uuid())) = 'not_allowed', 'and everyone else get not_allowed (no way to find out which rooms exist)');
+  delete from public.ev_room_settings where room_id = room;
+  perform pg_temp.ok(public.ev_room_3d_allowed(room), 'with the row gone the default comes back (on)');
+
+  -- Lagos HQ: off until its owner or staff switch it on. st is staff and the owner.
+  sres := pg_temp.t(a, format('select public.ev_set_room_3d(%L, true)', hq));
+  perform pg_temp.ok(sres = 'not_allowed' and not public.ev_room_3d_allowed(hq), 'an ordinary member cannot switch Lagos HQ on');
+  sres := pg_temp.t(st, format('select public.ev_set_room_3d(%L, true)', hq));
+  perform pg_temp.ok(sres = 'ok' and public.ev_room_3d_allowed(hq), 'staff switch Lagos HQ on');
+  perform pg_temp.ok((pg_temp.j(a, 'select public.ev_rooms_for_me()') -> 'hq' ->> 'three_d_on')::boolean, 'and the Rooms tab shows it on');
+  sres := pg_temp.t(st, format('select public.ev_set_room_3d(%L, false)', hq));
+  perform pg_temp.ok(sres = 'ok' and not public.ev_room_3d_allowed(hq), 'and off again');
+  -- An owner who is not staff, on a room that has no row.
+  update public.profiles set is_admin = false where id = st;
+  perform pg_temp.ok(pg_temp.t(st, format('select public.ev_set_room_3d(%L, true)', hq)) = 'ok', 'the owner of Lagos HQ can switch it with no staff flag');
+  sres := pg_temp.t(st, format('select public.ev_set_room_3d(%L, false)', hq));
+  perform pg_temp.ok(sres = 'ok' and not public.ev_room_3d_allowed(hq), 'and off');
+  perform pg_temp.ok(pg_temp.t(st, format('select public.ev_set_room_3d(%L, false)', rdisc)) = 'not_allowed', 'but an owner who is not staff cannot touch other rooms');
+  update public.profiles set is_admin = true where id = st;
+
+  -- The staff list.
+  r := pg_temp.j(st, 'select public.ev_admin_rooms()');
+  perform pg_temp.ok(jsonb_typeof(r) = 'array' and r -> 0 ->> 'id' = hq::text and r -> 0 ->> 'kind' = 'hq', 'staff list: every room, Lagos HQ first');
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(r) q where q ->> 'id' = room::text) and exists (select 1 from jsonb_array_elements(r) q where q ->> 'id' = rpriv::text)
+                     and exists (select 1 from jsonb_array_elements(r) q where q ->> 'id' = rdisc::text), 'staff list: including the ones staff are not in, and private ones');
+  perform pg_temp.ok(jsonb_array_length(r) = (select count(*) from public.crews), 'staff list: as many as there are crews');
+  perform pg_temp.ok((select (q ->> 'three_d_on')::boolean from jsonb_array_elements(r) q where q ->> 'id' = room::text) and not (r -> 0 ->> 'three_d_on')::boolean, 'staff list: each room carries its switch');
+  perform pg_temp.ok(pg_temp.j(h, 'select public.ev_admin_rooms()') is null and pg_temp.j(m, 'select public.ev_admin_rooms()') is null, 'anyone who is not staff gets null, even a room owner');
+
+  -- The table is closed.
+  perform pg_temp.ok(not exists (select 1 from information_schema.table_privileges where table_name = 'ev_room_settings' and grantee in ('anon', 'authenticated')), 'the switch table is closed to anon and authenticated');
+  perform pg_temp.actor(h);
+  begin
+    insert into public.ev_room_settings (room_id, three_d_on) values (room, false);
+    perform pg_temp.admin();
+    perform pg_temp.ok(false, 'a signed in person must not write the switch table directly');
+  exception when insufficient_privilege then
+    perform pg_temp.admin();
+    perform pg_temp.ok(true, 'a signed in person cannot write the switch table directly (not even the owner)');
+  end;
+  perform pg_temp.actor(h);
+  begin
+    perform count(*) from public.ev_room_settings;
+    perform pg_temp.admin();
+    perform pg_temp.ok(false, 'a signed in person must not read the switch table directly');
+  exception when insufficient_privilege then
+    perform pg_temp.admin();
+    perform pg_temp.ok(true, 'nor read it');
+  end;
+
+  -- The entry check: the function the entry function must ask. A signed in person can ask it; it is the one place the answer is made.
+  perform pg_temp.ok(pg_temp.t(m, format('select public.ev_room_3d_allowed(%L)', room))::boolean, 'a member can ask whether a room is on (the entry function runs as them)');
+  perform pg_temp.ok(not pg_temp.t(m, format('select public.ev_room_3d_allowed(%L)', hq))::boolean, 'and gets off for Lagos HQ');
+  perform pg_temp.t(h, format('select public.ev_set_room_3d(%L, false)', room));
+  perform pg_temp.ok(not pg_temp.t(m, format('select public.ev_room_3d_allowed(%L)', room))::boolean, 'and off for a room the owner switched off');
+  perform pg_temp.t(h, format('select public.ev_set_room_3d(%L, true)', room));
+
+  -- The one line Ola adds to crew_room_enter (see THE 3D ROOM SWITCH in the file): put into the live function here, inside this test's
+  -- transaction (rolled back with everything else), to show that the check does what it should.
+  declare def text := pg_get_functiondef('public.crew_room_enter(uuid, uuid)'::regprocedure);
+  begin
+    perform pg_temp.ok(position('perform _crew_room_require(p_crew);' in def) > 0, 'the entry function has the line the change goes after');
+    execute replace(def, 'perform _crew_room_require(p_crew);', 'perform _crew_room_require(p_crew);' || E'\n  if not public.ev_room_3d_allowed(p_crew) then raise exception ''room_off''; end if;');
+  end;
+  perform pg_temp.ok(pg_temp.j(m, format('select public.crew_room_enter(%L, %L)', room, gen_random_uuid())) is not null, 'with the check in: a member walks into a room that is on');
+  perform pg_temp.t(h, format('select public.ev_set_room_3d(%L, false)', room));
+  begin
+    perform pg_temp.j(m, format('select public.crew_room_enter(%L, %L)', room, gen_random_uuid()));
+    perform pg_temp.ok(false, 'a room that is off must refuse entry');
+  exception when others then
+    perform pg_temp.admin();
+    perform pg_temp.ok(sqlerrm = 'room_off', 'with the room off, entry is refused with room_off');
+  end;
+  begin
+    perform pg_temp.j(h, format('select public.crew_room_enter(%L, %L)', room, gen_random_uuid()));
+    perform pg_temp.ok(false, 'the owner is refused too while it is off');
+  exception when others then
+    perform pg_temp.admin();
+    perform pg_temp.ok(sqlerrm = 'room_off', 'the owner is refused too while it is off');
+  end;
+  perform pg_temp.t(h, format('select public.ev_set_room_3d(%L, true)', room));
+  perform pg_temp.ok(pg_temp.j(m, format('select public.crew_room_enter(%L, %L)', room, gen_random_uuid())) is not null, 'switched back on, entry works again');
+  begin
+    perform pg_temp.j(a, format('select public.crew_room_enter(%L, %L)', hq, gen_random_uuid()));
+    perform pg_temp.ok(false, 'Lagos HQ is off by default: entry must be refused');
+  exception when others then
+    perform pg_temp.admin();
+    perform pg_temp.ok(sqlerrm = 'room_off', 'Lagos HQ is refused by default');
+  end;
+  perform pg_temp.t(st, format('select public.ev_set_room_3d(%L, true)', hq));
+  perform pg_temp.ok(pg_temp.j(a, format('select public.crew_room_enter(%L, %L)', hq, gen_random_uuid())) is not null, 'and walkable once staff switch it on');
+
   -- Access.
   for f in select p.oid, p.oid::regprocedure as sig, p.proname as name
              from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
             where ns.nspname = 'public'
               and p.proname in ('ev_event_chat', 'ev_room_events', 'ev_room', 'ev_rooms_for_me', 'ev_room_mark_read', 'ev_ensure_hq', 'ev_hq_backfill',
-                                '_ev_chat_can_enter', '_ev_chat_json', '_ev_room_json', '_ev_is_hq')
+                                '_ev_chat_can_enter', '_ev_chat_json', '_ev_room_json', '_ev_is_hq', '_ev_room_has_layout',
+                                'ev_room_3d_allowed', 'ev_set_room_3d', 'ev_admin_rooms')
   loop
     perform pg_temp.ok(has_function_privilege('anon', f.oid, 'execute') = (f.name in ('ev_event_chat', 'ev_room_events', 'ev_room')),
                        f.sig || ': anon access is as designed');
-    perform pg_temp.ok(has_function_privilege('authenticated', f.oid, 'execute') = (f.name in ('ev_event_chat', 'ev_room_events', 'ev_room', 'ev_rooms_for_me', 'ev_room_mark_read', 'ev_ensure_hq')),
+    perform pg_temp.ok(has_function_privilege('authenticated', f.oid, 'execute') = (f.name in ('ev_event_chat', 'ev_room_events', 'ev_room', 'ev_rooms_for_me', 'ev_room_mark_read', 'ev_ensure_hq',
+                                                                              'ev_room_3d_allowed', 'ev_set_room_3d', 'ev_admin_rooms')),
                        f.sig || ': authenticated access is as designed');
   end loop;
   perform pg_temp.ok(has_function_privilege('service_role', 'public.ev_hq_backfill()', 'execute') and has_function_privilege('service_role', 'public.ev_ensure_hq()', 'execute'), 'the service role can run the backfill and ensure HQ');

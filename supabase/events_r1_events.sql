@@ -294,7 +294,7 @@ begin
 end $$;
 revoke all on function public._ev_can_open(uuid) from public, anon, authenticated;
 
--- The room of a host: the oldest room they own, never Hoppaz HQ.
+-- The room of a host: the oldest room they own, never Lagos HQ.
 create or replace function public._ev_host_room(p_user uuid) returns uuid
 language sql stable security definer set search_path = public, pg_temp as $$
   select c.id

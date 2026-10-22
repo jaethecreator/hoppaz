@@ -1,4 +1,4 @@
-/** Ids the database wants are uuids. The screens may hold a slug (an event's short link) or "hq" (Hoppaz HQ's address). */
+/** Ids the database wants are uuids. The screens may hold a slug (an event's short link) or "hq" (Lagos HQ's address). */
 import { rpc, UUID } from "./core";
 
 const clean = (s: string) => String(s).trim();
@@ -14,7 +14,7 @@ export async function eventIdOf(idOrSlug: string): Promise<string> {
 
 let hqId: string | null = null;
 
-/** Hoppaz HQ's room id (made on first ask; every account joins it). Null when there is no staff account to own it yet. */
+/** Lagos HQ's room id (made on first ask; every account joins it). Null when there is no staff account to own it yet. */
 export async function hqRoomId(): Promise<string | null> {
   if (hqId) return hqId;
   const id = await rpc<string | null>("ev_ensure_hq");

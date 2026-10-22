@@ -86,13 +86,20 @@ export interface PopsApi {
 }
 
 export interface RoomsApi {
-  /** Rooms tab: Hoppaz HQ first, then the viewer's rooms, then discoverable rooms. */
+  /** Rooms tab: Lagos HQ first, then the viewer's rooms, then discoverable rooms. */
   list(): Promise<{ hq: RoomSummary; mine: RoomSummary[]; discover: RoomSummary[]; eventChats: EventChat[] }>;
   get(idOrSlug: string): Promise<RoomSummary | null>;
   /** The rooms the viewer owns (the create page offers "Add to <room>" from this). Empty when signed out. */
   mine(): Promise<RoomSummary[]>;
   create(draft: RoomDraft): Promise<RoomSummary>;
   join(roomId: string): Promise<void>;
+  /**
+   * Switch the walkable 3D room on or off. The room's owner (RoomSummary.is_owner) or staff only: anyone else gets "Not allowed",
+   * a viewer who is not signed in "Sign in first". Off = chat only and "Enter room" goes away (RoomSummary.three_d_on).
+   */
+  setThreeD(roomId: string, on: boolean): Promise<void>;
+  /** The /admin list: every room, Lagos HQ first, then the biggest. Staff only ("Not allowed" for anyone else). */
+  listForStaff(): Promise<RoomSummary[]>;
   /** Announcements, newest first. Includes event Pops tagged with the event. */
   announcements(roomId: string): Promise<RoomAnnouncement[]>;
   /** Plain room announcement (never shows on an event). */

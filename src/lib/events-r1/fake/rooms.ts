@@ -1,5 +1,5 @@
 /**
- * Fake rooms: Hoppaz HQ first, the viewer's rooms, discover, announcements (plain, and copies of event Pops tagged with
+ * Fake rooms: Lagos HQ first, the viewer's rooms, discover, announcements (plain, and copies of event Pops tagged with
  * the event) and event chats. An event chat opens when the event goes live (1 hour before it starts) and closes 3 days
  * after it ends.
  */
@@ -11,7 +11,7 @@ import { emit, now, S, subscribe, viewer } from "./store";
 import type { RoomRec } from "./store";
 import { clone, DAY, newId } from "./util";
 
-/** By id or slug. "hq" is Hoppaz HQ's short address (/rooms/hq). */
+/** By id or slug. "hq" is Lagos HQ's short address (/rooms/hq). */
 function findRoom(idOrSlug: string): RoomRec | undefined {
   const all = Object.values(S().rooms);
   return S().rooms[idOrSlug] ?? all.find((r) => r.slug === idOrSlug) ?? (idOrSlug === "hq" ? all.find((r) => r.kind === "hq") : undefined);
@@ -97,6 +97,24 @@ export const rooms: RoomsApi = {
     if (!r) throw new Error("Room not found");
     S().memberships[`${v.id}:${r.id}`] = true;
     emit();
+  },
+
+  /** The owner of the room or staff. Staff are the dev "Hoppaz Staff" user. */
+  async setThreeD(roomId, on) {
+    const v = requireViewer();
+    const r = findRoom(roomId);
+    if (!r) throw new Error("Room not found");
+    if (r.owner_id !== v.id && !v.staff) throw new Error("Not allowed");
+    r.three_d_on = !!on;
+    emit();
+  },
+
+  /** Staff only: every room, Lagos HQ first, then the biggest. */
+  async listForStaff() {
+    const v = requireViewer();
+    if (!v.staff) throw new Error("Not allowed");
+    const all = Object.values(S().rooms).map((r) => roomSummary(r));
+    return all.sort((a, b) => Number(b.kind === "hq") - Number(a.kind === "hq") || b.members - a.members || a.name.localeCompare(b.name));
   },
 
   async announcements(roomId) {

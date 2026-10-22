@@ -1,6 +1,6 @@
 -- ============================================================================
 -- DRAFT FOR OLA, NOT RUN ON PRODUCTION
--- Hoppaz Release 1, file 6 of 6: events and rooms together. The event chat, the room's events, the Rooms tab, and Hoppaz HQ.
+-- Hoppaz Release 1, file 6 of 6: events and rooms together. The event chat, the room's events, the Rooms tab, Lagos HQ, and the 3D room switch.
 -- Written from src/lib/events-r1/fake/rooms.ts and rules.ts. Hotspots are not touched.
 --
 -- RUN ORDER: schema.sql, chat_accounts.sql, crew_rooms.sql, crew_announcements.sql, events_r1_events.sql, events_r1_registrations.sql,
@@ -19,24 +19,34 @@
 --   ev_room_events(room)      the room's events as full events, upcoming first then past: public ones, community ones for room members, the
 --                             host's own; invite only never for others; cancelled ones only for the host.
 --   ev_room(room)             one room as the room home needs it (the RoomSummary type); null for a private room the viewer is not in.
---   ev_rooms_for_me()         the Rooms tab: { hq, mine, discover, eventChats }. hq is Hoppaz HQ (made and joined on first read: see below).
+--   ev_rooms_for_me()         the Rooms tab: { hq, mine, discover, eventChats }. hq is Lagos HQ (made and joined on first read: see below).
 --                             mine: rooms I am in, latest announcement first, each with its latest announcement (with the event tag where
 --                             there is one) and my unread count. discover: up to 20 open rooms I am not in, biggest first. eventChats: the event
 --                             chats I may care about (events of my rooms that are listed for me, events I am going to or run), open first, then
 --                             about to open, then closed; a chat closed more than 14 days ago is dropped.
 --   ev_room_mark_read(room)   I have seen the room's announcements: unread goes to 0 (it calls crew_announcement_seen).
---   ev_ensure_hq()            the id of Hoppaz HQ (see HOPPAZ HQ). The Rooms tab calls it for you; a screen may call it too.
+--   ev_ensure_hq()            the id of Lagos HQ (see LAGOS HQ). The Rooms tab calls it for you; a screen may call it too.
 --   ev_hq_backfill()          service role: puts every account in HQ now, instead of waiting for each person's first read.
 --   _ev_chat_can_enter(event, user)   internal. The same rule as can_enter, for a given user, so a later change to in_room (the check the
 --                             messages table uses) can call it. NOT done here: the existing in_room works from checkins and swipes and still
 --                             decides who can post in the event channel. To make event chat messages follow registrations, in_room needs an
 --                             event branch that calls _ev_chat_can_enter(event id, user), and room_closes_at should use the same close time
 --                             (end + 3 days; it uses ends_at or start + 8 hours). That edit is Ola's.
+--   ev_set_room_3d(room, on)  the owner of the room (crew_members role owner) or staff (profiles.is_admin) switches the walkable 3D room on or
+--                             off. Off = chat only. Answers 'ok', or a reason: need_account, bad_value, not_allowed, not_found.
+--   ev_room_3d_allowed(room)  is the 3D room switched on for this room? The default, when nobody has set it: ON for a room that has a layout
+--                             (every crew does: the walkable room is made on first entry from the default template), OFF for Lagos HQ until
+--                             its owner or staff switch it on. The ENTRY function must ask it: see "THE 3D ROOM SWITCH" below.
+--   ev_admin_rooms()          staff only (profiles.is_admin): every room as a room summary (null for anyone else), Lagos HQ first, then the biggest.
+--   _ev_room_json now also says  has_3d (a walkable room can be made: there is a layout) and  three_d_on (the switch). Enter room shows
+--                             only when both are true.
 --
--- HOPPAZ HQ. One room that everybody is in, chat first. There is no "kind" column on crews, so HQ is the crew pointed to by the one row
--- of ev_hq. ev_ensure_hq():
---   * finds the HQ crew, or adopts a verified crew already named Hoppaz HQ (if Ola made one), or makes it: a crew named Hoppaz HQ, open,
---     verified, owned by the oldest staff account (profiles.is_admin). If there is no staff account it answers null: make one first.
+-- LAGOS HQ. One room that everybody is in, chat first. It used to be called Hoppaz HQ and starts fresh under the new name: no old hotspot
+-- message is moved into it. The code names stay (kind 'hq', slug 'hq', the ev_hq table). There is no "kind" column on crews, so HQ is the crew
+-- pointed to by the one row of ev_hq. ev_ensure_hq():
+--   * finds the HQ crew, or adopts a verified crew already named Lagos HQ (or, if Ola made one under the old name, Hoppaz HQ: it is renamed
+--     to Lagos HQ), or makes it: a crew named Lagos HQ, open, verified, owned by the oldest staff account (profiles.is_admin). If there is
+--     no staff account it answers null: make one first. A pointed-to crew still named Hoppaz HQ is renamed the next time this runs.
 --     A signed-in guest with no account cannot make it (the crews table asks for an account); the SQL editor and the service role can.
 --   * adds the caller as a member if they have an account (a guest is not added: chat needs an account anyway). So every account joins
 --     the first time it opens the Rooms tab. ev_hq_backfill() does it for everyone at once.
@@ -47,6 +57,18 @@
 -- check allows; if the 3D room is ever opened to the whole of HQ it will need a smarter limit than that. Nothing in crews or crew_members
 -- caps the number of members. One cost to watch: a General message reaches the whole crew, so every message in HQ is delivered to every member
 -- who has the room open; if HQ gets large, look at the realtime load before it does.
+--
+-- THE 3D ROOM SWITCH. The owner of a room, and staff, can switch its walkable 3D room on or off. Off = chat only (Announcements, General,
+-- event chats) and the app hides "Enter room". The switch is a row in the closed table ev_room_settings (room_id, three_d_on, updated_by,
+-- updated_at). No row = the default (ev_room_3d_allowed above). Nothing existing is edited by this file, so the ENTRY function is not
+-- changed here: Ola must add one line to it, or a person can still walk in by calling it directly. Read in crew_rooms_scale.sql, the live
+-- version (crew_rooms_scale.sql replaces the one in crew_rooms.sql; no later file redefines it):
+--     public.crew_room_enter(p_crew uuid, p_session uuid)      crew_rooms_scale.sql, line 371
+-- Add this line right after   perform _crew_room_require(p_crew);   (line 383), and the same line after the same call in the older
+-- copy in crew_rooms.sql (line 419, so a fresh database that runs only that file is guarded too):
+--     if not public.ev_room_3d_allowed(p_crew) then raise exception 'room_off'; end if;
+-- The app turns the text room_off into "The 3D room is off" and the client also refuses to offer Enter room. Switching a room off does not
+-- throw out people already walking (crew_room_step and the heartbeat are not changed): they leave when they leave, and nobody new comes in.
 -- ============================================================================
 begin;
 
@@ -65,7 +87,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke all on function public._ev_is_hq(uuid) from public, anon, authenticated;
 
--- ----------------------------------------------------------------- Hoppaz HQ ---
+-- ----------------------------------------------------------------- Lagos HQ ---
 create or replace function public.ev_ensure_hq() returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -80,19 +102,26 @@ begin
     perform pg_advisory_xact_lock(hashtextextended('ev-hq', 0));
     select h.crew_id into v_crew from public.ev_hq h;
     if v_crew is null then
-      select c.id into v_crew from public.crews c where c.verified and lower(btrim(c.name)) = 'hoppaz hq' order by c.created_at, c.id limit 1;
+      -- A crew already named Lagos HQ wins; one still named Hoppaz HQ is adopted too (and renamed below).
+      select c.id into v_crew from public.crews c where c.verified and lower(btrim(c.name)) in ('lagos hq', 'hoppaz hq')
+       order by (lower(btrim(c.name)) = 'lagos hq') desc, c.created_at, c.id limit 1;
       if v_crew is null then
         select p.id into v_owner from public.profiles p where p.is_admin order by p.created_at, p.id limit 1;
         if v_owner is null then return null; end if;
-        insert into public.crews (name, created_by, visibility, verified) values ('Hoppaz HQ', v_owner, 'open', true) returning id into v_crew;
+        insert into public.crews (name, created_by, visibility, verified) values ('Lagos HQ', v_owner, 'open', true) returning id into v_crew;
         insert into public.crew_members (crew_id, user_id, role) values (v_crew, v_owner, 'owner') on conflict do nothing;
       end if;
       insert into public.crew_rooms (crew_id, width, content, capacity)
-      values (v_crew, 30, jsonb_build_object('brand', 'Hoppaz HQ', 'strapline', 'Everyone is here.', 'musicTitle', '', 'musicUrl', '', 'audioUrl', '',
+      values (v_crew, 30, jsonb_build_object('brand', 'Lagos HQ', 'strapline', 'Everyone is here.', 'musicTitle', '', 'musicUrl', '', 'audioUrl', '',
                                              'artistTitle', '', 'artistNote', '', 'awards', '[]'::jsonb), 500)
       on conflict (crew_id) do update set capacity = greatest(crew_rooms.capacity, 500);
       insert into public.ev_hq (id, crew_id) values (true, v_crew) on conflict (id) do nothing;
     end if;
+  end if;
+  -- Under its old name: rename it (the crew and the room's brand line), once.
+  if exists (select 1 from public.crews c where c.id = v_crew and lower(btrim(c.name)) = 'hoppaz hq') then
+    update public.crews set name = 'Lagos HQ' where id = v_crew;
+    update public.crew_rooms set content = jsonb_set(content, '{brand}', '"Lagos HQ"') where crew_id = v_crew and lower(btrim(content ->> 'brand')) = 'hoppaz hq';
   end if;
   -- The reader joins on first read.
   if me is not null and public.has_account()
@@ -114,6 +143,53 @@ begin
   on conflict do nothing;
   get diagnostics v_n = row_count;
   return v_n;
+end $$;
+
+-- ------------------------------------------------------------ the 3D room switch ---
+-- One row per room that someone has set. Closed like every other ev_ table: the functions below are the only way in.
+create table if not exists public.ev_room_settings (
+  room_id     uuid primary key references public.crews(id) on delete cascade,
+  three_d_on  boolean not null,
+  updated_by  uuid references auth.users(id) on delete set null,
+  updated_at  timestamptz not null default now()
+);
+alter table public.ev_room_settings enable row level security;
+revoke all on public.ev_room_settings from anon, authenticated;
+grant all on public.ev_room_settings to service_role;
+
+-- Can this room be walked at all: does it have a layout? A room with no crew_rooms row yet is made on first entry from the default
+-- template (clubhouse, 30 wide), so it counts when that layout exists. Internal.
+create or replace function public._ev_room_has_layout(p_room uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select exists (select 1 from public.crews c where c.id = p_room)
+     and exists (select 1 from public.crew_room_layouts l
+                  where l.template = coalesce((select r.template from public.crew_rooms r where r.crew_id = p_room), 'clubhouse')
+                    and l.width = coalesce((select r.width from public.crew_rooms r where r.crew_id = p_room), 30));
+$$;
+revoke all on function public._ev_room_has_layout(uuid) from public, anon, authenticated;
+
+-- Is the 3D room switched on? A saved switch wins. With none: on for a room with a layout, off for Lagos HQ (until its room is ready and
+-- its owner or staff switch it on), off for a room that does not exist. This is the function the entry function asks.
+create or replace function public.ev_room_3d_allowed(p_room uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select public._ev_room_has_layout(p_room)
+     and coalesce((select s.three_d_on from public.ev_room_settings s where s.room_id = p_room), not public._ev_is_hq(p_room));
+$$;
+
+-- Owner or staff. Answers ok, or a reason: need_account (a guest or nobody), bad_value, not_allowed, not_found.
+create or replace function public.ev_set_room_3d(p_room uuid, p_on boolean) returns text
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare me uuid := auth.uid();
+begin
+  if me is null or not public.has_account() then return 'need_account'; end if;
+  if p_on is null then return 'bad_value'; end if;
+  if not (public._ev_staff() or exists (select 1 from public.crew_members m where m.crew_id = p_room and m.user_id = me and m.role = 'owner')) then
+    return 'not_allowed';
+  end if;
+  if not exists (select 1 from public.crews c where c.id = p_room) then return 'not_found'; end if;
+  insert into public.ev_room_settings (room_id, three_d_on, updated_by, updated_at) values (p_room, p_on, me, now())
+  on conflict (room_id) do update set three_d_on = excluded.three_d_on, updated_by = excluded.updated_by, updated_at = excluded.updated_at;
+  return 'ok';
 end $$;
 
 -- --------------------------------------------------------------- event chat ---
@@ -220,7 +296,8 @@ begin
     'kind', case when public._ev_is_hq(c.id) then 'hq' when c.verified then 'brand' else 'crew' end,
     'logo_url', c.logo_url, 'wallpaper_url', c.header_images[1],
     'members', (select count(*)::int from public.crew_members m where m.crew_id = c.id),
-    'verified', c.verified, 'joined', v_joined is not null, 'unread', v_unread, 'latest_announcement', v_latest);
+    'verified', c.verified, 'joined', v_joined is not null, 'unread', v_unread, 'latest_announcement', v_latest,
+    'has_3d', public._ev_room_has_layout(c.id), 'three_d_on', public.ev_room_3d_allowed(c.id));
 end $$;
 revoke all on function public._ev_room_json(uuid, uuid) from public, anon, authenticated;
 
@@ -288,12 +365,26 @@ begin
   perform public.crew_announcement_seen(p_room);
 end $$;
 
+-- Staff: every room, Lagos HQ first, then the biggest. Null for anyone who is not staff (an empty list is '[]').
+create or replace function public.ev_admin_rooms() returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  if not public._ev_staff() then return null; end if;
+  return coalesce((
+    select jsonb_agg(public._ev_room_json(t.id, auth.uid()) order by t.is_hq desc, t.members desc, t.name, t.id)
+      from (select c.id, c.name, public._ev_is_hq(c.id) as is_hq, (select count(*) from public.crew_members m where m.crew_id = c.id) as members
+              from public.crews c order by 3 desc, 4 desc, c.name, c.id limit 500) t
+  ), '[]'::jsonb);
+end $$;
+
 -- ----------------------------------------------------------------- access ---
 revoke all on function public.ev_event_chat(uuid), public.ev_room_events(uuid), public.ev_room(uuid), public.ev_rooms_for_me(),
-  public.ev_room_mark_read(uuid), public.ev_ensure_hq(), public.ev_hq_backfill() from public, anon;
+  public.ev_room_mark_read(uuid), public.ev_ensure_hq(), public.ev_hq_backfill(),
+  public.ev_room_3d_allowed(uuid), public.ev_set_room_3d(uuid, boolean), public.ev_admin_rooms() from public, anon;
 -- The event page and the room home also work for a visitor with no account.
 grant execute on function public.ev_event_chat(uuid), public.ev_room_events(uuid), public.ev_room(uuid) to anon, authenticated;
-grant execute on function public.ev_rooms_for_me(), public.ev_room_mark_read(uuid), public.ev_ensure_hq() to authenticated;
+grant execute on function public.ev_rooms_for_me(), public.ev_room_mark_read(uuid), public.ev_ensure_hq(),
+  public.ev_room_3d_allowed(uuid), public.ev_set_room_3d(uuid, boolean), public.ev_admin_rooms() to authenticated;
 -- The backfill is for Ola (the SQL editor) and the service role.
 revoke all on function public.ev_hq_backfill() from authenticated;
 grant execute on function public.ev_hq_backfill() to service_role;

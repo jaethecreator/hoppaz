@@ -182,9 +182,15 @@ export type RoomSummary = {
   is_owner: boolean;
   /** Owner or admin: may post an announcement. */
   can_post: boolean;
-  /** The room has a walkable 3D room to enter. False: Enter room goes to General. Hoppaz HQ is chat first and may be false. */
+  /** A walkable 3D room exists for this room (it can be entered once switched on). */
   has_3d: boolean;
-  /** People in the room right now (shown on Hoppaz HQ). 0 when not counted. */
+  /**
+   * The 3D room is switched on (the owner or staff set it, see RoomsApi.setThreeD). Enter room shows only when has_3d and
+   * three_d_on are both true; off means chat only (Announcements, General, event chats). Default on for rooms that have a
+   * 3D room, off for Lagos HQ until its room is ready.
+   */
+  three_d_on: boolean;
+  /** People in the room right now (shown on Lagos HQ). 0 when not counted. */
   online: number;
 };
 

@@ -6,7 +6,7 @@
  */
 import type { RoomsApi } from "../api";
 import type { EventChat, RoomAnnouncement, RoomMessage, RoomSummary } from "../types";
-import { client, emit, failText, reasonText, rpc, shared, subscribe, userId, uuid, who } from "./core";
+import { client, emit, failText, reasonText, rpc, rpcText, shared, subscribe, userId, uuid, who } from "./core";
 import { eventIdOf, roomIdOf } from "./ids";
 import { iso, mapAnnouncement, mapChat, mapMessage, mapPop, mapRoom } from "./map";
 
@@ -29,7 +29,7 @@ async function roles(): Promise<Map<string, string>> {
   });
 }
 
-/** What the database cannot say in one call: do I own it, may I post, and (Hoppaz HQ) who is in the room now. */
+/** What the database cannot say in one call: do I own it, may I post, and (Lagos HQ) who is in the room now. The 3D switch comes in the room's own answer. */
 function extras(roomId: string, role: Map<string, string>) {
   const r = role.get(roomId);
   return { is_owner: r === "owner", can_post: !!r && r !== "member" };
@@ -44,10 +44,10 @@ async function hqOnline(id: string): Promise<number> {
   }
 }
 
-/** Hoppaz HQ when there is no staff account to own it yet: a room that is there but cannot be used. */
+/** Lagos HQ when there is no staff account to own it yet: a room that is there but cannot be used. */
 const NO_HQ: RoomSummary = {
-  id: "hq", slug: "hq", name: "Hoppaz HQ", kind: "hq", logo_url: null, wallpaper_url: null, members: 0, verified: true, joined: false,
-  unread: 0, latest_announcement: null, is_owner: false, can_post: false, has_3d: false, online: 0,
+  id: "hq", slug: "hq", name: "Lagos HQ", kind: "hq", logo_url: null, wallpaper_url: null, members: 0, verified: true, joined: false,
+  unread: 0, latest_announcement: null, is_owner: false, can_post: false, has_3d: false, three_d_on: false, online: 0,
 };
 
 type List = { hq: RoomSummary; mine: RoomSummary[]; discover: RoomSummary[]; eventChats: EventChat[] };
@@ -57,7 +57,7 @@ function loadList(): Promise<List> {
     const j = await rpc<{ hq: Row | null; mine: Row[]; discover: Row[]; eventChats: Row[] } | null>("ev_rooms_for_me");
     const role = await roles();
     const hqRow = j?.hq ?? null;
-    const hq = hqRow ? mapRoom(hqRow, { ...extras(String(hqRow.id), role), has_3d: false, online: await hqOnline(String(hqRow.id)) }) : NO_HQ;
+    const hq = hqRow ? mapRoom(hqRow, { ...extras(String(hqRow.id), role), online: await hqOnline(String(hqRow.id)) }) : NO_HQ;
     const room = (r: Row) => mapRoom(r, extras(String(r.id), role));
     return {
       hq,
@@ -125,8 +125,7 @@ export const rooms: RoomsApi = {
     const j = await rpc<Row | null>("ev_room", { p_room: id });
     if (!j) return null;
     const role = await roles();
-    const isHq = j.kind === "hq";
-    return mapRoom(j, { ...extras(id, role), ...(isHq ? { has_3d: false, online: await hqOnline(id) } : {}) });
+    return mapRoom(j, { ...extras(id, role), ...(j.kind === "hq" ? { online: await hqOnline(id) } : {}) });
   },
 
   async mine() {
@@ -153,6 +152,24 @@ export const rooms: RoomsApi = {
     if (error) throw chatError(error.message);
     if (!data) throw new Error("Room not found");
     emit();
+  },
+
+  /** The owner or staff: ev_set_room_3d answers ok or a reason. The entry function refuses a walker when it is off (see EVENTS_R1_ORDER.md). */
+  async setThreeD(roomId, on) {
+    if (!who()) throw new Error("Sign in first");
+    const id = await roomIdOf(roomId);
+    if (!id) throw new Error("Room not found");
+    await rpcText("ev_set_room_3d", { p_room: id, p_on: !!on }, { not_found: "Room not found" });
+    emit();
+  },
+
+  /** Staff: every room (ev_admin_rooms answers null to anyone who is not staff). */
+  async listForStaff() {
+    if (!who()) throw new Error("Sign in first");
+    const rows = await rpc<Row[] | null>("ev_admin_rooms");
+    if (!rows) throw new Error("Not allowed");
+    const role = await roles();
+    return rows.map((r) => mapRoom(r, extras(String(r.id), role)));
   },
 
   async announcements(roomId) {

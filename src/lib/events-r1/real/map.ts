@@ -168,8 +168,8 @@ export function mapAnnouncement(j: J): RoomAnnouncement {
   };
 }
 
-/** `extra` holds what the database cannot say from one call: is_owner, can_post, has_3d, online. */
-export function mapRoom(j: J, extra: Partial<Pick<RoomSummary, "is_owner" | "can_post" | "has_3d" | "online">> = {}): RoomSummary {
+/** `extra` holds what the database cannot say from one call: is_owner, can_post, online (and has_3d, three_d_on for an older answer). */
+export function mapRoom(j: J, extra: Partial<Pick<RoomSummary, "is_owner" | "can_post" | "has_3d" | "three_d_on" | "online">> = {}): RoomSummary {
   const kind = j.kind === "hq" || j.kind === "brand" ? j.kind : "crew";
   return {
     id: String(j.id),
@@ -185,8 +185,10 @@ export function mapRoom(j: J, extra: Partial<Pick<RoomSummary, "is_owner" | "can
     latest_announcement: j.latest_announcement ? mapAnnouncement(j.latest_announcement) : null,
     is_owner: extra.is_owner ?? false,
     can_post: extra.can_post ?? false,
-    // Every crew can be entered (the 3D room is made on first entry). Hoppaz HQ is chat first.
-    has_3d: extra.has_3d ?? kind !== "hq",
+    // The database says whether a walkable room can be made (a layout exists: every crew, Lagos HQ too) and whether the owner or
+    // staff have it switched on (ev_room_3d_allowed: on by default, except Lagos HQ). An older answer without them: on, except Lagos HQ.
+    has_3d: typeof j.has_3d === "boolean" ? j.has_3d : (extra.has_3d ?? true),
+    three_d_on: typeof j.three_d_on === "boolean" ? j.three_d_on : (extra.three_d_on ?? kind !== "hq"),
     online: extra.online ?? 0,
   };
 }

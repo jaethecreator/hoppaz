@@ -255,6 +255,7 @@ export function failText(message: string): string {
   const m = message.toLowerCase();
   if (m.includes("permission denied") || m.includes("jwt") || m.includes("not authenticated") || m.includes("no_session")) return "Sign in first";
   if (m.includes("need_account")) return "Sign in first";
+  if (m.includes("room_off")) return "The 3D room is off";
   if (m.includes("ticket_secret_missing")) return REASONS.no_secret;
   if (m.includes("slow_down")) return REASONS.slow_down;
   if (m.includes("failed to fetch") || m.includes("network") || m.includes("fetch failed")) return "No connection. Try again";

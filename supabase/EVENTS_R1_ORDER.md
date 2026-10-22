@@ -105,6 +105,7 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
 | registrations.ticketFor | `ev_my_ticket` |
 | pops.listForEvent / visibleOnEvent / send | `ev_host_pops` / `ev_event_pops` / `ev_send_pop` |
 | rooms.list / get / eventChat | `ev_rooms_for_me` / `ev_room` / `ev_event_chat` |
+| rooms.setThreeD / listForStaff | `ev_set_room_3d` (owner or staff, answers `ok` or a reason) / `ev_admin_rooms` (staff, null for anyone else) |
 | rooms.announcements / markRead | `ev_room_announcements` / `ev_room_mark_read` |
 | rooms.create / join / postAnnouncement | the existing `create_crew` / `join_crew` / `crew_announce` (untouched) |
 | door.scan / confirm / search / checkInById / counts | `ev_scan` (mode standard, express, confirm) / `ev_scan` / `ev_door_search` / `ev_checkin_manual` / `ev_door_counts` |
@@ -121,10 +122,10 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
 2. **The trigger choice.** `ev_create_event` inserts a row (your `force_pending_on_insert` makes it pending) and then, in the same
    function and transaction, updates that one row to live. Nothing of yours is edited or switched off. Is that acceptable, or would you rather
    the trigger learned a "published by ev_create_event" rule?
-3. **HQ capacity.** Hoppaz HQ is a crew pointed to by `ev_hq`, with `crew_rooms.capacity` 500 (the most the check allows). The cap only
+3. **HQ capacity.** Lagos HQ is a crew pointed to by `ev_hq`, with `crew_rooms.capacity` 500 (the most the check allows). The cap only
    limits walkers in the 3D room, not members and not General chat, so chat first never meets it. What should the 3D room do when HQ
    is big? Also, every General message reaches every member with the room open: look at the realtime load before HQ is large. If you
-   would rather make HQ by hand, make a verified crew named `Hoppaz HQ`: `ev_ensure_hq()` adopts it. HQ needs one staff account to own it.
+   would rather make HQ by hand, make a verified crew named `Lagos HQ`: `ev_ensure_hq()` adopts it. HQ needs one staff account to own it.
 4. **Email sender.** The email code sign-in (six digits, no password) and the sender are yours (Supabase Auth, mail provider). Nothing in
    these files sends email. Which sender and domain will it be, and when can the front end test the code step for real?
 5. **Leak check on the events read policy.** `events_read_live` lets anyone with the anon key read every column of every live event. So
@@ -152,6 +153,28 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
 
 14. **Paid tickets switch.** `paid_tickets` lives in `ev_settings` and only you set it, with `ev_set_setting`. Is a SQL-editor statement enough, or do you want
     it behind the admin route too? And in Release 2, should the switch stay as a global kill switch?
+
+## 5a. The room is called Lagos HQ, and the 3D room switch (one change for Ola)
+
+**Lagos HQ.** The home room is now named Lagos HQ (it was Hoppaz HQ). `ev_ensure_hq()` makes a crew named `Lagos HQ`; it adopts a verified crew already named `Lagos HQ`, or one still named `Hoppaz HQ` (and renames it, and the room's brand line, to `Lagos HQ`); a pointed-to crew still named `Hoppaz HQ` is renamed the next time the function runs. It starts fresh: no hotspot message is moved into it. Code names are unchanged (`kind` `hq`, slug `hq`, the `ev_hq` table).
+
+**3D room switch.** The owner of a room (the `crew_members` row with role `owner`) and staff (`profiles.is_admin`) switch the walkable 3D room on or off. Off means chat only (Announcements, General, event chats) and the app hides "Enter room". All in `events_r1_rooms.sql` (no new file, so no new run order step):
+
+- table `ev_room_settings` (room_id primary key, three_d_on, updated_by, updated_at), closed like the other `ev_` tables;
+- `ev_set_room_3d(room, on)` answers `ok`, `need_account`, `bad_value`, `not_allowed` or `not_found`; owner or staff only;
+- `ev_room_3d_allowed(room)` answers whether it is on: a saved switch wins; with none it is on for a room with a layout (every crew has one: the room is made on first entry from the default template) and off for Lagos HQ until it is switched on;
+- `ev_rooms_for_me`, `ev_room` and `ev_admin_rooms` return `has_3d` (a layout exists) and `three_d_on` (the switch) for every room;
+- `ev_admin_rooms()` is staff only (null for anyone else): every room, Lagos HQ first, then the biggest.
+
+**THE ONE CHANGE FOR OLA.** Nothing here edits an existing function, so nothing yet stops someone calling the entry function of a room that is off. The function is `public.crew_room_enter(p_crew uuid, p_session uuid)`. The live copy is in `crew_rooms_scale.sql` (line 371; it replaces the one in `crew_rooms.sql`, line 407, and no later file redefines it). Add this line right after `perform _crew_room_require(p_crew);` (line 383 of `crew_rooms_scale.sql`), and the same line after the same call in the older copy (line 419 of `crew_rooms.sql`):
+
+```sql
+  if not public.ev_room_3d_allowed(p_crew) then raise exception 'room_off'; end if;
+```
+
+The app turns `room_off` into "The 3D room is off", and the client also hides Enter room when `three_d_on` is false. People already walking when it is switched off are not thrown out (`crew_room_step` is not changed); nobody new comes in. `tests/events_r1_rooms_test.sql` puts this exact line into the live function inside its own rolled-back transaction and shows: a member enters a room that is on, is refused with `room_off` when it is off (the owner too), and Lagos HQ is refused until staff switch it on.
+
+Staff in the app: `ev_set_room_3d` and `ev_admin_rooms` use the signed-in account's `profiles.is_admin` (not the shared token the reports desk uses). If the /admin page should work with the token alone, it needs a small route that calls them with the service role; they would then need a staff id to check, so say if you want that.
 
 ## 6. Deliberately not included
 
@@ -189,7 +212,7 @@ Notes: the dump step prints a few "permission denied to change default privilege
 Supabase's own roles) and skips pg_cron in the new database; none of that matters for these files. The schema-only dump carries the extensions' schemas but not the roles (they are cluster wide, so `anon`, `authenticated` and
 `service_role` are there). If `create extension` complains in the new database, create `postgis` and `pgcrypto` there first. The test for the
 tickets sets its own test signing secret inside its transaction and the rollback puts yours back. The test for rooms clears the staff flags
-and any Hoppaz HQ room inside its own transaction, also rolled back. The leaks test (`events_r1_leaks_test.sql`) reads as the real roles `anon` and `authenticated` and proves: no new table is readable or writable by them, the
+and any Lagos HQ room inside its own transaction, also rolled back. The leaks test (`events_r1_leaks_test.sql`) reads as the real roles `anon` and `authenticated` and proves: no new table is readable or writable by them, the
 online link cannot be read from any table, list or `ev_get_event` except by the host and people who are going, invite and community events are not
 returned by `events_near`, `events_deck`, `claim_checkin` or a plain select on `events`, and the starter quests notes in question 6 and in
 `events_r1_events.sql` are true. The registrations test cannot show two people racing for the last place
@@ -197,7 +220,7 @@ in one transaction; the header of that test says how to see it with two real ses
 
 ## 8. Local test database (the shared `postgres` on the Docker stack)
 
-The seven `events_r1_` files are loaded in the local `postgres` database (events, registrations, tickets, pops, reports, rooms, pay, in that order; each also passed its test twice in a throwaway `hoppaz_ev_` database first). The real front end layer (`src/lib/events-r1/real/`) runs against it. The ticket signing secret is set there with a random local value, and `paid_tickets` is `off` (the paid check script switches it on and back off). Only local data was touched: nothing is on production or any remote database.
+The seven `events_r1_` files are loaded in the local `postgres` database (events, registrations, tickets, pops, reports, rooms, pay, in that order; each also passed its test twice in a throwaway `hoppaz_ev_` database first). `events_r1_rooms.sql` was loaded again with the Lagos HQ rename and the 3D room switch (the local HQ crew, made by an earlier check run as Hoppaz HQ, is now Lagos HQ). The real front end layer (`src/lib/events-r1/real/`) runs against it. The ticket signing secret is set there with a random local value, and `paid_tickets` is `off` (the paid check script switches it on and back off). Only local data was touched: nothing is on production or any remote database.
 
 Backup taken first, before anything was loaded: `localdb/backups/postgres-before-events-r1-20261022-1908.dump` (pg_dump custom format). To go back to exactly that state:
 

@@ -377,6 +377,7 @@ export function roomSummary(room: RoomRec): RoomSummary {
     is_owner: !!v && room.owner_id === v.id,
     can_post: !!v && (room.owner_id === v.id || !!v.staff),
     has_3d: !!room.has_3d,
+    three_d_on: room.three_d_on ?? (!!room.has_3d && room.kind !== "hq"),
     online: room.online ?? 0,
   };
 }

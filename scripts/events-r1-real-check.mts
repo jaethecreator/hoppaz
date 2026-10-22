@@ -179,15 +179,61 @@ console.log("   made 5 throwaway people: staff, host, bea, cal, dee");
 
 console.log("\n== A. rooms, HQ, events, registration, approval, waitlist, capacity");
 await login(staff);
-const lst0 = await step("rooms.list as staff: Hoppaz HQ first", () => api.rooms.list(), (l) => `hq="${l.hq.name}" kind=${l.hq.kind} joined=${l.hq.joined} has_3d=${l.hq.has_3d} members=${l.hq.members}`);
+const lst0 = await step("rooms.list as staff: Lagos HQ first", () => api.rooms.list(), (l) => `hq="${l.hq.name}" kind=${l.hq.kind} joined=${l.hq.joined} has_3d=${l.hq.has_3d} three_d_on=${l.hq.three_d_on} members=${l.hq.members}`);
 const hqId = lst0?.hq.id as string;
 out(!!hqId && hqId !== "hq" && lst0?.hq.kind === "hq", "HQ is a real room", hqId);
 await step("rooms.get('hq') resolves the short address", async () => (await api.rooms.get("hq"))?.id === hqId, (v) => String(v));
+out(lst0?.hq.name === "Lagos HQ", "the HQ room is called Lagos HQ", String(lst0?.hq.name));
+eq("Lagos HQ: a room exists but it is off by default", [lst0?.hq.has_3d, lst0?.hq.three_d_on], [true, false]);
+eq("the entry function's check (ev_room_3d_allowed) says off for Lagos HQ", (await admin.rpc("ev_room_3d_allowed", { p_room: hqId })).data, false);
+await step("staff switch Lagos HQ on (setThreeD)", async () => {
+  await api.rooms.setThreeD(hqId, true);
+  const g = await api.rooms.get("hq");
+  const l = await api.rooms.list();
+  return `get=${g?.three_d_on} list=${l.hq.three_d_on} allowed=${(await admin.rpc("ev_room_3d_allowed", { p_room: hqId })).data}`;
+}, (v) => v);
+await step("staff switch Lagos HQ off again", async () => {
+  await api.rooms.setThreeD("hq", false);
+  return `get=${(await api.rooms.get("hq"))?.three_d_on} allowed=${(await admin.rpc("ev_room_3d_allowed", { p_room: hqId })).data}`;
+}, (v) => v);
 
 await login(host_);
 const room = await step("rooms.create (host)", () => api.rooms.create({ name: `Hosa Roomz ${tag}` }), (r) => `${r.name} owner=${r.is_owner} can_post=${r.can_post} joined=${r.joined}`);
 await refuses("rooms.create with no name", () => api.rooms.create({ name: "  " }), "Give your room a name");
 eq("rooms.mine has it", (await api.rooms.mine()).map((r) => r.id), [room?.id]);
+
+// The 3D room switch: default on, the owner and staff can set it, nobody else, and the database check follows.
+const roomOn = () => admin.rpc("ev_room_3d_allowed", { p_room: room!.id }).then((r) => r.data);
+eq("a new room: has_3d and three_d_on by default", [room?.has_3d, room?.three_d_on], [true, true]);
+eq("the entry function's check says on", await roomOn(), true);
+await login(bea);
+await refuses("a member who is not the owner cannot switch it (setThreeD)", () => api.rooms.setThreeD(room!.id, false), "Not allowed");
+await refuses("and cannot list every room (listForStaff)", () => api.rooms.listForStaff(), "Not allowed");
+await login(host_);
+await step("the owner switches it off", async () => {
+  await api.rooms.setThreeD(room!.id, false);
+  const g = (await api.rooms.get(room!.id))!;
+  const mine = (await api.rooms.mine()).find((r) => r.id === room!.id);
+  return `get has_3d=${g.has_3d} three_d_on=${g.three_d_on} | mine three_d_on=${mine?.three_d_on} | allowed=${await roomOn()}`;
+}, (v) => v);
+eq("off in the database too", await roomOn(), false);
+await login(bea);
+eq("another person sees it off", (await api.rooms.get(room!.id))?.three_d_on, false);
+await login(host_);
+await refuses("the owner cannot switch Lagos HQ", () => api.rooms.setThreeD(hqId, true), "Not allowed");
+await refuses("the owner cannot list every room", () => api.rooms.listForStaff(), "Not allowed");
+await login(staff);
+const all = await step("staff: listForStaff", () => api.rooms.listForStaff(), (l) => `${l.length} rooms, first=${l[0]?.name} (${l[0]?.kind}), mine is in it=${l.some((r) => r.id === room!.id)}`);
+out(!!all && all[0].kind === "hq" && all.some((r) => r.id === room!.id && r.three_d_on === false), "Lagos HQ first and each room carries its switch");
+await step("staff switch the owner's room back on", async () => {
+  await api.rooms.setThreeD(room!.id, true);
+  return `three_d_on=${(await api.rooms.get(room!.id))?.three_d_on} allowed=${await roomOn()}`;
+}, (v) => v);
+await refuses("setThreeD on a room that does not exist", () => api.rooms.setThreeD("00000000-0000-4000-8000-000000000000", true), "Room not found");
+await sb.auth.signOut();
+await core.ready();
+await refuses("setThreeD with no session", () => api.rooms.setThreeD(room!.id, false), "Sign in first");
+await login(host_);
 const start = Date.now() + 26 * HOUR;
 const ev = await step(
   "events.create: 2 ticket types, capacity 2, approval, waitlist",

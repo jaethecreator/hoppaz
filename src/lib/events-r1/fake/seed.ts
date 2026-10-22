@@ -210,8 +210,8 @@ const POPS: PopSeed[] = [
 
 type AnnSeed = { room: HostKey; body: string; hoursAgo: number; author: string };
 const ANNS: AnnSeed[] = [
-  { room: "hq", body: "Welcome to Hoppaz HQ. Say hi and tell us what you are doing this week.", hoursAgo: 46, author: "Hoppaz HQ" },
-  { room: "hq", body: "New: events now have a Register button. Tell your friends.", hoursAgo: 20, author: "Hoppaz HQ" },
+  { room: "hq", body: "Welcome to Lagos HQ. Say hi and tell us what you are doing this week.", hoursAgo: 46, author: "Lagos HQ" },
+  { room: "hq", body: "New: events now have a Register button. Tell your friends.", hoursAgo: 20, author: "Lagos HQ" },
   { room: "p360", body: "New playlist drops on Friday. Send us your requests in General.", hoursAgo: 30, author: "360Playlist" },
   { room: "kredete", body: "The next jollof table has five seats. Join the waitlist if it is full.", hoursAgo: 26, author: "Kredete" },
   { room: "lrc", body: "This week's route is up. Meet at the gate, 6:15am sharp.", hoursAgo: 10, author: "Lagos Run Club" },
@@ -225,7 +225,7 @@ const MESSAGES: MsgSeed[] = [
   { room: "hq", channel: "general", who: "Tayo Bello", body: "Anyone going to the Welcome Hop tomorrow?", minAgo: 190 },
   { room: "hq", channel: "general", who: "Ada Obi", body: "Yes! First time on the bus, any tips?", minAgo: 176 },
   { room: "hq", channel: "general", who: "Chidi Okafor", body: "Come hungry, they play ludo at the back.", minAgo: 171 },
-  { room: "hq", channel: "general", who: "Hoppaz HQ", body: "This weekend: 14 events in Lagos. Check the map.", minAgo: 95 },
+  { room: "hq", channel: "general", who: "Lagos HQ", body: "This weekend: 14 events in Lagos. Check the map.", minAgo: 95 },
   { room: "p360", channel: "general", who: "Ngozi Eze", body: "Who is coming to the listening party on Friday?", minAgo: 310 },
   { room: "p360", channel: "general", who: "Femi Balogun", body: "Me. Bringing two friends.", minAgo: 296 },
   { room: "p360", channel: "general", who: "360Playlist", body: "Send us your requests here and we will play the best ones.", minAgo: 240 },
@@ -261,7 +261,7 @@ export function buildSeed(now: number): FakeState {
     { id: U.lrc, name: "Lagos Run Club", email: "hello@lagosrunclub.example.com" },
     { id: U.p360, name: "360Playlist", email: "team@360playlist.example.com" },
     { id: U.roof, name: "Rooftop Sessions", email: "crew@rooftopsessions.example.com" },
-    { id: U.hq, name: "Hoppaz HQ", email: "hq@hoppaz.example.com" },
+    { id: U.hq, name: "Lagos HQ", email: "hq@hoppaz.example.com" },
     { id: U.staff, name: "Hoppaz Staff", email: "staff@hoppaz.example.com", staff: true },
   ];
   for (const u of users) st.users[u.id] = u;
@@ -271,7 +271,7 @@ export function buildSeed(now: number): FakeState {
 
   /* Rooms. */
   const rooms: Array<[string, string, string, RoomRec["kind"], string | null, number, boolean, string | null, string]> = [
-    [R.hq, "hoppaz-hq", "Hoppaz HQ", "hq", U.hq, 4800, true, null, "The home room. Say hi, ask anything, find out what is on."],
+    [R.hq, "lagos-hq", "Lagos HQ", "hq", U.hq, 4800, true, null, "The home room. Say hi, ask anything, find out what is on."],
     [R.p360, "360playlist", "360Playlist", "brand", U.p360, 839, true, "/brands/360playlist.jpg", "New music, listening parties and the people behind the playlist."],
     [R.kredete, "kredete", "Kredete", "crew", U.kredete, 312, false, null, "Open mics, food tables and small nights."],
     [R.lrc, "lagos-run-club", "Lagos Run Club", "crew", U.lrc, 467, false, null, "Runs for every pace across Lagos."],
@@ -284,8 +284,9 @@ export function buildSeed(now: number): FakeState {
   for (const [id, slug, name, kind, owner, base, verified, logo, description] of rooms) {
     st.rooms[id] = {
       id, slug, name, kind, logo_url: logo, wallpaper_url: null, verified, owner_id: owner, description, base_members: base,
-      // Hoppaz HQ is chat first: no walkable room here (so nothing can fill a 60 walker cap).
-      has_3d: false, online: kind === "hq" ? 320 : 0,
+      // 360Playlist and the brand rooms have a walkable room and it is switched on. Lagos HQ can have one but it is off until its room
+      // is ready (chat first, so nothing can fill a walker cap): it takes the default, off. A plain crew has none in the fake.
+      has_3d: kind !== "crew", ...(kind === "brand" ? { three_d_on: true } : {}), online: kind === "hq" ? 320 : 0,
     };
   }
   st.memberships[`${U.ada}:${R.p360}`] = true;
