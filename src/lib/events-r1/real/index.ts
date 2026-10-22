@@ -21,4 +21,5 @@ export const realApi: EventsR1Api = {
   reports: proxy("reports"),
   door: proxy("door"),
   clock: { now: () => Date.now() },
+  pay: proxy("pay"),
 };

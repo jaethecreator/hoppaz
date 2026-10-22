@@ -3,9 +3,10 @@ import type { EventsApi } from "../api";
 import type { EventDraft, EventKind, LinkType, ViewerState, Visibility } from "../types";
 import { VIBES } from "../../brand";
 import { PAID_UNAVAILABLE } from "../constants";
-import { PAID_TICKETS } from "../flags";
+import { paidTicketsOn } from "../flags";
 import { areaByName, insideLagos, LAGOS_CENTER, nearestArea } from "../../geo";
 import { autoPopsFor, defaultMessages, defaultQuestions } from "./defaults";
+import { canSell } from "./payouts";
 import { retimeAutoPops } from "./pops";
 import {
   assertManage, canList, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, freeTypes, hostRoom,
@@ -31,9 +32,10 @@ const MAX_TYPES = 5;
 
 /**
  * Check the ticket types of a draft and make them records. No list: keep `existing` (an edit) or one free General.
- * A paid type is refused unless PAID_TICKETS is on. Ids are kept for a type whose name is kept.
+ * A paid type is refused unless paidTicketsOn() ("Currently unavailable") and the host can sell ("payouts_not_ready").
+ * Ids are kept for a type whose name is kept.
  */
-function normalizeTypes(list: EventDraft["tickets"], existing: TicketTypeRec[] | null, eventId: string | null): TicketTypeRec[] {
+function normalizeTypes(list: EventDraft["tickets"], existing: TicketTypeRec[] | null, eventId: string | null, hostId: string): TicketTypeRec[] {
   if (!list) return existing ?? [{ id: newId(), name: "General", price_naira: 0, capacity: null }];
   if (list.length < 1) throw new Error("Add at least one ticket type");
   if (list.length > MAX_TYPES) throw new Error(`Up to ${MAX_TYPES} ticket types`);
@@ -46,7 +48,10 @@ function normalizeTypes(list: EventDraft["tickets"], existing: TicketTypeRec[] |
     seen.add(name.toLowerCase());
     const price = t.price_naira ?? 0;
     if (!Number.isInteger(price) || price < 0) throw new Error("A price must be a whole number");
-    if (price > 0 && !PAID_TICKETS) throw new Error(PAID_UNAVAILABLE);
+    if (price > 0) {
+      if (!paidTicketsOn()) throw new Error(PAID_UNAVAILABLE);
+      if (!canSell(hostId)) throw new Error("payouts_not_ready");
+    }
     const cap = t.capacity ?? null;
     if (cap !== null && (!Number.isInteger(cap) || cap < 1)) throw new Error("Capacity must be 1 or more");
     const kept = existing?.find((x) => x.name.toLowerCase() === name.toLowerCase());
@@ -66,7 +71,7 @@ function normalizeTypes(list: EventDraft["tickets"], existing: TicketTypeRec[] |
 }
 
 /** Check a draft and fill every default: a name is enough. */
-function normalize(d: EventDraft, roomId: string | null, existing: { id: string; types: TicketTypeRec[] } | null = null): Fields {
+function normalize(d: EventDraft, roomId: string | null, hostId: string, existing: { id: string; types: TicketTypeRec[] } | null = null): Fields {
   const title = (d.title ?? "").trim();
   if (!title) throw new Error("Give your event a name");
   if (title.length > 120) throw new Error("Keep the name under 120 characters");
@@ -124,7 +129,7 @@ function normalize(d: EventDraft, roomId: string | null, existing: { id: string;
   if (!VISIBILITIES.includes(visibility)) throw new Error("Pick Public, Community or Invite only");
   if (visibility === "community" && !roomId) throw new Error("Community events need a room. Create a room first.");
 
-  const ticket_types = normalizeTypes(d.tickets, existing?.types ?? null, existing?.id ?? null);
+  const ticket_types = normalizeTypes(d.tickets, existing?.types ?? null, existing?.id ?? null, hostId);
 
   return {
     price_naira: Math.min(...ticket_types.map((t) => t.price_naira)),
@@ -160,7 +165,7 @@ function checkRateLimit(host: UserRec): void {
 function makeEvent(host: UserRec, draft: EventDraft, copyTypes?: TicketTypeRec[]): EventRec {
   checkRateLimit(host);
   const room = draft.add_to_room === false ? null : hostRoom(host.id);
-  const f = normalize(copyTypes ? { ...draft, tickets: undefined } : draft, room?.id ?? null);
+  const f = normalize(copyTypes ? { ...draft, tickets: undefined } : draft, room?.id ?? null, host.id);
   // Clone: the same types (new ids), prices and all, whatever the paid flag says; nothing new is being offered.
   if (copyTypes) {
     f.ticket_types = copyTypes.map((t) => ({ ...t, id: newId() }));
@@ -241,7 +246,7 @@ export function viewerStateFor(e: EventRec): ViewerState {
   if (status !== "live") button = "closed";
   else if (active) {
     button = isGoing(active.status) ? "going" : active.status === "requested" ? "pending" : active.status === "waitlisted" ? "waitlisted" : "declined";
-  } else if (freeTypes(e).length === 0) button = "get_ticket";
+  } else if (freeTypes(e).length === 0) button = paidTicketsOn() && typesOf(e).every((t) => typeFull(e, t)) ? "closed" : "get_ticket";
   else if (freeTypes(e).every((t) => typeFull(e, t))) button = e.waitlist_on ? "waitlist" : "closed";
   else button = e.requires_approval ? "request" : "register";
 
@@ -308,7 +313,7 @@ export const events: EventsApi = {
       roomId = patch.add_to_room ? (hostRoom(e.host_id)?.id ?? null) : null;
       if (!roomId && e.visibility === "community") throw new Error("Community events need a room");
     }
-    Object.assign(e, normalize(merged, roomId, { id: e.id, types: typesOf(e) }));
+    Object.assign(e, normalize(merged, roomId, e.host_id, { id: e.id, types: typesOf(e) }));
     e.room_id = roomId;
     if (e.starts_at !== before.start) retimeAutoPops(e);
     if ((e.capacity === null || (before.capacity !== null && e.capacity > before.capacity)) || e.requires_approval !== before.approval) {

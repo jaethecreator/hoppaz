@@ -249,7 +249,7 @@ const MESSAGES: MsgSeed[] = [
 export function buildSeed(now: number): FakeState {
   const st: FakeState = {
     users: {}, events: {}, regs: {}, tickets: {}, pops: {}, announcements: {}, messages: {}, reports: {}, rooms: {},
-    regSettings: {}, memberships: {}, interest: {}, reads: {},
+    orders: {}, payouts: {}, regSettings: {}, memberships: {}, interest: {}, reads: {},
     viewerId: null, pendingEmail: null, offset: 0, key: null,
   };
   const iso = (ms: number) => new Date(ms).toISOString();
@@ -265,6 +265,9 @@ export function buildSeed(now: number): FakeState {
     { id: U.staff, name: "Hoppaz Staff", email: "staff@hoppaz.example.com", staff: true },
   ];
   for (const u of users) st.users[u.id] = u;
+
+  /* Bachs payouts: Rooftop Sessions and Kredete are set up (with some money already held); everyone else is new to it. */
+  for (const id of [U.roof, U.kredete]) st.payouts[id] = { id, status: "ready", balance_naira: 50_000 };
 
   /* Rooms. */
   const rooms: Array<[string, string, string, RoomRec["kind"], string | null, number, boolean, string | null, string]> = [
@@ -430,6 +433,7 @@ function crowdFor(st: FakeState, ev: EventRec, sp: Spec, now: number): void {
       // The seeded events have the one default type (rules.typesOf builds the same id).
       ticket_type_id: seedId(`ticket-type:${ev.id}`),
       ticket_name: "General",
+      quantity: 1,
       status,
       answers: {},
       referrer_id: ref ? ref.user_id : null,

@@ -26,8 +26,20 @@ export function regOf(eventId: string, userId: string): Registration | undefined
   return Object.values(S().regs).find((r) => r.event_id === eventId && r.user_id === userId);
 }
 
+/** Seats a registration holds: 1 for a free ticket, 1 to 5 for a paid order (and a saved one from before quantity existed holds 1). */
+export const seatsOf = (r: Pick<Registration, "quantity">): number => r.quantity ?? 1;
+
+/** Going and checked-in TICKETS (seats), not people: this is what capacity counts. */
 export function goingCount(eventId: string): number {
-  return regsOf(eventId).filter((r) => isGoing(r.status)).length;
+  return regsOf(eventId).filter((r) => isGoing(r.status)).reduce((n, r) => n + seatsOf(r), 0);
+}
+
+/** Seats held by open orders that have not run out of time. They count against capacity until they expire or are paid. */
+export function heldSeats(eventId: string, typeId?: string): number {
+  const t = now();
+  return Object.values(S().orders)
+    .filter((o) => o.event_id === eventId && o.status === "open" && Date.parse(o.expires_at) > t && (!typeId || o.ticket_type_id === typeId))
+    .reduce((n, o) => n + o.quantity, 0);
 }
 
 export function hostRoom(userId: string): RoomRec | null {
@@ -77,8 +89,13 @@ export function statusOf(e: EventRec): EventStatus {
   return now() > eventEnd(e) ? "ended" : "live";
 }
 
+/** Places left on the whole event: capacity less going seats and held seats. null = no limit. */
+export function eventSpotsLeft(e: EventRec): number | null {
+  return e.capacity === null ? null : Math.max(0, e.capacity - goingCount(e.id) - heldSeats(e.id));
+}
+
 export function isFull(e: EventRec): boolean {
-  return e.capacity !== null && goingCount(e.id) >= e.capacity;
+  return eventSpotsLeft(e) === 0;
 }
 
 /* --------------------------------------------------------- ticket types -- */
@@ -95,15 +112,33 @@ export function typeOfReg(e: EventRec, r: Pick<Registration, "ticket_type_id">):
   return ts.find((t) => t.id === r.ticket_type_id) ?? ts[0];
 }
 
-/** Going and checked-in people holding this type. */
+/** Seats of this type held by going and checked-in people. A paid ticket knows its own type; the rest are the registration's type. */
 export function soldOf(e: EventRec, typeId: string): number {
-  return regsOf(e.id).filter((r) => isGoing(r.status) && typeOfReg(e, r).id === typeId).length;
+  const tagged = new Map<string, Map<string, number>>();
+  for (const t of Object.values(S().tickets)) {
+    if (t.event_id !== e.id || t.status === "void" || !t.type_id) continue;
+    const m = tagged.get(t.reg_id) ?? new Map<string, number>();
+    m.set(t.type_id, (m.get(t.type_id) ?? 0) + 1);
+    tagged.set(t.reg_id, m);
+  }
+  let n = 0;
+  for (const r of regsOf(e.id)) {
+    if (!isGoing(r.status)) continue;
+    const m = tagged.get(r.id);
+    let counted = 0;
+    if (m) for (const [ty, c] of m) {
+      counted += c;
+      if (ty === typeId) n += c;
+    }
+    if (typeOfReg(e, r).id === typeId) n += Math.max(0, seatsOf(r) - counted);
+  }
+  return n;
 }
 
-/** Places left on a type: its own capacity and the event's, whichever is tighter. null = no limit. */
+/** Places left on a type: its own capacity and the event's, whichever is tighter, less seats held by open orders. null = no limit. */
 export function typeSpotsLeft(e: EventRec, t: TicketTypeRec): number | null {
-  const own = t.capacity === null ? null : Math.max(0, t.capacity - soldOf(e, t.id));
-  const ev = e.capacity === null ? null : Math.max(0, e.capacity - goingCount(e.id));
+  const own = t.capacity === null ? null : Math.max(0, t.capacity - soldOf(e, t.id) - heldSeats(e.id, t.id));
+  const ev = eventSpotsLeft(e);
   if (own === null) return ev;
   return ev === null ? own : Math.min(own, ev);
 }
@@ -170,14 +205,14 @@ export function eventView(e: EventRec, opts: { revealLink?: boolean } = {}): R1E
   const types = typesOf(e);
   const going = goingCount(e.id);
   const interested = Object.keys(S().interest).filter((k) => S().interest[k] && k.endsWith(`:${e.id}`)).length;
-  const checked = regsOf(e.id).filter((r) => r.status === "checked_in").length;
+  const checked = regsOf(e.id).reduce((n, r) => n + usedSeats(r), 0);
   return clone({
     ...rest,
     price_naira: Math.min(...types.map((t) => t.price_naira)),
     ticket_types: types.map((t) => typeView(e, t)),
     status: statusOf(e),
     going,
-    spots_left: e.capacity === null ? null : Math.max(0, e.capacity - going),
+    spots_left: eventSpotsLeft(e),
     host: hostRef(host_id),
     online_link: opts.revealLink || canSeeLink(e) ? e.online_link : null,
     distance_m: haversineKm(LAGOS_CENTER.lat, LAGOS_CENTER.lng, e.lat, e.lng) * 1000,
@@ -205,25 +240,45 @@ export function ticketIdFor(regId: string): string {
   return seedId(`ticket:${regId}`);
 }
 
-/** A person who is going has one valid ticket. A returning person gets a new version, so an old QR stops working. */
-export function ensureTicket(reg: Registration): TicketRec {
+/** Every ticket a registration ever had, seat 1 first. */
+export function ticketsOfReg(regId: string): TicketRec[] {
+  return Object.values(S().tickets)
+    .filter((t) => t.reg_id === regId)
+    .sort((a, b) => (a.seq ?? 1) - (b.seq ?? 1));
+}
+
+/**
+ * A person who is going has valid tickets: one for a free registration (made on demand), one per seat for a paid order (made
+ * when it was paid). A returning person with none left gets seat 1 back at a new version, so an old QR stops working.
+ */
+export function ensureTickets(reg: Registration): TicketRec[] {
+  const live = ticketsOfReg(reg.id).filter((t) => t.status !== "void");
+  if (live.length) return live;
   const id = ticketIdFor(reg.id);
   const t = S().tickets[id];
   if (!t) {
-    const fresh: TicketRec = { id, event_id: reg.event_id, reg_id: reg.id, version: 1, status: "valid" };
+    const fresh: TicketRec = { id, event_id: reg.event_id, reg_id: reg.id, version: 1, status: "valid", seq: 1 };
     S().tickets[id] = fresh;
-    return fresh;
+    return [fresh];
   }
-  if (t.status === "void") {
-    t.version += 1;
-    t.status = "valid";
-  }
-  return t;
+  t.version += 1;
+  t.status = "valid";
+  delete t.order_id;
+  delete t.type_id;
+  delete t.checked_in_at;
+  return [t];
 }
 
+export const ensureTicket = (reg: Registration): TicketRec => ensureTickets(reg)[0];
+
 export function voidTicket(reg: Registration): void {
-  const t = S().tickets[ticketIdFor(reg.id)];
-  if (t) t.status = "void";
+  for (const t of ticketsOfReg(reg.id)) t.status = "void";
+}
+
+/** How many of a registration's tickets are checked in. */
+export function usedSeats(reg: Registration): number {
+  const used = ticketsOfReg(reg.id).filter((t) => t.status === "used").length;
+  return used || (reg.status === "checked_in" ? seatsOf(reg) : 0);
 }
 
 /** Make someone going: stamp the ticket. The caller has checked there is room. */
@@ -249,8 +304,8 @@ export function fillFromWaitlist(eventId: string): void {
   for (const r of waiting) {
     const t = typeOfReg(e, r);
     if (e.requires_approval) {
-      const eventRoom = e.capacity === null ? Infinity : e.capacity - goingCount(eventId) - requestedOf();
-      const typeRoom = t.capacity === null ? Infinity : t.capacity - soldOf(e, t.id) - requestedOf(t.id);
+      const eventRoom = e.capacity === null ? Infinity : e.capacity - goingCount(eventId) - heldSeats(eventId) - requestedOf();
+      const typeRoom = t.capacity === null ? Infinity : t.capacity - soldOf(e, t.id) - heldSeats(eventId, t.id) - requestedOf(t.id);
       if (eventRoom > 0 && typeRoom > 0) {
         r.status = "requested";
         r.waitlist_pos = null;

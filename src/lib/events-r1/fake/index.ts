@@ -4,10 +4,14 @@
  * as anyone, a valid ticket token for a registration, a full reset.
  */
 import type { EventsR1Api } from "../api";
+import { PAID_KEY, PAID_TICKETS, paidTicketsOn } from "../flags";
+import type { HostPayoutStatus, PayMethod } from "../pay";
 import type { R1Event, Registration } from "../types";
 import { auth, signInUser } from "./auth";
 import { door } from "./door";
 import { events } from "./events";
+import { completeCheckout, expireCheckout, failCheckout, hostBalance, pay, peekOrder, settleRefund } from "./pay";
+import { payoutFor, setPayoutStatus, statusOfHost } from "./payouts";
 import { pops } from "./pops";
 import { registrationCode, registrations, ticketFrom } from "./registrations";
 import { reports } from "./reports";
@@ -26,6 +30,7 @@ export const fakeApi: EventsR1Api = {
   reports,
   door,
   clock: { now },
+  pay,
 };
 
 export type SampleTicket = { registrationId: string; name: string; code: string; token: string };
@@ -98,6 +103,36 @@ export const fakeDev = {
     r.has_3d = on;
     emit();
   },
+
+  /** The demo switch for paid tickets (the build flag, when it is on, wins and cannot be switched off here). */
+  paidOn: paidTicketsOn,
+  paidLockedByBuild: PAID_TICKETS,
+  setPaid(on: boolean) {
+    try {
+      if (on) window.localStorage.setItem(PAID_KEY, "1");
+      else window.localStorage.removeItem(PAID_KEY);
+    } catch {
+      /* private mode: the switch cannot be kept */
+    }
+    emit();
+  },
+
+  /** A host's Bachs setup: what Host payouts shows, and whether paid types can be saved and bought. */
+  payoutStatus: statusOfHost,
+  payoutOf: payoutFor,
+  setPayoutOf(userId: string, status: HostPayoutStatus) {
+    if (!S().users[userId]) throw new Error("No such user");
+    setPayoutStatus(userId, status);
+    emit();
+  },
+  hostBalance,
+
+  /** The fake Bachs: what the hosted pages and webhooks do. Used by /dev/fake-bachs/* and the check script. */
+  peekOrder,
+  completeCheckout: (orderId: string, method: PayMethod) => completeCheckout(orderId, method),
+  failCheckout,
+  expireCheckout,
+  settleRefund,
 
   /** Start over: a fresh seed, signed out, real time. */
   resetAll,

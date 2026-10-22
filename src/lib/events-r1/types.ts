@@ -28,7 +28,7 @@ export type TicketType = {
   id: string;
   event_id: string;
   name: string;
-  /** Whole naira. 0 = free. Paid types save only with NEXT_PUBLIC_PAID_TICKETS=1 and cannot be bought in R1. */
+  /** Whole naira. 0 = free. Paid types save only when paidTicketsOn() and the host can sell (see pay.ts). */
   price_naira: number;
   /** null = no limit of its own (the event's capacity still applies). */
   capacity: number | null;
@@ -98,6 +98,8 @@ export type Registration = {
   checked_in_at: string | null;
   /** Place in the waitlist, 1 = next. */
   waitlist_pos: number | null;
+  /** How many of the tickets are checked in (a paid order can hold several). Missing means none; status is checked_in only when all are. */
+  checked_in_count?: number;
 };
 
 /** What the one button on the event page should be, for this viewer. */
@@ -242,9 +244,9 @@ export type Report = {
 
 export type ScanResult =
   /** Standard mode: a good ticket, shown to the door person. Nobody is checked in until door.confirm(). */
-  | { ok: true; kind: "confirm"; name: string; ticket: string; checked_in: number; total: number }
-  | { ok: true; kind: "checked_in"; name: string; ticket: string; checked_in: number; total: number }
-  | { ok: false; kind: "already_used"; name: string; at: string }
+  | { ok: true; kind: "confirm"; name: string; ticket: string; checked_in: number; total: number; seat_no?: number; seats?: number }
+  | { ok: true; kind: "checked_in"; name: string; ticket: string; checked_in: number; total: number; seat_no?: number; seats?: number }
+  | { ok: false; kind: "already_used"; name: string; at: string; seat_no?: number; seats?: number }
   | { ok: false; kind: "not_valid"; reason: "bad_signature" | "wrong_event" | "void" | "unknown" | "not_going" };
 
 export type AuthUser = { id: string; name: string; email: string };

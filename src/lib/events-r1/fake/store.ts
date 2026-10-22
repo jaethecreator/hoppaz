@@ -8,6 +8,8 @@
  *
  * Importable under Node (the check script): every use of window and localStorage is guarded.
  */
+import type { HostPayoutStatus, Order } from "../pay";
+import { PAID_KEY } from "../flags";
 import type {
   AuthUser, Pop, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement, RoomMessage, RoomSummary, Ticket,
 } from "../types";
@@ -48,7 +50,25 @@ export type TicketRec = {
   reg_id: string;
   version: number;
   status: Ticket["status"];
+  /** Paid tickets: the order that made it and the type it is for. A free ticket has neither (the registration's type). */
+  order_id?: string;
+  type_id?: string;
+  /** Order of creation within the registration: seat 1, 2, 3. */
+  seq?: number;
+  checked_in_at?: string;
 };
+
+/** A paid order as stored: the Order a screen gets, plus what the fake needs to finish it. */
+export type OrderRec = Order & {
+  host_id: string;
+  answers: Record<string, string>;
+  referrer_id: string | null;
+  /** When a card refund started (fake clock, ms); it settles a minute later. */
+  refund_started_ms: number | null;
+};
+
+/** A host's Bachs setup. No record means Not started. balance_naira is what the host held before any sale here. */
+export type PayoutRec = { id: string; status: HostPayoutStatus; balance_naira: number };
 
 export type RegSettings = { questions: RegQuestion[]; messages: RegMessages };
 
@@ -63,6 +83,9 @@ export type FakeState = {
   messages: Record<string, RoomMessage>;
   reports: Record<string, Report>;
   rooms: Record<string, RoomRec>;
+  orders: Record<string, OrderRec>;
+  /** By host user id. */
+  payouts: Record<string, PayoutRec>;
   regSettings: Record<string, RegSettings>;
   /** "<userId>:<roomId>" */
   memberships: Record<string, boolean>;
@@ -80,7 +103,7 @@ export type FakeState = {
 
 const COLLS = [
   "users", "events", "regs", "tickets", "pops", "announcements", "messages", "reports", "rooms",
-  "regSettings", "memberships", "interest", "reads",
+  "orders", "payouts", "regSettings", "memberships", "interest", "reads",
 ] as const;
 type Coll = (typeof COLLS)[number];
 
@@ -232,6 +255,10 @@ state = restore(read());
 // Another tab changed something (the dev panel, usually): take its saved layer and tell our screens.
 if (hasStorage()) {
   window.addEventListener("storage", (e) => {
+    if (e.key === PAID_KEY) {
+      listeners.forEach((fn) => fn());
+      return;
+    }
     if (e.key !== STORAGE_KEY) return;
     state = restore(read());
     listeners.forEach((fn) => fn());
