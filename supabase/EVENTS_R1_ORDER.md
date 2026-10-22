@@ -4,8 +4,10 @@ DRAFT FOR OLA, NOT RUN ON PRODUCTION. Six new SQL files, each with a test file. 
 (`src/lib/events-r1/fake/`), which is the executable spec of the rules. Nothing here edits an older SQL file or an existing function. Every
 name is new (`ev_` for tables and functions, `_ev_` for helpers). You review them and you run them; nobody else touches production.
 
-None of the six files or their tests has been run against any database by the builder who wrote them: Docker was not running, so the
-only checking so far is reading and re-reading. Treat the first local run as the first real test (instructions at the end).
+The six files and their tests (plus `tests/events_r1_leaks_test.sql`, the leak checks) have been run against a throwaway database in the local
+Docker Postgres (`hoppaz_ev_*`, never `postgres`, never production): loaded twice in the order below, then every test passes. The first local
+run found two mistakes in the test helpers (fixed) and one in `events_r1_reports.sql` (the service role could execute `ev_report_event`; fixed). Nothing
+has run on production or any remote database; that is yours to do (section 1, then the secret step in section 2).
 
 ## 1. Run order
 
@@ -137,19 +139,25 @@ anything remote.
 ```bash
 docker exec supabase_db_hoppaz-local psql -U postgres -d postgres -c "create database hoppaz_ev_t1"
 docker exec supabase_db_hoppaz-local pg_dump -U postgres -d postgres -s | docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q
+# the schema dump has no rows: the rooms test needs the two room layouts that crew_rooms.sql inserts (read only from postgres)
+docker exec supabase_db_hoppaz-local pg_dump -U postgres -d postgres -a -t public.crew_room_layouts | docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q
 # then, in this order, each file twice (the second run checks they are safe to run again):
 for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms; do
   for i in 1 2; do docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q -v ON_ERROR_STOP=1 < supabase/$f.sql; done
 done
 # then each test (one transaction that rolls back; each ends with ALL ... TESTS PASSED):
-for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms; do
+for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms events_r1_leaks; do
   docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q -v ON_ERROR_STOP=1 < supabase/tests/${f}_test.sql
 done
 docker exec supabase_db_hoppaz-local psql -U postgres -d postgres -c "drop database hoppaz_ev_t1"
 ```
 
-Notes: the schema-only dump carries the extensions' schemas but not the roles (they are cluster wide, so `anon`, `authenticated` and
+Notes: the dump step prints a few "permission denied to change default privileges" and "must be able to SET ROLE" errors (objects owned by
+Supabase's own roles) and skips pg_cron in the new database; none of that matters for these files. The schema-only dump carries the extensions' schemas but not the roles (they are cluster wide, so `anon`, `authenticated` and
 `service_role` are there). If `create extension` complains in the new database, create `postgis` and `pgcrypto` there first. The test for the
 tickets sets its own test signing secret inside its transaction and the rollback puts yours back. The test for rooms clears the staff flags
-and any Hoppaz HQ room inside its own transaction, also rolled back. The registrations test cannot show two people racing for the last place
+and any Hoppaz HQ room inside its own transaction, also rolled back. The leaks test (`events_r1_leaks_test.sql`) reads as the real roles `anon` and `authenticated` and proves: no new table is readable or writable by them, the
+online link cannot be read from any table, list or `ev_get_event` except by the host and people who are going, invite and community events are not
+returned by `events_near`, `events_deck`, `claim_checkin` or a plain select on `events`, and the starter quests notes in question 6 and in
+`events_r1_events.sql` are true. The registrations test cannot show two people racing for the last place
 in one transaction; the header of that test says how to see it with two real sessions.
