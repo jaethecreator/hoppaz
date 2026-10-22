@@ -42,6 +42,8 @@ export default function StatusCard({ event, viewer }: { event: R1Event; viewer: 
   const typeName = event.ticket_types?.length > 1 ? reg.ticket_name : "";
   // An online-only event has no door, so no ticket to scan.
   const ticket = going && event.kind !== "online";
+  // A paid ticket is undone by a refund from the host, not by the buyer.
+  const paidTicket = going && (event.ticket_types?.find((t) => t.id === reg.ticket_type_id)?.price_naira ?? 0) > 0;
 
   const title = going ? "You're in" : reg.status === "requested" ? "Pending" : reg.status === "waitlisted" ? "On the waitlist" : "Declined";
   const note =
@@ -135,7 +137,9 @@ export default function StatusCard({ event, viewer }: { event: R1Event; viewer: 
         </div>
       )}
 
-      {reg.status !== "declined" && reg.status !== "checked_in" && (
+      {paidTicket && reg.status !== "checked_in" && <p className="mt-4 border-t border-line pt-3 font-body text-[13px] text-dim">You paid for this ticket. Ask the host if you need a refund.</p>}
+
+      {reg.status !== "declined" && reg.status !== "checked_in" && !paidTicket && (
         <div className="mt-4 border-t border-line pt-3">
           {confirming ? (
             <div role="group" aria-label="Cancel registration">

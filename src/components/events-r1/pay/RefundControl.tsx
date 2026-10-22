@@ -54,7 +54,7 @@ export default function RefundControl({ order }: { order: Order }) {
         <p className="font-body text-[14px]">Refund {naira(order.gross_naira)} to the buyer&apos;s card? Hoppaz&apos;s fee is not returned.</p>
       )}
       <div className="mt-2 flex gap-2">
-        <button type="button" onClick={() => setOpen(false)} disabled={busy} className="btn btn-ghost min-h-[40px] flex-1 normal-case">
+        <button type="button" onClick={() => setOpen(false)} disabled={busy} className="btn btn-ghost min-h-[40px] flex-none px-5 normal-case">
           Keep
         </button>
         {bank ? (
