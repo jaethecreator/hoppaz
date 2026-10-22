@@ -4,6 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "reac
 import { getSupabase } from "./supabase/client";
 import { demoEvents, demoHop } from "./demoData";
 import { haversineKm, LAGOS_CENTER, pointFromGeog } from "./geo";
+import { EVENTS_R1_FAKE } from "./events-r1/flags";
+import { fetchFakeEventById, useFakeEvents } from "./events-r1/listBridge";
 import { fetchEventsNearDirect, fetchLagosEvents, fetchNextHopRow } from "./publicApi";
 import { lagosDate, read, revalidate, subscribe } from "./phoneCache";
 import type { EventRow, Hop } from "./types";
@@ -35,6 +37,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * Development with no database answers from the sample day, like the list does.
  */
 export async function fetchEventById(id: string, fix: Fix): Promise<EventRow | null> {
+  if (EVENTS_R1_FAKE) return fetchFakeEventById(id, fix);
   const sample = () => (DEV ? (withDistance(demoEvents(), fix).find((e) => e.id === id) ?? null) : null);
   const sb = getSupabase();
   if (!sb) return sample();
@@ -117,7 +120,7 @@ function heldLagos(): EventRow[] | null {
   return inWindow(c.data);
 }
 
-export function useEvents(fix: Fix, radiusKm: number) {
+function useLiveEvents(fix: Fix, radiusKm: number) {
   const lat = fix?.lat ?? null;
   const lng = fix?.lng ?? null;
   const far = lat !== null && lng !== null && haversineKm(lat, lng, LAGOS_CENTER.lat, LAGOS_CENTER.lng) > FAR_KM;
@@ -230,6 +233,12 @@ export function useEvents(fix: Fix, radiusKm: number) {
   const ready = far ? !!farRows && farRows.key === farKey : lagosReady;
   const failed = far ? farFailed && !!farRows && farRows.rows.length === 0 : lagosFailed && !lagos;
   return { events, demo: !far && !lagos && demo, loading, ready, failed, reload };
+}
+
+// Release 1: with the fake data layer on (NEXT_PUBLIC_EVENTS_R1_FAKE=1) the lists come from it, with no network call.
+const useEventsImpl = EVENTS_R1_FAKE ? useFakeEvents : useLiveEvents;
+export function useEvents(fix: Fix, radiusKm: number) {
+  return useEventsImpl(fix, radiusKm);
 }
 
 /**
