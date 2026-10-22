@@ -1,35 +1,47 @@
 "use client";
 
-import { usePops } from "@/lib/events-r1/hooks";
+import { useEffect } from "react";
+import { useR1Event, usePops, useR1Now, useRegistrations } from "@/lib/events-r1/hooks";
 import type { PopAudience } from "@/lib/events-r1/types";
-import { stampWord } from "./words";
-import { CARD, Pill } from "./ui";
+import AutoPops from "./pops/AutoPops";
+import Composer from "./pops/Composer";
+import { ScheduledList, SentList } from "./pops/PopLists";
+import { countsOf } from "./words";
 
-const WHO: Record<PopAudience, string> = { going: "Going", pending: "Pending", waitlist: "Waitlist", everyone: "Everyone" };
-
-/** Placeholder: the event's Pops, read only. The Pops composer replaces this file; its props stay as they are. */
+/**
+ * Pops: send one to the people on the event, then see what went, what is scheduled and the three automatic Pops.
+ * Delivery in the real app is web push, so the hint points at Share to WhatsApp.
+ */
 export default function PopsTab({ eventId }: { eventId: string }) {
-  const { data, loading, error } = usePops(eventId, "host");
-  if (loading) return <p className="hint">Loading</p>;
-  if (error) return <p className="hint">Could not load Pops.</p>;
-  const pops = data ?? [];
-  if (!pops.length) return <p className="hint">No Pops yet.</p>;
+  const event = useR1Event(eventId);
+  const regs = useRegistrations(eventId);
+  const pops = usePops(eventId, "host");
+  const now = useR1Now();
+  const { reload } = pops;
+  const list = pops.data;
+
+  // The clock moved past a scheduled Pop: read again so it shows as sent.
+  const due = !!list?.some((p) => p.status === "scheduled" && p.enabled !== false && p.send_at && Date.parse(p.send_at) <= now);
+  useEffect(() => {
+    if (due) void reload();
+  }, [due, now, reload]);
+
+  if (event.loading || pops.loading) return <p className="hint">Loading</p>;
+  const e = event.data;
+  if (!e || pops.error || !list) return <p className="hint">Could not load Pops.</p>;
+
+  const c = countsOf(regs.data);
+  const counts: Record<PopAudience, number> = { going: c.going, pending: c.pending, waitlist: c.waitlist, everyone: c.going + c.pending + c.waitlist };
+  const manual = list.filter((p) => !p.auto);
+  const sent = manual.filter((p) => p.status === "sent").sort((a, b) => Date.parse(b.sent_at ?? "") - Date.parse(a.sent_at ?? ""));
+  const scheduled = manual.filter((p) => p.status === "scheduled").sort((a, b) => Date.parse(a.send_at ?? "") - Date.parse(b.send_at ?? ""));
+
   return (
-    <ul className="flex flex-col gap-2">
-      {pops.map((p) => (
-        <li key={p.id} className={CARD}>
-          <div className="flex flex-wrap items-center gap-2">
-            <Pill tone={p.status === "sent" ? "pill-keke" : "pill-danfo"}>{p.status === "sent" ? "Sent" : "Scheduled"}</Pill>
-            <span className="font-body text-[13px] text-dim">
-              To {WHO[p.audience].toLowerCase()}
-              {p.auto ? " · Automatic" : ""}
-              {" · "}
-              {stampWord(p.sent_at ?? p.send_at)}
-            </span>
-          </div>
-          <p className="mt-2 font-body text-[15px] leading-snug">{p.body}</p>
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-6">
+      <Composer event={e} counts={counts} now={now} />
+      <SentList pops={sent} />
+      <ScheduledList pops={scheduled} />
+      <AutoPops event={e} pops={list} now={now} />
+    </div>
   );
 }
