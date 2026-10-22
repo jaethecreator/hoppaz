@@ -4,8 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "reac
 import { getSupabase } from "./supabase/client";
 import { demoEvents, demoHop } from "./demoData";
 import { haversineKm, LAGOS_CENTER, pointFromGeog } from "./geo";
-import { EVENTS_R1_FAKE } from "./events-r1/flags";
-import { fetchFakeEventById, useFakeEvents } from "./events-r1/listBridge";
+import { EVENTS_R1, EVENTS_R1_FAKE } from "./events-r1/flags";
+import { fetchR1EventById, useR1ListEvents } from "./events-r1/listBridge";
 import { fetchEventsNearDirect, fetchLagosEvents, fetchNextHopRow } from "./publicApi";
 import { lagosDate, read, revalidate, subscribe } from "./phoneCache";
 import type { EventRow, Hop } from "./types";
@@ -26,6 +26,9 @@ function withDistance(rows: EventRow[], fix: Fix): EventRow[] {
     .sort((a, b) => b.heat - a.heat);
 }
 
+/** Release 1 serves the events (the real layer, or the fake one for the fake flag). */
+const R1_LIST = EVENTS_R1 || EVENTS_R1_FAKE;
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -37,7 +40,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * Development with no database answers from the sample day, like the list does.
  */
 export async function fetchEventById(id: string, fix: Fix): Promise<EventRow | null> {
-  if (EVENTS_R1_FAKE) return fetchFakeEventById(id, fix);
+  if (R1_LIST) return fetchR1EventById(id, fix);
   const sample = () => (DEV ? (withDistance(demoEvents(), fix).find((e) => e.id === id) ?? null) : null);
   const sb = getSupabase();
   if (!sb) return sample();
@@ -235,8 +238,9 @@ function useLiveEvents(fix: Fix, radiusKm: number) {
   return { events, demo: !far && !lagos && demo, loading, ready, failed, reload };
 }
 
-// Release 1: with the fake data layer on (NEXT_PUBLIC_EVENTS_R1_FAKE=1) the lists come from it, with no network call.
-const useEventsImpl = EVENTS_R1_FAKE ? useFakeEvents : useLiveEvents;
+// Release 1: with NEXT_PUBLIC_EVENTS_R1=1 (or the fake flag) the lists come from the Release 1 data layer: fake data with no network
+// call, or the real layer (ev_list_events). Both flags off: exactly as before.
+const useEventsImpl = R1_LIST ? useR1ListEvents : useLiveEvents;
 export function useEvents(fix: Fix, radiusKm: number) {
   return useEventsImpl(fix, radiusKm);
 }

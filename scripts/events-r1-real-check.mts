@@ -286,6 +286,19 @@ out(!!csv && csv.startsWith("Name,Email,Phone,Ticket,Status"), "csv has the head
 const cl = await step("events.clone (a week on)", () => api.events.clone(eid), (c) => `${c.title} +${Math.round((Date.parse(c.starts_at) - Date.parse(ev.starts_at)) / 864e5)} days, going=${c.going}`);
 void cl;
 
+// The list bridge (src/lib/events-r1/listBridge.ts): what the map, the deck and the event page get in real mode
+const bridge = await import("../src/lib/events-r1/listBridge.ts");
+const fix = { lat: 6.45, lng: 3.4 };
+const viaBridge = await bridge.fetchR1EventById(ev.slug, fix);
+out(viaBridge?.id === eid && typeof viaBridge.distance_m === "number" && viaBridge.distance_m > 0 && viaBridge.ticket_types.length === 2, "bridge: fetchR1EventById by slug fills distance and the R1 fields", `distance_m=${Math.round(viaBridge?.distance_m ?? 0)} types=${viaBridge?.ticket_types.length} room_id=${viaBridge?.room_id === room.id}`);
+const online = await api.events.create({ title: `Online Only ${tag}`, kind: "online", starts_at: iso(Date.now() + 30 * HOUR), link_type: "zoom", online_link: "https://zoom.example/j/123" });
+const viaB2 = await bridge.fetchR1EventById(online.id, fix);
+out(viaB2?.venue_name === "" && viaB2.lat === 6.5 && viaB2.lng === 3.42 && viaB2.kind === "online", "bridge: an event with no place is parked on the Lagos centre with an empty venue", `venue="${viaB2?.venue_name}" lat=${viaB2?.lat} lng=${viaB2?.lng}`);
+out(viaB2?.online_link === "https://zoom.example/j/123", "bridge: the host sees the online link", String(viaB2?.online_link));
+await login(dee);
+out((await bridge.fetchR1EventById(online.id, fix))?.online_link === null, "bridge: another person does not get the online link", "null");
+await login(host_);
+
 /* ----------------------------------------------------- B. Pops, rooms, chat ---- */
 
 console.log("\n== B. Pops (also post), announcements, General chat, event chat");
