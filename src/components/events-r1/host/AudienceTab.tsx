@@ -165,9 +165,11 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
                   <div className="mt-2 flex justify-end gap-2">
                     {approve ? (
                       <>
-                        <button type="button" disabled={busy === r.id} onClick={() => void act(r, "decline")} className="btn btn-ghost min-h-[40px] px-5 normal-case">
-                          Decline
-                        </button>
+                        {!paid?.length && (
+                          <button type="button" disabled={busy === r.id} onClick={() => void act(r, "decline")} className="btn btn-ghost min-h-[40px] px-5 normal-case">
+                            Decline
+                          </button>
+                        )}
                         <button type="button" disabled={busy === r.id} onClick={() => void act(r, "approve")} className="btn min-h-[40px] px-5 normal-case">
                           Approve
                         </button>
@@ -291,9 +293,11 @@ function Person({
         <div className="flex gap-2">
           {canApprove ? (
             <>
-              <button type="button" disabled={busy} onClick={() => onAct("decline")} className="btn btn-ghost flex-1 normal-case">
-                Decline
-              </button>
+              {!paid?.length && (
+                <button type="button" disabled={busy} onClick={() => onAct("decline")} className="btn btn-ghost flex-1 normal-case">
+                  Decline
+                </button>
+              )}
               <button type="button" disabled={busy} onClick={() => onAct("approve")} className="btn flex-1 normal-case">
                 Approve
               </button>
