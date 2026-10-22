@@ -97,6 +97,8 @@ declare
   v_crew  uuid;
   v_owner uuid;
 begin
+  -- A signed-in person while Release 1 is off: nothing is made and nobody joins; the room is only reported if it exists.
+  if me is not null and not public._ev_open() then return (select h.crew_id from public.ev_hq h); end if;
   select h.crew_id into v_crew from public.ev_hq h;
   if v_crew is null then
     -- A signed-in guest with no account cannot make it; the service role and the SQL editor (no session) can.
@@ -183,6 +185,7 @@ create or replace function public.ev_set_room_3d(p_room uuid, p_on boolean) retu
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare me uuid := auth.uid();
 begin
+  if not public._ev_open() then return 'not_open'; end if;
   if me is null or not public.has_account() then return 'need_account'; end if;
   if p_on is null then return 'bad_value'; end if;
   if not (public._ev_staff() or exists (select 1 from public.crew_members m where m.crew_id = p_room and m.user_id = me and m.role = 'owner')) then
@@ -364,6 +367,7 @@ end $$;
 create or replace function public.ev_room_mark_read(p_room uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
+  if not public._ev_open() then return; end if;
   perform public.crew_announcement_seen(p_room);
 end $$;
 

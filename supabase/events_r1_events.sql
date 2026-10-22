@@ -32,7 +32,7 @@
 --   reason codes (the real layer can turn them into the fake layer's messages): no_session, need_account, try_again_later (the
 --   silent rate limit, 5 events an hour per person), need_name, name_too_short, name_too_long, bad_start, bad_end,
 --   end_before_start, bad_timezone, bad_kind, bad_place, lagos_only, bad_link, bad_link_type, bad_capacity, whatsapp_max_32,
---   bad_visibility, need_room, bad_cover, bad_draft, not_found, not_allowed, currently_unavailable (a paid type while the setting is off), payouts_not_ready (the setting is on but the host's Bachs account cannot take money yet), tickets_needed,
+--   bad_visibility, need_room, bad_cover, bad_draft, not_found, not_allowed, not_open (the switch is off), no_host (a paid type on an old listing), currently_unavailable (a paid type while the setting is off), payouts_not_ready (the setting is on but the host's Bachs account cannot take money yet), tickets_needed,
 --   too_many_tickets, bad_ticket, need_ticket_name, ticket_name_too_long, duplicate_ticket, bad_price, bad_ticket_capacity, ticket_in_use.
 --
 -- TICKET TYPES (added later; Jae wants them now, with paid gated). Every event has 1 to 5 ticket types: a name, a whole-naira price (0 =
@@ -40,14 +40,20 @@
 -- free "General" with no limit unless the draft has a tickets list: { tickets: [{ name, price_naira, capacity }] }. The names are not empty,
 -- 60 characters at most and unique ignoring case; ev_update_event with a tickets list keeps types whose name is kept (same id), adds new ones, and
 -- refuses to drop a type people hold ({ ok: false, reason: ticket_in_use, ticket }); ev_clone_event copies the types. An old event with no
--- rows is NOT backfilled: it reads as one derived General at the event's own price (a fixed id from the event id), and the real row is made
--- the first time someone registers. Places: a type's spots_left is the tighter of its own capacity and the event's.
+-- rows is NOT backfilled: it reads as one derived FREE General (a fixed id from the event id; events.price_naira, the listed door price of a
+-- pre-Release 1 listing, is information only and never a ticket price), and the real row is made the first time someone registers. Places: a type's spots_left is the tighter of its own capacity and the event's.
 -- PAID NEEDS TWO THINGS (events_r1_pay.sql adds the second). PAID IS SWITCHED OFF. Any type with a price above 0 is refused by create, update and clone with exactly the reason text
 -- currently_unavailable, until the setting 'paid_tickets' is 'on'. It is in the closed one-row table ev_settings (key, value), starts as 'off'
 -- (re-running this file never flips it) and is set only through ev_set_setting(key, value), which only the service role (and the SQL editor) can
 -- run: select public.ev_set_setting('paid_tickets', 'on'). Even with it on, nobody can REGISTER for a paid type in Release 1 (ev_register answers
 -- currently_unavailable): there is no payment code. Clone refuses a paid type too while the setting is off (the fake layer copies it).
 -- add_to_room: the draft may say false to keep the event out of the host's room (default true when the host has a room).
+--
+-- THE SWITCH (events_r1). The row events_r1 of ev_settings is 'off' at first. While it is off, every WRITE function a normal user can call
+-- (here: create, update, cancel, clone; in the other files: register, cancel, decide, promote, registration settings, Pops, reports, room
+-- switches, door staff, paid orders) answers { ok: false, reason: not_open } (or the text not_open). Reads keep working. Ola runs
+-- select public.ev_set_setting('events_r1', 'on') at launch. A re-run of a file never flips it. The door (scan, manual check in, counts) is
+-- NOT switched: a ticket already sold must still scan. Events of the old listings (host_id null) can be edited or cancelled by staff only.
 --
 -- Event shape (what every function returns for an event): the fields of R1Event in src/lib/events-r1/types.ts, with these notes.
 -- ticket_types is an array of { id, event_id, name, price_naira, capacity, sold, spots_left } (always at least one) and price_naira is the lowest
@@ -159,11 +165,17 @@ create table if not exists public.ev_settings (
   value      text not null check (char_length(value) <= 200),
   updated_at timestamptz not null default now()
 );
+-- The key may hold digits now (events_r1): an older copy of the table has the letters-only check, so it is replaced.
+alter table public.ev_settings drop constraint if exists ev_settings_key_check;
+alter table public.ev_settings add constraint ev_settings_key_check check (key ~ '^[a-z0-9_]{1,40}$');
 alter table public.ev_settings enable row level security;
 revoke all on public.ev_settings from anon, authenticated;
 grant all on public.ev_settings to service_role;
 -- Paid tickets start off. A re-run leaves whatever Ola set.
 insert into public.ev_settings (key, value) values ('paid_tickets', 'off') on conflict (key) do nothing;
+-- The Release 1 switch: every write a normal user can make (events, registrations, Pops, reports, rooms, orders) answers not_open
+-- until Ola runs select public.ev_set_setting('events_r1', 'on'). Reads keep working. A re-run never flips it.
+insert into public.ev_settings (key, value) values ('events_r1', 'off') on conflict (key) do nothing;
 
 create table if not exists public.ev_ticket_types (
   id         uuid primary key default gen_random_uuid(),
@@ -184,7 +196,7 @@ grant all on public.ev_ticket_types to service_role;
 create or replace function public.ev_set_setting(p_key text, p_value text) returns text
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  if p_key is distinct from 'paid_tickets' then return 'bad_key'; end if;
+  if p_key is null or p_key not in ('paid_tickets', 'events_r1') then return 'bad_key'; end if;
   if p_value is null or p_value not in ('on', 'off') then return 'bad_value'; end if;
   insert into public.ev_settings (key, value) values (p_key, p_value)
   on conflict (key) do update set value = excluded.value, updated_at = now();
@@ -339,13 +351,21 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke all on function public._ev_paid_on() from public, anon, authenticated;
 
--- The event's types. An old event with no rows gets one derived General at its own price (same id every time).
+-- Is Release 1 switched on? Every write function a normal user can call asks this first and answers not_open when it is off.
+create or replace function public._ev_open() returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce((select s.value = 'on' from public.ev_settings s where s.key = 'events_r1'), false);
+$$;
+revoke all on function public._ev_open() from public, anon, authenticated;
+
+-- The event's types. An old event with no rows gets one derived FREE General (same id every time). The listed door price in
+-- events.price_naira is information for the old TICKETS link only: it is never a ticket price (a pre-Release 1 listing is not a paid event).
 create or replace function public._ev_types(p_event uuid)
 returns table (id uuid, name text, price_naira integer, capacity integer, sort integer)
 language sql stable security definer set search_path = public, pg_temp as $$
   select t.id, t.name, t.price_naira, t.capacity, t.sort from public.ev_ticket_types t where t.event_id = p_event
   union all
-  select md5('ticket-type:' || e.id::text)::uuid, 'General'::text, e.price_naira, null::integer, 0
+  select md5('ticket-type:' || e.id::text)::uuid, 'General'::text, 0, null::integer, 0
     from public.events e
    where e.id = p_event and not exists (select 1 from public.ev_ticket_types x where x.event_id = e.id);
 $$;
@@ -357,12 +377,12 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke all on function public._ev_first_type(uuid) from public, anon, authenticated;
 
--- Make the real General row of an old event (the caller holds the event lock). Nothing when the event has rows.
+-- Make the real (free) General row of an old event (the caller holds the event lock). Nothing when the event has rows.
 create or replace function public._ev_ensure_types(p_event uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   insert into public.ev_ticket_types (id, event_id, name, price_naira, capacity, sort)
-  select md5('ticket-type:' || e.id::text)::uuid, e.id, 'General', e.price_naira, null, 0
+  select md5('ticket-type:' || e.id::text)::uuid, e.id, 'General', 0, null, 0
     from public.events e
    where e.id = p_event and not exists (select 1 from public.ev_ticket_types x where x.event_id = e.id);
 end $$;
@@ -788,6 +808,7 @@ create or replace function public.ev_create_event(p_draft jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare r jsonb;
 begin
+  if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   r := public._ev_create_core(p_draft);
   if not (r ->> 'ok')::boolean then return r; end if;
   return jsonb_build_object('ok', true, 'event', public._ev_event_json((r ->> 'id')::uuid));
@@ -809,11 +830,14 @@ declare
   v_reopen boolean;
   v_room   uuid;
 begin
+  if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   if me is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
   if p_patch is null or jsonb_typeof(p_patch) <> 'object' then return jsonb_build_object('ok', false, 'reason', 'bad_draft'); end if;
   select * into e from public.events where id = p_event for update;
   if not found then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
   if not public._ev_manage(p_event) then return jsonb_build_object('ok', false, 'reason', 'not_allowed'); end if;
+  -- An old listing (no host_id): the Hopper who dropped it is not its host. Staff only.
+  if e.host_id is null and not public._ev_staff() then return jsonb_build_object('ok', false, 'reason', 'not_allowed'); end if;
 
   select coalesce(jsonb_object_agg(k.key, k.value), '{}'::jsonb) into v_patch
     from jsonb_each(p_patch) k where k.key = any (v_allowed);
@@ -832,6 +856,11 @@ begin
   n := public._ev_normalize(v_merged, v_room, coalesce(e.host_id, e.created_by));
   if not (n ->> 'ok')::boolean then return n; end if;
   f := n -> 'f';
+  -- Nothing paid is sold for an event with no host (no seller to pay): an old listing keeps free types only.
+  if e.host_id is null and jsonb_typeof(f -> 'tickets') = 'array'
+     and exists (select 1 from jsonb_array_elements(f -> 'tickets') x where (x ->> 'price_naira')::integer > 0) then
+    return jsonb_build_object('ok', false, 'reason', 'no_host');
+  end if;
 
   -- A ticket type people hold cannot be dropped. Checked before anything is written.
   if jsonb_typeof(f -> 'tickets') = 'array' then
@@ -876,16 +905,25 @@ create or replace function public.ev_cancel_event(p_event uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare e public.events;
 begin
+  if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   if auth.uid() is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
   select * into e from public.events where id = p_event for update;
   if not found then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
   if not public._ev_manage(p_event) then return jsonb_build_object('ok', false, 'reason', 'not_allowed'); end if;
+  -- An old listing (no host_id) is cancelled by staff only.
+  if e.host_id is null and not public._ev_staff() then return jsonb_build_object('ok', false, 'reason', 'not_allowed'); end if;
   -- Staff hid it: the host cannot undo that by cancelling.
   if e.status in ('hidden', 'rejected') and not public._ev_staff() then
     return jsonb_build_object('ok', false, 'reason', 'not_allowed');
   end if;
   if e.status <> 'cancelled' then
     update public.events set status = 'cancelled' where id = p_event;
+  end if;
+  -- Open orders (a buyer on the Bachs page right now) end with the event: expired at once, so they hold no seats, and marked so the
+  -- sweeper asks Bachs about each checkout (a payment that still lands is a late payment on a cancelled event: a refund is owed).
+  -- The orders table comes with events_r1_pay.sql, which may not be loaded yet.
+  if to_regclass('public.ev_orders') is not null then
+    execute 'update public.ev_orders set status = ''expired'', reconcile = true, updated_at = clock_timestamp() where event_id = $1 and status = ''open''' using p_event;
   end if;
   return jsonb_build_object('ok', true, 'event', public._ev_event_json(p_event));
 end $$;
@@ -899,6 +937,7 @@ declare
   s timestamptz;
   x timestamptz;
 begin
+  if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   if auth.uid() is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
   if not exists (select 1 from public.events where id = p_event) then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
   if not public._ev_manage(p_event) then return jsonb_build_object('ok', false, 'reason', 'not_allowed'); end if;

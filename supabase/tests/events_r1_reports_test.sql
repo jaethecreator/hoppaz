@@ -3,6 +3,8 @@
 -- one check if it is loaded too). Ends with ALL EVENTS R1 REPORTS TESTS PASSED.
 --   docker exec -i supabase_db_hoppaz-local psql -U postgres -d <a throwaway hoppaz_ev_ database> -q -v ON_ERROR_STOP=1 < supabase/tests/events_r1_reports_test.sql
 begin;
+-- Release 1 is switched on for the test (rolled back with everything else). The "off" cases switch it off again inside the test.
+select public.ev_set_setting('events_r1', 'on');
 create function pg_temp.ok(v boolean, label text) returns void language plpgsql as $$
 begin
   if v is not true then raise exception 'FAILED: %', label; end if;
@@ -28,12 +30,14 @@ begin
   execute 'set local role service_role';
 end $$;
 create function pg_temp.admin() returns void language plpgsql as $$ begin execute 'reset role'; perform set_config('request.jwt.claims', '', true); end $$;
-create function pg_temp.newuser(shown text, guest boolean default false) returns uuid language plpgsql as $$
+-- age_days: how old the account is (30 days unless the test needs a fresh one: only accounts over 7 days old count towards an auto-hide).
+create function pg_temp.newuser(shown text, guest boolean default false, age_days integer default 30) returns uuid language plpgsql as $$
 declare u uuid := gen_random_uuid();
 begin
   insert into auth.users (id, instance_id, aud, role, email, is_anonymous, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
   values (u, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-          case when guest then null else 'rep-' || u || '@evtest.invalid' end, guest, '{}', json_build_object('name', shown)::jsonb, now(), now());
+          case when guest then null else 'rep-' || u || '@evtest.invalid' end, guest, '{}', json_build_object('name', shown)::jsonb,
+          now() - make_interval(days => age_days), now());
   update public.profiles set display_name = shown where id = u;
   return u;
 end $$;
@@ -88,7 +92,9 @@ declare
   h uuid := pg_temp.newuser('Rep Host'); x uuid := pg_temp.newuser('Rep Stranger'); g uuid := pg_temp.newuser('Rep Guest', true);
   r1 uuid := pg_temp.newuser('Rep One'); r2 uuid := pg_temp.newuser('Rep Two'); r3 uuid := pg_temp.newuser('Rep Three');
   r4 uuid := pg_temp.newuser('Rep Four'); r5 uuid := pg_temp.newuser('Rep Five'); r6 uuid := pg_temp.newuser('Rep Six');
-  e1 uuid; e2 uuid; e3 uuid; ex uuid; rid uuid; r jsonb; n int; f record; i int;
+  y1 uuid := pg_temp.newuser('Rep Young One', false, 1); y2 uuid := pg_temp.newuser('Rep Young Two', false, 1); y3 uuid := pg_temp.newuser('Rep Young Three', false, 1);
+  y4 uuid := pg_temp.newuser('Rep Young Four', false, 3); o1 uuid := pg_temp.newuser('Rep Old One', false, 8);
+  e1 uuid; e2 uuid; e3 uuid; e4 uuid; e5 uuid; e6 uuid; ex uuid; rid uuid; r jsonb; n int; f record; i int;
 begin
   perform pg_temp.ok(not has_table_privilege('authenticated', 'public.ev_reports', 'select') and not has_table_privilege('anon', 'public.ev_reports', 'select'),
                      'the reports table is closed to anon and authenticated');
@@ -195,6 +201,37 @@ begin
   select id into rid from public.ev_reports where event_id = e3 limit 1;
   r := pg_temp.review(rid, true);
   perform pg_temp.ok(r ->> 'event_status' = 'unlisted' and pg_temp.stat(e3) = 'unlisted' and not pg_temp.listed(x, e3), 'restoring an invite event makes it unlisted again, not public');
+
+  -- Throwaway accounts cannot hide an event: only accounts more than 7 days old count.
+  e4 := pg_temp.ev(h, 'Fresh accounts report');
+  perform pg_temp.rep(y1, e4); perform pg_temp.rep(y2, e4); perform pg_temp.rep(y3, e4); perform pg_temp.rep(y4, e4);
+  perform pg_temp.ok((select count(*) from public.ev_reports where event_id = e4 and status = 'open') = 4 and pg_temp.stat(e4) = 'live',
+                     'four reports from accounts under 7 days old are kept but never hide the event');
+  perform pg_temp.rep(o1, e4); perform pg_temp.rep(r1, e4);
+  perform pg_temp.ok(pg_temp.stat(e4) = 'live', 'two old accounts among the fresh ones are still not three');
+  perform pg_temp.rep(r2, e4);
+  perform pg_temp.ok(pg_temp.stat(e4) = 'hidden', 'three accounts over 7 days old hide it (the fresh ones do not count, they do not block it either)');
+
+  -- An event with no host (an old listing) is never auto-hidden.
+  insert into public.events (title, venue_name, starts_at, status, created_by) values ('Old listing', 'Somewhere', now() + interval '2 days', 'live', h) returning id into e5;
+  perform pg_temp.rep(r1, e5); perform pg_temp.rep(r2, e5); perform pg_temp.rep(r3, e5); perform pg_temp.rep(r4, e5);
+  perform pg_temp.ok((select count(*) from public.ev_reports where event_id = e5) = 4 and pg_temp.stat(e5) = 'live',
+                     'an old listing (no host_id) is never auto-hidden, staff decide');
+
+  -- An event with a paid order is never auto-hidden (only when the pay file is loaded).
+  if to_regclass('public.ev_orders') is not null then
+    e6 := pg_temp.ev(h, 'Paid event reports');
+    insert into public.ev_orders (buyer_id, event_id, quantity, unit_price_kobo, gross_kobo, platform_fee_kobo, host_account, bachs_reference, expires_at, status, paid_at)
+    values (x, e6, 1, 500000, 500000, 22500, 'acct_TESTTESTTEST', 'ord_reptest_' || e6, now() + interval '15 minutes', 'paid', now());
+    perform pg_temp.rep(r1, e6); perform pg_temp.rep(r2, e6); perform pg_temp.rep(r3, e6); perform pg_temp.rep(r4, e6);
+    perform pg_temp.ok((select count(*) from public.ev_reports where event_id = e6) = 4 and pg_temp.stat(e6) = 'live',
+                       'an event with a paid order is never auto-hidden, staff decide');
+  end if;
+
+  -- The switch: with events_r1 off a report answers not_open and writes nothing.
+  perform public.ev_set_setting('events_r1', 'off');
+  perform pg_temp.ok(pg_temp.rep(o1, e3) = 'not_open' and not exists (select 1 from public.ev_reports where event_id = e3 and reporter_id = o1), 'events_r1 off: a report answers not_open');
+  perform public.ev_set_setting('events_r1', 'on');
 
   -- The daily limit.
   for i in 1..21 loop

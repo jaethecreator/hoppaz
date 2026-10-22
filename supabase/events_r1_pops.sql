@@ -58,6 +58,11 @@
 --    count in crew_announce needs to skip rows that have a link in ev_announcement_event. Not changed here.
 -- 2. A copy longer than 280 characters (the table's limit) is cut short and ends with three dots. The full Pop stays in
 --    ev_pops and on the event page; the room shows the short one with the event tag.
+-- 3. WHICH POPS REACH A ROOM. A Pop of an invite only event is never copied (it could carry an address or a gate code to every member of the
+--    room), and for a community event only a Pop for people who are going or for everyone is: _ev_pop_room_ok decides, ev_send_pop ignores
+--    also_room where it says no, and ev_room_announcements never shows an invite only event's title or text (or a community Pop for
+--    pending or waitlist people), even a copy made before this rule. While the events_r1 switch is off every write here answers not_open
+--    and ev_dispatch_due_pops does nothing.
 -- The panel function crew_announcements(room) also lists these copies, without the tag. The new room screen should read
 -- ev_room_announcements instead.
 -- ============================================================================
@@ -134,6 +139,15 @@ language sql stable set search_path = public, pg_temp as $$
 $$;
 revoke all on function public._ev_auto_text(text, text, timestamptz, text, boolean) from public, anon, authenticated;
 
+-- May a Pop of this event and audience be copied to the room's Announcements? Public events: yes. Community events: only for going or
+-- everyone. Invite only events: never.
+create or replace function public._ev_pop_room_ok(p_event uuid, p_audience text) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce((select case e.visibility when 'public' then true when 'community' then p_audience in ('going', 'everyone') else false end
+                     from public.events e where e.id = p_event), false);
+$$;
+revoke all on function public._ev_pop_room_ok(uuid, text) from public, anon, authenticated;
+
 -- Copy a sent Pop into its room's Announcements, once, tagged with the event. Nothing when the Pop is not "also in room" or the
 -- event has no room.
 create or replace function public._ev_copy_pop_to_room(p_pop uuid) returns void
@@ -148,6 +162,9 @@ begin
   if p.id is null or not p.also_room then return; end if;
   if exists (select 1 from public.ev_announcement_event l where l.pop_id = p.id) then return; end if;
   select e.room_id into v_room from public.events e where e.id = p.event_id;
+  -- Never copy a Pop of an invite only event into a room (a gate code or an address would reach every member), and for a community
+  -- event only a Pop for people who are going or for everyone (not "pending" or "waitlist").
+  if not public._ev_pop_room_ok(p.event_id, p.audience) then return; end if;
   if v_room is null or not exists (select 1 from public.crews c where c.id = v_room) then return; end if;
   v_body := btrim(p.body);
   if char_length(v_body) > 280 then v_body := btrim(left(v_body, 277)) || '...'; end if;
@@ -169,6 +186,7 @@ declare
   v_now  boolean := p_send_at is null or p_send_at <= now();
   p      public.ev_pops;
 begin
+  if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   if me is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
   select * into e from public.events where id = p_event;
   if e.id is null then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
@@ -187,7 +205,9 @@ begin
   end if;
 
   insert into public.ev_pops (event_id, author_id, body, audience, also_room, send_at, sent_at, status, recipients)
-  values (p_event, me, v_body, p_audience, coalesce(p_also_room, false) and e.room_id is not null,
+  values (p_event, me, v_body, p_audience,
+          -- also_room is ignored where a room copy is never allowed (invite only events, community Pops for pending or waitlist people).
+          coalesce(p_also_room, false) and e.room_id is not null and public._ev_pop_room_ok(p_event, p_audience),
           case when v_now then null else p_send_at end,
           case when v_now then clock_timestamp() end,
           case when v_now then 'sent' else 'scheduled' end,
@@ -276,7 +296,13 @@ begin
       left join public.profiles pr on pr.id = a.author_id
       left join public.ev_announcement_event l on l.announcement_id = a.id
       left join public.events ev on ev.id = l.event_id
-     where v_staff or ev.id is null or ev.status in ('live', 'unlisted', 'cancelled', 'ended')
+      left join public.ev_pops lp on lp.id = l.pop_id
+     -- The title and text of an invite only event are never shown here (not even a copy made before this rule), nor a community Pop
+     -- that was not for going or everyone.
+     where v_staff or ev.id is null
+        or (ev.status in ('live', 'unlisted', 'cancelled', 'ended')
+            and ev.visibility <> 'invite'
+            and (ev.visibility <> 'community' or lp.audience in ('going', 'everyone')))
   ), '[]'::jsonb);
 end $$;
 
@@ -291,6 +317,8 @@ declare
   v_sent integer := 0;
   v_ev   public.events;
 begin
+  -- Before launch nothing runs: the old listings must not get automatic Pops while Release 1 is off.
+  if not public._ev_open() then return 0; end if;
   -- 1. The automatic Pops whose time has come (and only just: inside 30 minutes, and not before the event existed).
   for e in
     select ev.id, ev.title, ev.starts_at, ev.kind, ev.timezone, ev.created_at, coalesce(ev.host_id, ev.created_by) as author
@@ -378,6 +406,7 @@ create or replace function public.ev_cancel_pop(p_pop uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare p public.ev_pops;
 begin
+  if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   if auth.uid() is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
   select * into p from public.ev_pops where id = p_pop for update;
   if p.id is null then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
@@ -395,6 +424,7 @@ declare
   e public.events;
   p public.ev_pops;
 begin
+  if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   if auth.uid() is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
   if p_auto is null or p_auto not in ('day_before', 'hour_before', 'doors_open') then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
   select * into e from public.events where id = p_event;
@@ -416,6 +446,7 @@ declare
   p      public.ev_pops;
   v_body text := btrim(coalesce(p_body, ''));
 begin
+  if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   if auth.uid() is null then return jsonb_build_object('ok', false, 'reason', 'no_session'); end if;
   if p_auto is null or p_auto not in ('day_before', 'hour_before', 'doors_open') then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
   select * into e from public.events where id = p_event;

@@ -17,10 +17,13 @@
 --   ev_report_event(event, reason, note)   a person with an account. Text: ok | no_session | need_account | not_found | bad_reason |
 --                              note_too_long | own_event | already_reported | slow_down (20 reports a day per person). A guest with no
 --                              email cannot report, so three throwaway guest sessions cannot hide someone's event.
---                              AUTO-HIDE: when an event has 3 or more OPEN reports from 3 different people, its status becomes
---                              'hidden' (a value events_r1_events.sql added to the status check). A hidden event is not listed,
---                              cannot be opened by anyone but its host and staff, takes no registrations and sends no Pops.
---                              Its guests and registrations are not touched. Hosts see it in ev_my_events with status hidden.
+--                              AUTO-HIDE: when an event has 3 or more OPEN reports from 3 different ACCOUNTS THAT ARE MORE THAN 7 DAYS OLD
+--                              (auth.users.created_at: accounts are free, so a fresh one counts for nothing), its status becomes
+--                              'hidden' (a value events_r1_events.sql added to the status check). Never auto-hidden: an event with no host
+--                              (an old listing), or an event with a paid order (paid, refund pending or refunded): those are for staff only.
+--                              A hidden event is not listed, cannot be opened by anyone but its host and staff, takes no registrations and
+--                              sends no Pops. Its guests and registrations are not touched, and its DOOR STILL WORKS (scan, manual check in, counts):
+--                              hidden is for the lists only, so a report can never shut a door. Hosts see it in ev_my_events with status hidden.
 --   ev_admin_reports()                     staff only: every report, newest first, as { id, event_id, event_title, event_status,
 --                              reporter_id, reporter_name, reason, note, created_at, status, open_reports } (the Report type with
 --                              three extra fields for the desk).
@@ -36,8 +39,8 @@
 -- one, calling these two with the service client. The staff are not named, as today (one shared token). The framework doc says
 -- refunds and payouts need named staff and an audit log before money flows; that is for Release 2, not here.
 --
--- One thing to decide: three friends can hide a rival's event until staff look. That is the price of "no queue, publish at once".
--- If it is too easy, raise the number in ev_report_event (the 3) or count only reporters who have been members for a while.
+-- One thing to decide: three people with week-old accounts can still hide a rival's (free, hosted) event from the lists until staff look.
+-- That is the price of "no queue, publish at once". Raise the number in ev_report_event (the 3) if it is too easy.
 -- ============================================================================
 begin;
 
@@ -66,7 +69,9 @@ declare
   e      public.events;
   v_note text := btrim(coalesce(p_note, ''));
   v_id   uuid;
+  v_paid boolean := false;
 begin
+  if not public._ev_open() then return 'not_open'; end if;
   if me is null then return 'no_session'; end if;
   if not public.has_account() then return 'need_account'; end if;
   select * into e from public.events where id = p_event;
@@ -85,8 +90,16 @@ begin
   returning id into v_id;
   if v_id is null then return 'already_reported'; end if;
 
-  -- Three different people, still open: hide it until staff check.
-  if (select count(distinct x.reporter_id) from public.ev_reports x where x.event_id = p_event and x.status = 'open') >= 3 then
+  -- Three different accounts older than 7 days, still open: hide it from the lists until staff check. Not an event with no host (an old
+  -- listing), and not one that has a paid order: money is involved, so only staff decide. (The orders table comes with events_r1_pay.sql.)
+  if to_regclass('public.ev_orders') is not null then
+    execute 'select exists (select 1 from public.ev_orders o where o.event_id = $1 and o.status in (''paid'', ''refund_pending'', ''refunded''))' into v_paid using p_event;
+  end if;
+  if e.host_id is not null and not v_paid
+     and (select count(distinct x.reporter_id)
+            from public.ev_reports x
+            join auth.users u on u.id = x.reporter_id
+           where x.event_id = p_event and x.status = 'open' and u.created_at < now() - interval '7 days') >= 3 then
     update public.events set status = 'hidden' where id = p_event and status in ('live', 'unlisted');
   end if;
   return 'ok';
