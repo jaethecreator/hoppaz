@@ -4,12 +4,6 @@ import type { LinkType } from "@/lib/events-r1/types";
 export const TIMEZONE = "Africa/Lagos";
 const HOUR = 3_600_000;
 
-/** A datetime-local value ("2026-10-23T19:00") for an instant, read on a Lagos clock. */
-export const toLagosInput = (ms: number) => new Date(ms + HOUR).toISOString().slice(0, 16);
-
-/** The instant for a datetime-local value typed on a Lagos clock. NaN when it is empty or broken. */
-export const fromLagosInput = (v: string) => Date.parse(`${v}:00+01:00`);
-
 /** Tomorrow evening, 19:00 Lagos. */
 export function defaultStart(nowMs: number): number {
   const d = new Date(nowMs + HOUR);

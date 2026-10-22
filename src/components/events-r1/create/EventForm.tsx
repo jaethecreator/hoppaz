@@ -11,7 +11,9 @@ import { PAID_TICKETS } from "@/lib/events-r1/flags";
 import { Choice, Row, Toggle } from "./Fields";
 import Tickets, { newTicket, ticketsDraft, ticketsError, ticketsSummary } from "./Tickets";
 import type { TicketForm } from "./Tickets";
-import { cleanLink, DEFAULT_LENGTH, defaultStart, detectLinkType, fromLagosInput, LINK_LABEL, TIMEZONE, toLagosInput } from "./helpers";
+import DateTimePicker from "../DateTimePicker";
+import { endError, lagosIso, moveEnd } from "../dateTime";
+import { cleanLink, DEFAULT_LENGTH, defaultStart, detectLinkType, LINK_LABEL, TIMEZONE } from "./helpers";
 
 const KINDS: Array<{ value: EventKind; label: string }> = [
   { value: "in_person", label: "In person" },
@@ -35,8 +37,8 @@ export default function EventForm({ cover }: { cover: string | null }) {
   const clock = useR1Now();
 
   const [title, setTitle] = useState("");
-  const [start, setStart] = useState(() => toLagosInput(defaultStart(Date.now())));
-  const [end, setEnd] = useState(() => toLagosInput(defaultStart(Date.now()) + DEFAULT_LENGTH));
+  const [start, setStart] = useState(() => lagosIso(defaultStart(Date.now())));
+  const [end, setEnd] = useState(() => lagosIso(defaultStart(Date.now()) + DEFAULT_LENGTH));
   const touched = useRef(false);
   const [kind, setKind] = useState<EventKind>("in_person");
   const [place, setPlace] = useState("");
@@ -65,8 +67,8 @@ export default function EventForm({ cover }: { cover: string | null }) {
   // The fake clock may be moved by a tester: when the data layer is ready, default from its time (until the host edits a time).
   useEffect(() => {
     if (touched.current) return;
-    setStart(toLagosInput(defaultStart(clock)));
-    setEnd(toLagosInput(defaultStart(clock) + DEFAULT_LENGTH));
+    setStart(lagosIso(defaultStart(clock)));
+    setEnd(lagosIso(defaultStart(clock) + DEFAULT_LENGTH));
     // Once, when the clock first answers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
@@ -108,11 +110,8 @@ export default function EventForm({ cover }: { cover: string | null }) {
   const changeStart = (v: string) => {
     touched.current = true;
     // Keep the length: the end moves with the start.
-    const a = fromLagosInput(start);
-    const b = fromLagosInput(end);
+    setEnd(moveEnd(start, end, v));
     setStart(v);
-    const n = fromLagosInput(v);
-    if (Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(n) && b > a) setEnd(toLagosInput(n + (b - a)));
   };
   const changeEnd = (v: string) => {
     touched.current = true;
@@ -135,8 +134,8 @@ export default function EventForm({ cover }: { cover: string | null }) {
     const cap = capacity ? Number(capacity) : null;
     const d: EventDraft = {
       title: title.trim(),
-      starts_at: Number.isFinite(fromLagosInput(start)) ? new Date(fromLagosInput(start)).toISOString() : undefined,
-      ends_at: Number.isFinite(fromLagosInput(end)) ? new Date(fromLagosInput(end)).toISOString() : null,
+      starts_at: Number.isFinite(Date.parse(start)) ? new Date(start).toISOString() : undefined,
+      ends_at: Number.isFinite(Date.parse(end)) ? new Date(end).toISOString() : null,
       timezone: TIMEZONE,
       kind,
       description: about.trim(),
@@ -178,9 +177,10 @@ export default function EventForm({ cover }: { cover: string | null }) {
 
   /** Paid with the paid flag off: nothing can be made. The button says so. */
   const blocked = paid && !PAID_TICKETS;
+  const endBad = endError(start, end);
 
   const submit = () => {
-    if (!api || busy || !title.trim() || blocked) return;
+    if (!api || busy || !title.trim() || blocked || endBad) return;
     const bad = ticketsError(paid, tickets);
     if (bad) {
       setOpen("tickets");
@@ -211,9 +211,9 @@ export default function EventForm({ cover }: { cover: string | null }) {
       </label>
 
       <div className="rounded-hz border border-line bg-ink-2 px-4">
-        <TimeRow label="Starts" value={start} onChange={changeStart} />
+        <DateTimePicker label="Starts" value={start} onChange={changeStart} min={lagosIso(clock)} now={clock} />
         <div className="h-px bg-line" />
-        <TimeRow label="Ends" value={end} onChange={changeEnd} />
+        <DateTimePicker label="Ends" value={end} onChange={changeEnd} min={start} error={endBad} now={clock} />
       </div>
       <p className="hint -mt-2 px-1">{TIMEZONE}</p>
 
@@ -324,20 +324,5 @@ export default function EventForm({ cover }: { cover: string | null }) {
         }}
       />
     </div>
-  );
-}
-
-function TimeRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="flex min-h-[52px] items-center justify-between gap-3">
-      <span className="w-14 flex-none font-body text-[15px] text-dim">{label}</span>
-      <input
-        type="datetime-local"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={`${label} (${TIMEZONE})`}
-        className="!w-auto min-w-0 flex-1 !border-0 !bg-transparent !px-0 text-right"
-      />
-    </label>
   );
 }
