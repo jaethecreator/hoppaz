@@ -11,7 +11,22 @@ export type CampaignZone = Block & { id: ZoneId; number: string; name: string; s
 export type PropKind = "console" | "speaker" | "headphones" | "plant" | "tree" | "sofa" | "table" | "records" | "plinth" | "poster" | "counter" | "bench" | "fountain" | "lamp" | "rug" | "maptable" | (string & {});
 export type CampaignProp = Block & { id: string; kind: PropKind; variant?: number; solid?: boolean };
 export type PrivateArea = Block & { id: string; name: string; stop: Tile };
-export type CampaignLayout = { id: string; grid: { width: number; height: number; tile: number }; spawn: Tile; zones: CampaignZone[]; privateAreas: PrivateArea[]; walls: Block[]; props: CampaignProp[] };
+/**
+ * Scenery people (ambient.ts). A template may list a few characters that live on each phone only: drawn with the avatar system,
+ * but never a Hopper. They are not peers, not counted, not tagged, not tappable and never in chat. `look` is a partial avatar look
+ * (normalizeLook fills the rest). `range` is the block they stay in; `home` is where they start and come back to.
+ */
+export type AmbientMember = {
+  id: string;
+  role: string;
+  look: Record<string, unknown>;
+  home: Tile;
+  range: Block;
+  /** post: stands at home and shuffles; wander: strolls the range and pauses; chat: walks with `partner`, side by side. */
+  mode: "post" | "wander" | "chat";
+  partner?: string;
+};
+export type CampaignLayout = { id: string; grid: { width: number; height: number; tile: number }; spawn: Tile; zones: CampaignZone[]; privateAreas: PrivateArea[]; walls: Block[]; props: CampaignProp[]; ambient?: AmbientMember[] };
 
 /** Scene dimensions, collision, assets and interaction anchors share one source of truth. */
 export const CLUBHOUSE: CampaignLayout = {

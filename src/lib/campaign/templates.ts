@@ -1,4 +1,5 @@
 import { CLUBHOUSE, clubhouseWidth, type CampaignLayout } from "./layout";
+import { lagosHqLayout } from "./rooms/lagosHq";
 import { EVENT_INDOOR } from "./rooms/eventIndoor";
 import { EVENT_THEATRE } from "./rooms/eventTheatre";
 import { EVENT_POOL } from "./rooms/eventPool";
@@ -20,7 +21,7 @@ import { HOTSPOT_IKORODU } from "./rooms/hotspotIkorodu";
  * the database by scripts/crew-room/export-layouts.mjs, so a template added here needs that run and a SQL load before
  * a crew can pick it.
  *
- * Crew templates (ROOM_TEMPLATES, what the MANAGE picker shows): the clubhouse today. Each one has its own backdrop
+ * Crew templates (ROOM_TEMPLATES, what the MANAGE picker shows): the clubhouse and Lagos HQ. Each one has its own backdrop
  * component (ClubhouseArt draws the clubhouse and nothing else; see roomArt.tsx) and its own stable prop ids.
  *
  * Place rooms (PLACE_ROOMS, below) are not crew templates and never reach the picker: the event rooms (a template per kind
@@ -55,6 +56,13 @@ export const ROOM_TEMPLATES: RoomTemplate[] = [
     description: "Six corners round a courtyard: a stage up top, a studio, a lounge, a gallery and booths to chat in.",
     thumbnail: "/templates/clubhouse.jpg",
     layout: (width) => (width === 30 ? CLUBHOUSE : clubhouseWidth(width)),
+  },
+  {
+    key: "lagos-hq",
+    name: "Lagos HQ",
+    description: "A bright Lagos street by the lagoon: a stage under the billboard, a market, a bus stop, a suya spot and a road of danfos and okadas.",
+    thumbnail: "/templates/lagos-hq.jpg",
+    layout: (width) => lagosHqLayout(width),
   },
 ];
 
