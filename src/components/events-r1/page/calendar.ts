@@ -4,6 +4,7 @@
  */
 import type { R1Event } from "@/lib/events-r1/types";
 import { placeLine } from "../words";
+import { icsEscape } from "./icsEscape";
 import { eventUrl } from "./share";
 import { endOf } from "./time";
 
@@ -15,7 +16,7 @@ function utc(ms: number): string {
   return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
 }
 
-const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+const esc = icsEscape;
 
 /** Lines over 75 characters continue on the next line, indented by one space. */
 function fold(line: string): string {

@@ -61,7 +61,7 @@ export type R1Event = EventRow & {
   /** Always at least one. */
   ticket_types: TicketType[];
   created_at: string;
-  /** Short link slug for hoppaz.fun/e/<slug>. */
+  /** Short link slug for <site>/event/<slug>. */
   slug: string;
 };
 

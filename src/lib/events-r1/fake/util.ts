@@ -58,7 +58,7 @@ export function rngFor(key: string): () => number {
 }
 
 
-/** "Sunset Rooftop Sessions Vol. 12" -> "sunset-rooftop-sessions-vol-12-3fa" (short link: hoppaz.fun/e/<slug>). */
+/** "Sunset Rooftop Sessions Vol. 12" -> "sunset-rooftop-sessions-vol-12-3fa" (short link: <site>/event/<slug>). */
 export function slugFor(title: string, id: string): string {
   const base = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "");
   return `${base || "event"}-${id.replace(/-/g, "").slice(0, 3)}`;

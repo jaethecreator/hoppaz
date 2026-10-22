@@ -1,8 +1,9 @@
-/** Links and sharing for the event page. The public link is hoppaz.fun/e/<slug>; ?ref= says who sent it. */
+/** Links and sharing for the event page. The public link is <site>/event/<slug>; ?ref= says who sent it. */
+import { eventPageUrl } from "@/lib/events-r1/siteUrl";
 import type { R1Event } from "@/lib/events-r1/types";
 
 export function eventUrl(e: Pick<R1Event, "slug" | "id">, ref?: string | null): string {
-  const base = `https://hoppaz.fun/e/${e.slug || e.id}`;
+  const base = eventPageUrl(e);
   return ref ? `${base}?ref=${encodeURIComponent(ref)}` : base;
 }
 
