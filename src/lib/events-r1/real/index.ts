@@ -1,25 +1,28 @@
 import type { EventsR1Api } from "../api";
+import { auth } from "./auth";
+import { door } from "./door";
+import { events } from "./events";
+import { pay } from "./pay";
+import { pops } from "./pops";
+import { registrations } from "./registrations";
+import { reports } from "./reports";
+import { rooms } from "./rooms";
 
 /**
- * The real layer. It will call Ola's security-definer functions (supabase/events_r1_*.sql, DRAFT).
- * Not wired yet: every method rejects, so a build that turns the flag on without the fake layer fails loudly.
+ * The real layer: every method calls Ola's security-definer functions (supabase/events_r1_*.sql) with the signed-in session,
+ * and answers with the same shapes and the same error messages as the fake layer (fake/), which is the spec.
+ * Picked by loadApi() when NEXT_PUBLIC_EVENTS_R1_FAKE is not 1. See real/README.md.
  */
-const notWired = (what: string) => (): never => {
-  throw new Error(`events-r1 real layer not wired yet: ${what}`);
-};
-
-const proxy = <T extends object>(name: string): T =>
-  new Proxy({} as T, { get: (_t, prop) => notWired(`${name}.${String(prop)}`) });
-
 export const realApi: EventsR1Api = {
   mode: "real",
-  auth: proxy("auth"),
-  events: proxy("events"),
-  registrations: proxy("registrations"),
-  pops: proxy("pops"),
-  rooms: proxy("rooms"),
-  reports: proxy("reports"),
-  door: proxy("door"),
+  auth,
+  events,
+  registrations,
+  pops,
+  rooms,
+  reports,
+  door,
   clock: { now: () => Date.now() },
-  pay: proxy("pay"),
+  pay,
 };
+
