@@ -1,0 +1,216 @@
+/**
+ * Release 1 shared types. One file so every package agrees on the shapes.
+ * The interface that uses them is in api.ts. Amounts are whole naira (R1 is free: 0).
+ */
+import type { EventRow } from "@/lib/types";
+
+export type Visibility = "public" | "community" | "invite";
+export type EventKind = "in_person" | "online" | "hybrid";
+export type LinkType = "zoom" | "meet" | "whatsapp" | "other";
+export type EventStatus = "live" | "cancelled" | "ended";
+
+export type HostRef = {
+  id: string;
+  name: string;
+  /** The host's room, if they have one. Event | Room on the event page opens it. */
+  roomId: string | null;
+  roomName: string | null;
+  verified: boolean;
+};
+
+/**
+ * An event for the new screens. It extends EventRow so the map, deck and EventCard keep working
+ * unchanged. An event with no place has lat/lng parked on LAGOS_CENTER and venue_name "" (hasVenue()
+ * then keeps it off the map), exactly like today's "no venue yet" leads.
+ */
+export type R1Event = EventRow & {
+  description: string;
+  host: HostRef;
+  ends_at: string | null;
+  timezone: string;
+  kind: EventKind;
+  visibility: Visibility;
+  status: EventStatus;
+  capacity: number | null;
+  requires_approval: boolean;
+  waitlist_on: boolean;
+  /** Link type is public; the link itself is returned only to a registered person (and the host). */
+  link_type: LinkType | null;
+  online_link: string | null;
+  room_id: string | null;
+  /** Going counts approved and checked-in people only. */
+  going: number;
+  spots_left: number | null;
+  /** Free-only in R1. Kept so Release 2 does not change the shape. */
+  price_naira: number;
+  created_at: string;
+  /** Short link slug for hoppaz.fun/e/<slug>. */
+  slug: string;
+};
+
+export type RegStatus =
+  | "requested" // free + approval on, waiting for the host
+  | "going" // in
+  | "waitlisted"
+  | "declined"
+  | "cancelled"
+  | "checked_in";
+
+export type RegQuestion = { id: string; label: string; required: boolean; builtin?: "name" | "email" | "phone" };
+export type RegMessages = { pending: string; going: string; declined: string };
+
+export type Registration = {
+  id: string;
+  event_id: string;
+  user_id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  status: RegStatus;
+  answers: Record<string, string>;
+  /** Who invited this person (their own invite link), so the host sees who brought whom. */
+  referrer_id: string | null;
+  referrer_name: string | null;
+  created_at: string;
+  checked_in_at: string | null;
+  /** Place in the waitlist, 1 = next. */
+  waitlist_pos: number | null;
+};
+
+/** What the one button on the event page should be, for this viewer. */
+export type ViewerState = {
+  signedIn: boolean;
+  isHost: boolean;
+  /** Swiped right: interested only. */
+  interested: boolean;
+  registration: Registration | null;
+  /** Register | Request to join | Join waitlist | Get ticket (R2, disabled) | You're in | Pending | Closed | Cancelled */
+  button:
+    | "register"
+    | "request"
+    | "waitlist"
+    | "get_ticket"
+    | "going"
+    | "pending"
+    | "waitlisted"
+    | "declined"
+    | "closed";
+  /** Online link is returned in R1Event.online_link only when this is true. */
+  canSeeOnlineLink: boolean;
+  /** Join call shows from 15 minutes before start (fake clock aware). */
+  joinCallOpen: boolean;
+};
+
+export type Ticket = {
+  id: string;
+  event_id: string;
+  holder_name: string;
+  ticket_name: string; // "General"
+  /** Signed token drawn as the QR: <b64 payload>.<b64 signature>. Payload = ticket id, event id, version. */
+  token: string;
+  version: number;
+  status: "valid" | "used" | "void";
+};
+
+export type PopAudience = "going" | "pending" | "waitlist" | "everyone";
+export type PopAuto = "day_before" | "hour_before" | "doors_open";
+
+export type Pop = {
+  id: string;
+  event_id: string;
+  event_title: string;
+  author_name: string;
+  body: string;
+  audience: PopAudience;
+  also_room: boolean;
+  /** null = sent at once. */
+  send_at: string | null;
+  sent_at: string | null;
+  status: "scheduled" | "sent";
+  auto: PopAuto | null;
+  recipients: number;
+};
+
+export type RoomKind = "hq" | "crew" | "brand";
+
+export type RoomSummary = {
+  id: string;
+  slug: string;
+  name: string;
+  kind: RoomKind;
+  logo_url: string | null;
+  wallpaper_url: string | null;
+  members: number;
+  verified: boolean;
+  /** Is the viewer a member. */
+  joined: boolean;
+  unread: number;
+  latest_announcement: RoomAnnouncement | null;
+};
+
+export type RoomAnnouncement = {
+  id: string;
+  room_id: string;
+  body: string;
+  created_at: string;
+  author_name: string;
+  /** Set when it came from an event Pop: shown tagged with the event name. One way: never the reverse. */
+  event_id: string | null;
+  event_title: string | null;
+};
+
+export type EventChatState = "upcoming" | "open" | "closed";
+export type EventChat = {
+  event_id: string;
+  event_title: string;
+  room_id: string;
+  opens_at: string;
+  closes_at: string; // 3 days after the event
+  state: EventChatState;
+  /** Whether the viewer may come in (follows the event's who-can-come-in setting). */
+  can_enter: boolean;
+};
+
+export type ReportReason = "fake_or_scam" | "wrong_place" | "offensive" | "other";
+export type Report = {
+  id: string;
+  event_id: string;
+  event_title: string;
+  reporter_id: string;
+  reason: ReportReason;
+  note: string;
+  created_at: string;
+  status: "open" | "reviewed";
+};
+
+export type ScanResult =
+  | { ok: true; kind: "checked_in"; name: string; ticket: string; checked_in: number; total: number }
+  | { ok: false; kind: "already_used"; name: string; at: string }
+  | { ok: false; kind: "not_valid"; reason: "bad_signature" | "wrong_event" | "void" | "unknown" | "not_going" };
+
+export type AuthUser = { id: string; name: string; email: string };
+
+/** Input for create and edit. A name is enough; everything else has a default. */
+export type EventDraft = {
+  title: string;
+  starts_at?: string;
+  ends_at?: string | null;
+  timezone?: string;
+  kind?: EventKind;
+  /** Place name, e.g. "Maroko, Lagos". Empty for online. */
+  place_name?: string;
+  area?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  link_type?: LinkType | null;
+  online_link?: string | null;
+  description?: string;
+  capacity?: number | null;
+  requires_approval?: boolean;
+  waitlist_on?: boolean;
+  visibility?: Visibility;
+  cover_url?: string | null;
+  vibe?: string;
+};
+
+export type RoomDraft = { name: string; description?: string };
