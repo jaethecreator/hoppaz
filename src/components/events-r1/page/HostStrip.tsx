@@ -42,8 +42,8 @@ export default function HostStrip({ event, viewer }: { event: R1Event; viewer: V
   return (
     <div>
       {fresh && (
-        <p className="mb-2 flex items-center gap-1.5 font-body text-[14px] text-keke">
-          <Check size={15} strokeWidth={3} aria-hidden /> Your event is live
+        <p className="mb-2 flex items-center gap-1.5 font-body text-[14px] text-cream">
+          <Check size={15} strokeWidth={3} className="text-keke" aria-hidden /> Your event is live
         </p>
       )}
       <div className="rounded-hz border border-line bg-ink-3 p-3">

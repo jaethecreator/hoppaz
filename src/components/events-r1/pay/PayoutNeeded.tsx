@@ -23,7 +23,7 @@ export default function PayoutNeeded({ returnPath }: { returnPath?: string }) {
   };
   return (
     <div className="flex flex-col items-start gap-2 rounded-hz border border-line bg-ink-3/40 p-3">
-      <p className="font-body text-[14px] text-danfo">Set up payouts first</p>
+      <p className="font-body text-[14px] text-cream">Set up payouts first</p>
       <button type="button" onClick={() => void go()} disabled={busy || !api} className="btn px-5 normal-case">
         {busy ? "One moment" : "Set up payouts"}
       </button>

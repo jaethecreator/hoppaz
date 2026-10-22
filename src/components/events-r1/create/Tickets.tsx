@@ -105,7 +105,7 @@ export default function Tickets({
         </button>
       )}
 
-      {paid && gate.state === "off" && <p className="font-body text-[14px] text-danfo">{PAID_UNAVAILABLE}</p>}
+      {paid && gate.state === "off" && <p className="font-body text-[14px] text-cream">{PAID_UNAVAILABLE}</p>}
       {paid && gate.state === "needs" && <PayoutNeeded />}
     </div>
   );

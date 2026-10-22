@@ -85,8 +85,8 @@ export default function OverviewTab({ event, regs, fresh, onTab }: { event: R1Ev
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
       <div className="flex flex-col gap-4">
         {fresh && (
-          <p className="flex items-center gap-1.5 font-body text-[14px] text-keke">
-            <Check size={15} strokeWidth={3} aria-hidden /> Your event is live
+          <p className="flex items-center gap-1.5 font-body text-[14px] text-cream">
+            <Check size={15} strokeWidth={3} className="text-keke" aria-hidden /> Your event is live
           </p>
         )}
 

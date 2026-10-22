@@ -64,7 +64,7 @@ export default function GuestSearch({ eventId, busy, onCheckIn }: { eventId: str
               </p>
             </div>
             {r.status === "checked_in" ? (
-              <span className="flex-none font-body text-[13px] text-keke">Checked in{r.checked_in_at ? ` ${lagosClock(r.checked_in_at)}` : ""}</span>
+              <span className="flex-none font-body text-[13px] text-cream">Checked in{r.checked_in_at ? ` ${lagosClock(r.checked_in_at)}` : ""}</span>
             ) : (
               <button type="button" disabled={busy} onClick={() => onCheckIn(r)} className="btn min-h-[44px] flex-none px-4 normal-case">
                 Check in

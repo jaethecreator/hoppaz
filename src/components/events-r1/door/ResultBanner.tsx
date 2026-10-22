@@ -67,7 +67,7 @@ export default function ResultBanner({
     <div className={clsx("flex items-start gap-3 rounded-hz border-2 p-4", box)}>
       <Icon size={26} strokeWidth={3} className={clsx("mt-0.5 flex-none", text)} aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className={clsx("font-display text-[20px] font-black leading-tight", text)}>{head}</p>
+        <p className="font-display text-[20px] font-black leading-tight text-cream">{head}</p>
         <p className="mt-0.5 font-body text-[15px] text-cream">{line}</p>
       </div>
       <button type="button" onClick={onClose} aria-label="Dismiss" className="-mr-2 -mt-2 grid h-11 w-11 flex-none place-items-center text-dim">

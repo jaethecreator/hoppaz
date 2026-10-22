@@ -91,7 +91,7 @@ export default function RegisterButton({
       );
     } else if (label.status) {
       main = (
-        <Link href={`/event/${encodeURIComponent(event.id)}`} className={clsx(btn, "btn-ghost border-keke text-keke", !side && "flex-1")}>
+        <Link href={`/event/${encodeURIComponent(event.id)}`} className={clsx(btn, "btn-ghost border-keke text-cream", !side && "flex-1")}>
           {label.text}
         </Link>
       );

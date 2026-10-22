@@ -217,7 +217,7 @@ export default function DoorScan({ id }: { id: string }) {
           <div aria-live="polite">
             {result && <ResultBanner result={result} busy={busy} onConfirm={confirm} onSkip={skip} onClose={skip} />}
             {fail && (
-              <p role="alert" className="rounded-hz border-2 border-fireant bg-fireant/15 p-4 font-body text-[15px] text-fireant">
+              <p role="alert" className="rounded-hz border-2 border-fireant bg-fireant/15 p-4 font-body text-[15px] text-cream">
                 {fail}
               </p>
             )}

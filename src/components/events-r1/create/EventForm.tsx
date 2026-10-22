@@ -240,7 +240,7 @@ export default function EventForm({ cover }: { cover: string | null }) {
           <p className="hint px-1">Join with</p>
           <Choice label="Join with" value={linkType} options={LINKS} onChange={pickLink} />
           <input value={link} onChange={(e) => pasteLink(e.target.value)} placeholder="Paste your call link" aria-label="Call link" inputMode="url" autoComplete="off" autoCapitalize="none" />
-          {effLink === "whatsapp" && <p className="font-body text-[14px] text-danfo">WhatsApp calls hold up to 32 people. Capacity set to 32.</p>}
+          {effLink === "whatsapp" && <p className="font-body text-[14px] text-cream">WhatsApp calls hold up to 32 people. Capacity set to 32.</p>}
           <p className="hint px-1">Guests see the link after they register.</p>
         </div>
       )}
