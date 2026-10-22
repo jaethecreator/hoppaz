@@ -87,17 +87,17 @@ export default function EventTabs({ event: given }: { event: R1Event }) {
   return (
     <div className="px-5 pt-1">
       <div className="flex items-center gap-2">
-        <div className="flex flex-1 overflow-hidden rounded-hz border border-line" role="group" aria-label="Event or room">
+        <div className="flex flex-1 overflow-hidden rounded-hz border border-line" role="group" aria-label="Event or Roomz">
           <span aria-current="page" className={clsx(tab, "bg-orange text-brand-ink")}>
             Event
           </span>
           {room ? (
             <Link href={`/rooms/${encodeURIComponent(room)}`} className={clsx(tab, "text-cream")}>
-              Room
+              Roomz
             </Link>
           ) : (
-            <span aria-disabled="true" title="This host has no room yet" className={clsx(tab, "text-dim/60")}>
-              Room
+            <span aria-disabled="true" title="This host has no Roomz yet" className={clsx(tab, "text-dim/60")}>
+              Roomz
             </span>
           )}
         </div>

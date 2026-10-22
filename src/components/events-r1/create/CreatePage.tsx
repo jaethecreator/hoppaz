@@ -21,7 +21,7 @@ export default function CreatePage() {
           value={mode}
           options={[
             { value: "event", label: "Event" },
-            { value: "room", label: "Room" },
+            { value: "room", label: "Roomz" },
           ]}
           onChange={setMode}
           className="mb-5"

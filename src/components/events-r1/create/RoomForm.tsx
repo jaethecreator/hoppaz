@@ -45,11 +45,11 @@ export default function RoomForm() {
   return (
     <div className="flex flex-col gap-4">
       <label className="block">
-        <span className="sr-only">Room name</span>
+        <span className="sr-only">Roomz name</span>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Room name"
+          placeholder="Roomz name"
           autoComplete="off"
           maxLength={60}
           className="!rounded-none !border-0 !border-b !bg-transparent !px-0 py-2 font-display text-[28px] font-black leading-tight placeholder:text-dim/60"
@@ -58,7 +58,7 @@ export default function RoomForm() {
       <input value={about} onChange={(e) => setAbout(e.target.value)} placeholder="What is it about?" aria-label="Description" maxLength={140} autoComplete="off" />
       <div className="flex flex-col gap-2 pb-2">
         <button type="button" className="btn w-full normal-case" onClick={submit} disabled={busy || !name.trim() || !api}>
-          {busy ? "Creating" : "Create room"}
+          {busy ? "Creating" : "Create Roomz"}
         </button>
         {error && (
           <p ref={errorRef} role="alert" className="px-1 font-body text-[14px] text-fireant">
@@ -68,7 +68,7 @@ export default function RoomForm() {
       </div>
       <SignInSheet
         open={sheet}
-        reason="Create your room"
+        reason="Create your Roomz"
         onClose={() => setSheet(false)}
         onSignedIn={() => {
           setSheet(false);
