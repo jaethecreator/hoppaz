@@ -312,17 +312,17 @@ begin
                      'the types come with get and with the list, for a stranger too');
   -- The checks.
   perform pg_temp.relax(h);
-  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":[]}') ->> 'reason' = 'tickets_needed', 'an empty tickets list is refused');
-  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":[{"name":"a"},{"name":"b"},{"name":"c"},{"name":"d"},{"name":"e"},{"name":"f"}]}') ->> 'reason' = 'too_many_tickets', 'six types are too many');
-  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":[{"name":"  "}]}') ->> 'reason' = 'need_ticket_name', 'a type needs a name');
-  perform pg_temp.ok(pg_temp.mk(h, json_build_object('title', 'T', 'tickets', json_build_array(json_build_object('name', repeat('n', 61))))::jsonb) ->> 'reason' = 'ticket_name_too_long', 'and a name under 61 characters');
-  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":[{"name":"VIP"},{"name":"vip "}]}') ->> 'reason' = 'duplicate_ticket', 'names are unique ignoring case');
-  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":[{"name":"a","price_naira":2.5}]}') ->> 'reason' = 'bad_price' and pg_temp.mk(h, '{"title":"T","tickets":[{"name":"a","price_naira":-1}]}') ->> 'reason' = 'bad_price'
-                     and pg_temp.mk(h, '{"title":"T","tickets":[{"name":"a","price_naira":"free"}]}') ->> 'reason' = 'bad_price', 'a price is a whole number from 0');
-  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":[{"name":"a","capacity":0}]}') ->> 'reason' = 'bad_ticket_capacity' and pg_temp.mk(h, '{"title":"T","tickets":[{"name":"a","capacity":1.5}]}') ->> 'reason' = 'bad_ticket_capacity',
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"TT","tickets":[]}') ->> 'reason' = 'tickets_needed', 'an empty tickets list is refused');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"TT","tickets":[{"name":"a"},{"name":"b"},{"name":"c"},{"name":"d"},{"name":"e"},{"name":"f"}]}') ->> 'reason' = 'too_many_tickets', 'six types are too many');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"TT","tickets":[{"name":"  "}]}') ->> 'reason' = 'need_ticket_name', 'a type needs a name');
+  perform pg_temp.ok(pg_temp.mk(h, json_build_object('title', 'TT', 'tickets', json_build_array(json_build_object('name', repeat('n', 61))))::jsonb) ->> 'reason' = 'ticket_name_too_long', 'and a name under 61 characters');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"TT","tickets":[{"name":"VIP"},{"name":"vip "}]}') ->> 'reason' = 'duplicate_ticket', 'names are unique ignoring case');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"TT","tickets":[{"name":"a","price_naira":2.5}]}') ->> 'reason' = 'bad_price' and pg_temp.mk(h, '{"title":"TT","tickets":[{"name":"a","price_naira":-1}]}') ->> 'reason' = 'bad_price'
+                     and pg_temp.mk(h, '{"title":"TT","tickets":[{"name":"a","price_naira":"free"}]}') ->> 'reason' = 'bad_price', 'a price is a whole number from 0');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"TT","tickets":[{"name":"a","capacity":0}]}') ->> 'reason' = 'bad_ticket_capacity' and pg_temp.mk(h, '{"title":"TT","tickets":[{"name":"a","capacity":1.5}]}') ->> 'reason' = 'bad_ticket_capacity',
                      'a type capacity is empty or 1 and up');
-  perform pg_temp.ok(pg_temp.mk(h, '{"title":"T","tickets":"all of them"}') ->> 'reason' = 'bad_ticket' and pg_temp.mk(h, '{"title":"T","tickets":["x"]}') ->> 'reason' = 'bad_ticket', 'a tickets value of the wrong shape is refused');
-  perform pg_temp.ok((select count(*) from public.events where title = 'T') = 0, 'and none of those made an event');
+  perform pg_temp.ok(pg_temp.mk(h, '{"title":"TT","tickets":"all of them"}') ->> 'reason' = 'bad_ticket' and pg_temp.mk(h, '{"title":"TT","tickets":["x"]}') ->> 'reason' = 'bad_ticket', 'a tickets value of the wrong shape is refused');
+  perform pg_temp.ok((select count(*) from public.events where title = 'TT') = 0, 'and none of those made an event');
   -- Paid is switched off.
   r := pg_temp.mk(h, '{"title":"Paid","tickets":[{"name":"General","price_naira":0},{"name":"VIP","price_naira":5000,"capacity":10}]}');
   perform pg_temp.ok(r ->> 'reason' = 'currently_unavailable' and (r ->> 'ok')::boolean is false, 'a paid type is refused on create with exactly currently_unavailable');

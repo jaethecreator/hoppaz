@@ -432,6 +432,19 @@ begin
       values (p_event, x ->> 'name', (x ->> 'price_naira')::integer, (x ->> 'capacity')::integer, i);
     end if;
   end loop;
+  -- Cancelled and declined people (and void tickets) may still point at a type that goes: they fall back to the event's first type.
+  if to_regclass('public.ev_registrations') is not null then
+    update public.ev_registrations set ticket_type_id = null
+     where event_id = p_event and ticket_type_id in (
+       select t.id from public.ev_ticket_types t
+        where t.event_id = p_event and lower(t.name) not in (select lower(v ->> 'name') from jsonb_array_elements(p_tickets) v));
+  end if;
+  if to_regclass('public.ev_tickets') is not null then
+    update public.ev_tickets set ticket_type_id = null
+     where event_id = p_event and ticket_type_id in (
+       select t.id from public.ev_ticket_types t
+        where t.event_id = p_event and lower(t.name) not in (select lower(v ->> 'name') from jsonb_array_elements(p_tickets) v));
+  end if;
   delete from public.ev_ticket_types
    where event_id = p_event
      and lower(name) not in (select lower(v ->> 'name') from jsonb_array_elements(p_tickets) v);
