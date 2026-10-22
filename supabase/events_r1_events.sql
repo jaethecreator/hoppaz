@@ -316,7 +316,7 @@ begin
     'created_at', e.created_at, 'slug', coalesce(e.slug, e.id::text),
     'host', jsonb_build_object('id', v_host, 'name', coalesce(v_hostname, 'Hoppaz'), 'roomId', v_room, 'roomName', v_roomname,
                                'verified', coalesce(v_verified, false)),
-    'distance_m', null,
+    'distance_m', null::double precision,
     'heat', least(100, e.base_heat + v_checkins * 7 + v_swipes * 3),
     'checkins', v_checkins, 'swipes_in', v_swipes, 'here_now', v_here
   );
@@ -421,7 +421,7 @@ begin
        or (d ->> 'capacity')::numeric < 1 or (d ->> 'capacity')::numeric > 100000 then
       return jsonb_build_object('ok', false, 'reason', 'bad_capacity');
     end if;
-    v_cap := (d ->> 'capacity')::integer;
+    v_cap := (d ->> 'capacity')::numeric::integer;
   elsif d ? 'capacity' and jsonb_typeof(d -> 'capacity') <> 'null' then
     return jsonb_build_object('ok', false, 'reason', 'bad_capacity');
   end if;
@@ -557,7 +557,7 @@ begin
   v_merged := public._ev_draft_of(p_event) || v_patch;
   -- A new place name or area with no coordinates: the old pin no longer fits.
   if (v_patch ? 'place_name' or v_patch ? 'area') and not (v_patch ? 'lat') and not (v_patch ? 'lng') then
-    v_merged := v_merged || jsonb_build_object('lat', null, 'lng', null);
+    v_merged := v_merged || jsonb_build_object('lat', null::double precision, 'lng', null::double precision);
   end if;
 
   n := public._ev_normalize(v_merged, e.room_id);

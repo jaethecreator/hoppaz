@@ -236,7 +236,7 @@ begin
                  'author_name', coalesce((select coalesce(nullif(btrim(pr.display_name), ''), pr.handle) from public.profiles pr
                                            where pr.id = coalesce(e.host_id, e.created_by)), 'Host'),
                  'body', public._ev_auto_text(a.kind, e.title, e.starts_at, e.timezone, e.kind = 'online'),
-                 'audience', 'going', 'also_room', false, 'send_at', a.fire_at, 'sent_at', null, 'status', 'scheduled',
+                 'audience', 'going', 'also_room', false, 'send_at', a.fire_at, 'sent_at', null::timestamptz, 'status', 'scheduled',
                  'auto', a.kind, 'recipients', 0)
           from (select k.kind,
                        case k.kind when 'day_before' then e.starts_at - interval '24 hours'
