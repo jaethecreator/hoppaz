@@ -272,7 +272,7 @@ export type EventDraft = {
   visibility?: Visibility;
   cover_url?: string | null;
   vibe?: string;
-  /** Ticket types, 1 to 5. Default: one free "General" with no limit. A paid type needs PAID_TICKETS. */
+  /** Ticket types, 1 to 5. Default: one free "General" with no limit. A paid type needs paidTicketsOn() and a host who can sell. */
   tickets?: { name: string; price_naira: number; capacity: number | null }[];
   /** Put the event in the host's room. Default true when the host has a room; false keeps it out. */
   add_to_room?: boolean;

@@ -5,7 +5,7 @@ import { Toggle } from "@/components/events-r1/create/Fields";
 import Tickets, { newTicket, ticketsDraft, ticketsError } from "@/components/events-r1/create/Tickets";
 import type { TicketForm } from "@/components/events-r1/create/Tickets";
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
-import { PAID_TICKETS } from "@/lib/events-r1/flags";
+import { paidTicketsOn } from "@/lib/events-r1/flags";
 import { useR1Api, useR1Query } from "@/lib/events-r1/hooks";
 import type { R1Event, RegMessages, RegQuestion } from "@/lib/events-r1/types";
 import { CARD, ErrorLine, Section } from "./ui";
@@ -48,7 +48,7 @@ function Form({ event, questions: q0, messages: m0 }: { event: R1Event; question
   const tickets = ticketsDraft(paid, types);
   const ticketsChanged = !same(tickets, event.ticket_types.map((t) => ({ name: t.name, price_naira: t.price_naira, capacity: t.capacity })));
   /** A paid choice cannot be saved while the paid switch is off. A paid event left as it is can still change its other settings. */
-  const blocked = paid && !PAID_TICKETS && ticketsChanged;
+  const blocked = paid && !paidTicketsOn() && ticketsChanged;
 
   const editQ = (id: string, patch: Partial<RegQuestion>) => touch(setQuestions)(questions.map((x) => (x.id === id ? { ...x, ...patch } : x)));
 

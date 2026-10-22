@@ -1,7 +1,7 @@
 "use client";
 
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
-import { PAID_TICKETS } from "@/lib/events-r1/flags";
+import { paidTicketsOn } from "@/lib/events-r1/flags";
 import { Choice } from "./Fields";
 
 export const MAX_TICKET_TYPES = 5;
@@ -90,7 +90,7 @@ export default function Tickets({
         </button>
       )}
 
-      {paid && !PAID_TICKETS && <p className="font-body text-[14px] text-danfo">{PAID_UNAVAILABLE}</p>}
+      {paid && !paidTicketsOn() && <p className="font-body text-[14px] text-danfo">{PAID_UNAVAILABLE}</p>}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { AREAS, areaByName } from "@/lib/geo";
 import { useMyRooms, useR1Api, useR1Now } from "@/lib/events-r1/hooks";
 import type { EventDraft, EventKind, LinkType, Visibility } from "@/lib/events-r1/types";
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
-import { PAID_TICKETS } from "@/lib/events-r1/flags";
+import { paidTicketsOn } from "@/lib/events-r1/flags";
 import { Choice, Row, Toggle } from "./Fields";
 import Tickets, { newTicket, ticketsDraft, ticketsError, ticketsSummary } from "./Tickets";
 import type { TicketForm } from "./Tickets";
@@ -175,7 +175,7 @@ export default function EventForm({ cover }: { cover: string | null }) {
   };
 
   /** Paid with the paid flag off: nothing can be made. The button says so. */
-  const blocked = paid && !PAID_TICKETS;
+  const blocked = paid && !paidTicketsOn();
   const endBad = endError(start, end);
 
   const submit = () => {

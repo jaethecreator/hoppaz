@@ -2,7 +2,7 @@
  * Release 1 paid tickets: shared types and the one interface for money.
  * Payments run on Bachs (bachs.io), direct charge: each host is their own merchant, Hoppaz takes a platform fee.
  * Amounts here are whole naira (kobo only inside the database and at the Bachs edge). The spec is notes/luma/11-bachs-integration-spec.md.
- * Everything here is behind NEXT_PUBLIC_PAID_TICKETS. Off: paid types show "Currently unavailable" and nothing below is called.
+ * Everything here is behind paidTicketsOn() (flags.ts: NEXT_PUBLIC_PAID_TICKETS, or the dev panel switch on fake data). Off: paid types show "Currently unavailable" and nothing below is called.
  */
 
 export type OrderStatus = "open" | "paid" | "expired" | "failed" | "refund_pending" | "refunded";
