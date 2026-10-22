@@ -186,7 +186,9 @@ function makeEvent(host: UserRec, draft: EventDraft, copyTypes?: TicketTypeRec[]
     host_id: host.id,
   };
   S().events[id] = rec;
-  for (const p of autoPopsFor(rec, host.name)) S().pops[p.id] = p;
+  // An automatic Pop whose time has already passed when the event is made is never sent (the database dispatcher skips it too: not
+  // before the event existed), so it starts switched off. Otherwise the next read would flush "Tomorrow at 7:00 pm" to everyone going.
+  for (const p of autoPopsFor(rec, host.name)) S().pops[p.id] = Date.parse(p.send_at ?? "") <= now() ? { ...p, enabled: false } : p;
   return rec;
 }
 
