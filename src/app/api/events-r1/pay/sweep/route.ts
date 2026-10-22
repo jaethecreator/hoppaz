@@ -2,7 +2,7 @@ import { getCheckout } from "@/lib/bachs/api";
 import { bachsConfig } from "@/lib/bachs/client";
 import { stringToKobo } from "@/lib/bachs/amounts";
 import { cronAllowed, fail, json, serviceDb } from "@/lib/bachs/http";
-import { startRefund } from "@/lib/bachs/refunds";
+import { reconcileRefund, startRefund } from "@/lib/bachs/refunds";
 import { methodOf } from "@/lib/bachs/webhookRouter";
 
 export const runtime = "nodejs";
@@ -14,9 +14,11 @@ export const dynamic = "force-dynamic";
  *   1. ev_pay_sweep expires open orders whose hold and 2 minute margin have run out and frees the seats.
  *   2. Each of those is checked with Bachs (GET /v1/checkout-sessions/{id} as the host). One that was paid after all goes through
  *      ev_pay_order_paid, which takes the late payment path (seats again if free, else a refund is owed).
- *   3. Card payments that are owed a refund with none under way (a late payment with no seat, or a refund Bachs refused earlier,
+ *   3. Card refunds that were started but never settled (Bachs did not answer, or the webhook did not come): asked about by id, or
+ *      sent again with the SAME reference and idempotency key, never a new reference.
+ *   4. Card payments that are owed a refund with none under way (a late payment with no seat, or a refund Bachs refused earlier,
  *      for example a host balance that was too low) are tried again.
- * -> { ok, expired, paid_late, refunds_started }. Schedule it every few minutes (vercel.json is not edited by this package).
+ * -> { ok, expired, paid_late, refunds_reconciled, refunds_started }. Schedule it every few minutes (vercel.json is not edited by this package).
  */
 async function run(req: Request) {
   if (!cronAllowed(req)) return fail(401, "Not allowed.");
@@ -50,12 +52,19 @@ async function sweep() {
       }
     }
   }
+  let reconciled = 0;
+  if (bachsConfig()) {
+    for (const p of await db.refundsUnsettled(20, 30)) {
+      const out = await reconcileRefund(db, p).catch(() => "unknown");
+      if (out !== "unknown") reconciled++;
+    }
+  }
   let refunds = 0;
   for (const o of await db.refundsOwedByCard(20)) {
     const out = await startRefund(db, { orderId: o.id, actor: null }).catch(() => null);
     if (out?.ok) refunds++;
   }
-  return json({ ok: true, expired: expired.length, paid_late: paidLate, refunds_started: refunds });
+  return json({ ok: true, expired: expired.length, paid_late: paidLate, refunds_reconciled: reconciled, refunds_started: refunds });
 }
 
 export const POST = run;

@@ -27,6 +27,9 @@ export type OrderRow = {
   needs_manual_refund: boolean;
 };
 
+/** A card refund that has been started but not settled: Bachs has not said paid or failed (the call timed out, or the webhook has not come). */
+export type PendingRefund = { orderId: string; reference: string; bachsRefundId: string | null; chargeId: string | null; hostAccount: string; attempts: number };
+
 export type PaidInput = { ref: string; charge: string | null; amount: string; method: string | null; feeKobo: number | null };
 
 export interface PayDb {
@@ -38,7 +41,7 @@ export interface PayDb {
   hostSaveAccount(userId: string, account: string): Promise<string>;
   hostApplyCapability(account: string, capability: string, status: string, at: string | null): Promise<string>;
   hostApplyRequirements(account: string, outstanding: string[]): Promise<string>;
-  /** price_naira of a ticket type (a derived General type has no row: its id is md5 of the event id and the price is the event's). Null if not found. */
+  /** price_naira of a ticket type (a derived General type has no row: its id is md5 of the event id and it is FREE: an old listing's door price is not a ticket price). Null if not found. */
   ticketPrice(eventId: string, typeId: string): Promise<number | null>;
   orderReserve(i: { userId: string; eventId: string; typeId: string; qty: number; feeKobo: number; answers: Json; referrer: string | null }): Promise<Json>;
   orderAttach(orderId: string, checkoutId: string, checkoutUrl: string, expiresAt: string | null): Promise<string>;
@@ -56,6 +59,10 @@ export interface PayDb {
   canRefund(orderId: string, userId: string): Promise<boolean>;
   refundStart(orderId: string, actor: string | null): Promise<Json>;
   refundApply(refundId: string | null, reference: string, status: "processing" | "paid" | "failed"): Promise<Json>;
+  /** Record a try whose outcome is unknown (timeout, 5xx): nothing is undone. After 10 the database flags the order for a person. */
+  refundAttempt(reference: string, note: string): Promise<Json>;
+  /** Card refunds under way (refund_pending) that nobody has heard back about for `olderThanSeconds`: the sweeper settles these. */
+  refundsUnsettled(limit: number, olderThanSeconds: number): Promise<PendingRefund[]>;
   disputeFlag(charge: string, dispute: string, status: string, amount: string | null): Promise<Json>;
 }
 
@@ -94,8 +101,8 @@ export function supabasePayDb(admin: SupabaseClient<any, "public", "public", any
       const row = await one(admin.from("ev_ticket_types").select("price_naira").eq("id", typeId).eq("event_id", eventId).maybeSingle(), "read ticket type");
       if (row) return row.price_naira as number;
       if (typeId !== md5Uuid(`ticket-type:${eventId}`)) return null;
-      const ev = await one(admin.from("events").select("price_naira").eq("id", eventId).maybeSingle(), "read event price");
-      return ev ? (ev.price_naira as number) : null;
+      const ev = await one(admin.from("events").select("id").eq("id", eventId).maybeSingle(), "read event");
+      return ev ? 0 : null;
     },
     orderReserve: (i) => rpc("ev_pay_order_reserve", { p_user: i.userId, p_event: i.eventId, p_type: i.typeId, p_qty: i.qty, p_fee_kobo: i.feeKobo, p_answers: i.answers, p_referrer: i.referrer }),
     orderAttach: (orderId, checkoutId, checkoutUrl, expiresAt) => rpc("ev_pay_order_attach", { p_order: orderId, p_checkout_id: checkoutId, p_checkout_url: checkoutUrl, p_expires: expiresAt }),
@@ -125,6 +132,30 @@ export function supabasePayDb(admin: SupabaseClient<any, "public", "public", any
     },
     refundStart: (orderId, actor) => rpc("ev_pay_refund_start", { p_order: orderId, p_actor: actor }),
     refundApply: (refundId, reference, status) => rpc("ev_pay_refund_apply", { p_refund_id: refundId, p_reference: reference, p_status: status }),
+    refundAttempt: (reference, note) => rpc("ev_pay_refund_attempt", { p_reference: reference, p_error: note }),
+    refundsUnsettled: async (limit, olderThanSeconds) => {
+      const before = new Date(Date.now() - olderThanSeconds * 1000).toISOString();
+      const rows = await one(
+        admin
+          .from("ev_refunds")
+          .select("reference,bachs_refund_id,attempts,order_id,ev_orders!inner(id,status,host_account,bachs_charge_id)")
+          .eq("method", "card")
+          .in("status", ["requested", "processing"])
+          .eq("ev_orders.status", "refund_pending")
+          .lt("updated_at", before)
+          .order("updated_at", { ascending: true })
+          .limit(limit),
+        "read unsettled refunds"
+      );
+      return ((rows ?? []) as any[]).map((r) => ({
+        orderId: r.order_id as string,
+        reference: r.reference as string,
+        bachsRefundId: (r.bachs_refund_id as string | null) ?? null,
+        chargeId: (r.ev_orders?.bachs_charge_id as string | null) ?? null,
+        hostAccount: r.ev_orders?.host_account as string,
+        attempts: (r.attempts as number) ?? 0,
+      }));
+    },
     disputeFlag: (charge, dispute, status, amount) => rpc("ev_pay_dispute_flag", { p_charge: charge, p_dispute: dispute, p_status: status, p_amount: amount }),
   };
 }

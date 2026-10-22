@@ -47,6 +47,8 @@ export function makeDb(seed?: Partial<Order>) {
       order.needs_refund = true; order.needs_manual = true; return { ok: true, method: "manual" };
     },
     refundApply: async (rid: string | null, ref: string, status: string) => { log.push(`refund_apply ${rid} ${ref} ${status}`); return { ok: true, status }; },
+    refundAttempt: async (ref: string, note: string) => { log.push(`refund_attempt ${ref} ${note}`); return { ok: true }; },
+    refundsUnsettled: async () => [] as { orderId: string; reference: string; bachsRefundId: string | null; chargeId: string | null; hostAccount: string; attempts: number }[],
     disputeFlag: async (c: string, d: string, s: string) => { log.push(`dispute ${c} ${d} ${s}`); return { ok: true }; },
   };
   return db;

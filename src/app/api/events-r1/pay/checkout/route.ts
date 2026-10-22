@@ -11,6 +11,8 @@ const slowDown = limiter(8);
 
 /** What the database's "no" means for the buyer. */
 const REASONS: Record<string, [number, string]> = {
+  not_open: [409, "Not open yet."],
+  no_host: [409, "Tickets for this event are not sold here."],
   no_session: [401, "Sign in to buy a ticket."],
   need_account: [401, "Make an account to buy a ticket."],
   bad_qty: [400, "Pick 1 to 5 tickets."],

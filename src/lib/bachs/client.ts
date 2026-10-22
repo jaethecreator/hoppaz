@@ -8,13 +8,21 @@ import type { BachsErrorKind } from "./types";
  *  - Errors are mapped on `error_code` into a BachsError with a `kind` the routes can branch on.
  *  - 429: waits Retry-After (at most 5 s) and tries again, up to 2 times. Timeouts and 5xx are retried once, but only when the
  *    call is safe to repeat (a GET, or a POST that carries an Idempotency-Key).
- *  - HARD GUARD: a call that creates a charge (checkout session) without an X-Account-Id that starts with acct_ is refused
- *    before anything leaves the building. Bachs silently ignores a misspelled header and would charge Hoppaz's own balance.
+ *  - HARD GUARD: a call that creates a charge (checkout session), or that touches a host's refunds or balances, without an
+ *    X-Account-Id that starts with acct_ is refused before anything leaves the building. Bachs silently ignores a misspelled
+ *    header and would charge, refund or read Hoppaz's own account instead of the host's.
  */
 
 const ACCOUNT_ID = /^acct_[A-Za-z0-9_]{6,64}$/;
-/** POSTs that create a charge or move money for a host. They must name the host account. */
-const NEEDS_ACCOUNT = [/^\/v1\/checkout-sessions\/?$/];
+/**
+ * Calls that create a charge or move or read a host's money. They must name the host account. `methods` null = any method (a GET of a
+ * refund or of the balances is just as wrong without the header: it would answer for Hoppaz's own account).
+ */
+const NEEDS_ACCOUNT: { methods: string[] | null; re: RegExp }[] = [
+  { methods: ["POST"], re: /^\/v1\/checkout-sessions\/?$/ },
+  { methods: null, re: /^\/v1\/refunds(\/[^/]+)?\/?$/ },
+  { methods: null, re: /^\/v1\/balances\/?$/ },
+];
 
 export class BachsError extends Error {
   readonly kind: BachsErrorKind;
@@ -84,8 +92,8 @@ export function guardRequest(method: string, path: string, accountId: string | u
   if (accountId !== undefined && !isAccountId(accountId)) {
     throw new BachsError("guard", "X-Account-Id must be a host account id (acct_...)", 0);
   }
-  if (method === "POST" && !accountId && NEEDS_ACCOUNT.some((re) => re.test(path.split("?")[0]))) {
-    throw new BachsError("guard", `Refusing ${method} ${path}: a charge needs X-Account-Id (acct_...)`, 0);
+  if (!accountId && NEEDS_ACCOUNT.some((n) => (n.methods === null || n.methods.includes(method)) && n.re.test(path.split("?")[0]))) {
+    throw new BachsError("guard", `Refusing ${method} ${path}: this call needs X-Account-Id (acct_...)`, 0);
   }
 }
 
