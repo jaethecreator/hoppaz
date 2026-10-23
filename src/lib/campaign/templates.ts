@@ -1,4 +1,5 @@
 import { CLUBHOUSE, clubhouseWidth, type CampaignLayout } from "./layout";
+import { emergencyRoomWidth } from "./rooms/emergencyRoom";
 import { EVENT_INDOOR } from "./rooms/eventIndoor";
 import { EVENT_THEATRE } from "./rooms/eventTheatre";
 import { EVENT_POOL } from "./rooms/eventPool";
@@ -55,6 +56,13 @@ export const ROOM_TEMPLATES: RoomTemplate[] = [
     description: "Six corners round a courtyard: a stage up top, a studio, a lounge, a gallery and booths to chat in.",
     thumbnail: "/templates/clubhouse.jpg",
     layout: (width) => (width === 30 ? CLUBHOUSE : clubhouseWidth(width)),
+  },
+  {
+    key: "emergency",
+    name: "The Emergency Room",
+    description: "A party dressed as an ER: triage, an operating theatre stage, a pharmacy, a ward, the lab and a helipad.",
+    thumbnail: "/templates/emergency.jpg",
+    layout: emergencyRoomWidth,
   },
 ];
 
