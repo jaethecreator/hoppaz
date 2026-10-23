@@ -1,5 +1,5 @@
-import type { CampaignLayout } from "../layout";
-import { floorProp, prop, room, wall, zone } from "./build";
+import type { CampaignLayout } from "../layout"
+import { floorProp, prop, room, wall, zone } from "./build"
 
 /**
  * Emergency Room by SOS: a weekly electronic music night in Lagos (Afrohouse, Afrotech, Gqom, Techno, Deep House). A crew room
@@ -26,24 +26,86 @@ import { floorProp, prop, room, wall, zone } from "./build";
  */
 
 /** Their page and handle. A tap on the Experiences zone's pill opens it (the zone's `link`, below). */
-export const EMERGENCY_ROOM_INSTAGRAM = "https://www.instagram.com/emergencyroombysos/";
+export const EMERGENCY_ROOM_INSTAGRAM =
+  "https://www.instagram.com/emergencyroombysos/"
 
 /** The layout at a width (30 or 36). */
 export function emergencyRoomLayout(width: 30 | 36): CampaignLayout {
-  const c = (width - 30) / 2; // 0 or 3: the extra floor on each side of the middle
-  const m = c; // middle shift
-  const r = 2 * c; // right shift
+  const c = (width - 30) / 2 // 0 or 3: the extra floor on each side of the middle
+  const m = c // middle shift
+  const r = 2 * c // right shift
   const layout = room("emergency-room", {
     spawn: { x: 15 + c, y: 17 },
-    walls: [wall(1, 1, width - 2, 3), wall(1, 4, 1, 15), wall(width - 2, 4, 1, 15)],
+    walls: [
+      wall(1, 1, width - 2, 3),
+      wall(1, 4, 1, 15),
+      wall(width - 2, 4, 1, 15),
+    ],
     zones: [
-      zone("stage", "THE DECK", "DJ is on", "stagedeck", { x: 10 + m, y: 7, w: 10, h: 7 }, { x: 14 + m, y: 13 }, { x: 13 + m, y: 13 }),
-      zone("entrance", "ENTRANCE", "Tickets here", "concrete", { x: 14 + m, y: 14, w: 9, h: 5 }, { x: 18 + m, y: 18 }, { x: 18 + m, y: 18 }),
-      zone("experiences", "EXPERIENCES", "Follow on Instagram", "concrete", { x: 2, y: 7, w: 5, h: 6 }, { x: 4, y: 12 }, { x: 4, y: 12 }, { label: "OPEN INSTAGRAM", url: EMERGENCY_ROOM_INSTAGRAM }),
-      zone("healing", "AFROTECH HEALING", "Sit back, breathe", "concrete", { x: 2, y: 13, w: 5, h: 6 }, { x: 4, y: 18 }, { x: 4, y: 18 }),
-      zone("merch", "MERCH", "The drip", "concrete", { x: 23 + r, y: 7, w: 5, h: 6 }, { x: 25 + r, y: 12 }, { x: 25 + r, y: 12 }),
-      zone("hall-of-fame", "HALL OF FAME", "Past nights and awards", "concrete", { x: 9 + m, y: 2, w: 12, h: 5 }, { x: 14 + m, y: 6 }, { x: 14 + m, y: 6 }),
-      zone("performers", "PERFORMERS ON DUTY", "Next event's DJs", "concrete", { x: 2, y: 2, w: 6, h: 5 }, { x: 5, y: 6 }, { x: 5, y: 6 }),
+      zone(
+        "stage",
+        "THE DECK",
+        "DJ is on",
+        "stagedeck",
+        { x: 10 + m, y: 7, w: 10, h: 7 },
+        { x: 14 + m, y: 13 },
+        { x: 13 + m, y: 13 },
+      ),
+      zone(
+        "entrance",
+        "ENTRANCE",
+        "Tickets here",
+        "concrete",
+        { x: 14 + m, y: 14, w: 9, h: 5 },
+        { x: 18 + m, y: 18 },
+        { x: 18 + m, y: 18 },
+      ),
+      zone(
+        "experiences",
+        "EXPERIENCES",
+        "Follow on Instagram",
+        "concrete",
+        { x: 2, y: 7, w: 5, h: 6 },
+        { x: 4, y: 12 },
+        { x: 4, y: 12 },
+        { label: "OPEN INSTAGRAM", url: EMERGENCY_ROOM_INSTAGRAM },
+      ),
+      zone(
+        "healing",
+        "AFROTECH HEALING",
+        "Sit back, breathe",
+        "concrete",
+        { x: 2, y: 13, w: 5, h: 6 },
+        { x: 4, y: 18 },
+        { x: 4, y: 18 },
+      ),
+      zone(
+        "merch",
+        "MERCH",
+        "The drip",
+        "concrete",
+        { x: 23 + r, y: 7, w: 5, h: 6 },
+        { x: 25 + r, y: 12 },
+        { x: 25 + r, y: 12 },
+      ),
+      zone(
+        "hall-of-fame",
+        "HALL OF FAME",
+        "Past nights and awards",
+        "concrete",
+        { x: 9 + m, y: 2, w: 12, h: 5 },
+        { x: 14 + m, y: 6 },
+        { x: 14 + m, y: 6 },
+      ),
+      zone(
+        "performers",
+        "PERFORMERS ON DUTY",
+        "Next event's DJs",
+        "concrete",
+        { x: 2, y: 2, w: 6, h: 5 },
+        { x: 5, y: 6 },
+        { x: 5, y: 6 },
+      ),
     ],
     props: [
       prop("er-sign", "erlightbox", 22 + r, 1, 6, 3),
@@ -73,10 +135,10 @@ export function emergencyRoomLayout(width: 30 | 36): CampaignLayout {
       // The way out, two tiles left of the spawn, drawn as the gate.
       prop("entry-map-table", "ergate", 13 + m, 16, 2, 1),
     ],
-  });
+  })
   // room() builds the 30 wide frame; the wide room is the same layout on a wider grid.
-  return width === 30 ? layout : { ...layout, grid: { ...layout.grid, width } };
+  return width === 30 ? layout : { ...layout, grid: { ...layout.grid, width } }
 }
 
-export const EMERGENCY_ROOM = emergencyRoomLayout(30);
-export const EMERGENCY_ROOM_WIDE = emergencyRoomLayout(36);
+export const EMERGENCY_ROOM = emergencyRoomLayout(30)
+export const EMERGENCY_ROOM_WIDE = emergencyRoomLayout(36)
