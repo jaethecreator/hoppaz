@@ -1,0 +1,8 @@
+<!-- Supabase dashboard: Authentication, Emails, "Magic link" template. Subject: Your Hoppaz code is {{ .Token }}
+     Also use it for the "Confirm sign up" template if you keep that one on, so a new person gets a code too. -->
+<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:420px;margin:0 auto;padding:24px;color:#1a1a1a">
+  <p style="font-size:16px;margin:0 0 12px">Hey, here is your Hoppaz code.</p>
+  <p style="font-size:40px;letter-spacing:8px;font-weight:700;margin:16px 0;font-family:ui-monospace,Menlo,Consolas,monospace">{{ .Token }}</p>
+  <p style="font-size:14px;color:#555;margin:0 0 8px">Type it into Hoppaz to sign in. It works for one hour.</p>
+  <p style="font-size:14px;color:#555;margin:0">Did not ask for this? Ignore this email. Nothing happens.</p>
+</div>

@@ -1,5 +1,5 @@
 import type { Block, Tile } from "../geometry";
-import type { CampaignLayout, CampaignProp, CampaignZone, FloorMaterial, PropKind } from "../layout";
+import type { CampaignLayout, CampaignProp, CampaignZone, CampaignZoneLink, FloorMaterial, PropKind } from "../layout";
 
 /**
  * Authoring helpers for event and hotspot rooms (src/lib/campaign/rooms/*). Data only: no JSX, no imports but types, so
@@ -30,8 +30,8 @@ export const floorProp = (id: string, kind: PropKind, x: number, y: number, w: n
 /** The exit, two tiles left of the spawn. `kind` picks how the room draws it (door, gate, mapboard, ticket desk...). */
 export const exitProp = (kind: PropKind) => prop(DOOR_ID, kind, 13, 16, 2, 1);
 
-export function zone(id: string, name: string, subtitle: string, material: FloorMaterial, rect: Block, stop: Tile, plaque: Tile): Omit<CampaignZone, "number"> {
-  return { id, name, subtitle, material, ...rect, stop, plaque };
+export function zone(id: string, name: string, subtitle: string, material: FloorMaterial, rect: Block, stop: Tile, plaque: Tile, link?: CampaignZoneLink): Omit<CampaignZone, "number"> {
+  return link ? { id, name, subtitle, material, ...rect, stop, plaque, link } : { id, name, subtitle, material, ...rect, stop, plaque };
 }
 
 export function room(id: string, parts: { zones: Omit<CampaignZone, "number">[]; walls: Block[]; props: CampaignProp[]; spawn?: Tile }): CampaignLayout {

@@ -37,6 +37,11 @@ import { useCollectibleEventIds } from "@/lib/useCollectibles";
 import { DEMO_DROP_TITLES } from "@/lib/demoData";
 import { closeHotspots, useHotspotNav } from "@/lib/hotspots/open";
 import YouMarker from "@/components/map/YouMarker";
+import { EVENTS_R1, ROOMS_SEAL } from "@/lib/events-r1/flags";
+import CreateButton from "@/components/events-r1/CreateButton";
+import EventsHeading from "@/components/events-r1/EventsHeading";
+import LagosHqMarker from "@/components/events-r1/map/LagosHqMarker";
+import { claimBusIntro } from "@/lib/opening/busIntro";
 
 // MapLibre touches window on import, so it stays out of the server bundle.
 const NightMap = dynamic(() => import("@/components/map/NightMap"), {
@@ -50,6 +55,9 @@ const NightMap = dynamic(() => import("@/components/map/NightMap"), {
 
 // The hotspot pins hang on the map, and MapLibre touches window on import: also client only, in its own chunk.
 const MainHotspots = dynamic(() => import("@/components/hotspots/MainHotspots"), { ssr: false });
+
+// Only a first-time visitor ever loads the city title.
+const TitleSequence = dynamic(() => import("@/components/TitleSequence"), { ssr: false });
 
 // One stable empty list, so memo deps do not change on every render.
 const NO_TYPES: string[] = [];
@@ -87,6 +95,14 @@ export default function MapPage() {
   // reads it waits a tick, or the server HTML would disagree with the first paint.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // First time on this device: the city title (the bus crossing Lagos) plays first, once, and the camera swoops in after it
+  // (src/lib/opening/busIntro.ts). null until asked; false for everyone else, who swoop in as soon as the page is up.
+  const [titles, setTitles] = useState<boolean | null>(null);
+  useEffect(() => setTitles(claimBusIntro()), []);
+  const signNames = useMemo(
+    () => (titles ? [...allEvents].sort((a, b) => b.heat - a.heat).slice(0, 12).map((e) => e.title) : []),
+    [titles, allEvents]
+  );
 
   // Clocks: the bus and the scrubber re-place themselves every half minute.
   const [now, setNow] = useState(() => Date.now());
@@ -99,7 +115,8 @@ export default function MapPage() {
 
   // Calendar counts: everything loaded that has a real place, narrowed by type only (not by distance).
   // Leads with no venue yet stay off the map; Today still lists them.
-  const typed = useMemo(() => allEvents.filter((e) => hasVenue(e) && matchesType(e, shownTypes)), [allEvents, shownTypes]);
+  // Release 1: the lists also carry events with no place (online ones, with an "Online" label); only the pins need a place.
+  const typed = useMemo(() => allEvents.filter((e) => (EVENTS_R1 || hasVenue(e)) && matchesType(e, shownTypes)), [allEvents, shownTypes]);
   const counts = useMemo(() => countByDay(typed), [typed]);
   // NEXT 20: the next events from now, whatever night they fall on, so the map never opens empty.
   // With a location (the first run asks for one), the ones close by come first, topped up with the rest (src/lib/nearEvents.ts).
@@ -107,10 +124,12 @@ export default function MapPage() {
   const next = useMemo(() => nearFirst(typed, located, now), [typed, located, now]);
   // The first run's second layer shows this week's best near you.
   const setTopNear = useTopNear((s) => s.set);
-  useEffect(() => setTopNear(located ? topThisWeek(typed, now) : []), [typed, located, now, setTopNear]);
+  useEffect(() => setTopNear(located ? topThisWeek(EVENTS_R1 ? typed.filter((e) => hasVenue(e)) : typed, now) : []), [typed, located, now, setTopNear]);
   // Otherwise everything on the map (pins, heat, the scrubber) works off the one chosen day.
   const dayEvents = useMemo(() => typed.filter((e) => nightOf(Date.parse(e.starts_at)) === dayKey), [typed, dayKey]);
   const events = mode === "next" ? next.list : dayEvents;
+  // Only an event with a place has a pin. (With Release 1 off every listed event has one.)
+  const pinned = useMemo(() => (EVENTS_R1 ? events.filter((e) => hasVenue(e)) : events), [events]);
 
   const pickDay = useCallback(
     (f: DateFilter) => {
@@ -201,15 +220,15 @@ export default function MapPage() {
 
   /* ---------------------------------------------------------- the scrubber -- */
   const [chosen, setChosen] = useState<{ day: string; at: number; live: boolean } | null>(null);
-  const stops = useMemo(() => scrubStops(events, dayKey, now), [events, dayKey, now]);
+  const stops = useMemo(() => scrubStops(pinned, dayKey, now), [pinned, dayKey, now]);
   const stopIdx = useMemo(() => {
     if (chosen && chosen.day === dayKey) {
       return chosen.live && stops[0]?.live ? 0 : nearestStop(stops, chosen.at);
     }
-    return defaultStop(stops, events, now, today);
-  }, [chosen, dayKey, stops, events, now, today]);
+    return defaultStop(stops, pinned, now, today);
+  }, [chosen, dayKey, stops, pinned, now, today]);
   const slot = stops[Math.min(stopIdx, stops.length - 1)];
-  const strengths = useMemo(() => scrubStrengths(events, stops), [events, stops]);
+  const strengths = useMemo(() => scrubStrengths(pinned, stops), [pinned, stops]);
   const ticks = useMemo(() => scrubTicks(stops, today), [stops, today]);
   const onStop = useCallback(
     (i: number) => {
@@ -314,7 +333,7 @@ export default function MapPage() {
     ? "Checking what's on…"
     : noLiveEvents
       ? "Nothing to show yet."
-      : conductorLine({ events, dropEventIds: dropSet, dayKey, now });
+      : conductorLine({ events: pinned, dropEventIds: dropSet, dayKey, now });
   const showEmpty = mode === "day" && ready && !noLiveEvents && events.length === 0 && !filtering && !event;
 
   return (
@@ -326,7 +345,7 @@ export default function MapPage() {
       {/* The map is its own stacking context: its markers carry z-indexes of their own and must stay under the nav and the chrome. */}
       <div className="absolute inset-0 isolate">
         <NightMap
-          events={events}
+          events={pinned}
           collectibleEventIds={dropIds}
           hopStops={hop?.stops ?? NO_STOPS}
           fix={fix}
@@ -345,7 +364,7 @@ export default function MapPage() {
           onBus={() => setHopOpen(true)}
           hudTop={hud.top}
           hudBottom={hud.bottom}
-          swoop={mounted}
+          swoop={mounted && titles === false}
           onMapReady={onMapReady}
           onMapUnavailable={onMapUnavailable}
           sidePanel={!!event}
@@ -357,8 +376,12 @@ export default function MapPage() {
       {/* You: your own mini avatar at your location. Nothing to tap. */}
       {mounted && map && <YouMarker map={map} fix={fix} look={profile?.avatar ?? look} />}
 
+      {/* Release 1: the Lagos HQ marker, out on the lagoon. Shows with the hotspots sealed or not. */}
+      {EVENTS_R1 && mounted && map && <LagosHqMarker map={map} />}
+
       {/* Hotspots: a pin on each open one, the Hotspots button and list, the sheet and the room. Placed under the chrome's measured height. */}
-      {mounted && <MainHotspots map={map} fix={fix} top={hud.top} hidden={!!event || filtering || picking || hopOpen} />}
+      {/* Release 1: sealed behind NEXT_PUBLIC_ROOMS_SEAL, nothing deleted. */}
+      {mounted && !ROOMS_SEAL && <MainHotspots map={map} fix={fix} top={hud.top} hidden={!!event || filtering || picking || hopOpen} />}
 
       {/* The chrome is all "now" (today's rail, the clock), so it draws on the client only: a page
           prerendered yesterday must not hydrate against today's rail. */}
@@ -380,6 +403,7 @@ export default function MapPage() {
               onDay={(date) => pickDay({ kind: "night", date })}
               // What a tap on its pin does: select it, and the map flies there and opens its card.
               onPickEvent={(e) => setSelected(e.id)}
+              r1
             />
           }
           types={shownTypes}
@@ -399,6 +423,7 @@ export default function MapPage() {
           showBus={hopActive && !!bus}
           onBus={() => setBusFocus((n) => n + 1)}
         >
+          {EVENTS_R1 && <EventsHeading mode={mode} date={dayKey} className="mt-0.5 px-0.5" />}
           {noLiveEvents && <ErrorLine onRetry={() => void reload()} />}
         </TopChrome>
       )}
@@ -415,13 +440,18 @@ export default function MapPage() {
       {/* The + (post a flyer) sits on the right: the hotspots and the desktop rail are on the left (Jae, 15 Oct). */}
       {mounted && !event && (
         <div ref={bottomRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3.5 pb-2.5">
-          <div className="mx-auto flex max-w-[560px] items-end gap-2">
-            <Link href="/drop" aria-label="Post a flyer" title="Post a flyer" className="btn pointer-events-auto order-last ml-auto grid h-11 w-11 flex-none place-items-center p-0">
-              <Plus size={16} strokeWidth={3} aria-hidden />
-            </Link>
+          <div className={EVENTS_R1 ? "mx-auto flex max-w-[560px] flex-col items-end gap-2 md:flex-row" : "mx-auto flex max-w-[560px] items-end gap-2"}>
+            {EVENTS_R1 ? (
+              // On a phone it sits above the day scrubber, bottom right; from 768 px up it goes to the right edge of the map.
+              <CreateButton className="md:absolute md:bottom-2.5 md:right-3.5" />
+            ) : (
+              <Link href="/drop" aria-label="Post a flyer" title="Post a flyer" className="btn pointer-events-auto order-last ml-auto grid h-11 w-11 flex-none place-items-center p-0">
+                <Plus size={16} strokeWidth={3} aria-hidden />
+              </Link>
+            )}
             {mode !== "next" && slot && (
               <TimeScrubber
-                className="pointer-events-auto min-w-0 flex-1"
+                className={EVENTS_R1 ? "pointer-events-auto w-full min-w-0 md:flex-1" : "pointer-events-auto min-w-0 flex-1"}
                 stops={stops}
                 index={stopIdx}
                 onIndex={onStop}
@@ -467,6 +497,7 @@ export default function MapPage() {
         />
       )}
       {hopOpen && <HopSheet hop={hop} fix={fix} onClose={() => setHopOpen(false)} />}
+      {titles && <TitleSequence signs={signNames} onDone={() => setTitles(false)} />}
     </div>
   );
 }

@@ -49,6 +49,8 @@ import { useEvents, useHop } from "@/lib/useEvents";
 import { useGoing } from "@/lib/useGoing";
 import { useSession } from "@/lib/useSession";
 import type { EventRow } from "@/lib/types";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import CreateButton from "@/components/events-r1/CreateButton";
 
 // One stable empty list, so memo deps do not change on every render.
 const NO_TYPES: string[] = [];
@@ -668,6 +670,13 @@ export default function TodayPage() {
           <div className="h-3 flex-none" />
         </div>
       </div>
+
+      {/* Release 1: the orange + Create, the same as the Map. Steps aside while a card is open. */}
+      {EVENTS_R1 && mounted && !event && (
+        <div className="pointer-events-none absolute bottom-2.5 right-3.5 z-20">
+          <CreateButton />
+        </div>
+      )}
 
       <WeOutsideSheet
         open={listOpen}

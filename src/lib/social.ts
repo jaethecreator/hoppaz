@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { ROOMS_SEAL } from "./events-r1/flags";
 import { getSupabase } from "./supabase/client";
 import type { DmThread, Wave } from "./types";
 
@@ -89,6 +90,8 @@ function apply(
   next: { waves: WaveIn[]; crew: CrewFace[]; dms: ChatRow[]; unread: number; mentions?: Mention[]; onMap?: boolean },
   supported: boolean
 ): InboxDiff {
+  // Release 1: hotspot chats are sealed, so nobody can be tagged in one.
+  if (ROOMS_SEAL) next = { ...next, mentions: [] };
   const prev = useSocial.getState();
   const diff: InboxDiff = { newWaves: [], newMessages: [], newMentions: [] };
   if (prev.loaded) {

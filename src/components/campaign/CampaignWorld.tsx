@@ -15,6 +15,7 @@ import type { CrewRoomConnection, RoomPeer, SocialWorld } from "@/lib/crew-room/
 import { deviceTier } from "@/lib/deviceTier";
 import { haptics } from "@/lib/haptics";
 import { sfx } from "@/lib/sound/sfx";
+import AmbientWalkers from "./AmbientWalkers";
 import AvatarSprite from "./AvatarSprite";
 import RoomArt, { type RoomArtContent } from "./roomArt";
 import { RoomCamera, type CamMode } from "./roomCamera";
@@ -859,6 +860,8 @@ export default function CampaignWorld({
                 const away = !!social && isAway(peer, observedAt);
                 return <Walker key={peer.id} id={peer.id} x={peer.x} y={peer.y} look={peer.look} name={peer.name} tile={tile} tag={tagged.has(peer.id)} away={away} attach={motion.attach} />;
               })}
+              {/* Scenery people (a template's `ambient` list): on this phone only, never peers, counted, tagged, tapped or in chat. */}
+              {layout.ambient?.length ? <AmbientWalkers layout={layout} /> : null}
               {!watching && <Walker id="me" me x={player.x} y={player.y} look={look} name="You" tile={tile} tag={lod >= 1} walking={walking} ring={ring} nudge={nudge} voiceId={userId} attach={motion.attach} />}
             </div>
             <div className={css.tags}>

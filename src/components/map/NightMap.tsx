@@ -531,8 +531,12 @@ export default function NightMap({
         if (!r.width) continue;
         const cx = r.left + r.width / 2 - h0.left;
         const cy = r.top + r.height / 2 - h0.top;
-        const full: Box = [cx - PIN_FULL.left, cy - PIN_FULL.up, cx + PIN_FULL.right, cy + PIN_FULL.down];
-        const disc: Box = [cx - PIN_DISC, cy - PIN_DISC, cx + PIN_DISC, cy + PIN_DISC];
+        // A bigger landmark (the Lagos HQ marker) says how much room it needs: data-pin-full "left,up,right,down" and data-pin-disc.
+        const own = el.dataset.pinFull?.split(",").map(Number);
+        const pf = own?.length === 4 && own.every(Number.isFinite) ? { left: own[0], up: own[1], right: own[2], down: own[3] } : PIN_FULL;
+        const pd = Number(el.dataset.pinDisc) || PIN_DISC;
+        const full: Box = [cx - pf.left, cy - pf.up, cx + pf.right, cy + pf.down];
+        const disc: Box = [cx - pd, cy - pd, cx + pd, cy + pd];
         const named = !far && (el.classList.contains("hz-pin-on") || free(...full));
         taken.push(named ? full : disc);
         const fit = named ? "full" : "disc";

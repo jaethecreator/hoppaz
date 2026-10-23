@@ -64,6 +64,12 @@ export function useZoneCards({
         if (c.artistTitle) action = { label: "SEE THE ARTIST", onPress: () => open("artist") };
         else if (music) action = { label: "SEE THE RELEASE", onPress: () => go(music) };
       }
+      // A template can give a zone one link of its own (CampaignZone.link): the pill opens it in a new tab. The label and the
+      // address are the template's data; only an http(s) address is ever opened.
+      else if (z.link) {
+        const url = validCampaignUrl(z.link.url);
+        if (url) action = { label: z.link.label, onPress: () => go(url) };
+      }
       if (!action) return;
       shown.current.set(zone, now);
       store.setAction({ id: "zone", label: action.label, priority: 20, onPress: action.onPress });

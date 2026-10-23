@@ -9,6 +9,8 @@ import { hasEnded } from "@/components/today/helpers";
 import { dayLabel } from "@/lib/filters";
 import { clockShort, eventTitle, isEventLead } from "@/lib/geo";
 import type { EventRow } from "@/lib/types";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import DayList from "@/components/events-r1/DayList";
 import { useDialog } from "./useDialog";
 
 /* eslint-disable @next/next/no-img-element -- organiser flyers come from anywhere, sizes unknown */
@@ -62,6 +64,7 @@ export default function NextCard({
   onClose,
   anchorRef,
   openerRef,
+  r1 = false,
 }: {
   heading: string;
   sub: string;
@@ -77,7 +80,10 @@ export default function NextCard({
   anchorRef: RefObject<HTMLElement | null>;
   /** The chip that opened it, so the card lines up under it on a wide screen. */
   openerRef: RefObject<HTMLElement | null>;
+  /** Release 1 wording and day list (the Map only). */
+  r1?: boolean;
 }) {
+  const r1on = EVENTS_R1 && r1;
   const box = useRef<HTMLDivElement>(null);
   useDialog(box, onClose);
 
@@ -104,7 +110,7 @@ export default function NextCard({
         <div className="flex flex-none items-center gap-2 border-b border-line py-1.5 pl-3 pr-1">
           <div className="min-w-0 flex-1">
             <h2 className="truncate font-display text-[15px] font-black leading-none">{heading}</h2>
-            <p className="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.1em] text-dim">{sub}</p>
+            <p className={clsx("mt-1 truncate text-dim", r1on ? "font-body text-[12px]" : "font-mono text-[10px] uppercase tracking-[0.1em]")}>{sub}</p>
           </div>
           {onBackToNext && (
             <button
@@ -125,6 +131,17 @@ export default function NextCard({
 
         {events.length === 0 ? (
           <p className="hint px-4 py-6 text-center">Nothing listed for this day yet.</p>
+        ) : r1on ? (
+          // Release 1: plain text under day headings.
+          <DayList
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+            events={events}
+            now={now}
+            onPick={(e) => {
+              onClose();
+              onPick(e);
+            }}
+          />
         ) : (
           <ul className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             {events.map((e, i) => {

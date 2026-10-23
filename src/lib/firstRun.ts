@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { ROOMS_SEAL } from "@/lib/events-r1/flags";
 
 /**
  * The first run, in layers over the app as it always was (no splash, no pager, no Next buttons):
@@ -172,7 +173,10 @@ export const useFirstRun = create<FirstRunState>((set, get) => ({
   step: null,
   ready: false,
   hydrate: () => {
-    if (!get().ready) set({ step: readSaved(), ready: true });
+    if (get().ready) return;
+    const saved = readSaved();
+    // Release 1: no hotspot, so no walk to one. A saved "home" or "arrived" is the end of it.
+    set({ step: ROOMS_SEAL && (saved === "home" || saved === "arrived") ? "done" : saved, ready: true });
   },
   sync: () => {
     const saved = readSaved();
@@ -180,6 +184,8 @@ export const useFirstRun = create<FirstRunState>((set, get) => ({
     if (saved === "done" && get().step !== "done") set({ step: "done" });
   },
   go: (step) => {
+    // Release 1: the home base and arrived layers are sealed with the hotspots (NEXT_PUBLIC_ROOMS_SEAL).
+    if (ROOMS_SEAL && (step === "home" || step === "arrived")) step = "done";
     save(step);
     set({ step, ready: true });
   },

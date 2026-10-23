@@ -3,7 +3,12 @@ import type { Block, Tile } from "./geometry";
 /** The clubhouse's own zone ids. Event and hotspot rooms (src/lib/campaign/rooms) bring their own, so a zone id is any string. */
 export type ZoneId = "studio" | "stage" | "awards" | "courtyard" | "records" | "campaign" | (string & {});
 export type FloorMaterial = "acoustic" | "stage" | "marble" | "grass" | "wood" | "terrazzo" | (string & {});
-export type CampaignZone = Block & { id: ZoneId; number: string; name: string; subtitle: string; material: FloorMaterial; stop: Tile; plaque: Tile };
+/**
+ * `link` is optional data: a room template may give a zone one link (a label for the room's action pill, and an https URL),
+ * and the pill offers it while someone stands in the zone (useZoneCards.ts). The engine knows no brand, only this field.
+ */
+export type CampaignZoneLink = { label: string; url: string };
+export type CampaignZone = Block & { id: ZoneId; number: string; name: string; subtitle: string; material: FloorMaterial; stop: Tile; plaque: Tile; link?: CampaignZoneLink };
 /**
  * What a prop is drawn as. The first sixteen are the clubhouse kit (ClubhouseArt). Event and hotspot rooms draw their own
  * props in their art file (src/components/campaign/art), so a kind is any string there: the layout only needs the box.
@@ -11,7 +16,22 @@ export type CampaignZone = Block & { id: ZoneId; number: string; name: string; s
 export type PropKind = "console" | "speaker" | "headphones" | "plant" | "tree" | "sofa" | "table" | "records" | "plinth" | "poster" | "counter" | "bench" | "fountain" | "lamp" | "rug" | "maptable" | (string & {});
 export type CampaignProp = Block & { id: string; kind: PropKind; variant?: number; solid?: boolean };
 export type PrivateArea = Block & { id: string; name: string; stop: Tile };
-export type CampaignLayout = { id: string; grid: { width: number; height: number; tile: number }; spawn: Tile; zones: CampaignZone[]; privateAreas: PrivateArea[]; walls: Block[]; props: CampaignProp[] };
+/**
+ * Scenery people (ambient.ts). A template may list a few characters that live on each phone only: drawn with the avatar system,
+ * but never a Hopper. They are not peers, not counted, not tagged, not tappable and never in chat. `look` is a partial avatar look
+ * (normalizeLook fills the rest). `range` is the block they stay in; `home` is where they start and come back to.
+ */
+export type AmbientMember = {
+  id: string;
+  role: string;
+  look: Record<string, unknown>;
+  home: Tile;
+  range: Block;
+  /** post: stands at home and shuffles; wander: strolls the range and pauses; chat: walks with `partner`, side by side. */
+  mode: "post" | "wander" | "chat";
+  partner?: string;
+};
+export type CampaignLayout = { id: string; grid: { width: number; height: number; tile: number }; spawn: Tile; zones: CampaignZone[]; privateAreas: PrivateArea[]; walls: Block[]; props: CampaignProp[]; ambient?: AmbientMember[] };
 
 /** Scene dimensions, collision, assets and interaction anchors share one source of truth. */
 export const CLUBHOUSE: CampaignLayout = {

@@ -14,8 +14,13 @@ import PushAlert from "@/components/app/PushAlert"
 import SoundLane from "@/components/app/SoundLane"
 import GameTimePing from "@/components/game-time/GameTimePing"
 import FirstRun from "@/components/firstrun/FirstRun"
+import OpeningCover from "@/components/opening/OpeningCover"
+import OpeningHost from "@/components/opening/OpeningHost"
 import SocialPing from "@/components/social/SocialPing"
+import { ROOMS_SEAL } from "@/lib/events-r1/flags"
 import { THEME_BOOT_SCRIPT } from "@/lib/theme"
+import { BOOT_SCRIPT as OPENING_BOOT_SCRIPT } from "@/lib/opening/boot"
+import { OPENING_ENABLED } from "@/lib/opening/flags"
 import "@fontsource/archivo/400.css"
 import "@fontsource/archivo/500.css"
 import "@fontsource/archivo/600.css"
@@ -88,9 +93,11 @@ export default function RootLayout({
     <html lang="en" data-theme="night" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+        {/* The short opening (src/lib/opening): on a cold start it is drawn from the first frame. Off with NEXT_PUBLIC_OPENING=off. */}
+        {OPENING_ENABLED && <script dangerouslySetInnerHTML={{ __html: OPENING_BOOT_SCRIPT }} />}
         {/* The two biggest public reads start before React hydrates. Same path, no query and same-origin credentials as getJSON in src/lib/publicApi.ts, or the preload is wasted. */}
         <link rel="preload" href="/api/public/events" as="fetch" crossOrigin="anonymous" />
-        <link rel="preload" href="/api/public/hotspots" as="fetch" crossOrigin="anonymous" />
+        {!ROOMS_SEAL && <link rel="preload" href="/api/public/hotspots" as="fetch" crossOrigin="anonymous" />}
       </head>
       <body className="overflow-hidden">
         {/* First, so its effect runs before any page's: a page that sends a guest to sign up has the router by then. */}
@@ -112,6 +119,8 @@ export default function RootLayout({
         <Toaster />
         <InstallSheet />
         <FirstRun />
+        {OPENING_ENABLED && <OpeningCover />}
+        {OPENING_ENABLED && <OpeningHost />}
       </body>
     </html>
   )

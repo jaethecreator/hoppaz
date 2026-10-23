@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { DEMO } from "@/components/me/demo";
+import { ROOMS_SEAL } from "@/lib/events-r1/flags";
 import { getSupabase } from "@/lib/supabase/client";
 import { fetchHotspotRows } from "@/lib/publicApi";
 import { read, write } from "@/lib/phoneCache";
@@ -130,20 +131,21 @@ const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : use
  * with nothing to show says "Hotspots could not load" and offers `reload(true)`.
  */
 export function useHotspots({ active, at }: { active: boolean; at: Pt | null }) {
-  const [list, setList] = useState<Hotspot[]>(() => (DEMO ? DEMO_HOTSPOTS : []));
+  const [list, setList] = useState<Hotspot[]>(() => (DEMO && !ROOMS_SEAL ? DEMO_HOTSPOTS : []));
   const [loaded, setLoaded] = useState(DEMO);
   const [failed, setFailed] = useState(false);
 
   // The pins from the phone's own copy land before the first paint (and after hydration, so the server HTML still agrees).
   useIsoLayoutEffect(() => {
-    if (DEMO || !cached) return;
+    if (DEMO || ROOMS_SEAL || !cached) return;
     setList(cached.list);
     setLoaded(true);
   }, []);
 
   /** `force` asks now; without it, a copy under a minute old is kept. Whatever is on the map stays when the call fails. */
   const reload = useCallback(async (force = false) => {
-    if (DEMO) return;
+    // Release 1: sealed hotspots are an empty list, and nothing is asked of the server.
+    if (DEMO || ROOMS_SEAL) return;
     if (!force && cached && Date.now() - cached.at < SHEET_REFRESH_MS) return;
     const rows = await fetchList();
     if (rows) {
@@ -168,7 +170,7 @@ export function useHotspots({ active, at }: { active: boolean; at: Pt | null }) 
   // A copy under a minute old (from the crew hub, an earlier visit, or the phone) is used as it is. An older one is shown
   // and refreshed in the background; with none, ask now.
   useEffect(() => {
-    if (!active || DEMO) return;
+    if (!active || DEMO || ROOMS_SEAL) return;
     if (cached) {
       setList(cached.list);
       setLoaded(true);

@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import CampaignWorld from "@/components/campaign/CampaignWorld";
+import { useZoneCards } from "@/components/campaign/useZoneCards";
+import ActionButton from "@/components/crew-room/ActionButton";
 import RoomArt from "@/components/campaign/roomArt";
 import { floodFill } from "@/lib/campaign/geometry";
-import { canWalkScene, CLUBHOUSE, type CampaignLayout } from "@/lib/campaign/layout";
-import { PLACE_ROOMS } from "@/lib/campaign/templates";
+import { canWalkScene, CLUBHOUSE, EMPTY_CAMPAIGN, type CampaignLayout } from "@/lib/campaign/layout";
+import { PLACE_ROOMS, ROOM_TEMPLATES } from "@/lib/campaign/templates";
 import type { RoomPeer, SocialWorld } from "@/lib/crew-room/types";
 import { anonLook, DEFAULT_LOOK, normalizeLook, randomLook } from "@/lib/avatar";
 import { hotspotRoomData } from "@/lib/rooms/hotspotRooms";
@@ -28,6 +30,11 @@ const ENTRIES: Entry[] = [
   ...PLACE_ROOMS.filter((r) => r.kind === "event").map((r) => ({ key: r.key, name: r.name, group: "EVENT", layout: r.layout })),
   ...PLACE_ROOMS.filter((r) => r.kind === "hotspot").map((r) => ({ key: r.key, name: hotspotRoomData(r.slug)?.place ?? r.name, group: "HOTSPOT", layout: r.layout })),
   { key: "clubhouse", name: "Clubhouse", group: "CREW", layout: CLUBHOUSE },
+  // Crew templates other than the clubhouse (the Emergency Room): `<key>` at 30 wide, `<key>-36` at 36 wide.
+  ...ROOM_TEMPLATES.filter((t) => t.key !== "clubhouse").flatMap((t) => [
+    { key: t.key, name: t.name, group: "TEMPLATE", layout: t.layout(30) },
+    { key: `${t.key}-36`, name: `${t.name} 36`, group: "TEMPLATE", layout: t.layout(36) },
+  ]),
 ];
 
 /**
@@ -99,26 +106,39 @@ function Walk({ entry, count, look }: { entry: Entry; count: number; look: unkno
     () => ({ peers, circles: [], selfId: "me", circleId: null, areaId: null, watching: false, observedAt, reset, onStep: () => true }),
     [peers, observedAt, reset]
   );
-  const isPlace = entry.group !== "CREW";
+  const isPlace = entry.group !== "CREW" && entry.group !== "TEMPLATE";
   return (
-    <CampaignWorld
-      key={entry.key}
-      layout={entry.layout}
-      look={look}
-      brand={isPlace ? entry.name : "360Playlist"}
-      social={social}
-      placeId={isPlace ? entry.key : undefined}
-      roomContent={entry.group === "EVENT" ? SAMPLE : undefined}
-    />
+    <>
+      <CampaignWorld
+        key={entry.key}
+        layout={entry.layout}
+        look={look}
+        brand={isPlace || entry.group === "TEMPLATE" ? entry.name : "360Playlist"}
+        social={social}
+        placeId={isPlace ? entry.key : undefined}
+        roomContent={entry.group === "EVENT" ? SAMPLE : undefined}
+      />
+      {entry.group === "TEMPLATE" && <DevZonePill layout={entry.layout} />}
+    </>
+  );
+}
+
+/** A crew template's zone pill (the OPEN INSTAGRAM pill of the Emergency Room), as the crew room mounts it: the zone hook and the action pill. */
+function DevZonePill({ layout }: { layout: CampaignLayout }) {
+  useZoneCards({ layout, content: EMPTY_CAMPAIGN, nextEvent: null, ready: true, openSheet: () => {} });
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20">
+      <ActionButton crewId="dev" layout={layout} />
+    </div>
   );
 }
 
 function Still({ entry }: { entry: Entry }) {
-  const isPlace = entry.group !== "CREW";
+  const isPlace = entry.group !== "CREW" && entry.group !== "TEMPLATE";
   return (
     <div className="grid h-full place-items-center overflow-auto bg-[#15171a] p-2">
       <div className="w-full max-w-[960px] [&>svg]:h-auto [&>svg]:w-full">
-        <RoomArt layout={entry.layout} uid="still" brand={isPlace ? entry.name : "360Playlist"} content={entry.group === "EVENT" ? SAMPLE : undefined} />
+        <RoomArt layout={entry.layout} uid="still" brand={isPlace || entry.group === "TEMPLATE" ? entry.name : "360Playlist"} content={entry.group === "EVENT" ? SAMPLE : undefined} />
       </div>
     </div>
   );
@@ -178,7 +198,7 @@ export default function DevRoomTemplates() {
                 onClick={() => setKey(e.key)}
                 className={`flex-none rounded border px-2 py-1 font-mono text-[10px] ${e.key === key ? "border-[#FF4D00] bg-[#FF4D00] text-[#0E0B0A]" : "border-white/20 text-white/80"}`}
               >
-                {e.group === "EVENT" ? "" : e.group === "HOTSPOT" ? "@ " : "· "}
+                {e.group === "EVENT" ? "" : e.group === "HOTSPOT" ? "@ " : e.group === "TEMPLATE" ? "# " : "· "}
                 {e.name.toUpperCase()}
               </button>
             ))}

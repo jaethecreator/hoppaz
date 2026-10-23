@@ -1,4 +1,5 @@
-import { CalendarDays, DoorOpen, Gift, MapPin, MoreHorizontal, ShieldAlert, Target, type LucideIcon } from "lucide-react";
+import { Box, CalendarDays, DoorOpen, Flag, Gift, MapPin, MoreHorizontal, ShieldAlert, Target, type LucideIcon } from "lucide-react";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
 import type { SectionKey } from "../types";
 
 /**
@@ -11,6 +12,8 @@ export const SECTIONS: { key: SectionKey; title: string; short: string; Icon: Lu
   { key: "events", title: "Events", short: "Events", Icon: CalendarDays, words: ["event", "queue"] },
   { key: "hotspots", title: "Hotspots", short: "Hotspots", Icon: MapPin, words: ["hotspot", "alias", "mute"] },
   { key: "safety", title: "Safety", short: "Safety", Icon: ShieldAlert, words: ["report", "photo", "safety"] },
+  ...(EVENTS_R1 ? [{ key: "eventreports" as const, title: "Event reports", short: "Reports", Icon: Flag, words: ["event report", "reported", "hidden"] }] : []),
+  ...(EVENTS_R1 ? [{ key: "roomz3d" as const, title: "Roomz 3D", short: "Roomz 3D", Icon: Box, words: ["3d", "roomz", "room", "walk", "switch"] }] : []),
   { key: "quests", title: "Quests", short: "Quests", Icon: Target, words: ["quest"] },
   { key: "more", title: "More tools", short: "More", Icon: MoreHorizontal, words: ["partner", "spawner", "street box", "score", "collectible", "classic", "more"] },
 ];
