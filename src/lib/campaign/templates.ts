@@ -147,7 +147,7 @@ export const EVENT_ROOMS: PlaceRoom[] = [
     kind: "event",
     name: "Outdoor party",
     description:
-      "An open-air party: a stage truck, tents, suya and jollof stalls and string lights over the lawn.",
+      "An open-air party: a stage truck, tents, suya and jollof stalls and string lightsover the lawn.",
     layout: EVENT_OUTDOOR,
   },
   {

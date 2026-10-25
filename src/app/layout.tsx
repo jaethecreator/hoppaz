@@ -11,6 +11,7 @@ import InstallSheet from "@/components/app/InstallSheet"
 import MusicHost from "@/components/app/MusicHost"
 import OfflineLine from "@/components/app/OfflineLine"
 import PushAlert from "@/components/app/PushAlert"
+import SaveProgressBanner from "@/components/app/SaveProgressBanner"
 import SoundLane from "@/components/app/SoundLane"
 import GameTimePing from "@/components/game-time/GameTimePing"
 import FirstRun from "@/components/firstrun/FirstRun"
@@ -114,6 +115,7 @@ export default function RootLayout({
           </div>
           <BottomNav />
         </div>
+        <SaveProgressBanner />
         <GameTimePing />
         <SocialPing />
         <Toaster />

@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { createAccount, continueWithGoogle, logIn } from "@/lib/account";
+import { nameFromEmail } from "@/components/events-r1/signin/helpers";
 
 /** Fired on window after a sign-up or log-in, so the home-screen sheet can offer itself. */
 export const SIGNED_IN_EVENT = "hoppaz:signed-in";
 
 /**
- * Sign up or log in, in one small form: name, email, password for a new
- * account; email and password to log in. Used by the sign-up sheet, the
+ * Sign up or log in, in one small form: email and password for a new
+ * account (the name is made from the email and can be changed in Me); email and password to log in. Used by the sign-up sheet, the
  * gated pages and /account. No email to confirm: you're in the moment it saves.
  */
 export default function SignupForm({
@@ -20,7 +21,6 @@ export default function SignupForm({
   startWith?: "create" | "login";
 }) {
   const [mode, setMode] = useState<"create" | "login">(startWith);
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
@@ -33,7 +33,7 @@ export default function SignupForm({
     if (busy) return;
     setError(null);
     setBusy(true);
-    const err = mode === "create" ? await createAccount({ name, email, password }) : await logIn(email, password);
+    const err = mode === "create" ? await createAccount({ name: nameFromEmail(email.trim()) || "Hopper", email, password }) : await logIn(email, password);
     setBusy(false);
     if (err) return setError(err);
     window.dispatchEvent(new Event(SIGNED_IN_EVENT));
@@ -75,21 +75,6 @@ export default function SignupForm({
         <span className="font-mono text-[10px] tracking-[0.12em] text-dim">OR EMAIL</span>
         <span className="h-px flex-1 bg-line" />
       </div>
-      {mode === "create" && (
-        <div>
-          <label className="label" htmlFor="su-name">Your name</label>
-          <input
-            id="su-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={24}
-            autoComplete="given-name"
-            autoCapitalize="words"
-            enterKeyHint="next"
-            required
-          />
-        </div>
-      )}
       <div>
         <label className="label" htmlFor="su-email">Email</label>
         <input
