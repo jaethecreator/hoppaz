@@ -13,6 +13,7 @@ import OfflineLine from "@/components/app/OfflineLine"
 import PushAlert from "@/components/app/PushAlert"
 import SaveProgressBanner from "@/components/app/SaveProgressBanner"
 import SoundLane from "@/components/app/SoundLane"
+import WaitlistPrompt from "@/components/app/WaitlistPrompt"
 import GameTimePing from "@/components/game-time/GameTimePing"
 import FirstRun from "@/components/firstrun/FirstRun"
 import OpeningCover from "@/components/opening/OpeningCover"
@@ -116,6 +117,7 @@ export default function RootLayout({
           <BottomNav />
         </div>
         <SaveProgressBanner />
+        <WaitlistPrompt />
         <GameTimePing />
         <SocialPing />
         <Toaster />
