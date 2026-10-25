@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(cat src/app/api/account/create/route.ts; sed -n 28,42p src/lib/types.ts; sed -n 1,50p src/components/BottomNav.tsx; sed -n 1,30p src/lib/events-r1/../../components/events-r1/signin/helpers.ts)",
-      "Read(//Users/ola_199x/Desktop/Dev/hoppaz/src/components/events-r1/signin/**)"
+      "Read(//Users/ola_199x/Desktop/Dev/hoppaz/src/components/events-r1/signin/**)",
+      "Bash(node -e ' *)",
+      "Bash(sed -i 's|^  \"District 19, 19 Ologun Agbaje St, Victoria Island\": \\\\[6.4318, 3.4185\\\\],|&\\\\n  \"District 19, Victoria Island\": [6.4318, 3.4185],|' scripts/events/load-guide.mjs)",
+      "Bash(node scripts/events/load-guide.mjs ~/Downloads/hoppaz-events-W43-W44)",
+      "Bash(node scripts/events/load-guide.mjs ~/Downloads/hoppaz-events-W43-W44 --apply)"
     ]
   }
 }
