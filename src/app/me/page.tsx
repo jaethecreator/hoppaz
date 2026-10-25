@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import RequireAccount from "@/components/app/RequireAccount";
 import { useRouter } from "next/navigation";
-import { FileText, Gift, Link2 } from "lucide-react";
+import { FileText, Gift, Link2, Mic } from "lucide-react";
 import Sheet from "@/components/Sheet";
 import AreaPicker from "@/components/AreaPicker";
 import type { MascotState } from "@/components/Mascot";
@@ -395,6 +395,12 @@ function MePagePage() {
       <section aria-label="More" className="mt-7">
         <p className="seclabel mb-2.5">MORE</p>
         <RowGroup>
+          <RowLink
+            href="/meet"
+            title="Speed Meet"
+            hint="4 minute voice chats with people who like what you like."
+            lead={<Mic size={19} strokeWidth={1.9} aria-hidden className="flex-none text-violet" />}
+          />
           <RowLink
             href="/drops"
             title="Live drops"

@@ -17,7 +17,7 @@ export default function AccountPage() {
 }
 
 /**
- * Make an account or log in. Three fields to sign up (name, email, password);
+ * Make an account or log in. Two fields to sign up (email, password; the name is made from the email);
  * anything else (gender, then birthday) is asked later, one question at a time.
  * The session is shared app-wide, so signing in or out needs no reload.
  */
