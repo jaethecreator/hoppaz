@@ -16,9 +16,12 @@ export const SIGNED_IN_EVENT = "hoppaz:signed-in";
 export default function SignupForm({
   onDone,
   startWith = "create",
+  createLabel = "MAKE MY ACCOUNT",
 }: {
   onDone: (how: "create" | "login") => void;
   startWith?: "create" | "login";
+  /** The new-account button's words (the waitlist card says JOIN THE WAITLIST). */
+  createLabel?: string;
 }) {
   const [mode, setMode] = useState<"create" | "login">(startWith);
   const [email, setEmail] = useState("");
@@ -122,7 +125,7 @@ export default function SignupForm({
       )}
 
       <button type="submit" className="btn mt-1 w-full" disabled={busy || googleBusy}>
-        {busy ? "ONE SEC…" : mode === "create" ? "MAKE MY ACCOUNT" : "LOG IN"}
+        {busy ? "ONE SEC…" : mode === "create" ? createLabel : "LOG IN"}
       </button>
       <button type="button" onClick={flip} className="min-h-[44px] font-body text-[14px] text-dim underline underline-offset-4">
         {mode === "create" ? "Already have an account? Log in" : "New here? Make an account"}
