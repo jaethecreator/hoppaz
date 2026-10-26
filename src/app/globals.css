@@ -1618,3 +1618,124 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
 [data-gt-ping]:has(~ [data-social-ping]) {
   visibility: hidden;
 }
+
+/* ------------------------------------------------------------ host surfaces -- */
+/* Event page, room page, create and the dashboards are the quiet host layer: everything is coloured by the Tint engine
+   (src/lib/tint.ts) through the --t-* variables a TintShell sets. Sentence case, 6px radius, one main action per screen. */
+@layer components {
+  .tint-ui {
+    color: var(--t-text);
+    background: var(--t-bg);
+  }
+  .tint-ui input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+  .tint-ui select,
+  .tint-ui textarea {
+    background: var(--t-bg);
+    border-color: var(--t-line);
+    color: var(--t-text);
+    color-scheme: inherit;
+  }
+  .tint-ui input:focus,
+  .tint-ui select:focus,
+  .tint-ui textarea:focus {
+    border-color: var(--t-accent);
+    outline: none;
+  }
+  .tint-ui ::placeholder {
+    color: var(--t-muted);
+    opacity: 0.75;
+  }
+  .tint-ui :focus-visible {
+    outline-color: var(--t-accent);
+  }
+  /* The host layer's lip button: the tint's strong step, a 4px darker lip, sinks 4px on press. */
+  .lip {
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-hz px-4 py-3 font-display text-[15px] font-extrabold
+           transition-[transform,box-shadow] duration-75 active:translate-y-1;
+    background: var(--t-accent);
+    color: var(--t-on);
+    box-shadow: 0 4px 0 var(--t-ember);
+  }
+  .lip:active {
+    box-shadow: none;
+  }
+  .lip[aria-disabled="true"],
+  .lip:disabled {
+    background: var(--t-soft);
+    color: var(--t-muted);
+    box-shadow: none;
+    transform: none;
+  }
+  .lip-ghost {
+    @apply inline-flex min-h-[40px] items-center justify-center gap-2 rounded-hz border px-3 py-2 font-body text-[14px] font-bold
+           transition-[transform,box-shadow] duration-75 active:translate-y-[3px];
+    border-color: var(--t-line);
+    background: var(--t-solid);
+    color: var(--t-text);
+    box-shadow: 0 3px 0 var(--t-line);
+  }
+  .lip-ghost:active {
+    box-shadow: none;
+  }
+  .t-card {
+    @apply rounded-hz border;
+    background: var(--t-tile);
+    border-color: var(--t-line);
+  }
+  /* Packs: the background behaviour behind a host page. Drawn once, cheap, quiet behind the content. */
+  .pack-layer {
+    @apply pointer-events-none absolute inset-0 overflow-hidden;
+  }
+  .pack-glow::before,
+  .pack-glow::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(70px);
+    animation: hz-drift 18s ease-in-out infinite alternate;
+  }
+  .pack-glow::before {
+    width: 60%;
+    height: 50%;
+    left: -10%;
+    top: -12%;
+    background: var(--t-glow);
+  }
+  .pack-glow::after {
+    width: 55%;
+    height: 45%;
+    right: -12%;
+    top: 20%;
+    background: var(--t-glow2);
+    animation-delay: -9s;
+  }
+  .pack-confetti {
+    background-image: radial-gradient(var(--t-accent) 1.6px, transparent 1.8px), radial-gradient(var(--t-glow2) 1.6px, transparent 1.8px);
+    background-size: 46px 46px, 62px 62px;
+    background-position: 0 0, 23px 31px;
+    opacity: 0.35;
+  }
+  .pack-detty {
+    background-image: radial-gradient(circle at 20% 20%, var(--t-glow) 0, transparent 40%),
+      repeating-conic-gradient(from 0deg at 50% -10%, var(--t-soft) 0 6deg, transparent 6deg 18deg);
+    opacity: 0.6;
+  }
+  .pack-owambe {
+    background-image: linear-gradient(45deg, var(--t-soft) 25%, transparent 25%, transparent 75%, var(--t-soft) 75%),
+      linear-gradient(45deg, var(--t-soft) 25%, transparent 25%, transparent 75%, var(--t-soft) 75%);
+    background-size: 36px 36px;
+    background-position: 0 0, 18px 18px;
+    opacity: 0.45;
+  }
+}
+@keyframes hz-drift {
+  to {
+    transform: translate(8%, 6%) scale(1.08);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pack-glow::before,
+  .pack-glow::after {
+    animation: none;
+  }
+}

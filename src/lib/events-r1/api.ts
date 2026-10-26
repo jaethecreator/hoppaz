@@ -3,6 +3,7 @@
  * `fake` (fake/) is in memory and seeded; `real` (real/) calls Ola's functions later.
  * Picked by getApi() in index.ts from NEXT_PUBLIC_EVENTS_R1_FAKE.
  */
+import type { LooksApi } from "./looks";
 import type { PayApi } from "./pay";
 import type {
   AuthUser, EventChat, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
@@ -162,4 +163,6 @@ export interface EventsR1Api {
   clock: ClockApi;
   /** Paid tickets (Bachs). Only used when paid tickets are switched on. */
   pay: PayApi;
+  /** Event and room looks (pack, Day or Night, tint). */
+  looks: LooksApi;
 }

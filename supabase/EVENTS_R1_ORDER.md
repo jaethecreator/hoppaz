@@ -29,6 +29,7 @@ Then the new files, in this order, each one once (they are safe to run again):
 | 7 | `events_r1_pay.sql` | all six new files; `auth.users` | files 1 to 6 (see `EVENTS_R1_PAY.md`) |
 | 6 | `events_r1_rooms.sql` | `crews`, `crew_members`, `crew_rooms`, `crew_announcement_seen`, `crew_announcement_seen()` | files 1, 2 and 4 |
 | 8 | `events_r1_covers.sql` | `crew_rooms.sql` (the public `crew-images` bucket), `chat_accounts.sql` (`has_account()`) | nothing, but run it after file 1: a cover link is saved through `ev_create_event` / `ev_update_event` (see 2d) |
+| 9 | `events_r1_looks.sql` | `crews`, `crew_members`, `chat_accounts.sql` (`has_account()`) | file 1 (`_ev_manage`, `_ev_staff`, `_ev_can_open`). Event and room looks: pack, Day or Night, tint. Until it runs, pages read the cover and creating never fails. |
 
 Files 1 and 2 leave small stubs for functions that later files fill in (the going count, the waitlist fill, the ticket issue and void,
 the HQ test). A stub is written only when the real function is missing, so running a file again never puts a stub back over the real one.

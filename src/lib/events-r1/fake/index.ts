@@ -9,6 +9,7 @@ import type { HostPayoutStatus, PayMethod } from "../pay";
 import type { R1Event, Registration } from "../types";
 import { auth, signInUser } from "./auth";
 import { door } from "./door";
+import { fakeLooks } from "../looks";
 import { events } from "./events";
 import { completeCheckout, expireCheckout, failCheckout, hostBalance, pay, peekOrder, settleRefund } from "./pay";
 import { payoutFor, setPayoutStatus, statusOfHost } from "./payouts";
@@ -31,6 +32,7 @@ export const fakeApi: EventsR1Api = {
   door,
   clock: { now },
   pay,
+  looks: fakeLooks,
 };
 
 export type SampleTicket = { registrationId: string; name: string; code: string; token: string };
