@@ -1,5 +1,5 @@
 -- DRAFT FOR OLA, NOT RUN ON PRODUCTION. Release 1 paid tickets (supabase/events_r1_pay.sql). LOCAL ONLY: everything rolls back.
--- Needs the six events_r1_ files and events_r1_pay.sql loaded. Ends with ALL EVENTS R1 PAY TESTS PASSED.
+-- Needs the six events_r1_ files, events_r1_pay.sql and events_r1_pay_collect.sql (Hoppaz collects, 26 Oct) loaded. Ends with ALL EVENTS R1 PAY TESTS PASSED.
 -- The service-role functions are called as the database owner here (as the SQL editor would); the access checks at the end and in the
 -- middle show that anon and signed-in users cannot call them.
 --   docker exec -i supabase_db_hoppaz-local psql -U postgres -d <a throwaway hoppaz_ev_ database> -q -v ON_ERROR_STOP=1 < supabase/tests/events_r1_pay_test.sql

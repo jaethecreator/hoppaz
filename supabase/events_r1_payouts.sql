@@ -1,8 +1,8 @@
 -- ============================================================================
 -- DRAFT FOR OLA, NOT RUN ON PRODUCTION
--- Hoppaz Release 1, file 8: host balances and withdrawals (Hoppaz collects; Bachs "You collect the payment").
+-- Hoppaz Release 1, file 10: host balances and withdrawals (Hoppaz collects; Bachs "You collect the payment").
 --
--- RUN ORDER: after events_r1_pay.sql (file 7). Safe to run again. One transaction. It adds two columns to ev_host_payouts, one table
+-- RUN ORDER: after events_r1_pay.sql (file 7) and events_r1_pay_collect.sql (file 9). Safe to run again. One transaction. It adds two columns to ev_host_payouts, one table
 -- (ev_withdrawals) and its functions; it edits nothing else.
 --
 -- THE MONEY (decided by Jae, 26 Oct 2026)

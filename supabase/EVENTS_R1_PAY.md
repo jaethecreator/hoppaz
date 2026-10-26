@@ -10,7 +10,8 @@ Decided by Jae: Bachs "You collect the payment" (the marketplace shape), not dir
 - Any host sells at once. `_ev_host_can_sell` is true for every host; `ev_host_payouts.can_sell` now means "can withdraw": the host's Bachs
   account is a recipient with `transfers` and `payouts` active. It needs only a name, date of birth, address and a bank account that
   resolves (no ID, no BVN), sent from the app (`/api/events-r1/pay/payout-setup`), never Bachs's hosted form.
-- `events_r1_payouts.sql` (file 8): the host balance (paid shares less withdrawals; 5 percent of each share held until 30 days after the
+- `events_r1_pay_collect.sql` (file 9) holds these changes; `events_r1_pay.sql` itself is unchanged.
+- `events_r1_payouts.sql` (file 10): the host balance (paid shares less withdrawals; 5 percent of each share held until 30 days after the
   event), withdrawals (the whole available balance, at least N1,000, sent a day after the ask), and the functions the sweeper and the
   webhook use. The sweeper transfers from Hoppaz to the host (`POST /v1/transfers`) and pays out as the host (`POST /v1/payouts`);
   `payout.paid` / `payout.failed` settle it.
