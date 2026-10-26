@@ -98,6 +98,9 @@ export default function DateTimePicker({
 
   return (
     <div
+      // min-w-0: inside a grid or flex parent the day chips scroll sideways instead of stretching the picker past its box.
+      // dtp: on a tinted host page (.tint-ui) the picker takes the page colours (globals.css).
+      className="dtp min-w-0"
       onKeyDown={(e) => {
         if (open && e.key === "Escape") {
           e.stopPropagation();
@@ -139,7 +142,17 @@ export default function DateTimePicker({
                 {shortDay(day)}
               </button>
             )}
-            <button type="button" data-nav aria-expanded={cal} onClick={() => setCal((c) => !c)} className={clsx(CHIP, cal && "border-orange text-orange")}>
+            <button
+              type="button"
+              data-nav
+              aria-expanded={cal}
+              onClick={() => {
+                // The calendar opens on the month of the picked day (a chip may have moved it since the picker mounted).
+                if (!cal && valid) setMonth(day.slice(0, 7));
+                setCal(!cal);
+              }}
+              className={clsx(CHIP, cal && "border-orange text-orange")}
+            >
               More days
             </button>
           </div>

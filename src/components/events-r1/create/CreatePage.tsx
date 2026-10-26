@@ -17,13 +17,19 @@ export default function CreatePage() {
   const [restored, setRestored] = useState(false);
   useEffect(() => {
     const d = readDraft();
-    const m = new URLSearchParams(window.location.search).get("mode") ?? d.pending ?? d.mode;
+    // ?mode= is the page that was asked for (Events' Create is event, Roomz' Create is room): it beats whatever the draft last held.
+    const asked = new URLSearchParams(window.location.search).get("mode");
+    const m = asked === "event" || asked === "room" ? asked : (d.pending ?? d.mode);
     if (m === "event" || m === "room") setMode(m);
+    // A sign up left half way for the other kind must not resume into this one later.
+    if (asked === "event" || asked === "room") patchDraft({ mode: asked, ...(d.pending && d.pending !== asked ? { pending: null } : {}) });
     setRestored(true);
   }, []);
   const pickMode = (m: "event" | "room") => {
     setMode(m);
     patchDraft({ mode: m });
+    // Keep the address true to the page, so a reload (or the return from Google) opens the same kind.
+    window.history.replaceState(null, "", `/create?mode=${m}`);
   };
   if (!restored) return <div className="h-full" />;
   if (mode === "event")

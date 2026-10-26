@@ -279,7 +279,7 @@ function BigDate({ iso }: { iso: string }) {
 
 function WhenFields({ f }: { f: EventFormState }) {
   return (
-    <div className="grid">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)]">
       <DateTimePicker label="Starts" value={f.start} onChange={f.changeStart} min={lagosIso(f.clock)} now={f.clock} />
       {f.endShown ? (
         <>
@@ -447,6 +447,21 @@ function PostAs({ f, onNewRoom }: { f: EventFormState; onNewRoom: () => void }) 
   );
 }
 
+/** The way to a room from the event creator on a phone, in the open (Post as only has "+ New room" inside a menu). */
+function RoomNudge({ onNewRoom }: { onNewRoom: () => void }) {
+  return (
+    <div className="t-card flex items-center gap-3 p-3">
+      <IconTile>
+        <Users />
+      </IconTile>
+      <span className="min-w-0 flex-1 font-body text-[13px] text-t-muted">Want a home for all your events? Make a room instead.</span>
+      <button type="button" onClick={onNewRoom} className="min-h-[40px] flex-none rounded-hz border border-t-line px-3 font-body text-[13px] font-bold">
+        Create a room
+      </button>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ the screen -- */
 
 /**
@@ -535,7 +550,12 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: () => void }) {
       {wide ? (
         <div className="mx-auto max-w-[1180px] px-8 pb-16 pt-6">
           <div className="mb-6 flex items-center justify-between gap-4">
-            <PostAs f={f} onNewRoom={onNewRoom} />
+            <div className="flex items-center gap-4">
+              <PostAs f={f} onNewRoom={onNewRoom} />
+              <button type="button" onClick={onNewRoom} className="min-h-[40px] font-body text-[13.5px] font-bold text-t-accent">
+                Create a room instead
+              </button>
+            </div>
             <label className="flex items-center gap-2">
               <span className="font-body text-[13px] text-t-muted">Who can see it</span>
               <select value={f.visibility} onChange={(e) => f.setVisibility(e.target.value as Visibility)} className="!w-auto font-body text-[14px]">
@@ -562,7 +582,7 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: () => void }) {
                 />
                 <p className="mt-1.5 font-body text-[12.5px] text-t-muted">This is the name people see on the map and on their ticket.</p>
               </div>
-              <div className="grid grid-cols-[40px_1fr] gap-3">
+              <div className="grid grid-cols-[40px_minmax(0,1fr)] gap-3">
                 <IconTile>
                   <Calendar />
                 </IconTile>
@@ -570,13 +590,13 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: () => void }) {
                   <WhenFields f={f} />
                 </div>
               </div>
-              <div className="grid grid-cols-[40px_1fr] gap-3">
+              <div className="grid grid-cols-[40px_minmax(0,1fr)] gap-3">
                 <IconTile>
                   <MapPin />
                 </IconTile>
                 <WhereFields f={f} />
               </div>
-              <div className="grid grid-cols-[40px_1fr] gap-3">
+              <div className="grid grid-cols-[40px_minmax(0,1fr)] gap-3">
                 <IconTile>
                   <AlignLeft />
                 </IconTile>
@@ -647,6 +667,7 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: () => void }) {
                 </div>
               ))}
             </div>
+            <RoomNudge onNewRoom={onNewRoom} />
             {errorLine}
           </div>
           <div className="sticky bottom-0 z-30 border-t border-t-line bg-t-bar px-4 pb-3 pt-3 backdrop-blur">
