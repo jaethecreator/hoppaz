@@ -85,7 +85,7 @@ export async function POST(req: Request) {
   const origin = returnOrigin(req);
   try {
     const checkout = await createCheckout({
-      accountId: String(held.host_account),
+      account: String(held.host_account),
       reference: String(held.reference),
       idempotencyKey: `order:${orderId}:co1`,
       grossKobo: gross,

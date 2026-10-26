@@ -6,11 +6,11 @@ export const naira = (n: number): string => `₦${Math.round(n).toLocaleString("
 
 export const ticketsWord = (n: number): string => `${n} ticket${n === 1 ? "" : "s"}`;
 
-/** What the host is told when a refund cannot come out of their Bachs balance yet. */
-export const BALANCE_WORD = "A refund comes out of your Bachs balance and your balance is lower than the sale because of the fees. It works once more sales have come in.";
+/** What the host is told when Bachs cannot take a refund from Hoppaz's balance right now (it pays them out of the next payments). */
+export const BALANCE_WORD = "Refunds are paused for a few minutes. Try again shortly.";
 
-/** The one line on the Get paid card: who sells and who pays for a refund. */
-export const SELLER_NOTE = "You are the seller. Refunds and disputes are charged to your Bachs balance. Hoppaz's fee is not returned on a refund.";
+/** The one line on the money card: who collects, who pays which fee, what a refund does. */
+export const SELLER_NOTE = "Hoppaz collects every payment and pays you. Buyers pay the card or transfer fee. Hoppaz keeps 4.5 percent. A refund comes off your earnings.";
 
 /** The server code for "events are switched off on this server" (events_r1 setting), as a plain line. */
 const NOT_OPEN = /events?_r1_off|r1_off|not_open_yet/i;
@@ -30,7 +30,7 @@ export function buyError(e: unknown): string {
 export function hostPayError(e: unknown): string {
   const m = e instanceof Error ? e.message : "";
   if (NOT_OPEN.test(m)) return "Not open yet";
-  if (/payouts?_not_ready/i.test(m)) return "Set up payouts first";
+  if (/payouts?_not_ready|needs_bank/i.test(m)) return "Add your bank details first";
   if (/balance/i.test(m)) return BALANCE_WORD;
   if (/tickets_used|checked.?in|used/i.test(m)) return "Tickets already checked in";
   return m || "That did not work. Try again.";

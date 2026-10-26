@@ -32,7 +32,7 @@ export default function SalesTab({ event }: { event: R1Event }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <GetPaidCard returnPath={`/host/${encodeURIComponent(event.id)}?tab=sales`} quietWhenReady />
+      <GetPaidCard returnPath={`/host/${encodeURIComponent(event.id)}?tab=sales`} />
 
       {sales.loading && !s ? (
         <p className="hint">Loading</p>
@@ -50,7 +50,7 @@ export default function SalesTab({ event }: { event: R1Event }) {
               </div>
               <Money label="Sales" value={s.totals.gross_naira} />
               <Money label="Hoppaz fee" value={s.totals.platform_fee_naira} />
-              <Money label="Bachs fee" value={s.totals.processing_fee_naira} />
+              <Money label="Card fees paid by you" value={s.totals.processing_fee_naira} />
             </dl>
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-line pt-3 font-body text-[14px]">
               <span>
@@ -85,7 +85,7 @@ export default function SalesTab({ event }: { event: R1Event }) {
                     <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
                       <Money label="Sales" value={r.gross_naira} />
                       <Money label="Hoppaz fee" value={r.platform_fee_naira} />
-                      <Money label="Bachs fee" value={r.processing_fee_naira} />
+                      <Money label="Card fees paid by you" value={r.processing_fee_naira} />
                       <Money label="You receive" value={r.net_naira} strong />
                     </dl>
                   </li>

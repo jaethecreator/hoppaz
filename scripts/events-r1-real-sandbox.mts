@@ -1,3 +1,6 @@
+// OUT OF DATE since 26 Oct 2026: written for the old direct-charge model (each host its own Bachs merchant, hosted onboarding). Hoppaz now
+// collects every payment and pays hosts out (supabase/events_r1_payouts.sql, src/lib/bachs/payouts.ts); createConnectedAccount and the onboard
+// route are gone. The new flow is covered by scripts/bachs-check.mts, scripts/events-r1-check.mts and the 26 Oct sandbox run in the PR. Update before use.
 /**
  * One REAL Bachs sandbox purchase (then more, a refund and a bank transfer) through OUR route handlers and the LOCAL Supabase.
  * Not the mock: BACHS_SECRET_KEY / BACHS_API_BASE come from .env.local (the sandbox key; it is never printed). Run from the repo root:

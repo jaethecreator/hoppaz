@@ -10,7 +10,7 @@ import { hostPayError, naira } from "./words";
 export const refundable = (o: Order): boolean => (o.status === "paid" && !o.needs_manual_refund) || o.needs_manual_refund;
 
 /**
- * Refund, in place, no pop-up. A card order asks once ("Refund ₦6,000 to the buyer's card? Hoppaz's fee is not returned.").
+ * Refund, in place, no pop-up. A card order asks once ("Refund ₦6,000 to the buyer's card? It comes off your earnings.").
  * A bank transfer cannot be sent back through Bachs: the host pays the buyer by bank, then taps Mark as refunded.
  */
 export default function RefundControl({ order }: { order: Order }) {
@@ -51,7 +51,7 @@ export default function RefundControl({ order }: { order: Order }) {
       {bank ? (
         <p className="font-body text-[14px]">Bank transfers cannot be refunded here. Pay the buyer back by bank, then mark it done.</p>
       ) : (
-        <p className="font-body text-[14px]">Refund {naira(order.gross_naira)} to the buyer&apos;s card? Hoppaz&apos;s fee is not returned.</p>
+        <p className="font-body text-[14px]">Refund {naira(order.gross_naira)} to the buyer&apos;s card? It comes off your earnings.</p>
       )}
       <div className="mt-2 flex gap-2">
         <button type="button" onClick={() => setOpen(false)} disabled={busy} className="btn btn-ghost min-h-[40px] flex-none px-5 normal-case">

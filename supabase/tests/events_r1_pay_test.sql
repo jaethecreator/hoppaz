@@ -121,25 +121,25 @@ begin
   perform pg_temp.ok(public.ev_pay_host_save_account(h2, 'acct_host1') = 'account_taken', 'two hosts cannot share an account');
   perform pg_temp.ok(public.ev_pay_host_save_account(h2, 'nope') = 'bad_account' and public.ev_pay_host_save_account(gen_random_uuid(), 'acct_zzz1') = 'no_such_user', 'a bad account id or user is refused');
   r := pg_temp.j(h, 'select public.ev_pay_host_status()');
-  perform pg_temp.ok(r ->> 'status' = 'in_progress' and not (r ->> 'can_sell')::boolean, 'a new account: in progress, cannot sell');
+  perform pg_temp.ok(r ->> 'status' = 'in_progress' and not (r ->> 'can_sell')::boolean, 'a new account: in progress, cannot withdraw');
+  -- Hoppaz collects (26 Oct): can_sell now means "can withdraw": transfers AND payouts active. Collection capabilities no longer count.
   perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'payouts', 'active') = 'ok', 'payouts active');
   r := pg_temp.j(h, 'select public.ev_pay_host_status()');
-  perform pg_temp.ok(not (r ->> 'can_sell')::boolean and r ->> 'status' = 'restricted' and r -> 'capabilities' ->> 'payouts' = 'active', 'payouts alone cannot sell');
-  perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'bank_transfer', 'restricted', now()) = 'ok', 'a collection capability that is restricted');
-  perform pg_temp.ok(not (pg_temp.j(h, 'select public.ev_pay_host_status()') ->> 'can_sell')::boolean, 'still cannot sell');
-  perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'bank_transfer', 'active', now() + interval '1 minute') = 'ok', 'it becomes active (newer event)');
+  perform pg_temp.ok(not (r ->> 'can_sell')::boolean and r ->> 'status' = 'restricted' and r -> 'capabilities' ->> 'payouts' = 'active', 'payouts alone cannot withdraw');
+  perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'bank_transfer', 'active', now()) = 'ok', 'a collection capability');
+  perform pg_temp.ok(not (pg_temp.j(h, 'select public.ev_pay_host_status()') ->> 'can_sell')::boolean, 'collection does not count any more');
+  perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'transfers', 'restricted', now()) = 'ok', 'transfers restricted');
+  perform pg_temp.ok(not (pg_temp.j(h, 'select public.ev_pay_host_status()') ->> 'can_sell')::boolean, 'still cannot withdraw');
+  perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'transfers', 'active', now() + interval '1 minute') = 'ok', 'it becomes active (newer event)');
   r := pg_temp.j(h, 'select public.ev_pay_host_status()');
-  perform pg_temp.ok((r ->> 'can_sell')::boolean and r ->> 'status' = 'ready', 'bank_transfer and payouts active: can sell, ready');
-  perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'bank_transfer', 'restricted', now() + interval '30 seconds') = 'stale', 'an OLDER event arriving late is ignored');
+  perform pg_temp.ok((r ->> 'can_sell')::boolean and r ->> 'status' = 'ready', 'transfers and payouts active: can withdraw, ready');
+  perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'transfers', 'restricted', now() + interval '30 seconds') = 'stale', 'an OLDER event arriving late is ignored');
   perform pg_temp.ok((pg_temp.j(h, 'select public.ev_pay_host_status()') ->> 'can_sell')::boolean, 'so the host is still ready (events applied out of order)');
-  perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'bank_transfer', 'active', now() + interval '1 minute') = 'ok'
+  perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'transfers', 'active', now() + interval '1 minute') = 'ok'
                      and (pg_temp.j(h, 'select public.ev_pay_host_status()') ->> 'can_sell')::boolean, 'the same event applied twice changes nothing');
-  perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'bank_transfer', 'restricted', now() + interval '2 minutes') = 'ok'
-                     and public.ev_pay_host_apply_capability('acct_host1', 'ngn_card_collection', 'active', now()) = 'ok', 'bank transfer is restricted again, NGN cards come on');
-  perform pg_temp.ok((pg_temp.j(h, 'select public.ev_pay_host_status()') ->> 'can_sell')::boolean, 'NGN card collection also counts as a collection capability');
   perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'payouts', 'restricted', now() + interval '3 minutes') = 'ok', 'payouts restricted');
   r := pg_temp.j(h, 'select public.ev_pay_host_status()');
-  perform pg_temp.ok(not (r ->> 'can_sell')::boolean and r ->> 'status' = 'restricted', 'cannot sell again, and the status is restricted');
+  perform pg_temp.ok(not (r ->> 'can_sell')::boolean and r ->> 'status' = 'restricted', 'cannot withdraw again, and the status is restricted');
   perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_host1', 'payouts', 'active', now() + interval '4 minutes') = 'ok' and (pg_temp.j(h, 'select public.ev_pay_host_status()') ->> 'can_sell')::boolean, 'and ready once payouts are back');
   perform pg_temp.ok(public.ev_pay_host_apply_capability('acct_nobody', 'payouts', 'active') = 'unknown_account' and public.ev_pay_host_apply_capability('acct_host1', 'Payouts!', 'active') = 'bad_capability'
                      and public.ev_pay_host_apply_capability('acct_host1', 'payouts', 'maybe') = 'bad_status', 'an unknown account, capability or status is refused');
@@ -151,17 +151,17 @@ begin
   perform pg_temp.ok(public.ev_pay_host_apply_requirements('acct_host1', '[]') = 'ok' and pg_temp.j(h, 'select public.ev_pay_host_status()') -> 'requirements_due' = '[]'::jsonb, 'an empty list clears them');
   perform pg_temp.ok(pg_temp.j(h2, 'select public.ev_pay_host_status()') ->> 'status' = 'not_started', 'another host sees their own status');
 
-  -- ================================================== paid types need a ready host ========
+  -- ================================================== paid types: any host (Hoppaz collects) ========
   e1 := pg_temp.ev(h, 'Paid night', 5);
   fr := pg_temp.ty(e1, 'Free', 0, null, 1); vip := pg_temp.ty(e1, 'VIP', 5000, 3, 2);
   r := pg_temp.j(h2, format('select public.ev_update_event(%L, %L::jsonb)', e1, '{"description":"x"}'));
   perform pg_temp.ok(r ->> 'reason' = 'not_allowed', 'a stranger cannot edit the event');
   update public.events set host_id = h2 where id = e1;
   r := pg_temp.j(h2, format('select public.ev_update_event(%L, %L::jsonb)', e1, '{"tickets":[{"name":"Free"},{"name":"VIP","price_naira":5000,"capacity":3}]}'));
-  perform pg_temp.ok(r ->> 'reason' = 'payouts_not_ready', 'a host with no ready account cannot keep or set a paid type');
+  perform pg_temp.ok((r ->> 'ok')::boolean, 'a host with no payout account can set a paid type (bank details come at withdrawal)');
   update public.events set host_id = h where id = e1;
   r := pg_temp.j(h, format('select public.ev_update_event(%L, %L::jsonb)', e1, '{"tickets":[{"name":"Free"},{"name":"VIP","price_naira":5000,"capacity":3}]}'));
-  perform pg_temp.ok((r ->> 'ok')::boolean, 'a ready host can');
+  perform pg_temp.ok((r ->> 'ok')::boolean, 'and so can a ready host');
   perform pg_temp.ok(pg_temp.j(b1, format('select public.ev_register(%L, %L::jsonb)', e1, json_build_object('ticketTypeId', vip)::text)) ->> 'reason' = 'use_checkout', 'registering for a paid type says use_checkout');
   perform public.ev_set_setting('paid_tickets', 'off');
   r := pg_temp.res(b1, e1, vip, 1, 5000);
@@ -180,7 +180,9 @@ begin
   perform pg_temp.ok(pg_temp.res(g, e1, vip, 1, 5000) ->> 'reason' = 'need_account', 'a guest with no email cannot buy');
   perform pg_temp.ok(pg_temp.res(null, e1, vip, 1, 5000) ->> 'reason' = 'no_session' and pg_temp.res(b1, gen_random_uuid(), vip, 1, 5000) ->> 'reason' = 'not_found', 'no user, or no event');
   e2 := pg_temp.ev(h2, 'Other host event'); vip2 := pg_temp.ty(e2, 'VIP', 5000);
-  perform pg_temp.ok(pg_temp.res(b1, e2, vip2, 1, 5000) ->> 'reason' = 'not_ready', 'a host whose account cannot sell: not_ready');
+  r := pg_temp.res(b1, e2, vip2, 1, 5000);
+  perform pg_temp.ok((r ->> 'ok')::boolean and r ->> 'host_account' = 'platform', 'a host with no payout account sells: Hoppaz collects (host_account platform)');
+  perform pg_temp.ok(public.ev_pay_order_release((r ->> 'order_id')::uuid, 'test') = 'ok', 'released');
   eo := pg_temp.ev(h, 'Over', null, false, now() - interval '5 hours'); vip3 := pg_temp.ty(eo, 'VIP', 5000);
   perform pg_temp.ok(pg_temp.res(b1, eo, vip3, 1, 5000) ->> 'reason' = 'event_over', 'an event that is over');
   ec := pg_temp.ev(h, 'Cancelled'); vip3 := pg_temp.ty(ec, 'VIP', 5000); update public.events set status = 'cancelled' where id = ec;
@@ -196,7 +198,7 @@ begin
   -- ================================================== reserve: capacity and holds ========
   r := pg_temp.res(b1, e1, vip, 2, 5000);
   o1 := (r ->> 'order_id')::uuid;
-  perform pg_temp.ok((r ->> 'ok')::boolean and (r ->> 'gross_kobo')::bigint = 1000000 and (r ->> 'platform_fee_kobo')::bigint = 45000 and r ->> 'host_account' = 'acct_host1'
+  perform pg_temp.ok((r ->> 'ok')::boolean and (r ->> 'gross_kobo')::bigint = 1000000 and (r ->> 'platform_fee_kobo')::bigint = 45000 and r ->> 'host_account' = 'platform'
                      and r ->> 'buyer_email' like 'pay-%@evtest.invalid' and r ->> 'reference' = 'ord_' || replace(o1::text, '-', '') and (r ->> 'expires_at')::timestamptz > now() + interval '14 minutes'
                      and (r ->> 'quantity')::int = 2, 'reserve: the money in kobo, the host account, the buyer email, the reference and a 15 minute hold');
   perform pg_temp.ok(pg_temp.left_of(e1, vip) = 1, 'two seats held: 1 of 3 left');
@@ -257,9 +259,9 @@ begin
   -- Money fields and who may read the order.
   r := pg_temp.j(b1, format('select public.ev_pay_my_order(%L)', o1));
   perform pg_temp.ok(r ->> 'status' = 'paid' and (r ->> 'gross_naira')::numeric = 10000 and (r ->> 'platform_fee_naira')::numeric = 450 and (r ->> 'processing_fee_naira')::numeric = 150
-                     and (r ->> 'host_net_naira')::numeric = 9400 and r ->> 'payment_method' = 'bank_transfer' and r -> 'checkout_url' = 'null'::jsonb and (r ->> 'quantity')::int = 2
+                     and (r ->> 'host_net_naira')::numeric = 9550 and r ->> 'payment_method' = 'bank_transfer' and r -> 'checkout_url' = 'null'::jsonb and (r ->> 'quantity')::int = 2
                      and (r ->> 'unit_price_naira')::numeric = 5000 and r ->> 'event_title' = 'Paid night' and r ->> 'ticket_name' = 'VIP' and r ->> 'buyer_name' = 'Pay Ada'
-                     and not (r ->> 'needs_refund')::boolean and r ->> 'paid_at' is not null, 'the Order shape: kobo shown as naira, the host net is gross minus both fees, no checkout link once paid');
+                     and not (r ->> 'needs_refund')::boolean and r ->> 'paid_at' is not null, 'the Order shape: kobo shown as naira, the host net is gross minus Hoppaz''s fee (the buyer paid the processing fee on top), no checkout link once paid');
   perform pg_temp.ok(pg_temp.j(b2, format('select public.ev_pay_my_order(%L)', o1)) is null and pg_temp.j(x, format('select public.ev_pay_my_order(%L)', o1)) is null, 'LEAK CHECK: nobody else can read the buyer''s order');
   perform pg_temp.ok(jsonb_array_length(pg_temp.j(b1, 'select public.ev_pay_my_orders()')) >= 1 and not exists (select 1 from jsonb_array_elements(pg_temp.j(b1, 'select public.ev_pay_my_orders()')) o where o ->> 'buyer_id' <> b1::text) and jsonb_array_length(pg_temp.j(x, 'select public.ev_pay_my_orders()')) = 0, 'my orders: only mine');
   perform pg_temp.ok(jsonb_array_length(pg_temp.j(h, format('select public.ev_pay_event_orders(%L)', e1))) >= 1 and pg_temp.j(h, format('select public.ev_pay_event_orders(%L)', e1)) -> 0 -> 'checkout_url' = 'null'::jsonb
@@ -323,6 +325,14 @@ begin
   o6 := pg_temp.go(b3, e3, v3, 1, 2000);
   r := public.ev_pay_order_paid('chk_' || replace(o6::text, '-', ''), 'ch_o6', '2001.00', 'card', 4000);
   perform pg_temp.ok((r ->> 'issued')::boolean and (r ->> 'flag_review')::boolean and pg_temp.tix(e3, b3) = 1, 'OVERPAID: issued, and flagged for review');
+  declare e9 uuid; t9 uuid; o9 uuid;
+  begin
+    -- On its own event, so no later count changes.
+    e9 := pg_temp.ev(h, 'Fee on top'); t9 := pg_temp.ty(e9, 'GA', 2000);
+    o9 := pg_temp.go(b2, e9, t9, 1, 2000);
+    r := public.ev_pay_order_paid('chk_' || replace(o9::text, '-', ''), 'ch_o9', '2040.00', 'card', 4000);
+    perform pg_temp.ok((r ->> 'issued')::boolean and not (r ->> 'flag_review')::boolean, 'the gross plus the processing fee the buyer paid on top is exact, not overpaid');
+  end;
   o7 := pg_temp.go(b4, e3, v3, 1, 2000);
   perform pg_temp.ok(public.ev_pay_order_details('ch_o5', 'chk_' || replace(o7::text, '-', ''), 1, 'card') ->> 'reason' = 'charge_taken', 'a charge id already on another order is refused');
 
@@ -383,7 +393,7 @@ begin
   perform pg_temp.ok(r ->> 'reason' = 'not_allowed', 'a stranger cannot start a refund');
   r := public.ev_pay_refund_start(o5, h);
   perform pg_temp.ok((r ->> 'ok')::boolean and r ->> 'method' = 'card' and r ->> 'status' = 'refund_pending' and r ->> 'reference' = 'rf_' || replace(o5::text, '-', '') and r ->> 'charge_id' = 'ch_o5'
-                     and r ->> 'host_account' = 'acct_host1' and (r ->> 'amount_kobo')::bigint = 200000 and pg_temp.st(o5) = 'refund_pending', 'a card refund: refund_pending, the reference rf_<order>, the charge and the host account for the Bachs call');
+                     and r ->> 'host_account' = 'platform' and (r ->> 'amount_kobo')::bigint = 200000 and pg_temp.st(o5) = 'refund_pending', 'a card refund: refund_pending, the reference rf_<order>, the charge and the host account for the Bachs call');
   perform pg_temp.ok(pg_temp.tix(e3, b2) = 0 and (select status from public.ev_registrations where event_id = e3 and user_id = b2) = 'cancelled' and (select quantity from public.ev_registrations where event_id = e3 and user_id = b2) = 0,
                      'the tickets are void and the registration is given up');
   perform pg_temp.ok(public.ev_pay_refund_start(o5, h) ->> 'reason' = 'already_refunding', 'a second start while it is pending: already_refunding');
@@ -434,7 +444,7 @@ begin
                      'sales per ticket type: VIP sold 4 for 20,000 with Hoppaz''s 900; the free type sold 0');
   perform pg_temp.ok((r -> 'totals' ->> 'sold')::int = 4 and (r -> 'totals' ->> 'gross_naira')::numeric = 20000 and (r -> 'totals' ->> 'net_naira')::numeric =
                      (r -> 'totals' ->> 'gross_naira')::numeric - (r -> 'totals' ->> 'platform_fee_naira')::numeric - (r -> 'totals' ->> 'processing_fee_naira')::numeric
-                     and (r -> 'totals' ->> 'refunded_naira')::numeric = 0 and (r ->> 'open_orders')::int = 0 and (r ->> 'refunds_owed')::int = 0, 'totals: net is gross minus both fees; nothing refunded, nothing open');
+                     and (r -> 'totals' ->> 'refunded_naira')::numeric = 0 and (r ->> 'open_orders')::int = 0 and (r ->> 'refunds_owed')::int = 0, 'totals: net is gross minus Hoppaz''s fee and any fee the host bore; nothing refunded, nothing open');
   r := pg_temp.j(h, format('select public.ev_pay_sales(%L)', e3));
   perform pg_temp.ok((r -> 'totals' ->> 'refunded_naira')::numeric = 6000 and (r -> 'rows' -> 0 ->> 'sold')::int = 0, 'refunded money shows in the totals (3 orders of 2,000), and refunded orders are not sold');
   r := pg_temp.j(h, format('select public.ev_pay_sales(%L)', e4));

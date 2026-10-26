@@ -64,7 +64,28 @@ export interface PayDb {
   /** Card refunds under way (refund_pending) that nobody has heard back about for `olderThanSeconds`: the sweeper settles these. */
   refundsUnsettled(limit: number, olderThanSeconds: number): Promise<PendingRefund[]>;
   disputeFlag(charge: string, dispute: string, status: string, amount: string | null): Promise<Json>;
+  /** What the host's money screen shows of their bank ("GTBank Plc ending 6789"). */
+  hostSetBankLabel(userId: string, label: string): Promise<string>;
+  /** Withdrawals the sweeper should move now (each claimed for 10 minutes). */
+  payoutsDue(limit: number): Promise<DueWithdrawal[]>;
+  payoutTransferred(id: string, transferId: string): Promise<string>;
+  payoutPaying(id: string, payoutId: string, amountKobo: number, feeKobo: number | null): Promise<string>;
+  payoutNote(id: string, error: string): Promise<string>;
+  payoutResult(payoutId: string, status: "paid" | "failed", reason: string | null): Promise<Json>;
 }
+
+/** A withdrawal due for the sweeper (ev_payout_due). requested: send the transfer; transferred: send the payout. */
+export type DueWithdrawal = {
+  id: string;
+  reference: string;
+  user_id: string;
+  status: "requested" | "transferred";
+  amount_kobo: number;
+  account: string;
+  transfer_id: string | null;
+  payout_tries: number;
+  attempts: number;
+};
 
 const ORDER_COLS = "id,buyer_id,event_id,status,gross_kobo,platform_fee_kobo,host_account,bachs_checkout_id,bachs_reference,bachs_charge_id,payment_method,needs_refund,needs_manual_refund";
 
@@ -157,5 +178,11 @@ export function supabasePayDb(admin: SupabaseClient<any, "public", "public", any
       }));
     },
     disputeFlag: (charge, dispute, status, amount) => rpc("ev_pay_dispute_flag", { p_charge: charge, p_dispute: dispute, p_status: status, p_amount: amount }),
+    hostSetBankLabel: (userId, label) => rpc("ev_payout_set_bank_label", { p_user: userId, p_label: label }),
+    payoutsDue: async (limit) => ((await rpc("ev_payout_due", { p_limit: limit })) ?? []) as DueWithdrawal[],
+    payoutTransferred: (id, transferId) => rpc("ev_payout_transferred", { p_id: id, p_transfer: transferId }),
+    payoutPaying: (id, payoutId, amountKobo, feeKobo) => rpc("ev_payout_paying", { p_id: id, p_payout: payoutId, p_amount_kobo: amountKobo, p_fee_kobo: feeKobo }),
+    payoutNote: (id, error) => rpc("ev_payout_note", { p_id: id, p_error: error }),
+    payoutResult: (payoutId, status, reason) => rpc("ev_payout_result", { p_payout: payoutId, p_status: status, p_reason: reason }),
   };
 }

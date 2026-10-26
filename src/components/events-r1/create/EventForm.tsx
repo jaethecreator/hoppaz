@@ -361,7 +361,7 @@ export default function EventForm({ cover }: { cover: string | null }) {
 
       <div className="flex flex-col gap-2 pb-2">
         <GlowButton ready={!busy && !!title.trim() && !!api && !blocked} className="btn w-full normal-case" onClick={submit} disabled={busy || !title.trim() || !api || blocked}>
-          {blocked && gate.state === "off" ? PAID_UNAVAILABLE : blocked && gate.state === "needs" ? "Set up payouts first" : busy ? "Creating" : "Create event"}
+          {blocked && gate.state === "off" ? PAID_UNAVAILABLE : busy ? "Creating" : "Create event"}
         </GlowButton>
         {error && (
           <p ref={errorRef} role="alert" className="px-1 font-body text-[14px] text-fireant">

@@ -1,6 +1,12 @@
 -- ============================================================================
 -- DRAFT FOR OLA, NOT RUN ON PRODUCTION
--- Hoppaz Release 1, file 7: paid tickets on Bachs (direct charge: each host is their own merchant, Hoppaz keeps a platform fee).
+-- Hoppaz Release 1, file 7: paid tickets on Bachs.
+-- CHANGED 26 Oct 2026: HOPPAZ COLLECTS (Bachs "You collect the payment", the marketplace shape). Every checkout is made on Hoppaz's own
+-- Bachs account (host_account 'platform'), the buyer pays Bachs's processing fee on top (buyer_pays_fee), Hoppaz keeps its fee (4.5 percent of
+-- the gross) and pays each host the rest from a balance they withdraw (events_r1_payouts.sql, run AFTER this file). Hosts sell at once, with
+-- no payout setup; can_sell in ev_host_payouts now means "can withdraw". The notes below still describe the order, refund and dispute rules,
+-- which are unchanged, except where they say the host's own account: read Hoppaz's account there.
+-- Before 26 Oct it was a direct charge: each host its own merchant, Hoppaz keeping a platform fee.
 -- Written from notes/luma/11-bachs-integration-spec.md (section 9, sequences A to D) and src/lib/events-r1/pay.ts (the field names of the
 -- jsonb below are the names of those types). The exact signatures and shapes are in supabase/EVENTS_R1_PAY.md.
 --
@@ -152,6 +158,10 @@ alter table public.ev_orders add column if not exists reconcile boolean not null
 -- was refused and the order is back to paid). Null for anything else (for example an event that closed) and once nothing is owed.
 alter table public.ev_orders add column if not exists refund_reason text check (refund_reason is null or refund_reason in ('late', 'failed'));
 
+-- Hoppaz collects (26 Oct): the buyer pays Bachs's processing fee on top (customer_bears_fee), so it is never taken from the host's share.
+-- Orders made before the switch keep false (the host paid it).
+alter table public.ev_orders add column if not exists buyer_pays_fee boolean not null default false;
+
 -- Which order a ticket came from (a refund voids that order's tickets only).
 alter table public.ev_tickets add column if not exists order_id uuid references public.ev_orders(id) on delete set null;
 create index if not exists ev_tickets_order_idx on public.ev_tickets (order_id) where order_id is not null;
@@ -166,9 +176,11 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke all on function public._ev_held(uuid, uuid) from public, anon, authenticated;
 
+-- Hoppaz collects every payment, so any host can sell paid tickets at once: no payout setup first. The bank details are asked for
+-- only when the host withdraws (events_r1_payouts.sql). ev_host_payouts.can_sell now means "can withdraw".
 create or replace function public._ev_host_can_sell(p_user uuid) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
-  select coalesce((select h.can_sell from public.ev_host_payouts h where h.user_id = p_user), false);
+  select p_user is not null and exists (select 1 from public.profiles p where p.id = p_user);
 $$;
 revoke all on function public._ev_host_can_sell(uuid) from public, anon, authenticated;
 
@@ -178,7 +190,8 @@ create or replace function public._ev_pay_naira(p_kobo numeric) returns numeric
 language sql immutable set search_path = public, pg_temp as $$ select round(p_kobo / 100.0, 2); $$;
 revoke all on function public._ev_pay_naira(numeric) from public, anon, authenticated;
 
--- can_sell and status from the capabilities: (bank_transfer OR ngn_card_collection active) AND payouts active.
+-- can_sell (now: can withdraw) and status from the capabilities. A host is a recipient: Hoppaz sends them their share (transfers) and they take
+-- it to their bank (payouts). Both must be active.
 create or replace function public._ev_pay_recompute(p_user uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -189,8 +202,7 @@ begin
   select * into h from public.ev_host_payouts where user_id = p_user for update;
   if h.user_id is null then return; end if;
   -- coalesce: a missing capability reads as null, and null and true is null (the column is not null).
-  v_sell := coalesce(((h.capabilities ->> 'bank_transfer') = 'active' or (h.capabilities ->> 'ngn_card_collection') = 'active')
-                     and (h.capabilities ->> 'payouts') = 'active', false);
+  v_sell := coalesce((h.capabilities ->> 'transfers') = 'active' and (h.capabilities ->> 'payouts') = 'active', false);
   v_any := exists (select 1 from jsonb_each_text(h.capabilities) c where c.value = 'active');
   update public.ev_host_payouts
      set can_sell = v_sell,
@@ -230,7 +242,10 @@ language sql stable security definer set search_path = public, pg_temp as $$
     'unit_price_naira', public._ev_pay_naira(o.unit_price_kobo), 'gross_naira', public._ev_pay_naira(o.gross_kobo),
     'platform_fee_naira', public._ev_pay_naira(o.platform_fee_kobo),
     'processing_fee_naira', case when o.processing_fee_kobo is null then null else public._ev_pay_naira(o.processing_fee_kobo) end,
-    'host_net_naira', case when o.processing_fee_kobo is null or o.paid_at is null then null
+    -- The buyer paid the processing fee on top (buyer_pays_fee): the host's share is the gross less Hoppaz's fee, known at once.
+    'host_net_naira', case when o.paid_at is null then null
+                           when o.buyer_pays_fee then public._ev_pay_naira(o.gross_kobo - o.platform_fee_kobo)
+                           when o.processing_fee_kobo is null then null
                            else public._ev_pay_naira(o.gross_kobo - o.platform_fee_kobo - o.processing_fee_kobo) end,
     'status', o.status, 'payment_method', o.payment_method, 'created_at', o.created_at, 'expires_at', o.expires_at, 'paid_at', o.paid_at,
     'checkout_url', case when p_show_url and o.status = 'open' then o.checkout_url else null end,
@@ -340,8 +355,8 @@ begin
   if t.id is null then return jsonb_build_object('ok', false, 'reason', 'bad_ticket'); end if;
   if t.price_naira <= 0 then return jsonb_build_object('ok', false, 'reason', 'not_paid_type'); end if;
   v_host := e.host_id;
-  select h.bachs_account_id into v_acct from public.ev_host_payouts h where h.user_id = v_host and h.can_sell;
-  if v_acct is null then return jsonb_build_object('ok', false, 'reason', 'not_ready'); end if;
+  -- Hoppaz collects the payment on its own Bachs account ('platform'); the host's share is paid out later (events_r1_payouts.sql).
+  v_acct := 'platform';
 
   v_gross := t.price_naira::bigint * 100 * p_qty;
   if p_fee_kobo is null or p_fee_kobo <= 0 or p_fee_kobo >= v_gross then return jsonb_build_object('ok', false, 'reason', 'bad_fee'); end if;
@@ -386,9 +401,9 @@ begin
   select coalesce(nullif(btrim(p.display_name), ''), p.handle, 'Guest') into v_name from public.profiles p where p.id = p_user;
 
   insert into public.ev_orders (id, buyer_id, event_id, ticket_type_id, ticket_name, quantity, unit_price_kobo, gross_kobo, platform_fee_kobo,
-                                host_account, bachs_reference, expires_at, answers, referrer_id)
+                                host_account, bachs_reference, expires_at, answers, referrer_id, buyer_pays_fee)
   values (v_id, p_user, p_event, t.id, t.name, p_qty, t.price_naira::bigint * 100, v_gross, p_fee_kobo, v_acct,
-          'ord_' || replace(v_id::text, '-', ''), now() + interval '15 minutes', v_ans, v_ref)
+          'ord_' || replace(v_id::text, '-', ''), now() + interval '15 minutes', v_ans, v_ref, true)
   returning * into o;
   return jsonb_build_object('ok', true, 'order_id', o.id, 'reference', o.bachs_reference, 'gross_kobo', o.gross_kobo,
                             'platform_fee_kobo', o.platform_fee_kobo, 'unit_price_kobo', o.unit_price_kobo, 'quantity', o.quantity,
@@ -525,7 +540,8 @@ begin
     update public.ev_orders set flag_review = 'amount_mismatch', bachs_charge_id = coalesce(bachs_charge_id, nullif(p_charge, '')), updated_at = clock_timestamp() where id = o.id;
     return jsonb_build_object('ok', true, 'order_id', o.id, 'issued', false, 'late', false, 'needs_refund', false, 'flag_review', true, 'reason', 'amount_mismatch');
   end if;
-  if v_kobo > o.gross_kobo then v_flag := 'overpaid'; end if;
+  -- A buyer who paid the processing fee on top paid exactly the gross plus that fee: that is exact, not overpaid.
+  if v_kobo > o.gross_kobo and not (o.buyer_pays_fee and p_fee_kobo is not null and v_kobo = o.gross_kobo + p_fee_kobo) then v_flag := 'overpaid'; end if;
 
   -- An event that is cancelled, hidden, pending or rejected issues nothing, on every path (on time or late): the money is owed back.
   if not exists (select 1 from public.events e where e.id = o.event_id and e.status in ('live', 'unlisted')) then
@@ -824,7 +840,8 @@ begin
            coalesce(sum(o.quantity), 0)::int as sold,
            coalesce(sum(o.gross_kobo), 0) as gross,
            coalesce(sum(o.platform_fee_kobo), 0) as pf,
-           coalesce(sum(coalesce(o.processing_fee_kobo, 0)), 0) as proc
+           -- Only what the host bears: a fee the buyer paid on top is not taken from the host's net.
+           coalesce(sum(case when o.buyer_pays_fee then 0 else coalesce(o.processing_fee_kobo, 0) end), 0) as proc
       from public._ev_types(p_event) t
       left join public.ev_orders o on o.ticket_type_id = t.id and o.event_id = p_event and o.status = 'paid' and not o.needs_refund
      group by t.id, t.name, t.price_naira, t.sort)

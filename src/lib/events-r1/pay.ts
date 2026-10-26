@@ -49,7 +49,7 @@ export type HostPayout = {
   capabilities: Record<string, string>;
   /** Plain words for what Bachs still needs from the host. */
   requirements_due: string[];
-  /** bank_transfer or ngn_card_collection active, and payouts active. Paid ticket types can be used only when true. */
+  /** Since 26 Oct (Hoppaz collects): transfers and payouts active, the host can withdraw. Selling never needs it. */
   can_sell: boolean;
   /** Where the host sees payouts (Bachs dashboard). */
   dashboard_url: string;
@@ -74,6 +74,51 @@ export type Sales = {
   refunds_owed: number;
 };
 
+/** One withdrawal of a host's balance. requested: sent a day after the ask; transferred / paying: on its way to the bank. */
+export type Withdrawal = {
+  id: string;
+  amount_naira: number;
+  status: "requested" | "transferred" | "paying" | "paid" | "cancelled";
+  execute_after: string;
+  /** What reached the bank (the amount less Bachs's withdrawal fee), once sent. */
+  received_naira: number | null;
+  fee_naira: number | null;
+  created_at: string;
+  paid_at: string | null;
+};
+
+/** The host's money (events_r1_payouts.sql). Hoppaz collects every payment and pays the host their share. */
+export type PayoutSummary = {
+  account: { has_account: boolean; ready: boolean; bank_label: string | null; requirements_due: string[] };
+  /** Shares of paid tickets (the price less Hoppaz's 4.5 percent), all time. */
+  earned_naira: number;
+  /** 5 percent held back until 30 days after each event (chargebacks). */
+  reserved_naira: number;
+  /** When the earliest held amount is released. */
+  reserve_until: string | null;
+  withdrawn_naira: number;
+  /** What can be withdrawn now. */
+  available_naira: number;
+  /** earned less withdrawn; below zero when refunds came after a withdrawal. */
+  balance_naira: number;
+  open_withdrawal: Withdrawal | null;
+  recent: Withdrawal[];
+  rules: { reserve_percent: number; reserve_days: number; delay_hours: number; min_naira: number };
+};
+
+/** What the host gives to get paid. Nothing else: no ID, no BVN. */
+export type PayoutDetails = {
+  firstName: string;
+  lastName: string;
+  /** YYYY-MM-DD */
+  dob: string;
+  line1: string;
+  city: string;
+  state: string;
+  bankCode: string;
+  accountNumber: string;
+};
+
 export type Quote = { gross_naira: number; platform_fee_naira: number; quantity: number; unit_price_naira: number };
 export type Checkout = { order_id: string; checkout_url: string; expires_at: string };
 export type RefundResult = {
@@ -86,9 +131,17 @@ export type RefundResult = {
 export interface PayApi {
   /** The signed-in host's payout setup. */
   hostPayout(): Promise<HostPayout>;
-  /** Hosted Bachs onboarding link for the signed-in host (single use; the server creates it on click). */
-  startOnboarding(returnPath: string): Promise<{ url: string }>;
-  /** What the buyer will pay: price times quantity, and Hoppaz's fee included in the gross (the buyer sees one price). */
+  /** The signed-in host's balance, held amount, bank and withdrawals. */
+  payoutSummary(): Promise<PayoutSummary>;
+  /** Nigerian banks for the payout form. */
+  banks(): Promise<{ name: string; code: string }[]>;
+  /** The name the bank has on an account (so the host sees it is theirs). Throws when the bank does not find it. */
+  checkAccount(bankCode: string, accountNumber: string): Promise<{ account_name: string }>;
+  /** Save the host's payout details (makes their payout account; ready at once when the bank resolves). */
+  setupPayout(d: PayoutDetails): Promise<{ ready: boolean; bank_label: string; account_name: string }>;
+  /** Withdraw the whole available balance; it is sent a day later. Throws needs_bank, already_requested or too_small. */
+  requestWithdrawal(): Promise<Withdrawal>;
+  /** What the buyer will pay for the tickets: price times quantity. Bachs adds its processing fee on top at checkout. */
   quote(eventId: string, ticketTypeId: string, quantity: number): Promise<Quote>;
   /** Reserve seats, create the Bachs checkout, return its hosted page. Tickets are NEVER issued here, only by the verified webhook. */
   checkout(eventId: string, ticketTypeId: string, quantity: number, opts?: { answers?: Record<string, string>; referrerId?: string | null }): Promise<Checkout>;

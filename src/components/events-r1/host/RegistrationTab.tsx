@@ -155,7 +155,7 @@ function Form({ event, questions: q0, messages: m0 }: { event: R1Event; question
 
       <div className="flex flex-col gap-2 pb-2">
         <button type="button" className="btn w-full normal-case" onClick={() => void save()} disabled={busy || !api || blocked}>
-          {blocked && gate.state === "needs" ? "Set up payouts first" : blocked ? PAID_UNAVAILABLE : busy ? "Saving" : "Save"}
+          {blocked ? PAID_UNAVAILABLE : busy ? "Saving" : "Save"}
         </button>
         <ErrorLine>{error}</ErrorLine>
         <p className="h-4 px-1 font-body text-[13px] text-dim" aria-live="polite">

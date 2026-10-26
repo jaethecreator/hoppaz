@@ -52,7 +52,7 @@ type Sent = { kind: "sent" } | { kind: "refused"; reason: string } | { kind: "un
 async function sendRefund(db: PayDb, r: { reference: string; chargeId: string; hostAccount: string }, retry: boolean, bachs: ClientDeps, log: (line: string) => void): Promise<Sent> {
   try {
     const refund = await createRefund(
-      { chargeId: r.chargeId, reference: r.reference, idempotencyKey: `refund:${r.reference}`, accountId: r.hostAccount, reason: "requested_by_customer" },
+      { chargeId: r.chargeId, reference: r.reference, idempotencyKey: `refund:${r.reference}`, account: r.hostAccount, reason: "requested_by_customer" },
       bachs
     );
     await db.refundApply(refund.refund_id ?? refund.id ?? null, r.reference, settledStatus(refund.status));

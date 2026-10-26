@@ -7,7 +7,7 @@ export const MAX_QTY = 5;
 
 /**
  * How many tickets, for a paid type: a stepper from 1 to `max`, and one line with what the buyer pays ("2 tickets · ₦6,000").
- * The buyer sees one price: Hoppaz's fee is inside it.
+ * Hoppaz's fee comes from the host's side; Bachs adds its card or transfer fee on top at checkout, and the buyer sees it there.
  */
 export default function PayQuantity({
   unit,
@@ -46,6 +46,7 @@ export default function PayQuantity({
       </div>
       <p className="border-t border-line pt-2 font-body text-[14px] text-cream" aria-live="polite">
         {ticketsWord(qty)} · {naira(total)}
+        <span className="block font-body text-[12px] text-dim">Plus a small card or transfer fee at checkout</span>
       </p>
     </div>
   );

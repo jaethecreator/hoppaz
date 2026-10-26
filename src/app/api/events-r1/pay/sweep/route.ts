@@ -2,6 +2,7 @@ import { getCheckout } from "@/lib/bachs/api";
 import { bachsConfig } from "@/lib/bachs/client";
 import { stringToKobo } from "@/lib/bachs/amounts";
 import { cronAllowed, fail, json, serviceDb } from "@/lib/bachs/http";
+import { runDuePayouts } from "@/lib/bachs/payouts";
 import { reconcileRefund, startRefund } from "@/lib/bachs/refunds";
 import { methodOf } from "@/lib/bachs/webhookRouter";
 
@@ -12,13 +13,14 @@ export const dynamic = "force-dynamic";
  * The sweeper. POST (or GET, which is what Vercel Cron sends) with the shared secret: Authorization: Bearer <HOPPAZ_CRON_SECRET>
  * (or the existing CRON_SECRET), or the header x-hoppaz-cron-secret. Without it: 401.
  *   1. ev_pay_sweep expires open orders whose hold and 2 minute margin have run out and frees the seats.
- *   2. Each of those is checked with Bachs (GET /v1/checkout-sessions/{id} as the host). One that was paid after all goes through
+ *   2. Each of those is checked with Bachs (GET /v1/checkout-sessions/{id} on the account it was sold on, Hoppaz's own). One that was paid after all goes through
  *      ev_pay_order_paid, which takes the late payment path (seats again if free, else a refund is owed).
  *   3. Card refunds that were started but never settled (Bachs did not answer, or the webhook did not come): asked about by id, or
  *      sent again with the SAME reference and idempotency key, never a new reference.
  *   4. Card payments that are owed a refund with none under way (a late payment with no seat, or a refund Bachs refused earlier,
- *      for example a host balance that was too low) are tried again.
- * -> { ok, expired, paid_late, refunds_reconciled, refunds_started }. Schedule it every few minutes (vercel.json is not edited by this package).
+ *      for example a balance that was too low) are tried again.
+ *   5. Host withdrawals that are due: the transfer from Hoppaz, then the payout to the host's bank (src/lib/bachs/payouts.ts).
+ * -> { ok, expired, paid_late, refunds_reconciled, refunds_started, payouts }. Schedule it every few minutes (vercel.json is not edited by this package).
  */
 async function run(req: Request) {
   if (!cronAllowed(req)) return fail(401, "Not allowed.");
@@ -64,7 +66,8 @@ async function sweep() {
     const out = await startRefund(db, { orderId: o.id, actor: null }).catch(() => null);
     if (out?.ok) refunds++;
   }
-  return json({ ok: true, expired: expired.length, paid_late: paidLate, refunds_reconciled: reconciled, refunds_started: refunds });
+  const payouts = bachsConfig() ? await runDuePayouts(db).catch((e) => ({ error: (e as Error).message })) : null;
+  return json({ ok: true, expired: expired.length, paid_late: paidLate, refunds_reconciled: reconciled, refunds_started: refunds, payouts });
 }
 
 export const POST = run;

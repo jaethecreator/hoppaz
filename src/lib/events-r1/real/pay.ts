@@ -2,7 +2,7 @@
  * Real paid tickets (Bachs). Money moves only through the Next.js route handlers (src/app/api/events-r1/pay/*), called with
  * the signed-in session's access token. Reads go straight to the database (ev_pay_* functions, supabase/events_r1_pay.sql).
  */
-import type { Checkout, HostPayout, Order, PayApi, Quote, RefundResult, Sales } from "../pay";
+import type { Checkout, HostPayout, Order, PayApi, PayoutSummary, Quote, RefundResult, Sales, Withdrawal } from "../pay";
 import { accessToken, emit, rpc, UUID } from "./core";
 import { iso } from "./map";
 
@@ -61,6 +61,40 @@ function mapOrder(j: Row): Order {
   };
 }
 
+function mapWithdrawal(j: Row): Withdrawal {
+  return {
+    id: String(j.id),
+    amount_naira: n(j.amount_naira),
+    status: j.status as Withdrawal["status"],
+    execute_after: iso(j.execute_after) ?? "",
+    received_naira: nOrNull(j.received_naira),
+    fee_naira: nOrNull(j.fee_naira),
+    created_at: iso(j.created_at) ?? "",
+    paid_at: iso(j.paid_at),
+  };
+}
+
+/** GET a route with the session (the bank list). */
+async function getRoute<T>(path: string): Promise<T> {
+  const token = await accessToken();
+  if (!token) throw new Error("Sign in first");
+  let res: Response;
+  try {
+    res = await fetch(`${base()}/api/events-r1/pay/${path}`, { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+  } catch {
+    throw new Error("No connection. Try again");
+  }
+  const out = (await res.json().catch(() => ({}))) as Row;
+  if (!res.ok) throw new Error(typeof out.error === "string" && out.error ? out.error : "That did not work. Try again");
+  return out as T;
+}
+
+const WITHDRAW_NO: Record<string, string> = {
+  no_session: "Sign in first",
+  needs_bank: "Add your bank details first",
+  already_requested: "A withdrawal is already on its way",
+};
+
 const orderId = (id: string) => {
   if (!UUID.test(id)) throw new Error("Order not found");
   return id;
@@ -79,8 +113,53 @@ export const pay: PayApi = {
     };
   },
 
-  async startOnboarding(returnPath) {
-    return post<{ url: string }>("onboard", { returnPath });
+  async payoutSummary() {
+    const j = await rpc<Row | null>("ev_payout_summary");
+    if (!j) throw new Error("Sign in first");
+    const a = (j.account as Row) ?? {};
+    const rules = (j.rules as Row) ?? {};
+    return {
+      account: {
+        has_account: !!a.has_account,
+        ready: !!a.ready,
+        bank_label: (a.bank_label as string | null) ?? null,
+        requirements_due: Array.isArray(a.requirements_due) ? (a.requirements_due as string[]) : [],
+      },
+      earned_naira: n(j.earned_naira),
+      reserved_naira: n(j.reserved_naira),
+      reserve_until: iso(j.reserve_until),
+      withdrawn_naira: n(j.withdrawn_naira),
+      available_naira: n(j.available_naira),
+      balance_naira: n(j.balance_naira),
+      open_withdrawal: j.open_withdrawal ? mapWithdrawal(j.open_withdrawal as Row) : null,
+      recent: Array.isArray(j.recent) ? (j.recent as Row[]).map(mapWithdrawal) : [],
+      rules: { reserve_percent: n(rules.reserve_percent, 5), reserve_days: n(rules.reserve_days, 30), delay_hours: n(rules.delay_hours, 24), min_naira: n(rules.min_naira, 1000) },
+    } satisfies PayoutSummary;
+  },
+
+  async banks() {
+    return (await getRoute<{ banks: { name: string; code: string }[] }>("banks")).banks ?? [];
+  },
+
+  async checkAccount(bankCode, accountNumber) {
+    return post<{ account_name: string }>("banks", { bankCode, accountNumber });
+  },
+
+  async setupPayout(d) {
+    const out = await post<{ ready: boolean; bank_label: string; account_name: string }>("payout-setup", { ...d });
+    emit();
+    return out;
+  },
+
+  async requestWithdrawal() {
+    const j = await rpc<Row | null>("ev_payout_request");
+    if (!j?.ok) {
+      const reason = String(j?.reason ?? "");
+      if (reason === "too_small") throw new Error(`You need at least ₦1,000 to withdraw (you have ₦${Math.floor(n(j?.available_naira)).toLocaleString("en-NG")})`);
+      throw new Error(WITHDRAW_NO[reason] ?? "That did not work. Try again");
+    }
+    emit();
+    return mapWithdrawal(j.withdrawal as Row);
   },
 
   async quote(eventId, ticketTypeId, quantity) {
