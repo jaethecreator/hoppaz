@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { paidTicketsOn, PAID_KEY } from "@/lib/events-r1/flags";
 import { useR1Api, useR1Query } from "@/lib/events-r1/hooks";
-import type { HostPayout, Order, Sales } from "@/lib/events-r1/pay";
+import type { HostPayout, Order, PayoutSummary, Sales } from "@/lib/events-r1/pay";
 
 /**
  * Is paid tickets on right now? Read after mount (the demo switch lives in localStorage, so the server render is always
@@ -28,18 +28,20 @@ export function useHostPayout(enabled: boolean) {
   return useR1Query<HostPayout | null>(async (api) => (enabled && api.auth.current() ? api.pay.hostPayout() : null), [enabled]);
 }
 
+/** The signed-in host's money (balance, held amount, bank, withdrawals), or null (not asked, signed out, or paid tickets off). */
+export function usePayoutSummary(enabled: boolean) {
+  return useR1Query<PayoutSummary | null>(async (api) => (enabled && api.auth.current() ? api.pay.payoutSummary() : null), [enabled]);
+}
+
 /**
- * What a host sees about paid tickets on a form: "off" (paid tickets off), "loading", "signedout", "needs" (cannot sell yet:
- * Set up payouts first) or "ready". `payout` is Bachs's answer when there is one.
+ * What a host sees about paid tickets on a form: "off" (paid tickets off), "signedout" or "ready". Hoppaz collects every payment,
+ * so any host can sell at once: the bank details are asked for only when they withdraw.
  */
-export function usePaidGate(): { state: "off" | "loading" | "signedout" | "needs" | "ready"; payout: HostPayout | null } {
+export function usePaidGate(): { state: "off" | "signedout" | "ready" } {
   const on = usePaidOn();
-  const { data, loading } = useHostPayout(on);
   const api = useR1Api();
-  if (!on) return { state: "off", payout: null };
-  if (loading) return { state: "loading", payout: null };
-  if (!data) return { state: api?.auth.current() ? "loading" : "signedout", payout: null };
-  return { state: data.can_sell ? "ready" : "needs", payout: data };
+  if (!on) return { state: "off" };
+  return { state: api?.auth.current() ? "ready" : "signedout" };
 }
 
 /** Host: every order of one event (empty when paid tickets are off). */

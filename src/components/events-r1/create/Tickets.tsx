@@ -1,8 +1,7 @@
 "use client";
 
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
-import { platformFeeNaira, processingFeeNaira } from "@/lib/events-r1/payFee";
-import PayoutNeeded from "../pay/PayoutNeeded";
+import { platformFeeNaira } from "@/lib/events-r1/payFee";
 import { usePaidGate } from "../pay/usePay";
 import { naira } from "../pay/words";
 import { Choice } from "./Fields";
@@ -42,7 +41,8 @@ export const ticketsDraft = (paid: boolean, types: TicketForm[]) =>
 function receives(price: string): number | null {
   const gross = Number(price);
   if (!Number.isInteger(gross) || gross < 2) return null;
-  return gross - platformFeeNaira(gross) - processingFeeNaira(gross, "card");
+  // Hoppaz collects: the buyer pays Bachs's processing fee on top, so the host's share is the price less Hoppaz's fee.
+  return gross - platformFeeNaira(gross);
 }
 
 const digits = (v: string, max = 9) => v.replace(/\D/g, "").slice(0, max);
@@ -50,8 +50,8 @@ const digits = (v: string, max = 9) => v.replace(/\D/g, "").slice(0, max);
 /**
  * The inside of the Tickets row, Luma style: Free or Paid for the event, then the ticket types (price first when Paid),
  * a Remove on all but the last, and + Add ticket type (up to 5). Paid with paid tickets off shows the one line
- * PAID_UNAVAILABLE; with it on and the host not ready to sell, "Set up payouts first"; ready, what the host receives per
- * ticket. Switching back to Free loses nothing.
+ * PAID_UNAVAILABLE; with it on, what the host receives per ticket (any host can sell: bank details are asked only when they
+ * withdraw). Switching back to Free loses nothing.
  */
 export default function Tickets({
   paid,
@@ -77,7 +77,7 @@ export default function Tickets({
               <span className="mb-1 block font-body text-[13px] text-dim">Price (₦)</span>
               <input value={t.price} onChange={(e) => edit(t.key, { price: digits(e.target.value) })} inputMode="numeric" placeholder="0" aria-label={`Price (₦), ticket ${i + 1}`} />
               {gate.state !== "off" && receives(t.price) !== null && (
-                <span className="mt-1 block font-body text-[13px] text-dim">You receive about {naira(receives(t.price) as number)} per ticket after the Hoppaz fee and Bachs fees</span>
+                <span className="mt-1 block font-body text-[13px] text-dim">You receive {naira(receives(t.price) as number)} per ticket. Buyers pay the card or transfer fee</span>
               )}
             </label>
           )}
@@ -106,7 +106,6 @@ export default function Tickets({
       )}
 
       {paid && gate.state === "off" && <p className="font-body text-[14px] text-cream">{PAID_UNAVAILABLE}</p>}
-      {paid && gate.state === "needs" && <PayoutNeeded />}
     </div>
   );
 }

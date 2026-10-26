@@ -954,29 +954,31 @@ await test("paid switch off: paid type, quote, checkout and register all say Cur
   });
 });
 
-await test("paid switch on, payouts not ready: a paid type cannot be saved or bought (payouts_not_ready)", async () => {
+await test("paid switch on: any host sells at once, bank details only to withdraw, 5% held for 30 days, paid a day after asking", async () => {
   await withPaid(true, async () => {
-    // A new host starts as Not started.
+    // Hoppaz collects (26 Oct): a new host sells with no payout setup.
     const me = await newPerson();
-    eq((await api.pay.hostPayout()).status, "not_started", "new host");
-    eq((await api.pay.hostPayout()).can_sell, false, "cannot sell");
-    ok((await api.pay.hostPayout()).requirements_due.includes("Upload your ID"), "plain words");
-    await rejects(api.events.create({ title: "Mine", tickets: PAID_TYPE(1000) }), "payouts_not_ready", "create");
-    for (const st of ["in_progress", "restricted"] as const) {
-      fakeDev.setPayoutOf(me.id, st);
-      eq((await api.pay.hostPayout()).can_sell, false, `${st} cannot sell`);
-      await rejects(api.events.create({ title: "Mine", tickets: PAID_TYPE(1000) }), "payouts_not_ready", `create when ${st}`);
-    }
-    eq((await api.pay.startOnboarding("/host/x")).url, "/dev/fake-bachs/onboarding?return=%2Fhost%2Fx", "onboarding link");
-    fakeDev.setPayoutOf(me.id, "ready");
     const hp = await api.pay.hostPayout();
-    eq([hp.can_sell, hp.status, hp.requirements_due.length, hp.dashboard_url], [true, "ready", 0, "https://dashboard.bachs.io"], "ready");
-    eq((await api.events.create({ title: "Mine", tickets: PAID_TYPE(1000) })).ticket_types[0].price_naira, 1000, "saved when ready");
-    // The host loses the setup after the event exists: nobody can buy.
-    const ev = await api.events.create({ title: "Mine 2", tickets: PAID_TYPE(1000) });
-    fakeDev.setPayoutOf(me.id, "restricted");
+    eq([hp.status, hp.can_sell], ["not_started", false], "new host: cannot withdraw yet");
+    ok(hp.requirements_due.includes("The bank account for your payouts"), "plain words");
+    const ev = await api.events.create({ title: "Mine", tickets: PAID_TYPE(10000) });
+    eq(ev.ticket_types[0].price_naira, 10000, "a paid type saves with no payout setup");
     await newPerson();
-    await rejects(api.pay.checkout(ev.id, ev.ticket_types[0].id, 1), "payouts_not_ready", "checkout");
+    const o = await api.pay.checkout(ev.id, ev.ticket_types[0].id, 1);
+    fakeDev.completeCheckout(o.order_id, "card");
+    fakeDev.signInAs(me.id);
+    let sum = await api.pay.payoutSummary();
+    eq([sum.earned_naira, sum.reserved_naira, sum.available_naira, sum.account.ready], [9550, 478, 9072, false], "4.5 percent to Hoppaz, 5 percent of the share held");
+    await rejects(api.pay.requestWithdrawal(), "Add your bank details first", "no bank yet");
+    await rejects(api.pay.checkAccount("058", "0000000000"), "We couldn't find that account. Check the number and the bank.", "an account the bank does not know");
+    const saved = await api.pay.setupPayout({ firstName: "Ada", lastName: "Obi", dob: "1995-06-15", line1: "1 Test Street", city: "Ikeja", state: "Lagos", bankCode: "058", accountNumber: "0123456789" });
+    eq([saved.ready, saved.bank_label], [true, "GTBank Plc ending 6789"], "ready at once: name, date of birth, address, bank");
+    const w = await api.pay.requestWithdrawal();
+    eq([w.amount_naira, w.status], [9072, "requested"], "the whole available balance, sent a day later");
+    await rejects(api.pay.requestWithdrawal(), "A withdrawal is already on its way", "one at a time");
+    fakeDev.advance(25 * HOUR);
+    sum = await api.pay.payoutSummary();
+    eq([sum.open_withdrawal, sum.recent[0].status, sum.recent[0].received_naira, sum.available_naira], [null, "paid", 9022, 0], "reached the bank less the N50 fee");
     // Seeded: Rooftop Sessions and Kredete are Ready, others are not.
     eq(["Rooftop Sessions", "Kredete", "Lagos Run Club", "360Playlist"].map((h) => fakeDev.payoutStatus(user(h).id)), ["ready", "ready", "not_started", "not_started"], "seed");
   });

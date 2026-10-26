@@ -8,9 +8,9 @@ import type { BachsErrorKind } from "./types";
  *  - Errors are mapped on `error_code` into a BachsError with a `kind` the routes can branch on.
  *  - 429: waits Retry-After (at most 5 s) and tries again, up to 2 times. Timeouts and 5xx are retried once, but only when the
  *    call is safe to repeat (a GET, or a POST that carries an Idempotency-Key).
- *  - HARD GUARD: a call that creates a charge (checkout session), or that touches a host's refunds or balances, without an
- *    X-Account-Id that starts with acct_ is refused before anything leaves the building. Bachs silently ignores a misspelled
- *    header and would charge, refund or read Hoppaz's own account instead of the host's.
+ *  - HARD GUARD: a call that creates a charge (checkout session), or that touches refunds or balances, must name whose it is: an
+ *    X-Account-Id that starts with acct_ (a host's), or asPlatform (Hoppaz's own, the normal case since Hoppaz collects). Anything else
+ *    is refused before it leaves the building: Bachs silently ignores a misspelled header and would act on Hoppaz's own account.
  */
 
 const ACCOUNT_ID = /^acct_[A-Za-z0-9_]{6,64}$/;
@@ -59,8 +59,13 @@ export const isAccountId = (v: unknown): v is string => typeof v === "string" &&
 export type RequestOptions = {
   query?: Record<string, string | number | undefined>;
   body?: unknown;
-  /** The host's Bachs account: sent as X-Account-Id (acts as that account, direct charge). */
+  /** The host's Bachs account: sent as X-Account-Id (acts as that account). */
   accountId?: string;
+  /**
+   * Act as Hoppaz's own account on a call the guard keeps for host accounts (a checkout, a refund or the balances). Hoppaz collects every
+   * ticket payment (Bachs "You collect"), so those calls are Hoppaz's own: this says so out loud instead of just leaving the header off.
+   */
+  asPlatform?: boolean;
   idempotencyKey?: string;
   timeoutMs?: number;
 };
@@ -88,17 +93,18 @@ function kindFor(status: number, code: string | null): BachsErrorKind {
 }
 
 /** Throws before any network call when the request breaks the account rules. Exported so tests can show the guard. */
-export function guardRequest(method: string, path: string, accountId: string | undefined): void {
+export function guardRequest(method: string, path: string, accountId: string | undefined, asPlatform = false): void {
   if (accountId !== undefined && !isAccountId(accountId)) {
     throw new BachsError("guard", "X-Account-Id must be a host account id (acct_...)", 0);
   }
-  if (!accountId && NEEDS_ACCOUNT.some((n) => (n.methods === null || n.methods.includes(method)) && n.re.test(path.split("?")[0]))) {
-    throw new BachsError("guard", `Refusing ${method} ${path}: this call needs X-Account-Id (acct_...)`, 0);
+  if (accountId && asPlatform) throw new BachsError("guard", "A call is either Hoppaz's own or a host's, not both", 0);
+  if (!accountId && !asPlatform && NEEDS_ACCOUNT.some((n) => (n.methods === null || n.methods.includes(method)) && n.re.test(path.split("?")[0]))) {
+    throw new BachsError("guard", `Refusing ${method} ${path}: this call needs X-Account-Id (acct_...) or asPlatform`, 0);
   }
 }
 
 export async function bachsRequest<T>(method: "GET" | "POST" | "PATCH", path: string, opts: RequestOptions = {}, deps: ClientDeps = {}): Promise<T> {
-  guardRequest(method, path, opts.accountId);
+  guardRequest(method, path, opts.accountId, opts.asPlatform);
   const config = deps.config === undefined ? bachsConfig() : deps.config;
   if (!config) throw new BachsError("auth", "Bachs is not configured (BACHS_SECRET_KEY)", 0);
   const doFetch = deps.fetchImpl ?? fetch;

@@ -8,18 +8,18 @@
  * Amounts are whole naira. Seats held by an open order count against capacity until expires_at (15 minutes of fake
  * time); an order past that flips to expired the next time anything reads it.
  */
-import type { PayApi, Order, PayMethod, Quote, RefundResult, Sales, SalesRow } from "../pay";
+import type { PayApi, Order, PayMethod, PayoutSummary, Quote, RefundResult, Sales, SalesRow, Withdrawal } from "../pay";
 import { PAID_UNAVAILABLE } from "../constants";
 import { paidTicketsOn } from "../flags";
 import { platformFeeNaira, processingFeeNaira } from "../payFee";
 import type { Registration } from "../types";
-import { canSell, payoutFor } from "./payouts";
+import { canSell, payoutFor, setPayoutStatus } from "./payouts";
 import { cleanAnswers } from "./registrations";
 import {
   assertManage, canOpen, eventEnd, fillFromWaitlist, findEvent, isGoing, regOf, requireViewer, seatsOf, ticketIdFor,
   ticketsOfReg, typeSpotsLeft, typesOf, userById, voidTicket,
 } from "./rules";
-import type { EventRec, OrderRec, TicketRec, TicketTypeRec } from "./store";
+import type { EventRec, OrderRec, TicketRec, TicketTypeRec, WithdrawalRec } from "./store";
 import { emit, now, persist, S, viewer } from "./store";
 import { clone, newId } from "./util";
 
@@ -227,6 +227,71 @@ function takeBack(o: OrderRec): void {
   fillFromWaitlist(o.event_id);
 }
 
+/* ------------------------------------------------------------- payouts -- */
+
+/** A few real bank codes (the real list comes from Bachs). */
+const FAKE_BANKS = [
+  { name: "Access Bank", code: "044" },
+  { name: "First Bank of Nigeria", code: "011" },
+  { name: "GTBank Plc", code: "058" },
+  { name: "Kuda Microfinance Bank", code: "50211" },
+  { name: "Moniepoint Microfinance Bank", code: "50515" },
+  { name: "OPay Digital Services", code: "999992" },
+  { name: "United Bank for Africa", code: "033" },
+  { name: "Zenith Bank", code: "057" },
+];
+const WITHDRAW_FEE = 50;
+const DAY_MS = 24 * 3.6e6;
+const RULES = { reserve_percent: 5, reserve_days: 30, delay_hours: 24, min_naira: 1000 };
+
+const toWithdrawal = (w: WithdrawalRec): Withdrawal => ({
+  id: w.id,
+  amount_naira: w.amount_naira,
+  status: w.paid_ms ? "paid" : "requested",
+  execute_after: iso(w.execute_after_ms),
+  received_naira: w.paid_ms ? Math.max(0, w.amount_naira - WITHDRAW_FEE) : null,
+  fee_naira: w.paid_ms ? WITHDRAW_FEE : null,
+  created_at: iso(w.created_ms),
+  paid_at: w.paid_ms ? iso(w.paid_ms) : null,
+});
+
+/** The host's money, worked out like events_r1_payouts.sql: shares of paid orders, 5 percent held for 30 days after the event, less withdrawals. */
+function summaryFor(userId: string): PayoutSummary {
+  const rec = S().payouts[userId];
+  const list = rec?.withdrawals ?? [];
+  // A withdrawal reaches the bank once its day has passed (fake clock).
+  for (const w of list) if (!w.paid_ms && now() >= w.execute_after_ms) w.paid_ms = w.execute_after_ms;
+  let earned = 0;
+  let reserved = 0;
+  let until: number | null = null;
+  for (const o of Object.values(S().orders)) {
+    if (o.host_id !== userId || o.status !== "paid" || o.needs_refund) continue;
+    const share = o.gross_naira - o.platform_fee_naira;
+    earned += share;
+    const e = findEvent(o.event_id);
+    const release = (e ? eventEnd(e) : now()) + RULES.reserve_days * DAY_MS;
+    if (release > now()) {
+      reserved += Math.ceil((share * RULES.reserve_percent) / 100);
+      until = until === null ? release : Math.min(until, release);
+    }
+  }
+  const withdrawn = list.reduce((sum, w) => sum + w.amount_naira, 0);
+  const open = list.find((w) => !w.paid_ms) ?? null;
+  const payout = payoutFor(userId);
+  return {
+    account: { has_account: !!rec, ready: payout.can_sell, bank_label: rec?.bank_label ?? null, requirements_due: payout.requirements_due },
+    earned_naira: earned,
+    reserved_naira: reserved,
+    reserve_until: until === null ? null : iso(until),
+    withdrawn_naira: withdrawn,
+    available_naira: Math.max(0, earned - reserved - withdrawn),
+    balance_naira: earned - withdrawn,
+    open_withdrawal: open ? toWithdrawal(open) : null,
+    recent: [...list].sort((a, b) => b.created_ms - a.created_ms).slice(0, 10).map(toWithdrawal),
+    rules: RULES,
+  };
+}
+
 /* --------------------------------------------------------------------- api -- */
 
 export const pay: PayApi = {
@@ -234,9 +299,48 @@ export const pay: PayApi = {
     return payoutFor(requireViewer().id);
   },
 
-  async startOnboarding(returnPath) {
+  async payoutSummary() {
+    return clone(summaryFor(requireViewer().id));
+  },
+
+  async banks() {
+    return clone(FAKE_BANKS);
+  },
+
+  async checkAccount(bankCode, accountNumber) {
     requireViewer();
-    return { url: `/dev/fake-bachs/onboarding?return=${encodeURIComponent(returnPath)}` };
+    if (!FAKE_BANKS.some((b) => b.code === bankCode) || !/^\d{10}$/.test(accountNumber) || accountNumber === "0000000000") {
+      throw new Error("We couldn't find that account. Check the number and the bank.");
+    }
+    return { account_name: (userById(requireViewer().id)?.name ?? "Hopper").toUpperCase() };
+  },
+
+  async setupPayout(d) {
+    const v = requireViewer();
+    if (!d.firstName.trim() || !d.lastName.trim()) throw new Error("Add your first and last name, as on your bank account.");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.dob)) throw new Error("Add your date of birth. You need to be 18 or over to get paid.");
+    if (!d.line1.trim() || !d.city.trim() || !d.state.trim()) throw new Error("Add your address: street, city and state.");
+    const { account_name } = await pay.checkAccount(d.bankCode, d.accountNumber);
+    setPayoutStatus(v.id, "ready");
+    const bank = FAKE_BANKS.find((b) => b.code === d.bankCode)?.name ?? "Bank";
+    S().payouts[v.id].bank_label = `${bank} ending ${d.accountNumber.slice(-4)}`;
+    persist();
+    emit();
+    return { ready: true, bank_label: S().payouts[v.id].bank_label ?? "", account_name };
+  },
+
+  async requestWithdrawal() {
+    const v = requireViewer();
+    const sum = summaryFor(v.id);
+    if (!sum.account.ready) throw new Error("Add your bank details first");
+    if (sum.open_withdrawal) throw new Error("A withdrawal is already on its way");
+    if (sum.available_naira < RULES.min_naira) throw new Error(`You need at least ₦1,000 to withdraw (you have ₦${sum.available_naira.toLocaleString("en-NG")})`);
+    const rec = S().payouts[v.id];
+    const w: WithdrawalRec = { id: newId(), amount_naira: sum.available_naira, execute_after_ms: now() + DAY_MS, created_ms: now(), paid_ms: null };
+    rec.withdrawals = [...(rec.withdrawals ?? []), w];
+    persist();
+    emit();
+    return toWithdrawal(w);
   },
 
   async quote(eventId, ticketTypeId, quantity) {

@@ -17,9 +17,8 @@ import type { Look } from "@/lib/events-r1/looks";
 import type { EventKind, LinkType, Visibility } from "@/lib/events-r1/types";
 import { COVERS, randomCover } from "@/lib/host/covers";
 import { SWATCHES, swatchColor } from "@/lib/tint";
-import PayoutNeeded from "../pay/PayoutNeeded";
 import { naira } from "../pay/words";
-import { platformFeeNaira, processingFeeNaira } from "@/lib/events-r1/payFee";
+import { platformFeeNaira } from "@/lib/events-r1/payFee";
 import { lagosIso } from "../dateTime";
 import { coverFromFile, uploadCoverFile } from "./cover";
 import { readCover, writeCover } from "./draft";
@@ -322,7 +321,8 @@ function DescField({ f, alwaysOpen }: { f: EventFormState; alwaysOpen?: boolean 
 function receives(price: string): number | null {
   const gross = Number(price);
   if (!Number.isInteger(gross) || gross < 2) return null;
-  return gross - platformFeeNaira(gross) - processingFeeNaira(gross, "card");
+  // Hoppaz collects: the buyer pays the card or transfer fee on top, so the host's share is the price less Hoppaz's fee.
+  return gross - platformFeeNaira(gross);
 }
 
 function TicketsFields({ f }: { f: EventFormState }) {
@@ -332,7 +332,7 @@ function TicketsFields({ f }: { f: EventFormState }) {
     <div className="grid gap-3">
       <div className="flex items-center justify-between gap-2">
         <Seg label="Free or paid" value={f.paid ? "paid" : "free"} options={[{ value: "free", label: "Free" }, { value: "paid", label: "Paid" }]} onChange={(v) => f.setPaid(v === "paid")} />
-        <span className="font-body text-[12.5px] text-t-muted">{f.paid ? "Fee is inside the price" : "Free unless you add a price"}</span>
+        <span className="font-body text-[12.5px] text-t-muted">{f.paid ? "Buyers pay the card or transfer fee" : "Free unless you add a price"}</span>
       </div>
       <div className="grid gap-2">
         {f.tickets.map((t, i) => (
@@ -348,7 +348,7 @@ function TicketsFields({ f }: { f: EventFormState }) {
               <span />
             )}
             {f.paid && receives(t.price) !== null && f.gate.state !== "off" && (
-              <span className="col-span-full -mt-1 font-body text-[12px] text-t-muted">You get about {naira(receives(t.price) as number)} per ticket</span>
+              <span className="col-span-full -mt-1 font-body text-[12px] text-t-muted">You get {naira(receives(t.price) as number)} per ticket</span>
             )}
           </div>
         ))}
@@ -359,7 +359,6 @@ function TicketsFields({ f }: { f: EventFormState }) {
         </button>
       )}
       {f.paid && f.gate.state === "off" && <p className="font-body text-[13.5px]">{PAID_UNAVAILABLE}</p>}
-      {f.paid && f.gate.state === "needs" && <PayoutNeeded />}
       <div>
         <Switch on={f.approval} onChange={f.setApproval} label="Ask me to approve guests" />
         <Switch
@@ -475,7 +474,7 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: () => void }) {
   const canCreate = !!f.title.trim() && !!f.api && !f.blocked && !f.busy && !f.endBad;
   const steps = [!!f.title.trim(), true, !f.inPerson || !!f.place.trim(), !!cover];
   const left = steps.filter((s) => !s).length;
-  const buttonText = f.blocked && f.gate.state === "off" ? PAID_UNAVAILABLE : f.blocked && f.gate.state === "needs" ? "Set up payouts first" : f.busy ? "Creating" : "Create event";
+  const buttonText = f.blocked && f.gate.state === "off" ? PAID_UNAVAILABLE : f.busy ? "Creating" : "Create event";
   const leftText = f.missing.length ? `Add ${f.missing.join(", ").replace(/, ([^,]*)$/, " and $1")}` : "Ready. Everything else can be added after.";
   const submit = () => f.submit(() => setOpen("tickets"));
   const errorLine = f.error && (

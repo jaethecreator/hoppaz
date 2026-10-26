@@ -1,5 +1,27 @@
 # Paid tickets on Bachs: the database contract (events_r1_pay.sql)
 
+## 26 Oct 2026: Hoppaz collects (read this first)
+
+Decided by Jae: Bachs "You collect the payment" (the marketplace shape), not direct charges.
+
+- Every checkout is made on Hoppaz's own Bachs account. `ev_orders.host_account` is `'platform'` and `buyer_pays_fee` is true: the buyer
+  pays the ticket price plus Bachs's processing fee, shown by Bachs as its own line (`customer_bears_fee: true`). No `platform_fee` is sent.
+- Hoppaz keeps `HOPPAZ_TICKET_FEE_PERCENT` (4.5) of the price, taken from the host's share (`platform_fee_kobo`).
+- Any host sells at once. `_ev_host_can_sell` is true for every host; `ev_host_payouts.can_sell` now means "can withdraw": the host's Bachs
+  account is a recipient with `transfers` and `payouts` active. It needs only a name, date of birth, address and a bank account that
+  resolves (no ID, no BVN), sent from the app (`/api/events-r1/pay/payout-setup`), never Bachs's hosted form.
+- `events_r1_payouts.sql` (file 8): the host balance (paid shares less withdrawals; 5 percent of each share held until 30 days after the
+  event), withdrawals (the whole available balance, at least N1,000, sent a day after the ask), and the functions the sweeper and the
+  webhook use. The sweeper transfers from Hoppaz to the host (`POST /v1/transfers`) and pays out as the host (`POST /v1/payouts`);
+  `payout.paid` / `payout.failed` settle it.
+- Refunds of these orders come out of Hoppaz's balance; a refunded order earns the host nothing (it comes off their earnings, and a balance
+  can go below zero until the next sales). Disputes are the same.
+- Tested end to end on the Bachs sandbox on 26 Oct: checkout (N10,000 + N200 card fee), Hoppaz balance N10,000, transfer N9,550 to a
+  recipient host, payout N9,500 with a N50 fee.
+
+The sections below describe the order, refund and dispute rules, which are unchanged; where they say the host's account, read Hoppaz's.
+
+
 DRAFT FOR OLA, NOT RUN ON PRODUCTION. For the builder of the Next.js route handlers. Read with `notes/luma/11-bachs-integration-spec.md` (section 9) and
 `src/lib/events-r1/pay.ts`. Everything here is in `supabase/events_r1_pay.sql` (run after the six `events_r1_` files); the test is
 `supabase/tests/events_r1_pay_test.sql`. No function here talks to Bachs: the route does the Bachs call and hands the result to the function.

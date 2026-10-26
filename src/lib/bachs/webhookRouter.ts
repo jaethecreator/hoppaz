@@ -1,4 +1,5 @@
 import { stringToKobo } from "./amounts";
+import { PLATFORM, platformAccountId } from "./api";
 import type { ClientDeps } from "./client";
 import type { Json, PayDb } from "./db";
 import { startRefund } from "./refunds";
@@ -15,6 +16,7 @@ import type { BachsEvent } from "./types";
  *   dispute.created / updated        ev_pay_dispute_flag
  *   capability.updated               ev_pay_host_apply_capability
  *   account.updated                  ev_pay_host_apply_requirements
+ *   payout.paid / payout.failed      ev_payout_result        a host's withdrawal reached their bank, or is tried again
  *   collection.failed and the rest   logged, not acted on
  *
  * `retry: true` means answer 5xx so Bachs sends it again (an order that is not in our database yet: the buyer can pay a few
@@ -40,6 +42,29 @@ const koboOrNull = (v: unknown): number | null => {
   }
 };
 
+/**
+ * Whether an event about an order came from the account the order was sold on. Hoppaz's own charges (PLATFORM) come from Hoppaz's account:
+ * its id is read once from Bachs. null: Bachs could not be asked (answer 5xx, Bachs sends the event again).
+ */
+async function fromOrdersAccount(account: string | null, order: { host_account: string }, bachs: ClientDeps): Promise<boolean | null> {
+  if (!account) return true;
+  if (order.host_account !== PLATFORM) return account === order.host_account;
+  try {
+    return account === (await platformAccountId(Object.keys(bachs).length ? bachs : undefined));
+  } catch {
+    return null;
+  }
+}
+
+/** Bachs's processing fee on a charge: given, or the charge amount less what settled (the buyer paid it on top). */
+function feeOf(d: Json): number | null {
+  const given = koboOrNull(d.processing_fee) ?? koboOrNull(d.charge?.fees?.amount);
+  if (given !== null) return given;
+  const paid = koboOrNull(d.charge?.amount);
+  const settled = koboOrNull(d.charge?.settlement_amount);
+  return paid !== null && settled !== null && paid >= settled ? paid - settled : null;
+}
+
 export async function routeBachsEvent(event: BachsEvent, db: PayDb, bachs: ClientDeps = {}, log: (line: string) => void = console.warn): Promise<RouteResult> {
   const d: Json = event.data ?? {};
   const account = event.account ?? (typeof d.account === "string" ? d.account : null);
@@ -51,9 +76,11 @@ export async function routeBachsEvent(event: BachsEvent, db: PayDb, bachs: Clien
       const reference = typeof d.reference === "string" ? d.reference : null;
       const order = await db.orderByRef(checkoutId, reference);
       if (!order) return { action: "order_not_found", retry: true };
-      // The event must come from the host account the order was sold for.
-      if (account && account !== order.host_account) {
-        log(`[bachs] ${event.id}: account ${account} is not the order's host, ignored`);
+      // The event must come from the account the order was sold on (Hoppaz's own, or an old order's host).
+      const same = await fromOrdersAccount(account, order, bachs);
+      if (same === null) return { action: "platform_unknown", retry: true };
+      if (!same) {
+        log(`[bachs] ${event.id}: account ${account} is not the order's account, ignored`);
         return { action: "account_mismatch" };
       }
       const res = await db.orderPaid({
@@ -61,7 +88,7 @@ export async function routeBachsEvent(event: BachsEvent, db: PayDb, bachs: Clien
         charge: d.charge?.id ?? d.charge_id ?? null,
         amount: String(d.amount ?? ""),
         method: methodOf(d.payment_method_details?.type ?? d.charge?.payment_method_details?.type ?? d.payment_method),
-        feeKobo: koboOrNull(d.processing_fee),
+        feeKobo: feeOf(d),
       });
       if (!res.ok) return { action: `paid_${res.reason ?? "refused"}`, retry: res.reason === "not_found" };
       if (res.needs_refund) await autoRefund(res, db, bachs, log);
@@ -72,7 +99,9 @@ export async function routeBachsEvent(event: BachsEvent, db: PayDb, bachs: Clien
       const reference = typeof d.reference === "string" ? d.reference : null;
       const order = await db.orderByRef(checkoutId, reference);
       if (!order) return { action: "order_not_found", retry: true };
-      if (account && account !== order.host_account) return { action: "account_mismatch" };
+      const same = await fromOrdersAccount(account, order, bachs);
+      if (same === null) return { action: "platform_unknown", retry: true };
+      if (!same) return { action: "account_mismatch" };
       const res = await db.orderDetails({ charge: d.charge_id ?? null, checkout: order.bachs_checkout_id ?? checkoutId ?? order.bachs_reference, feeKobo: koboOrNull(d.processing_fee), method: methodOf(d.payment_method_details?.type) });
       // A payment that could not be seated while its method was unknown was held as a manual refund; now it says card, so Bachs can refund it.
       if (res.ok && res.refund_by_card) {
@@ -109,6 +138,16 @@ export async function routeBachsEvent(event: BachsEvent, db: PayDb, bachs: Clien
       if (!acct || !Array.isArray(d.outstanding)) return { action: "ignored_bad_account" };
       const res = await db.hostApplyRequirements(acct, d.outstanding.filter((x: unknown): x is string => typeof x === "string"));
       return { action: `requirements_${res}` };
+    }
+    case "payout.paid":
+    case "payout.failed": {
+      // A host's withdrawal reaching their bank, or not (a payout made by the sweeper, as the host). Found by Bachs's payout id.
+      const payoutId = typeof d.withdrawal_id === "string" ? d.withdrawal_id : typeof d.id === "string" ? d.id : null;
+      if (!payoutId) return { action: "ignored_no_payout" };
+      const status = event.type === "payout.paid" ? "paid" : "failed";
+      const res = await db.payoutResult(payoutId, status, typeof d.failure_reason === "string" ? d.failure_reason : null);
+      // Not ours (a payout made from the Bachs dashboard, say): nothing to do.
+      return { action: res.ok ? `payout_${res.changed ? status : "no_change"}` : `payout_${res.reason ?? "refused"}` };
     }
     default:
       return { action: "ignored" };

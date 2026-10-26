@@ -33,6 +33,7 @@ const { routeBachsEvent } = await import("../src/lib/bachs/webhookRouter.ts");
 const { handleWebhook } = await import("../src/lib/bachs/webhook.ts");
 const { startRefund, reconcileRefund } = await import("../src/lib/bachs/refunds.ts");
 const { makeDb } = await import("./bachs-stub-db.mts");
+const { runDuePayouts, shortBy } = await import("../src/lib/bachs/payouts.ts");
 
 let pass = 0;
 let fail = 0;
@@ -167,10 +168,11 @@ function fakeFetch(responses: { status: number; body?: unknown; headers?: Record
 
 await test("guard: a charge without a valid X-Account-Id never leaves the building", async () => {
   const f = fakeFetch([{ status: 201, body: {} }]);
-  const base = { accountId: ACCT, reference: "ord_1", idempotencyKey: "k", grossKobo: 500000, platformFeeKobo: 22500, successUrl: "https://x.test/r", cancelUrl: "https://x.test/c", metadata: { order_id: "1" } };
-  await throws(() => api.createCheckout({ ...base, accountId: "" }, { config, fetchImpl: f.impl, log: quiet }), /X-Account-Id/, "empty");
-  await throws(() => api.createCheckout({ ...base, accountId: "org_123456789" }, { config, fetchImpl: f.impl, log: quiet }), /X-Account-Id/, "wrong prefix");
-  await throws(() => api.createCheckout({ ...base, accountId: "acct_" }, { config, fetchImpl: f.impl, log: quiet }), /X-Account-Id/, "too short");
+  const base = { account: ACCT, reference: "ord_1", idempotencyKey: "k", grossKobo: 500000, platformFeeKobo: 22500, successUrl: "https://x.test/r", cancelUrl: "https://x.test/c", metadata: { order_id: "1" } };
+  await throws(() => api.createCheckout({ ...base, account: "" }, { config, fetchImpl: f.impl, log: quiet }), /X-Account-Id/, "empty");
+  await throws(() => api.createCheckout({ ...base, account: "org_123456789" }, { config, fetchImpl: f.impl, log: quiet }), /X-Account-Id/, "wrong prefix");
+  await throws(() => api.createCheckout({ ...base, account: "acct_" }, { config, fetchImpl: f.impl, log: quiet }), /X-Account-Id/, "too short");
+  await throws(() => bachsRequest("POST", "/v1/checkout-sessions", { body: {}, idempotencyKey: "k", accountId: ACCT, asPlatform: true }, { config, fetchImpl: f.impl, log: quiet }), /not both/, "a host's and Hoppaz's at once");
   await throws(() => bachsRequest("POST", "/v1/checkout-sessions", { body: {}, idempotencyKey: "k" }, { config, fetchImpl: f.impl, log: quiet }), /needs X-Account-Id/, "raw call without account");
   await throws(() => api.createCheckout({ ...base, platformFeeKobo: 0 }, { config, fetchImpl: f.impl, log: quiet }), /platform_fee must be above 0/, "zero fee");
   await throws(() => api.createCheckout({ ...base, platformFeeKobo: 500000 }, { config, fetchImpl: f.impl, log: quiet }), /below the gross/, "fee equal to gross");
@@ -185,16 +187,16 @@ await test("guard: refunds and balances name the host too, whatever the method",
   await throws(() => bachsRequest("GET", "/v1/balances", {}, d), /needs X-Account-Id/, "balances without account");
   await throws(() => api.getAvailableNairaKobo("", d), /X-Account-Id/, "balances with an empty account");
   await throws(() => api.getRefund("rfnd_1", "org_nope", d), /X-Account-Id/, "a bad account id");
-  await throws(() => api.createRefund({ chargeId: "ch_1", reference: "rf_1", idempotencyKey: "k", accountId: undefined as never }, d), /needs X-Account-Id/, "createRefund with no account at all");
+  await throws(() => api.createRefund({ chargeId: "ch_1", reference: "rf_1", idempotencyKey: "k", account: undefined as never }, d), /needs X-Account-Id/, "createRefund with no account at all");
   eq(f.calls.length, 0, "nothing was sent");
   guardRequest("GET", "/v1/platform_fees", undefined); // platform calls without a host stay allowed
   await api.getRefund("rfnd_1", ACCT, d);
   eq(f.calls[0].headers["X-Account-Id"], ACCT, "with the account it goes");
 });
-await test("createCheckout: sends the direct-charge request Bachs expects", async () => {
+await test("createCheckout: an old order on a host's account still sends the direct-charge request", async () => {
   const f = fakeFetch([{ status: 201, body: { checkout_id: "chk_1", checkout_url: "https://c.test/x", status: "open" } }]);
   const out = await api.createCheckout(
-    { accountId: ACCT, reference: "ord_abc", idempotencyKey: "order:abc:co1", grossKobo: 500000, platformFeeKobo: 22500, customer: { email: "b@x.test", name: "B" }, successUrl: "https://x.test/tickets/return?order=abc", cancelUrl: "https://x.test/event/e", metadata: { order_id: "abc", event_id: "e", buyer_id: "u" } },
+    { account: ACCT, reference: "ord_abc", idempotencyKey: "order:abc:co1", grossKobo: 500000, platformFeeKobo: 22500, customer: { email: "b@x.test", name: "B" }, successUrl: "https://x.test/tickets/return?order=abc", cancelUrl: "https://x.test/event/e", metadata: { order_id: "abc", event_id: "e", buyer_id: "u" } },
     { config, fetchImpl: f.impl, log: quiet }
   );
   eq(out.checkout_id, "chk_1", "response passed through");
@@ -212,6 +214,82 @@ await test("createCheckout: sends the direct-charge request Bachs expects", asyn
   eq(body.payment_method_types, ["NGN_BANK_TRANSFER", "NGN_CARD"], "methods");
   ok(!("transfer_data" in body), "no transfer_data (contradictory charge type)");
   ok(!("customer_bears_fee" in body), "host pays Bachs's fee by default");
+});
+await test("createCheckout: Hoppaz collects: its own checkout, no platform_fee, the buyer pays Bachs's fee on top", async () => {
+  const f = fakeFetch([{ status: 201, body: { checkout_id: "chk_2", checkout_url: "https://c.test/y", status: "open" } }]);
+  await api.createCheckout(
+    { account: api.PLATFORM, reference: "ord_p", idempotencyKey: "order:p:co1", grossKobo: 1000000, platformFeeKobo: 45000, successUrl: "https://x.test/r", cancelUrl: "https://x.test/c", metadata: { order_id: "p" } },
+    { config, fetchImpl: f.impl, log: quiet }
+  );
+  const c = f.calls[0];
+  ok(!("X-Account-Id" in c.headers), "no X-Account-Id: the charge is Hoppaz's");
+  const body = JSON.parse(c.body!);
+  eq(body.pricing, { currency: "NGN", amount: "10000.00" }, "the ticket price");
+  ok(!("platform_fee" in body), "no platform_fee: Hoppaz's cut is what it does not pay the host");
+  eq(body.customer_bears_fee, true, "the buyer pays Bachs's fee on top");
+});
+await test("guard: Hoppaz's own refunds and balances go only when asPlatform says so", async () => {
+  const f = fakeFetch([{ status: 200, body: { balances: [{ currency: "NGN", available_balance: "10000.00" }], account_id: "acct_PLATFORM000" } }]);
+  const d = { config, fetchImpl: f.impl, log: quiet, sleep: async () => {} };
+  eq(await api.getAvailableNairaKobo(api.PLATFORM, d), 1000000, "Hoppaz's available balance");
+  ok(!("X-Account-Id" in f.calls[0].headers), "read as Hoppaz");
+  eq(await api.platformAccountId(d), "acct_PLATFORM000", "Hoppaz's account id from the balances");
+});
+await test("payouts: the shortfall in Bachs's refusal is read in kobo", async () => {
+  eq(shortBy("Insufficient NGN balance: 9550.00 available, 9600.00 needed (amount 9550.00 + fee 50.00), 50.00 short"), 5000, "sandbox wording, 26 Oct");
+  eq(shortBy("1,250.50 short"), 125050, "thousands");
+  eq(shortBy("nothing here"), null, "no number");
+});
+await test("payouts: a due withdrawal is transferred, then paid out less the fee, to the default usable bank", async () => {
+  const db = makeDb();
+  db.withdrawals.push({ id: "w1", reference: "wd_aaaa", user_id: "u1", status: "requested", amount_kobo: 955000, account: ACCT, transfer_id: null, payout_tries: 0, attempts: 1 });
+  const f = fakeFetch([
+    { status: 201, body: { id: "tr_1", destination: ACCT, amount: "9550.00", currency: "NGN", status: "paid" } },
+    { status: 200, body: { destinations: [{ id: "pd_old", type: "bank_account", currency: "NGN", is_usable: false, is_default: false }, { id: "pd_1", type: "bank_account", currency: "NGN", is_usable: true, is_default: true }] } },
+    { status: 200, body: { balances: [{ currency: "NGN", available_balance: "9550.00" }] } },
+    { status: 200, body: { id: "pay_1", status: "processing", amount: "9500.00", fee: "50.00", total_debited: "9550.00" } },
+  ]);
+  const out = await runDuePayouts(db as never, { config, fetchImpl: f.impl, log: quiet, sleep: async () => {} }, quiet);
+  eq(out, { transferred: 1, payouts: 1, seen: 1 }, "one transfer, one payout");
+  const t = JSON.parse(f.calls[0].body!);
+  eq([f.calls[0].url.endsWith("/v1/transfers"), t.destination, t.amount, t.transfer_group], [true, ACCT, "9550.00", "wd_aaaa"], "the transfer");
+  eq(f.calls[0].headers["Idempotency-Key"], "wd_aaaa:transfer", "a retry is the same transfer");
+  eq(f.calls[3].headers["X-Account-Id"], ACCT, "the payout is made as the host");
+  const p = JSON.parse(f.calls[3].body!);
+  eq([p.destination, p.amount, p.reference], ["pd_1", "9500.00", "wd_aaaa_1"], "to the default usable bank, the balance less N50");
+  eq([db.withdrawals[0].status, db.withdrawals[0].payout_id, db.withdrawals[0].fee], ["paying", "pay_1", 5000], "saved as paying");
+});
+await test("payouts: a transfer refused for INSUFFICIENT_BALANCE waits (Hoppaz's payments not settled yet)", async () => {
+  const db = makeDb();
+  db.withdrawals.push({ id: "w2", reference: "wd_bbbb", user_id: "u1", status: "requested", amount_kobo: 500000, account: ACCT, transfer_id: null, payout_tries: 0, attempts: 1 });
+  const f = fakeFetch([{ status: 400, body: { error_code: "INSUFFICIENT_BALANCE", detail: "Insufficient NGN balance" } }]);
+  const out = await runDuePayouts(db as never, { config, fetchImpl: f.impl, log: quiet, sleep: async () => {} }, quiet);
+  eq(out, { transferred: 0, payouts: 0, seen: 1 }, "nothing moved");
+  eq(db.withdrawals[0].status, "requested", "still requested, tried again later");
+  ok(String(db.withdrawals[0].note).includes("settle"), "the reason is noted");
+});
+await test("payouts: a different withdrawal fee is read from the refusal and the payout is sent once more, lower", async () => {
+  const db = makeDb();
+  db.withdrawals.push({ id: "w3", reference: "wd_cccc", user_id: "u1", status: "transferred", amount_kobo: 955000, account: ACCT, transfer_id: "tr_9", payout_tries: 0, attempts: 2 });
+  const f = fakeFetch([
+    { status: 200, body: { destinations: [{ id: "pd_1", type: "bank_account", currency: "NGN", is_usable: true, is_default: true }] } },
+    { status: 200, body: { balances: [{ currency: "NGN", available_balance: "9550.00" }] } },
+    { status: 400, body: { error_code: "INSUFFICIENT_BALANCE", detail: "Insufficient NGN balance: 9550.00 available, 9600.00 needed (amount 9500.00 + fee 100.00), 50.00 short" } },
+    { status: 200, body: { id: "pay_2", status: "processing", amount: "9450.00", fee: "100.00" } },
+  ]);
+  await runDuePayouts(db as never, { config, fetchImpl: f.impl, log: quiet, sleep: async () => {} }, quiet);
+  eq(JSON.parse(f.calls[3].body!).amount, "9450.00", "50 less on the second try");
+  eq(db.withdrawals[0].status, "paying", "then paying");
+});
+await test("router: payout.paid and payout.failed settle the withdrawal by Bachs's payout id", async () => {
+  const db = makeDb();
+  db.withdrawals.push({ id: "w4", reference: "wd_dddd", user_id: "u1", status: "paying", amount_kobo: 100000, account: ACCT, transfer_id: "tr_1", payout_tries: 1, attempts: 2, payout_id: "pay_9" });
+  const failed = await routeBachsEvent({ id: "evt_p1", type: "payout.failed", data: { withdrawal_id: "pay_9", status: "failed" } } as never, db as never, { config, fetchImpl: fakeFetch([{ status: 500 }]).impl, log: quiet, sleep: async () => {} }, quiet);
+  eq([failed.action, db.withdrawals[0].status], ["payout_failed", "transferred"], "failed: back to transferred, paid out again next sweep");
+  db.withdrawals[0].status = "paying";
+  const paid = await routeBachsEvent({ id: "evt_p2", type: "payout.paid", data: { withdrawal_id: "pay_9", status: "completed" } } as never, db as never, { config, fetchImpl: fakeFetch([{ status: 500 }]).impl, log: quiet, sleep: async () => {} }, quiet);
+  eq([paid.action, db.withdrawals[0].status], ["payout_paid", "paid"], "paid");
+  eq((await routeBachsEvent({ id: "evt_p3", type: "payout.paid", data: { withdrawal_id: "pay_other" } } as never, db as never, { config, fetchImpl: fakeFetch([{ status: 500 }]).impl, log: quiet, sleep: async () => {} }, quiet)).action, "payout_not_found", "not ours");
 });
 await test("client: the key is never logged, request ids are", async () => {
   const lines: string[] = [];
@@ -342,7 +420,8 @@ await test("router: refund.*, dispute.*, capability.updated, account.updated, un
   eq((await go("capability.updated", { account: ACCT, capability: "payouts", status: "active" })).action, "capability_ok", "capability");
   eq((await go("account.updated", { account: ACCT, outstanding: ["persons.name", "payout_destination"] })).action, "requirements_ok", "account");
   eq((await go("collection.failed", { reason: "x" })).action, "ignored", "collection.failed is only logged");
-  eq((await go("payout.paid", {})).action, "ignored", "unknown type");
+  eq((await go("subscription.created", {})).action, "ignored", "unknown type");
+  eq((await go("payout.paid", {})).action, "ignored_no_payout", "a payout event with no payout id");
   ok(db.log.includes("capability " + ACCT + " payouts active 2026-10-22T10:00:00Z"), "capability gets the event's time");
   ok(db.log.includes("requirements " + ACCT + " persons.name|payout_destination"), "outstanding list passed");
   ok(db.log.includes("refund_apply rfnd_1 rf_1 paid") && db.log.includes("refund_apply rfnd_1 rf_1 failed") && db.log.includes("refund_apply rfnd_1 rf_1 processing"), "refund statuses come from the event type");
@@ -532,13 +611,13 @@ process.env.NEXT_PUBLIC_SITE_URL = "https://hoppaz.test";
 const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
   new Request(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
 const webhookRoute = await import("../src/app/api/bachs/webhook/route.ts");
-const onboardRoute = await import("../src/app/api/events-r1/pay/onboard/route.ts");
+const payoutSetupRoute = await import("../src/app/api/events-r1/pay/payout-setup/route.ts");
+const banksRoute = await import("../src/app/api/events-r1/pay/banks/route.ts");
 const checkoutRoute = await import("../src/app/api/events-r1/pay/checkout/route.ts");
 const confirmRoute = await import("../src/app/api/events-r1/pay/confirm/route.ts");
 const refundRoute = await import("../src/app/api/events-r1/pay/refund/route.ts");
 const sweepRoute = await import("../src/app/api/events-r1/pay/sweep/route.ts");
 const quoteRoute = await import("../src/app/api/events-r1/pay/quote/route.ts");
-const { signRefresh } = await import("../src/lib/bachs/http.ts");
 const UID = "11111111-1111-4111-8111-111111111111";
 
 await test("route webhook: bad or missing signature is 400 before anything else", async () => {
@@ -559,34 +638,12 @@ await test("route sweep: 401 without the shared secret, with a wrong one; with t
 });
 await test("routes: no session is 401, a foreign Origin is 403, bad input is 400", async () => {
   const url = "https://hoppaz.test/api/events-r1/pay/";
-  for (const [name, route] of [["checkout", checkoutRoute], ["confirm", confirmRoute], ["refund", refundRoute], ["onboard", onboardRoute]] as const) {
+  for (const [name, route] of [["checkout", checkoutRoute], ["confirm", confirmRoute], ["refund", refundRoute], ["payout-setup", payoutSetupRoute], ["banks", banksRoute]] as const) {
     eq((await route.POST(post(url + name, {}))).status, 401, `${name} without a bearer`);
     eq((await route.POST(post(url + name, {}, { origin: "https://evil.test", authorization: "Bearer x" }))).status, 403, `${name} from another site`);
   }
   eq((await quoteRoute.POST(post(url + "quote", { eventId: "x" }))).status, 400, "quote bad input");
   eq((await quoteRoute.POST(post(url + "quote", { eventId: UID, ticketTypeId: UID, quantity: 9 }))).status, 400, "quote quantity 9");
 });
-await test("onboarding refresh link: it lives 15 minutes, not days", async () => {
-  const { REFRESH_MINUTES, refreshValid: valid } = await import("../src/lib/bachs/http.ts");
-  eq(REFRESH_MINUTES, 15, "lifetime in minutes");
-  const now = Math.floor(Date.now() / 1000);
-  const fresh = now + REFRESH_MINUTES * 60;
-  ok(valid(UID, "/x", fresh, signRefresh(UID, "/x", fresh)), "valid inside the window");
-  ok(!valid(UID, "/x", now - 1, signRefresh(UID, "/x", now - 1)), "invalid right after it");
-  ok(!valid(UID, "/x", fresh, signRefresh(UID, "/y", fresh)), "and bound to its return path");
-});
-await test("route onboard refresh: a bad or expired signed link goes back to the site, never to Bachs", async () => {
-  const exp = Math.floor(Date.now() / 1000) + 3600;
-  const sig = signRefresh(UID, "/host/e1?tab=overview", exp);
-  const mk = (q: Record<string, string>) => onboardRoute.GET(new Request("https://hoppaz.test/api/events-r1/pay/onboard?" + new URLSearchParams(q)));
-  const badSig = await mk({ u: UID, r: "/host/e1?tab=overview", e: String(exp), s: "0".repeat(64) });
-  eq([badSig.status, badSig.headers.get("location")], [307, "https://hoppaz.test/host/e1?tab=overview"], "bad signature");
-  const expired = await mk({ u: UID, r: "/host/e1?tab=overview", e: String(exp - 7200), s: signRefresh(UID, "/host/e1?tab=overview", exp - 7200) });
-  eq(expired.headers.get("location"), "https://hoppaz.test/host/e1?tab=overview", "expired link");
-  const evil = await mk({ u: UID, r: "//evil.test/x", e: String(exp), s: signRefresh(UID, "//evil.test/x", exp) });
-  eq(evil.headers.get("location"), "https://hoppaz.test/", "an off-site return path is dropped");
-  ok(sig.length === 64, "signature is hex sha256");
-});
-
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
