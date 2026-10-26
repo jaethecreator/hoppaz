@@ -1677,6 +1677,10 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
   .lip-ghost:active {
     box-shadow: none;
   }
+  /* An event or room name: the pack's title font (TintShell sets --t-font). */
+  .t-title {
+    font-family: var(--t-font, var(--font-poppins));
+  }
   .t-card {
     @apply rounded-hz border;
     background: var(--t-tile);

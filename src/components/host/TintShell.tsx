@@ -1,5 +1,7 @@
 "use client";
 
+import "@fontsource/unbounded/800.css";
+import "@fontsource/fraunces/900.css";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { Look } from "@/lib/events-r1/looks";
@@ -27,10 +29,19 @@ export function usePictureTint(src: string | null, look: Look): Tint {
   return peekTint(src) ?? read?.tint ?? look.tint;
 }
 
-/** The CSS variables for a look. */
+/** The title font of each pack (mock-up create-event-final.html): Poppins for the quiet two, Unbounded for the loud two, Fraunces for Owambe. */
+const PACK_FONT: Record<Look["pack"], string> = {
+  minimal: "var(--font-poppins)",
+  glow: "var(--font-poppins)",
+  confetti: '"Unbounded", var(--font-poppins)',
+  detty: '"Unbounded", var(--font-poppins)',
+  owambe: '"Fraunces", Georgia, serif',
+};
+
+/** The CSS variables for a look: the tint's colours and the pack's title font (--t-font, used by .t-title). */
 export function useLookStyle(look: Look, tint?: Tint): CSSProperties {
   const t = tint ?? look.tint;
-  return useMemo(() => tintStyle(t, look.mood), [t, look.mood]);
+  return useMemo(() => ({ ...tintStyle(t, look.mood), "--t-font": PACK_FONT[look.pack] ?? PACK_FONT.minimal }) as CSSProperties, [t, look.mood, look.pack]);
 }
 
 /** The pack's background behaviour, behind the content. Minimal draws nothing. */

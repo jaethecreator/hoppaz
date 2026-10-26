@@ -568,7 +568,7 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: () => void }) {
                   aria-label="Event name"
                   autoComplete="off"
                   maxLength={120}
-                  className="!rounded-none !border-0 !border-b !border-dashed !bg-transparent !px-0 !py-1 font-display text-[40px] font-black leading-tight"
+                  className="!rounded-none !border-0 !border-b !border-dashed !bg-transparent !px-0 !py-1 t-title text-[40px] font-black leading-tight"
                 />
                 <p className="mt-1.5 font-body text-[12.5px] text-t-muted">This is the name people see on the map and on their ticket.</p>
               </div>
@@ -637,7 +637,7 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: () => void }) {
                   rows={2}
                   placeholder="Event name"
                   maxLength={120}
-                  className="!resize-none !border-0 !bg-transparent !px-0 font-display text-[28px] font-black leading-tight"
+                  className="!resize-none !border-0 !bg-transparent !px-0 t-title text-[28px] font-black leading-tight"
                 />
               </label>
             </div>
