@@ -87,3 +87,34 @@ export type BachsErrorKind =
   | "guard"; // refused here before any call (missing or bad X-Account-Id)
 
 export type BachsBalance = { currency: string; available_balance: string; pending_balance?: string };
+
+/** Hoppaz -> a host's account (POST /v1/transfers). status "paid" once it has moved. */
+export type BachsTransfer = { id: string; source?: string; destination: string; amount: string; currency: string; status?: string; transfer_group?: string | null; created_at?: string };
+
+/** A host's saved bank (GET /v1/payouts/destinations as the host). Pay out only to one that is_usable. */
+export type BachsPayoutDestination = {
+  id: string;
+  type: string;
+  currency: string;
+  status?: string;
+  is_usable?: boolean;
+  is_default?: boolean;
+  account_number?: string | null;
+  account_name?: string | null;
+  bank_code?: string | null;
+  bank_name?: string | null;
+};
+
+/** Money out of an account to its bank (POST /v1/payouts). fee is added on top: total_debited = amount + fee. */
+export type BachsPayout = {
+  id: string;
+  status: string;
+  amount: string;
+  currency?: string;
+  fee?: string | null;
+  total_debited?: string | null;
+  destination?: string;
+  reference?: string | null;
+  failure_reason?: string | null;
+  created_at?: string;
+};

@@ -70,7 +70,10 @@ export type OrderRec = Order & {
 };
 
 /** A host's Bachs setup. No record means Not started. balance_naira is what the host held before any sale here. */
-export type PayoutRec = { id: string; status: HostPayoutStatus; balance_naira: number };
+export type PayoutRec = { id: string; status: HostPayoutStatus; balance_naira: number; bank_label?: string | null; withdrawals?: WithdrawalRec[] };
+
+/** A fake withdrawal (fake clock ms). It reaches the bank, less a N50 fee, once execute_after_ms has passed. */
+export type WithdrawalRec = { id: string; amount_naira: number; execute_after_ms: number; created_ms: number; paid_ms: number | null };
 
 export type RegSettings = { questions: RegQuestion[]; messages: RegMessages };
 

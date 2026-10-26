@@ -27,6 +27,7 @@ Then the new files, in this order, each one once (they are safe to run again):
 | 4 | `events_r1_pops.sql` | `crew_announcements` (the table) | files 1 and 2 |
 | 5 | `events_r1_reports.sql` | as file 1 | file 1 |
 | 7 | `events_r1_pay.sql` | all six new files; `auth.users` | files 1 to 6 (see `EVENTS_R1_PAY.md`) |
+| 8 | `events_r1_payouts.sql` | `events_r1_pay.sql` | file 7 (host balances and withdrawals; Hoppaz collects, see `EVENTS_R1_PAY.md`) |
 | 6 | `events_r1_rooms.sql` | `crews`, `crew_members`, `crew_rooms`, `crew_announcement_seen`, `crew_announcement_seen()` | files 1, 2 and 4 |
 | 8 | `events_r1_covers.sql` | `crew_rooms.sql` (the public `crew-images` bucket), `chat_accounts.sql` (`has_account()`) | nothing, but run it after file 1: a cover link is saved through `ev_create_event` / `ev_update_event` (see 2d) |
 
