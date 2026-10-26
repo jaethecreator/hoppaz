@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { Map as MLMap } from "maplibre-gl";
 import MapMarker from "@/components/map/MapMarker";
+import { useR1Api } from "@/lib/events-r1/hooks";
+import { enterPath, walkable } from "../rooms/words";
 import s from "./LagosHqMarker.module.css";
 
 /** Lagos HQ sits in the open water of the lagoon between Banana Island, Ikorodu, Makoko and Bariga. */
@@ -47,14 +49,28 @@ function Pavilion({ className }: { className?: string }) {
 
 /**
  * The Lagos HQ marker on the events map: a big, bold pavilion on a pier in the lagoon, a soft pulse ring on the water and a
- * LAGOS HQ plate under it. One marker, no layer. It stands in the middle of the water so it stands out, and a tap opens the
- * Lagos HQ room home (chat first). It carries the global class "hz-pin", so NightMap's declutter places the event signs around
+ * LAGOS HQ plate under it. One marker, no layer. It stands in the middle of the water so it stands out, and a tap enters the
+ * Lagos room (the walkable street), or the Lagos HQ room home (chat first) when the walkable room is off or not set up yet. It carries the global class "hz-pin", so NightMap's declutter places the event signs around
  * it (it reads data-pin-full and data-pin-disc, set here, for how much room this bigger marker needs) and sets data-fit
  * ("full" with its plate, "disc" smaller without) the same as for a hotspot pin. Release 1 only; mounted by the map page.
  */
 export default function LagosHqMarker({ map }: { map: MLMap }) {
   const router = useRouter();
+  const api = useR1Api();
   const wrap = useRef<HTMLSpanElement>(null);
+  const going = useRef(false);
+
+  // A tap walks into the Lagos room. If the room is not there or is chat only, it opens the room home instead (chat first).
+  const open = async () => {
+    if (going.current) return;
+    going.current = true;
+    try {
+      const room = api ? await api.rooms.get("hq").catch(() => null) : null;
+      router.push(room && walkable(room) ? enterPath(room) : "/rooms/hq");
+    } finally {
+      going.current = false;
+    }
+  };
 
   // Scale with the camera. The element stays 96 px (the tap target); the drawing inside it grows and shrinks.
   useEffect(() => {
@@ -89,8 +105,8 @@ export default function LagosHqMarker({ map }: { map: MLMap }) {
       lat={LAGOS_HQ_AT.lat}
       anchor="center"
       className={`hz-pin ${s.spot}`}
-      label="Lagos HQ. Tap to open the room."
-      onClick={() => router.push("/rooms/hq")}
+      label="Lagos HQ. Tap to enter the room."
+      onClick={() => void open()}
       style={{ zIndex: Z }}
     >
       <span className={s.wrap} data-lagos-hq ref={wrap}>
