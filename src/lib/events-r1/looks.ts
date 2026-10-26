@@ -59,29 +59,3 @@ export function parseLook(v: unknown): Look | null {
 
 /** The flat shape saved to the database (jsonb). */
 export const lookJson = (l: Look) => ({ pack: l.pack, mood: l.mood, hue: l.tint.hue, chroma: l.tint.chroma, auto: l.auto, two_d: l.two_d ?? null });
-
-const KEY = "hz.r1.looks.v1";
-const readAll = (): Record<string, unknown> => {
-  if (typeof window === "undefined") return {};
-  try {
-    return JSON.parse(window.localStorage.getItem(KEY) || "{}") as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-};
-
-export const fakeLooks: LooksApi = {
-  async get(owner, id) {
-    return parseLook(readAll()[`${owner}:${id}`]);
-  },
-  async set(owner, id, look) {
-    if (typeof window === "undefined") return;
-    const all = readAll();
-    all[`${owner}:${id}`] = lookJson(look);
-    try {
-      window.localStorage.setItem(KEY, JSON.stringify(all));
-    } catch {
-      /* full storage: the page falls back to the cover */
-    }
-  },
-};

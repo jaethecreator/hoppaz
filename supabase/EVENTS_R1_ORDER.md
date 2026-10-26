@@ -30,7 +30,7 @@ Then the new files, in this order, each one once (they are safe to run again):
 | 8 | `events_r1_payouts.sql` | `events_r1_pay.sql` | file 7 (host balances and withdrawals; Hoppaz collects, see `EVENTS_R1_PAY.md`) |
 | 6 | `events_r1_rooms.sql` | `crews`, `crew_members`, `crew_rooms`, `crew_announcement_seen`, `crew_announcement_seen()` | files 1, 2 and 4 |
 | 9 | `events_r1_covers.sql` | `crew_rooms.sql` (the public `crew-images` bucket), `chat_accounts.sql` (`has_account()`) | nothing, but run it after file 1: a cover link is saved through `ev_create_event` / `ev_update_event` (see 2d) |
-| 10 | `events_r1_looks.sql` | `crews`, `crew_members`, `chat_accounts.sql` (`has_account()`) | file 1 (`_ev_manage`, `_ev_staff`, `_ev_can_open`). Event and room looks: pack, Day or Night, tint. Until it runs, pages read the cover and creating never fails. |
+| 10 | `events_r1_looks.sql` | `events`, `crews`, `crew_members`, `auth.users` (from `schema.sql`), `chat_accounts.sql` (`has_account()`), `crew_stage_voice.sql` (`crew_members.role` may be `admin`; the file checks owner and admin) | file 1 (`_ev_manage`, `_ev_staff`, `_ev_can_open`). Event and room looks: pack, Day or Night, tint. Until it runs, pages read the cover and creating never fails. |
 
 Files 1 and 2 leave small stubs for functions that later files fill in (the going count, the waitlist fill, the ticket issue and void,
 the HQ test). A stub is written only when the real function is missing, so running a file again never puts a stub back over the real one.
@@ -94,6 +94,12 @@ Only the service role and the SQL editor can run it. Separately, an event with n
 **Local stack only:** the local Supabase serves storage on http://127.0.0.1, so on a laptop run `select public.ev_set_setting('local_http_covers','on');` once. Never on production: there only https cover links are accepted.
 
 `events_r1_covers.sql` lets a host with an account upload a cover to the existing public `crew-images` bucket, in their own folder: `event-covers/<user id>/<file>.jpg` (2 MB, jpeg, png or webp: the bucket's own limits, unchanged). It adds three storage policies (`events_r1_cover_upload`, `_read`, `_remove`) and one helper (`_ev_cover_path_owner`); the older crew picture policies only match a file straight under a crew id, so they are not touched. The app keeps the full public link as `cover_url` (saved as `flyer_url`), because every card, the map and the share card use `flyer_url` as an image address as is. `events_r1_events.sql` changed in one line: the cover check in `_ev_create_core` also accepts a plain `http://localhost` or `http://127.0.0.1` link into `/storage/v1/object/public/` (the local stack serves storage on http); any other plain http link is still `bad_cover`. Cover files are not removed when an event is deleted or the account is deleted (`/api/account/delete` clears `event-photos` and `chat-images`, not this folder). Test: `tests/events_r1_covers_test.sql`.
+
+## 2e. Looks for event and room pages (file 10)
+
+`events_r1_looks.sql` stores how a host dresses an event page or a room page: one row per event or room in `ev_looks` (pack, Day or Night, hue and chroma, `auto` for "the tint follows the cover", and the walkable 2D room choice). A missing look is normal; the app then reads the cover. The table is closed to `anon` and `authenticated` (no privileges, row level security on, no policies): everything goes through two functions. `ev_get_look(p_kind, p_id)` returns the look as jsonb, or null when there is none, the kind is not `event` or `room`, or the viewer may not open that event (it uses `_ev_can_open`; anon may call it). `ev_set_look(p_kind, p_id, p_look)` answers `ok`, `need_account` (no account, a guest included), `bad_kind`, `not_allowed` or `bad_look` (unknown pack or mood, hue outside 0 to 359.99, chroma outside 0 to 0.37, an `auto` that is not true or false, a number that is not a number, a `two_d` over 511 bytes); only signed-in users can call it. Who may set: an event's host or staff; a room's owner or an admin (`crew_members.role`, which needs `crew_stage_voice.sql`), or staff. An id that is not an event (or not a crew) answers `not_allowed`, never an error. Setting again changes the one row in place.
+
+Each row points at its owner with a real foreign key (`event_id` to `events`, `crew_id` to `crews`, exactly one of the two, matching the kind), both `on delete cascade`: delete the event or the crew and its look goes with it. Deleting a person keeps the look and clears `updated_by`. If you ran the first local draft of this file (one `owner_id` column, no foreign keys), run `drop table public.ev_looks;` once before this one. Test: `tests/events_r1_looks_test.sql`.
 
 ## 3. The cron line (Pops)
 
@@ -226,12 +232,16 @@ docker exec supabase_db_hoppaz-local psql -U postgres -d postgres -c "create dat
 docker exec supabase_db_hoppaz-local pg_dump -U postgres -d postgres -s | docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q
 # the schema dump has no rows: the rooms test needs the two room layouts that crew_rooms.sql inserts (read only from postgres)
 docker exec supabase_db_hoppaz-local pg_dump -U postgres -d postgres -a -t public.crew_room_layouts | docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q
+# the covers file needs the public crew-images bucket row, and the looks file needs crew_members.role to allow 'admin' (crew_stage_voice.sql):
+# the schema dump has neither the bucket row nor, in a database that never ran that file, the admin role, so load them here
+docker exec supabase_db_hoppaz-local pg_dump -U postgres -d postgres -a -t storage.buckets | docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q
+docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q -v ON_ERROR_STOP=1 < supabase/crew_stage_voice.sql
 # then, in this order, each file twice (the second run checks they are safe to run again):
-for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms events_r1_pay events_r1_covers; do
+for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms events_r1_pay events_r1_payouts events_r1_covers events_r1_looks; do
   for i in 1 2; do docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q -v ON_ERROR_STOP=1 < supabase/$f.sql; done
 done
 # then each test (one transaction that rolls back; each ends with ALL ... TESTS PASSED):
-for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms events_r1_pay events_r1_covers; do
+for f in events_r1_events events_r1_registrations events_r1_tickets events_r1_pops events_r1_reports events_r1_rooms events_r1_pay events_r1_payouts events_r1_covers events_r1_looks; do
   docker exec -i supabase_db_hoppaz-local psql -U postgres -d hoppaz_ev_t1 -q -v ON_ERROR_STOP=1 < supabase/tests/${f}_test.sql
 done
 docker exec supabase_db_hoppaz-local psql -U postgres -d postgres -c "drop database hoppaz_ev_t1"
