@@ -1,0 +1,38 @@
+/* The room's DJ mix: a small DJ button top left under the header. The YouTube player is tucked behind it, invisible and not clickable. */
+.card {
+  position: absolute;
+  left: max(8px, env(safe-area-inset-left));
+  top: 52px;
+  z-index: 4;
+}
+.frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 200px;
+  height: 200px;
+  opacity: 0;
+  pointer-events: none;
+}
+.frame iframe {
+  display: block;
+  width: 200px;
+  height: 200px;
+}
+.bar {
+  position: relative;
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid rgb(var(--hairline));
+  border-radius: 999px;
+  background: rgb(var(--raised) / 0.94);
+  color: inherit;
+  font: 500 11px/14px var(--font-mono);
+  letter-spacing: 0.08em;
+}
+.bar:disabled {
+  opacity: 0.6;
+}

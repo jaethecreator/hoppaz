@@ -13,6 +13,7 @@ import { useCrewEvents } from "@/lib/crew-room/hub";
 import { useCrewRoom } from "@/lib/crew-room/useCrewRoom";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { useRoomTrack } from "@/lib/sound/roomTrack";
+import { parseYouTube } from "@/lib/sound/youtube";
 import { getSupabase } from "@/lib/supabase/client";
 import { useSession } from "@/lib/useSession";
 import campaign from "@/components/campaign/Campaign.module.css";
@@ -44,10 +45,13 @@ function ConnectedRoom({ crewId }: { crewId: string }) {
   }, []);
   // The room music, once inside: the owner's own loop when they set one, otherwise the room theme (MusicHost).
   const inside = room.status === "ready";
-  const own = room.snapshot ? validCampaignUrl(room.snapshot.room.content.audioUrl) : null;
+  const link = room.snapshot ? validCampaignUrl(room.snapshot.room.content.audioUrl) : null;
+  // A YouTube link is the room's DJ mix (RoomMix): it is not an audio file, and the room theme stays quiet under it.
+  const mix = room.snapshot?.room.template === "emergency-room" && !!parseYouTube(link);
+  const own = parseYouTube(link) ? null : link;
   useEffect(() => {
-    useRoomTrack.getState().set(inside, own);
-  }, [inside, own]);
+    useRoomTrack.getState().set(inside, own, mix);
+  }, [inside, own, mix]);
   useEffect(() => () => useRoomTrack.getState().set(false, null), []);
   if (room.status === "ready" && room.snapshot && room.world && userId) return <CrewRoomView crewId={crewId} userId={userId} room={room} />;
   return <RoomGate crewId={crewId} room={room} />;
