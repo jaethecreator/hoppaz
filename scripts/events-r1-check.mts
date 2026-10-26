@@ -28,6 +28,8 @@ const { roomCopyAllowed } = await import("../src/lib/events-r1/popRoom.ts");
 const { paidTicketsOn } = await import("../src/lib/events-r1/flags.ts");
 const { platformFeeNaira, processingFeeNaira } = await import("../src/lib/events-r1/payFee.ts");
 const { PAID_UNAVAILABLE } = await import("../src/lib/events-r1/constants.ts");
+const geo = await import("../src/lib/geocode/lagos.ts");
+const { parsePhoton } = await import("../src/lib/geocode/photon.ts");
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MIN = 60_000;
@@ -1393,6 +1395,86 @@ await test("reports: a hidden event still scans at the door, and an event with p
     await report3(paid.id);
     eq((await api.events.list()).some((e) => e.id === paid.id), true, "an event with a paid order stays listed");
   });
+});
+
+await test("place pin: lat/lng saved, nearest area when none is given, Lagos box, name length", async () => {
+  // Each event is made by a new person: the silent limit is 5 events an hour per host.
+  const pinned = async (extra: Record<string, unknown>) => {
+    await newPerson();
+    return api.events.create({ title: `Pin ${++n}`, ...extra });
+  };
+  // Ikeja City Mall: a pin and a name, no area. The area is the nearest one, the point is kept as given.
+  const ikeja = await pinned({ place_name: "Ikeja City Mall", lat: 6.6143785, lng: 3.357768 });
+  eq([ikeja.lat, ikeja.lng, ikeja.area, ikeja.venue_name], [6.6143785, 3.357768, "Ikeja", "Ikeja City Mall"], "Ikeja pin");
+  const lekki = await pinned({ place_name: "Admiralty Way", lat: 6.4471791, lng: 3.4637346 });
+  eq([lekki.lat, lekki.lng, lekki.area], [6.4471791, 3.4637346, "Lekki Phase 1"], "Lekki pin");
+  const fp = await pinned({ place_name: "Freedom Park", lat: 6.4488192, lng: 3.3965307 });
+  eq(fp.area, "Lagos Island", "Freedom Park is nearest Lagos Island");
+  // A hybrid event keeps its pin too; an online one has none.
+  const hybrid = await pinned({ kind: "hybrid", place_name: "Yaba Hub", lat: 6.5, lng: 3.38, link_type: "zoom", online_link: "https://zoom.us/j/123" });
+  eq([hybrid.lat, hybrid.lng, hybrid.area], [6.5, 3.38, "Yaba"], "hybrid pin");
+  const online = await pinned({ kind: "online", place_name: "Ignored", lat: 6.5, lng: 3.38, link_type: "zoom", online_link: "https://zoom.us/j/123" });
+  eq([online.lat, online.lng, online.venue_name], [6.5, 3.42, ""], "online has no pin");
+  // A host's own area still wins, and an unknown one is ignored.
+  const own = await pinned({ place_name: "Somewhere", area: "Ajah", lat: 6.45, lng: 3.5 });
+  eq([own.area, own.lat], ["Ajah", 6.45], "a known area is kept");
+  const odd = await pinned({ place_name: "Somewhere", area: "Narnia", lat: 6.6, lng: 3.35 });
+  eq(odd.area, "Ikeja", "an unknown area is ignored for the nearest one");
+  // Outside the box: lagos_only, on every side. The corners themselves are inside.
+  for (const [lat, lng] of [[6.29, 3.4], [6.81, 3.4], [6.5, 3.04], [6.5, 3.96], [51.5, -0.12], [0, 0]]) {
+    await newPerson();
+    await rejects(api.events.create({ title: "Out", place_name: "Far", lat, lng }), "Hoppaz is Lagos only for now", `outside ${lat},${lng}`);
+  }
+  for (const [lat, lng] of [[6.3, 3.05], [6.8, 3.95]]) eq((await pinned({ place_name: "Edge", lat, lng })).lat, lat, `inside at the edge ${lat},${lng}`);
+  // A place name is 2 to 120 characters.
+  await newPerson();
+  await rejects(api.events.create({ title: "Short", place_name: "x", lat: 6.5, lng: 3.4 }), "Check the place and try again", "one letter");
+  await rejects(api.events.create({ title: "Long", place_name: "x".repeat(121), lat: 6.5, lng: 3.4 }), "Check the place and try again", "121 letters");
+  eq((await pinned({ place_name: "x".repeat(120), lat: 6.5, lng: 3.4 })).venue_name.length, 120, "120 letters is fine");
+});
+
+await test("place search helpers: the Lagos box, query cleaning, result filtering, Photon rows", async () => {
+  ok(geo.inLagosBox(6.5, 3.4) && geo.inLagosBox(6.3, 3.05) && geo.inLagosBox(6.8, 3.95), "inside, edges included");
+  ok(!geo.inLagosBox(6.29, 3.4) && !geo.inLagosBox(6.5, 3.96) && !geo.inLagosBox(NaN, 3.4) && !geo.inLagosBox("6.5", "3.4"), "outside, NaN and strings");
+  eq(geo.clampToLagos(7, 2), { lat: 6.8, lng: 3.05 }, "clamped to the corner");
+  eq(geo.clampToLagos(6.5, 3.4), { lat: 6.5, lng: 3.4 }, "inside is untouched");
+  eq([geo.cleanQuery("  Ikeja   City  Mall "), geo.cleanQuery("ab"), geo.cleanQuery("   a  "), geo.cleanQuery("x".repeat(81)), geo.cleanQuery(null), geo.cleanQuery("x".repeat(80))?.length], ["Ikeja City Mall", null, null, null, null, 80], "query cleaning");
+
+  const row = (name: string, lat: number, lng: number) => ({ id: `${name}${lat}`, name, address: "", lat, lng });
+  const kept = geo.keepLagos([
+    row("Far away", 51.5, -0.12),
+    row("Ikeja City Mall", 6.6143, 3.3577),
+    row("ikeja city mall", 6.6153, 3.3569), // the same place about 130 m away: dropped
+    row("Ikeja City Mall", 6.65, 3.36), // another one with the same name 4 km away: kept
+    row("", 6.5, 3.4),
+    row("Edge", 6.3, 3.05),
+    ...Array.from({ length: 10 }, (_, i) => row(`Place ${i}`, 6.4 + i * 0.01, 3.4)),
+  ]);
+  eq(kept.map((r) => r.name).slice(0, 3), ["Ikeja City Mall", "Ikeja City Mall", "Edge"], "filtered, in order");
+  eq(kept.length, 6, "at most six");
+  ok(kept.every((r) => geo.inLagosBox(r.lat, r.lng)), "all inside Lagos");
+
+  eq(geo.spotFromSuggestion({ id: "1", name: "x", address: "12 Allen Avenue, Ikeja", lat: 6.6, lng: 3.35 }).place_name, "12 Allen Avenue, Ikeja", "a one letter name falls back to the address");
+  eq(geo.spotFromSuggestion({ id: "1", name: "n".repeat(200), address: "", lat: 6.6, lng: 3.35 }).place_name.length, 120, "name cut to 120");
+  eq(geo.readSpot({ place_name: "A", address: "B", lat: 6.5, lng: 3.4 }), { place_name: "A", address: "B", lat: 6.5, lng: 3.4 }, "a saved spot reads back");
+  eq([geo.readSpot({ place_name: "A", lat: 9, lng: 3.4 }), geo.readSpot("x"), geo.readSpot(null), geo.readSpot({ lat: "6.5", lng: "3.4" })], [null, null, null, null], "a bad saved spot is dropped");
+  eq([geo.spotName({ place_name: " Yaba Hub ", address: "", lat: 6.5, lng: 3.4 }), geo.spotName({ place_name: " ", address: "", lat: 6.5, lng: 3.4, manual: true }), geo.spotName(null)], ["Yaba Hub", "", ""], "spotName");
+  eq(geo.mapsUrl(6.4488192, 3.3965307), "https://www.google.com/maps/search/?api=1&query=6.448819,3.396531", "maps link");
+
+  const found = parsePhoton({
+    features: [
+      { geometry: { type: "Point", coordinates: [3.357768, 6.6143785] }, properties: { osm_id: 1, osm_type: "W", name: "Ikeja City Mall", housenumber: "174/194", street: "Obafemi Awolowo Way", district: "Agidingbi", city: "Ikeja", countrycode: "NG" } },
+      { geometry: { type: "Point", coordinates: [3.4543, 6.443] }, properties: { osm_id: 2, osm_type: "W", name: "Admiralty Way", district: "Maroko", city: "Lekki Phase I", countrycode: "NG" } },
+      { geometry: { type: "Point", coordinates: [2.4, 6.4] }, properties: { name: "Cotonou", countrycode: "BJ" } },
+      { geometry: { type: "Point", coordinates: [3.4, 6.5] }, properties: { housenumber: "5", street: "Allen Avenue", countrycode: "NG" } },
+      { geometry: { type: "Point" }, properties: { name: "No point" } },
+      { geometry: { type: "Point", coordinates: [3.4, 6.5] }, properties: {} },
+    ],
+  });
+  eq(found.length, 3, "Photon: no foreign rows, no rows without a point or a name");
+  eq([found[0].name, found[0].address, found[0].lat, found[0].lng], ["Ikeja City Mall", "174/194 Obafemi Awolowo Way, Agidingbi, Ikeja", 6.6143785, 3.357768], "Photon: name, address, lat and lng the right way round");
+  eq([found[1].address, found[2].name], ["Maroko, Lekki Phase I", "5 Allen Avenue"], "Photon: address without a street, unnamed house");
+  eq([parsePhoton(null), parsePhoton({}), parsePhoton({ features: "no" })], [[], [], []], "Photon: junk in, nothing out");
 });
 
 await test("reset clears user-made changes", async () => {

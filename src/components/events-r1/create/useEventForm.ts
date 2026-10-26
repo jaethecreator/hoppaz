@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { areaByName } from "@/lib/geo";
+import { readSpot, spotName } from "@/lib/geocode/lagos";
+import type { PlaceSpot } from "@/lib/geocode/types";
 import { useMyRooms, useR1Api, useR1Auth, useR1Now } from "@/lib/events-r1/hooks";
 import type { EventDraft, EventKind, LinkType, R1Event, Visibility } from "@/lib/events-r1/types";
 import { usePaidGate } from "../pay/usePay";
@@ -40,8 +41,9 @@ export function useEventForm({ cover, look }: { cover: string | null; look: Look
   const [endShown, setEndShown] = useState(() => d0.endShown === true);
   const touched = useRef(d0.touched === true);
   const [kind, setKind] = useState<EventKind>(() => (KIND_VALUES.includes(d0.kind as EventKind) ? (d0.kind as EventKind) : "in_person"));
-  const [place, setPlace] = useState(() => str(d0.place));
-  const [area, setArea] = useState(() => str(d0.area));
+  // The place is a pin: a name, an address line and a point (PlaceSearch). Kept in the draft like every other field.
+  const [spot, setSpot] = useState<PlaceSpot | null>(() => readSpot(d0.spot));
+  const place = spotName(spot);
   const [linkType, setLinkType] = useState<LinkType | null>(() => (LINK_VALUES.includes(d0.linkType as LinkType) ? (d0.linkType as LinkType) : null));
   const [link, setLink] = useState(() => str(d0.link));
   const [about, setAbout] = useState(() => str(d0.about));
@@ -80,11 +82,11 @@ export function useEventForm({ cover, look }: { cover: string | null; look: Look
     patchDraft({
       mode: "event",
       event: {
-        title, start, end, endShown, touched: touched.current, kind, place, area, linkType, link, about, approval, capacity,
+        title, start, end, endShown, touched: touched.current, kind, spot, linkType, link, about, approval, capacity,
         capAuto: capAuto.current, waitlist, paid, tickets, visibility, addToRoom,
       },
     });
-  }, [title, start, end, endShown, kind, place, area, linkType, link, about, approval, capacity, waitlist, paid, tickets, visibility, addToRoom]);
+  }, [title, start, end, endShown, kind, spot, linkType, link, about, approval, capacity, waitlist, paid, tickets, visibility, addToRoom]);
 
   const mine = useMyRooms();
   const room = mine.data?.[0] ?? null;
@@ -137,7 +139,6 @@ export function useEventForm({ cover, look }: { cover: string | null; look: Look
   };
 
   const draft = (): EventDraft => {
-    const a = inPerson ? areaByName(area) : undefined;
     const d: EventDraft = {
       title: title.trim(),
       starts_at: Number.isFinite(Date.parse(start)) ? new Date(start).toISOString() : undefined,
@@ -154,11 +155,11 @@ export function useEventForm({ cover, look }: { cover: string | null; look: Look
       cover_url: cover,
     };
     if (inPerson) {
-      d.place_name = place.trim();
-      if (a) {
-        d.area = a.name;
-        d.lat = a.lat;
-        d.lng = a.lng;
+      // Name and point; the area is left empty and the database picks the nearest one from the point.
+      d.place_name = place;
+      if (spot) {
+        d.lat = spot.lat;
+        d.lng = spot.lng;
       }
     }
     if (online) {
@@ -197,7 +198,7 @@ export function useEventForm({ cover, look }: { cover: string | null; look: Look
   /** What is still missing, in the order the screen asks for it. Name is the only must; the rest are nudges. */
   const missing: string[] = [];
   if (!title.trim()) missing.push("a name");
-  if (inPerson && !place.trim()) missing.push("a place");
+  if (inPerson && !place) missing.push("a place");
   if (online && !link.trim() && kind === "online") missing.push("a link");
   if (!cover) missing.push("a cover");
 
@@ -238,7 +239,7 @@ export function useEventForm({ cover, look }: { cover: string | null; look: Look
   return {
     api, clock, user,
     title, setTitle, start, end, changeStart, changeEnd, endShown, setEndShown, endBad,
-    kind, pickKind, place, setPlace, area, setArea, linkType, pickLink, link, pasteLink, effLink, online, inPerson,
+    kind, pickKind, spot, setSpot, place, linkType, pickLink, link, pasteLink, effLink, online, inPerson,
     about, setAbout, approval, setApproval, capacity, changeCapacity, waitlist, setWaitlist,
     paid, setPaid, tickets, setTickets, visibility, setVisibility, addToRoom, changeAddToRoom, room, roomOn,
     busy, error, setError, gate, blocked, missing, submit, create,

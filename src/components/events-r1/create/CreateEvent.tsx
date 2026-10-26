@@ -9,7 +9,6 @@ import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Globe, ImagePl
 import SignInSheet from "@/components/events-r1/SignInSheet";
 import TintShell, { usePictureTint } from "@/components/host/TintShell";
 import TwoDRoomCard from "@/components/host/TwoDRoomCard";
-import { AREAS } from "@/lib/geo";
 import { useR1Api } from "@/lib/events-r1/hooks";
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
 import { DEFAULT_LOOK, PACKS } from "@/lib/events-r1/looks";
@@ -29,6 +28,7 @@ import type { TicketForm } from "./Tickets";
 import { useEventForm } from "./useEventForm";
 import type { EventFormState } from "./useEventForm";
 import DoneSheet from "./DoneSheet";
+import PlaceSearch from "./PlaceSearch";
 
 const LOOK_KEY = "hz-create-look";
 const KINDS: Array<{ value: EventKind; label: string }> = [
@@ -301,17 +301,7 @@ function WhereFields({ f }: { f: EventFormState }) {
     <div className="grid gap-2">
       <Seg label="Where" value={f.kind} options={KINDS} onChange={f.pickKind} />
       {f.inPerson && (
-        <div className="grid gap-2">
-          <input value={f.place} onChange={(e) => f.setPlace(e.target.value)} placeholder="Venue name and address" aria-label="Venue" autoComplete="off" maxLength={120} />
-          <select value={f.area} onChange={(e) => f.setArea(e.target.value)} aria-label="Area">
-            <option value="">Area (puts it on the map)</option>
-            {AREAS.map((a) => (
-              <option key={a.name} value={a.name}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <PlaceSearch value={f.spot} onChange={f.setSpot} />
       )}
       {f.online && (
         <div className="grid gap-2">
