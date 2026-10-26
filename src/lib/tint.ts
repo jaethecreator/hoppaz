@@ -82,6 +82,18 @@ export function tintFromPixels(d: Uint8ClampedArray): Tint {
 }
 
 const cache = new Map<string, Promise<Tint>>();
+const known = new Map<string, Tint>();
+
+/** The tint of a picture already read, at once (no await), or null. Lets a page paint its colour on the first frame. */
+export function peekTint(src: string): Tint | null {
+  return known.get(src) ?? null;
+}
+
+/** Remember the tint of a picture read under another address (an upload read from the local file before it went to the bucket). */
+export function primeTint(src: string, tint: Tint): void {
+  known.set(src, tint);
+  cache.set(src, Promise.resolve(tint));
+}
 
 /** Read the tint of a picture by its address (data URL, same-site path, or a public bucket link that allows CORS). */
 export function readTint(src: string): Promise<Tint> {
@@ -105,6 +117,9 @@ export function readTint(src: string): Promise<Tint> {
     };
     img.onerror = () => resolve(FALLBACK_TINT);
     img.src = src;
+  }).then((t) => {
+    known.set(src, t);
+    return t;
   });
   cache.set(src, p);
   return p;

@@ -16,9 +16,10 @@ import { DEFAULT_LOOK, PACKS } from "@/lib/events-r1/looks";
 import type { Look } from "@/lib/events-r1/looks";
 import type { EventKind, LinkType, Visibility } from "@/lib/events-r1/types";
 import { COVERS, randomCover } from "@/lib/host/covers";
-import { SWATCHES, swatchColor } from "@/lib/tint";
+import { primeTint, readTint, SWATCHES, swatchColor } from "@/lib/tint";
 import { naira } from "../pay/words";
 import { platformFeeNaira } from "@/lib/events-r1/payFee";
+import DateTimePicker from "../DateTimePicker";
 import { lagosIso } from "../dateTime";
 import { coverFromFile, uploadCoverFile } from "./cover";
 import { readCover, writeCover } from "./draft";
@@ -55,8 +56,6 @@ function parts(iso: string) {
   h = h % 12 || 12;
   return { day: String(day || "--"), mon: MON[(m || 1) - 1] ?? "---", wd: DOW[wd] ?? "", time: `${h}:${String(min || 0).padStart(2, "0")} ${ap}` };
 }
-const withDate = (iso: string, d: string) => (d ? `${d}T${iso.slice(11, 16)}:00+01:00` : iso);
-const withTime = (iso: string, t: string) => (t ? `${iso.slice(0, 10)}T${t}:00+01:00` : iso);
 const digits = (v: string, max = 9) => v.replace(/\D/g, "").slice(0, max);
 
 function readLook(): Look {
@@ -67,6 +66,27 @@ function readLook(): Look {
     /* storage blocked */
   }
   return DEFAULT_LOOK;
+}
+
+function clearLook() {
+  try {
+    window.sessionStorage.removeItem(LOOK_KEY);
+  } catch {
+    /* storage blocked */
+  }
+}
+
+/** Desktop layout from 1024 px (Tailwind lg), the same line the tab bar turns into a rail. One tree is rendered, never both. */
+function useWide(): boolean {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const q = window.matchMedia("(min-width: 1024px)");
+    const on = () => setWide(q.matches);
+    on();
+    q.addEventListener("change", on);
+    return () => q.removeEventListener("change", on);
+  }, []);
+  return wide;
 }
 
 /* ------------------------------------------------------------------ small parts -- */
@@ -123,7 +143,18 @@ function CoverBlock({ cover, setCover, phone }: { cover: string | null; setCover
     setBusy(true);
     setErr("");
     try {
-      setCover(await (f === "real" ? uploadCoverFile(x) : coverFromFile(x)));
+      if (f === "real") {
+        // The bucket link may not allow a canvas read, so the colour is read from the file on the phone first.
+        const local = URL.createObjectURL(x);
+        try {
+          const tint = await readTint(local);
+          const url = await uploadCoverFile(x);
+          primeTint(url, tint);
+          setCover(url);
+        } finally {
+          URL.revokeObjectURL(local);
+        }
+      } else setCover(await coverFromFile(x));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "That picture won't open. Try another.");
     } finally {
@@ -247,27 +278,20 @@ function BigDate({ iso }: { iso: string }) {
 }
 
 function WhenFields({ f }: { f: EventFormState }) {
-  const min = lagosIso(f.clock).slice(0, 10);
   return (
-    <div className="grid gap-2">
-      <div className="grid grid-cols-[1fr_7rem] items-center gap-2 sm:grid-cols-[64px_1fr_7.5rem]">
-        <span className="col-span-2 font-body text-[13px] text-t-muted sm:col-span-1">Starts</span>
-        <input type="date" value={f.start.slice(0, 10)} min={min} onChange={(e) => f.changeStart(withDate(f.start, e.target.value))} aria-label="Start date" />
-        <input type="time" value={f.start.slice(11, 16)} step={900} onChange={(e) => f.changeStart(withTime(f.start, e.target.value))} aria-label="Start time" />
-      </div>
+    <div className="grid">
+      <DateTimePicker label="Starts" value={f.start} onChange={f.changeStart} min={lagosIso(f.clock)} now={f.clock} />
       {f.endShown ? (
-        <div className="grid grid-cols-[1fr_7rem] items-center gap-2 sm:grid-cols-[64px_1fr_7.5rem]">
-          <span className="col-span-2 font-body text-[13px] text-t-muted sm:col-span-1">Ends</span>
-          <input type="date" value={f.end.slice(0, 10)} min={f.start.slice(0, 10)} onChange={(e) => f.changeEnd(withDate(f.end, e.target.value))} aria-label="End date" />
-          <input type="time" value={f.end.slice(11, 16)} step={900} onChange={(e) => f.changeEnd(withTime(f.end, e.target.value))} aria-label="End time" />
-        </div>
+        <>
+          <div className="h-px bg-t-line" />
+          <DateTimePicker label="Ends" value={f.end} onChange={f.changeEnd} min={f.start} error={f.endBad} now={f.clock} />
+        </>
       ) : (
-        <button type="button" onClick={() => f.setEndShown(true)} className="justify-self-start font-body text-[13.5px] font-bold text-t-accent">
+        <button type="button" onClick={() => f.setEndShown(true)} className="min-h-[44px] justify-self-start font-body text-[13.5px] font-bold text-t-accent">
           + Add an end time
         </button>
       )}
-      {f.endBad && <p className="font-body text-[13px] text-[#E5484D]">{f.endBad}</p>}
-      <span className="font-body text-[12px] text-t-muted">Lagos time · GMT+1 ({TIMEZONE})</span>
+      <span className="pb-1 font-body text-[12px] text-t-muted">Lagos time · GMT+1 ({TIMEZONE})</span>
     </div>
   );
 }
@@ -327,7 +351,9 @@ function receives(price: string): number | null {
 
 function TicketsFields({ f }: { f: EventFormState }) {
   const edit = (key: string, patch: Partial<TicketForm>) => f.setTickets(f.tickets.map((t) => (t.key === key ? { ...t, ...patch } : t)));
-  const [limit, setLimit] = useState(!!f.capacity);
+  // On by hand, or because spots are set (a WhatsApp call sets 32 by itself).
+  const [limitOn, setLimitOn] = useState(false);
+  const limit = limitOn || !!f.capacity;
   return (
     <div className="grid gap-3">
       <div className="flex items-center justify-between gap-2">
@@ -364,7 +390,7 @@ function TicketsFields({ f }: { f: EventFormState }) {
         <Switch
           on={limit}
           onChange={(v) => {
-            setLimit(v);
+            setLimitOn(v);
             if (!v) f.changeCapacity("");
           }}
           label="Limit spots"
@@ -446,9 +472,20 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: () => void }) {
   const [look, setLookState] = useState<Look>(DEFAULT_LOOK);
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    setCoverState(readCover() ?? randomCover().src);
-    setLookState(readLook());
-    setReady(true);
+    const c = readCover() ?? randomCover().src;
+    const l = readLook();
+    setCoverState(c);
+    setLookState(l);
+    // Paint once the cover's colour is known (a template reads in a few ms), so the page never opens grey. Never wait long.
+    let live = true;
+    const go = () => live && setReady(true);
+    const t = window.setTimeout(go, 700);
+    if (l.auto) void readTint(c).then(go);
+    else go();
+    return () => {
+      live = false;
+      window.clearTimeout(t);
+    };
   }, []);
   const setCover = (c: string | null) => {
     setCoverState(c);
@@ -466,7 +503,11 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: () => void }) {
   };
   const f = useEventForm({ cover, look: fullLook });
   const [open, setOpen] = useState<string | null>("when");
+  const wide = useWide();
   const two = look.two_d ?? { on: true, template: "clubhouse" };
+  useEffect(() => {
+    if (f.made) clearLook();
+  }, [f.made]);
   const setTwo = (v: { on: boolean; template: string }) => setLook({ ...look, two_d: v });
 
   if (!ready) return <div className="h-full bg-ink" />;
@@ -501,136 +542,136 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: () => void }) {
 
   return (
     <TintShell look={fullLook} className="min-h-full">
-      {/* ---------------- phone ---------------- */}
-      <div className="lg:hidden">
-        <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-t-line bg-t-bar px-4 py-3 backdrop-blur">
-          <button type="button" aria-label="Close" onClick={() => router.push("/")} className="grid h-9 w-9 place-items-center rounded-hz border border-t-line">
-            <X size={18} />
-          </button>
-          <b className="font-display text-[17px] font-extrabold">New event</b>
-          <div className="ml-auto">
+      {wide ? (
+        <div className="mx-auto max-w-[1180px] px-8 pb-16 pt-6">
+          <div className="mb-6 flex items-center justify-between gap-4">
             <PostAs f={f} onNewRoom={onNewRoom} />
-          </div>
-        </div>
-        <div className="grid gap-4 px-4 pb-6 pt-4">
-          <CoverBlock cover={cover} setCover={setCover} phone />
-          <LookCard look={fullLook} setLook={setLook} />
-          <div className="grid grid-cols-[auto_1fr] items-end gap-4">
-            <BigDate iso={f.start} />
-            <label className="block">
-              <span className="sr-only">Event name</span>
-              <textarea
-                value={f.title}
-                onChange={(e) => f.setTitle(e.target.value.replace(/\n/g, ""))}
-                rows={2}
-                placeholder="Event name"
-                maxLength={120}
-                className="!resize-none !border-0 !bg-transparent !px-0 font-display text-[28px] font-black leading-tight"
-              />
+            <label className="flex items-center gap-2">
+              <span className="font-body text-[13px] text-t-muted">Who can see it</span>
+              <select value={f.visibility} onChange={(e) => f.setVisibility(e.target.value as Visibility)} className="!w-auto font-body text-[14px]">
+                {WHO.map((w) => (
+                  <option key={w.value} value={w.value} disabled={w.value === "community" && !f.roomOn}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
-          <div className="grid gap-2">
-            {rows.map((r) => (
-              <div key={r.id} className="t-card overflow-hidden">
-                <button type="button" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)} className="flex min-h-[56px] w-full items-center gap-3 px-3 text-left">
-                  <IconTile>{r.icon}</IconTile>
-                  <span className="min-w-0 flex-1">
-                    <b className="block font-body text-[14.5px]">{r.label}</b>
-                    <span className="block truncate font-body text-[12.5px] text-t-muted">{r.sum || (r.optional ? "Optional" : "")}</span>
-                  </span>
-                  {r.done && <Check size={16} className="text-t-accent" aria-label="Done" />}
-                  <ChevronDown size={18} className={`text-t-muted transition-transform ${open === r.id ? "rotate-180" : ""}`} aria-hidden />
+          <div className="grid grid-cols-[110px_minmax(0,1fr)_380px] gap-8">
+            <BigDate iso={f.start} />
+            <div className="grid content-start gap-6">
+              <div>
+                <input
+                  value={f.title}
+                  onChange={(e) => f.setTitle(e.target.value)}
+                  placeholder="Event name"
+                  aria-label="Event name"
+                  autoComplete="off"
+                  maxLength={120}
+                  className="!rounded-none !border-0 !border-b !border-dashed !bg-transparent !px-0 !py-1 font-display text-[40px] font-black leading-tight"
+                />
+                <p className="mt-1.5 font-body text-[12.5px] text-t-muted">This is the name people see on the map and on their ticket.</p>
+              </div>
+              <div className="grid grid-cols-[40px_1fr] gap-3">
+                <IconTile>
+                  <Calendar />
+                </IconTile>
+                <div className="t-card p-3">
+                  <WhenFields f={f} />
+                </div>
+              </div>
+              <div className="grid grid-cols-[40px_1fr] gap-3">
+                <IconTile>
+                  <MapPin />
+                </IconTile>
+                <WhereFields f={f} />
+              </div>
+              <div className="grid grid-cols-[40px_1fr] gap-3">
+                <IconTile>
+                  <AlignLeft />
+                </IconTile>
+                <div className="grid">
+                  <DescField f={f} />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <button type="button" className="lip !min-h-[52px] !text-[16px]" aria-disabled={!canCreate} onClick={submit}>
+                  {buttonText}
                 </button>
-                {open === r.id && <div className="border-t border-t-line p-3">{r.body}</div>}
+                <span className="text-center font-body text-[12.5px] text-t-muted">{leftText}</span>
+                {errorLine}
               </div>
-            ))}
+            </div>
+            <div className="grid content-start gap-4">
+              <CoverBlock cover={cover} setCover={setCover} />
+              <LookCard look={fullLook} setLook={setLook} />
+              <div className="t-card grid gap-3 p-4">
+                <b className="font-body text-[15px]">Tickets</b>
+                <TicketsFields f={f} />
+              </div>
+              <TwoDRoomCard on={two.on} template={two.template} onChange={setTwo} sub="Guests walk in from 1 hour before" />
+            </div>
           </div>
-          {errorLine}
         </div>
-        <div className="sticky bottom-0 z-30 border-t border-t-line bg-t-bar px-4 pb-3 pt-3 backdrop-blur">
-          <div className="mb-2 flex items-center gap-2">
-            {steps.map((s, i) => (
-              <i key={i} className={`h-1.5 flex-1 rounded-full ${s ? "bg-t-accent" : "bg-t-soft"}`} />
-            ))}
-            <span className="ml-1 font-body text-[12px] text-t-muted">{left ? `${left} left` : "Ready"}</span>
+      ) : (
+        <div>
+          <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-t-line bg-t-bar px-4 py-3 backdrop-blur">
+            <button type="button" aria-label="Close" onClick={() => router.push("/")} className="grid h-9 w-9 place-items-center rounded-hz border border-t-line">
+              <X size={18} />
+            </button>
+            <b className="font-display text-[17px] font-extrabold">New event</b>
+            <div className="ml-auto">
+              <PostAs f={f} onNewRoom={onNewRoom} />
+            </div>
           </div>
-          <button type="button" className="lip w-full !min-h-[52px] !text-[16px]" aria-disabled={!canCreate} onClick={submit}>
-            {buttonText}
-          </button>
-        </div>
-      </div>
-
-      {/* ---------------- desktop ---------------- */}
-      <div className="mx-auto hidden max-w-[1180px] px-8 pb-16 pt-6 lg:block">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <PostAs f={f} onNewRoom={onNewRoom} />
-          <label className="flex items-center gap-2">
-            <span className="font-body text-[13px] text-t-muted">Who can see it</span>
-            <select value={f.visibility} onChange={(e) => f.setVisibility(e.target.value as Visibility)} className="!w-auto font-body text-[14px]">
-              {WHO.map((w) => (
-                <option key={w.value} value={w.value} disabled={w.value === "community" && !f.roomOn}>
-                  {w.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="grid grid-cols-[110px_minmax(0,1fr)_380px] gap-8">
-          <BigDate iso={f.start} />
-          <div className="grid content-start gap-6">
-            <div>
-              <input
-                value={f.title}
-                onChange={(e) => f.setTitle(e.target.value)}
-                placeholder="Event name"
-                aria-label="Event name"
-                autoComplete="off"
-                maxLength={120}
-                className="!rounded-none !border-0 !border-b !border-dashed !bg-transparent !px-0 !py-1 font-display text-[40px] font-black leading-tight"
-              />
-              <p className="mt-1.5 font-body text-[12.5px] text-t-muted">This is the name people see on the map and on their ticket.</p>
-            </div>
-            <div className="grid grid-cols-[40px_1fr] gap-3">
-              <IconTile>
-                <Calendar />
-              </IconTile>
-              <div className="t-card p-3">
-                <WhenFields f={f} />
-              </div>
-            </div>
-            <div className="grid grid-cols-[40px_1fr] gap-3">
-              <IconTile>
-                <MapPin />
-              </IconTile>
-              <WhereFields f={f} />
-            </div>
-            <div className="grid grid-cols-[40px_1fr] gap-3">
-              <IconTile>
-                <AlignLeft />
-              </IconTile>
-              <div className="grid">
-                <DescField f={f} />
-              </div>
+          <div className="grid gap-4 px-4 pb-6 pt-4">
+            <CoverBlock cover={cover} setCover={setCover} phone />
+            <LookCard look={fullLook} setLook={setLook} />
+            <div className="grid grid-cols-[auto_1fr] items-end gap-4">
+              <BigDate iso={f.start} />
+              <label className="block">
+                <span className="sr-only">Event name</span>
+                <textarea
+                  value={f.title}
+                  onChange={(e) => f.setTitle(e.target.value.replace(/\n/g, ""))}
+                  rows={2}
+                  placeholder="Event name"
+                  maxLength={120}
+                  className="!resize-none !border-0 !bg-transparent !px-0 font-display text-[28px] font-black leading-tight"
+                />
+              </label>
             </div>
             <div className="grid gap-2">
-              <button type="button" className="lip !min-h-[52px] !text-[16px]" aria-disabled={!canCreate} onClick={submit}>
-                {buttonText}
-              </button>
-              <span className="text-center font-body text-[12.5px] text-t-muted">{leftText}</span>
-              {errorLine}
+              {rows.map((r) => (
+                <div key={r.id} className="t-card overflow-hidden">
+                  <button type="button" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)} className="flex min-h-[56px] w-full items-center gap-3 px-3 text-left">
+                    <IconTile>{r.icon}</IconTile>
+                    <span className="min-w-0 flex-1">
+                      <b className="block font-body text-[14.5px]">{r.label}</b>
+                      <span className="block truncate font-body text-[12.5px] text-t-muted">{r.sum || (r.optional ? "Optional" : "")}</span>
+                    </span>
+                    {r.done && <Check size={16} className="text-t-accent" aria-label="Done" />}
+                    <ChevronDown size={18} className={`text-t-muted transition-transform ${open === r.id ? "rotate-180" : ""}`} aria-hidden />
+                  </button>
+                  {open === r.id && <div className="border-t border-t-line p-3">{r.body}</div>}
+                </div>
+              ))}
             </div>
+            {errorLine}
           </div>
-          <div className="grid content-start gap-4">
-            <CoverBlock cover={cover} setCover={setCover} />
-            <LookCard look={fullLook} setLook={setLook} />
-            <div className="t-card grid gap-3 p-4">
-              <b className="font-body text-[15px]">Tickets</b>
-              <TicketsFields f={f} />
+          <div className="sticky bottom-0 z-30 border-t border-t-line bg-t-bar px-4 pb-3 pt-3 backdrop-blur">
+            <div className="mb-2 flex items-center gap-2">
+              {steps.map((s, i) => (
+                <i key={i} className={`h-1.5 flex-1 rounded-full ${s ? "bg-t-accent" : "bg-t-soft"}`} />
+              ))}
+              <span className="ml-1 font-body text-[12px] text-t-muted">{left ? `${left} left` : "Ready"}</span>
             </div>
-            <TwoDRoomCard on={two.on} template={two.template} onChange={setTwo} sub="Guests walk in from 1 hour before" />
+            <button type="button" className="lip w-full !min-h-[52px] !text-[16px]" aria-disabled={!canCreate} onClick={submit}>
+              {buttonText}
+            </button>
           </div>
         </div>
-      </div>
+      )}
 
       <SignInSheet open={f.signIn} reason="Sign up to create your event" onClose={f.closeSignIn} onSignedIn={f.signedIn} />
       {f.made && <DoneSheet event={f.made} roomName={f.roomOn ? (f.room?.name ?? null) : null} onNewRoom={onNewRoom} />}

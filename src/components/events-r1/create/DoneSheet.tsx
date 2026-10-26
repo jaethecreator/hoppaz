@@ -37,9 +37,9 @@ export default function DoneSheet({ event, roomName, onNewRoom }: { event: R1Eve
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 lg:items-center" role="dialog" aria-modal="true" aria-label="Your event is live">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 lg:items-center lg:p-4" role="dialog" aria-modal="true" aria-label="Your event is live">
       {!pop ? (
-        <div className="w-full max-w-[460px] rounded-t-hz bg-t-solid shadow-2xl lg:rounded-hz">
+        <div className="max-h-[92dvh] w-full max-w-[460px] overflow-y-auto overscroll-contain rounded-t-hz bg-t-solid pb-[env(safe-area-inset-bottom)] shadow-2xl lg:rounded-hz">
           <div className="grid gap-1 px-5 pb-3 pt-5">
             <b className="font-display text-[22px] font-black">Your event is live</b>
             <span className="font-body text-[13.5px] text-t-muted">{event.title}</span>
@@ -80,7 +80,7 @@ export default function DoneSheet({ event, roomName, onNewRoom }: { event: R1Eve
           </div>
         </div>
       ) : (
-        <div className="relative grid w-full max-w-[440px] gap-3 rounded-t-hz bg-t-solid px-6 pb-7 pt-6 shadow-2xl lg:rounded-hz">
+        <div className="relative grid max-h-[92dvh] w-full max-w-[440px] gap-3 overflow-y-auto overscroll-contain rounded-t-hz bg-t-solid px-6 pb-[calc(1.75rem+env(safe-area-inset-bottom))] pt-6 shadow-2xl lg:rounded-hz">
           <div className="relative mx-auto h-20 w-48" aria-hidden>
             <span className="absolute left-2 top-5 h-11 w-11 rounded-full border-2 border-t-solid bg-t-soft" />
             <span className="absolute left-12 top-2 h-11 w-11 rounded-full border-2 border-t-solid bg-t-line" />

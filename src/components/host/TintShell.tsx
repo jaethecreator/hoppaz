@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { Look } from "@/lib/events-r1/looks";
-import { readTint, tintStyle } from "@/lib/tint";
+import { peekTint, readTint, tintStyle } from "@/lib/tint";
 import type { Tint } from "@/lib/tint";
 
 /**
- * The tint read from a picture, for a look whose colour follows its cover or logo (look.auto). Until it is read (or when there
- * is no picture) the look's own stored tint is used, so a page never flashes a wrong colour once it has been saved.
+ * The tint read from a picture, for a look whose colour follows its cover or logo (look.auto). A picture read before paints on
+ * the first frame; while a new picture is read the last colour stays (no grey between two covers). With nothing read yet (or no
+ * picture) the look's own stored tint is used, so a saved page never flashes a wrong colour.
  */
 export function usePictureTint(src: string | null, look: Look): Tint {
   const [read, setRead] = useState<{ src: string; tint: Tint } | null>(null);
@@ -22,8 +23,8 @@ export function usePictureTint(src: string | null, look: Look): Tint {
       live = false;
     };
   }, [src, look.auto]);
-  if (look.auto && src && read?.src === src) return read.tint;
-  return look.tint;
+  if (!look.auto || !src) return look.tint;
+  return peekTint(src) ?? read?.tint ?? look.tint;
 }
 
 /** The CSS variables for a look. */
