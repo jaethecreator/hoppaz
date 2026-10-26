@@ -6,7 +6,8 @@
       "Bash(node -e ' *)",
       "Bash(sed -i 's|^  \"District 19, 19 Ologun Agbaje St, Victoria Island\": \\\\[6.4318, 3.4185\\\\],|&\\\\n  \"District 19, Victoria Island\": [6.4318, 3.4185],|' scripts/events/load-guide.mjs)",
       "Bash(node scripts/events/load-guide.mjs ~/Downloads/hoppaz-events-W43-W44)",
-      "Bash(node scripts/events/load-guide.mjs ~/Downloads/hoppaz-events-W43-W44 --apply)"
+      "Bash(node scripts/events/load-guide.mjs ~/Downloads/hoppaz-events-W43-W44 --apply)",
+      "Bash(node_modules/.bin/tsc --noEmit)"
     ]
   }
 }
