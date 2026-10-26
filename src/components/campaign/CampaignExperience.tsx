@@ -9,6 +9,7 @@ import ActionButton from "@/components/crew-room/ActionButton";
 import ChatSheet from "@/components/crew-room/ChatSheet";
 import EventSheet from "@/components/crew-room/EventSheet";
 import HopperMenu from "@/components/crew-room/HopperMenu";
+import RoomMix from "@/components/crew-room/RoomMix";
 import RoomVoice from "@/components/crew-room/RoomVoice";
 import { ChatButton, HudPill } from "@/components/crew-room/Hud";
 import { useChatDock } from "@/lib/crew-room/chatStore";
@@ -20,6 +21,7 @@ import type { CrewRoomConnection, SocialWorld } from "@/lib/crew-room/types";
 import { validCampaignUrl, type CampaignContent, type CampaignLayout } from "@/lib/campaign/layout";
 import { roomTemplate } from "@/lib/campaign/templates";
 import { useHoppaz } from "@/lib/store";
+import { parseYouTube } from "@/lib/sound/youtube";
 import { useSession } from "@/lib/useSession";
 import CampaignSettings from "./CampaignSettings";
 import CampaignWorld, { type OpenPhase } from "./CampaignWorld";
@@ -161,6 +163,8 @@ export default function CampaignExperience({ crew }: { crew: CrewCampaign }) {
   const layout = useMemo(() => roomTemplate(crew.template, width), [crew.template, width]);
   const name = roomName(content.brand || crew.name);
   const audio = validCampaignUrl(content.audioUrl);
+  // The DJ mix is for the Emergency Room for now: its deck is the booth the sound comes from.
+  const mix = crew.template === "emergency-room" ? parseYouTube(audio) : null;
   const watching = crew.world.watching;
   const goOut = useGoOut();
   const hasAction = useRoomStore((s) => !!s.action);
@@ -291,6 +295,7 @@ export default function CampaignExperience({ crew }: { crew: CrewCampaign }) {
           </p>
         )}
         {crew.notice && <div className={css.noticeSlot}>{crew.notice}</div>}
+        {audio && mix && <RoomMix url={audio} ready={phase === "done"} layout={layout} />}
         <HudPill audio={audio} owner={crew.editable} watching={watching} onSettings={() => setSettings(true)} />
         <ChatButton compact={hasAction} />
         <div className={css.chromeLayer}>

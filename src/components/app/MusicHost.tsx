@@ -32,7 +32,8 @@ export default function MusicHost() {
   const theme = useTheme();
   // A crew room's screen says when the Hopper is inside and which loop its owner set (useRoomTrack).
   const room = useRoomTrack();
-  const slot = slotFor(path, theme === "night", room.inside);
+  // A room with a YouTube mix has no theme loop: the mix is the music.
+  const slot = slotFor(path, theme === "night", room.inside && !room.mix);
   const inRoomPath = ROOM.test(path.replace(/\/+$/, ""));
   const own = inRoomPath ? room.url : null;
   useEffect(() => {

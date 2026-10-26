@@ -145,8 +145,8 @@ export default function CampaignSettings({
           </label>
           <label>
             Room music loop{" "}
-            <span className={css.note}>Optional. A hosted audio file the room plays on a loop, from a visitor’s first tap. Its host has to allow playing it from other sites. Without one, the room plays the Hoppaz room theme.</span>
-            <input type="url" value={draft.audioUrl} onChange={(event) => setDraft({ ...draft, audioUrl: event.target.value })} placeholder="https://…/track.mp3" autoComplete="off" />
+            <span className={css.note}>Optional. A YouTube link (a DJ mix or a playlist) that plays for everyone in the room, from the stage; people who walk in join the set where it is. Or a hosted audio file the room plays on a loop. Without one, the room plays the Hoppaz room theme.</span>
+            <input type="url" value={draft.audioUrl} onChange={(event) => setDraft({ ...draft, audioUrl: event.target.value })} placeholder="https://youtu.be/… or https://…/track.mp3" autoComplete="off" />
           </label>
           <label>
             Featured artist or release
