@@ -8,7 +8,7 @@ export type RoomPeer = Tile & { id: string; name: string; look: unknown; circle_
 export type RoomSnapshot = {
   observed_at: string;
   crew: { id: string; name: string; is_owner: boolean; verified: boolean };
-  room: { width: 30 | 36; content: CampaignContent; version: number; capacity: number };
+  room: { template?: string; width: 30 | 36; content: CampaignContent; version: number; capacity: number };
   peers: RoomPeer[];
   /** This Hopper's walker. Null while watching a full room. */
   self: (Tile & { seq: number; circle_id: string | null; session_id: string }) | null;

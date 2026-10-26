@@ -17,7 +17,8 @@ import { crewImageSrc } from "@/lib/crew-room/images";
 import { useExploreStore, useGoOut } from "@/lib/crew-room/rails";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import type { CrewRoomConnection, SocialWorld } from "@/lib/crew-room/types";
-import { clubhouseWidth, validCampaignUrl, type CampaignContent, type CampaignLayout } from "@/lib/campaign/layout";
+import { validCampaignUrl, type CampaignContent, type CampaignLayout } from "@/lib/campaign/layout";
+import { roomTemplate } from "@/lib/campaign/templates";
 import { useHoppaz } from "@/lib/store";
 import { useSession } from "@/lib/useSession";
 import CampaignSettings from "./CampaignSettings";
@@ -35,6 +36,8 @@ export type CrewCampaign = {
   name: string;
   verified: boolean;
   content: CampaignContent;
+  /** crew_rooms.template: which room is drawn and walked (ROOM_TEMPLATES). Missing or unknown is the clubhouse. */
+  template?: string;
   width: 30 | 36;
   /** I own this crew: the HUD shows the room settings button. */
   editable: boolean;
@@ -155,7 +158,7 @@ export default function CampaignExperience({ crew }: { crew: CrewCampaign }) {
   const { profile } = useSession();
   const content = crew.content;
   const width = crew.width;
-  const layout = useMemo(() => clubhouseWidth(width), [width]);
+  const layout = useMemo(() => roomTemplate(crew.template, width), [crew.template, width]);
   const name = roomName(content.brand || crew.name);
   const audio = validCampaignUrl(content.audioUrl);
   const watching = crew.world.watching;
@@ -229,7 +232,9 @@ export default function CampaignExperience({ crew }: { crew: CrewCampaign }) {
 
   const backHref = `/crew/${crew.id}`;
   const chatUp = useRoomStore((s) => s.sheet !== "closed");
-  const hint = phase === "hold" && !chatUp ? "6 ROOMS. TAP ONE." : "";
+  // The clubhouse has six rooms to tap; a room with none (the Emergency Room) has nothing to point at.
+  const rooms = layout.privateAreas.length;
+  const hint = phase === "hold" && !chatUp && rooms ? `${rooms} ROOMS. TAP ONE.` : "";
 
   return (
     <div className={css.experience}>
@@ -259,7 +264,7 @@ export default function CampaignExperience({ crew }: { crew: CrewCampaign }) {
 
       <div className={css.stage} style={stageVars}>
         <CampaignWorld
-          key={width}
+          key={`${crew.template ?? "clubhouse"}-${width}`}
           crewId={crew.id}
           layout={layout}
           look={profile?.avatar ?? look}

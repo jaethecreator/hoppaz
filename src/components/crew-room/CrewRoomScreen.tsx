@@ -223,6 +223,7 @@ export function CrewRoomView({ crewId, userId, room }: { crewId: string; userId:
         name: snapshot.crew.name,
         verified: snapshot.crew.verified,
         content: snapshot.room.content,
+        template: snapshot.room.template,
         width: snapshot.room.width,
         editable: snapshot.crew.is_owner,
         connected: room.connected,
