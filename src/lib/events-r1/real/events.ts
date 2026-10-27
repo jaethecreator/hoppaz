@@ -4,6 +4,7 @@ import type { R1Event, ViewerState } from "../types";
 import { client, emit, ready, rpc, rpcOk, rpcText, subscribe, userId, who } from "./core";
 import { cleanQuestions, mapEvent, mapRegistration } from "./map";
 import { eventIdOf, roomIdOf } from "./ids";
+import { CREATE_LIMIT } from "../constants";
 
 /** An id, or a slug the database also finds. */
 const key = (idOrSlug: string) => String(idOrSlug).trim();
@@ -39,7 +40,7 @@ export const events: EventsApi = {
   },
 
   async create(draft) {
-    const out = await rpcOk<{ event: Record<string, unknown> }>("ev_create_event", { p_draft: draft });
+    const out = await rpcOk<{ event: Record<string, unknown> }>("ev_create_event", { p_draft: draft }, { try_again_later: CREATE_LIMIT });
     emit();
     return mapEvent(out.event);
   },

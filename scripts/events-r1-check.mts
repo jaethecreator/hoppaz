@@ -27,7 +27,7 @@ const { eventPageUrl, siteOrigin } = await import("../src/lib/events-r1/siteUrl.
 const { roomCopyAllowed } = await import("../src/lib/events-r1/popRoom.ts");
 const { paidTicketsOn } = await import("../src/lib/events-r1/flags.ts");
 const { platformFeeNaira, processingFeeNaira } = await import("../src/lib/events-r1/payFee.ts");
-const { PAID_UNAVAILABLE } = await import("../src/lib/events-r1/constants.ts");
+const { CREATE_LIMIT, PAID_UNAVAILABLE } = await import("../src/lib/events-r1/constants.ts");
 const geo = await import("../src/lib/geocode/lagos.ts");
 const { parsePhoton } = await import("../src/lib/geocode/photon.ts");
 
@@ -509,10 +509,10 @@ await test("door: express, standard confirm, already used, bad signature, wrong 
   await rejects(api.door.scan(ev.id, t3.token, "express"), "Not allowed", "a guest cannot scan");
 });
 
-await test("silent rate limit: the sixth event in an hour says only 'Try again later'", async () => {
+await test("silent rate limit: the sixth event in an hour says to wait, never the number", async () => {
   as("Kredete");
   for (let i = 0; i < 5; i++) await api.events.create({ title: `Rate ${i}` });
-  await rejects(api.events.create({ title: "Rate 5" }), "Try again later", "sixth");
+  await rejects(api.events.create({ title: "Rate 5" }), CREATE_LIMIT, "sixth");
   fakeDev.advance(61 * MIN);
   eq((await api.events.create({ title: "Rate after an hour" })).title, "Rate after an hour", "allowed again");
 });

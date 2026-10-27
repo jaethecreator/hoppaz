@@ -2,7 +2,7 @@
 import type { EventsApi } from "../api";
 import type { EventDraft, EventKind, LinkType, ViewerState, Visibility } from "../types";
 import { VIBES } from "../../brand";
-import { PAID_UNAVAILABLE } from "../constants";
+import { CREATE_LIMIT, PAID_UNAVAILABLE } from "../constants";
 import { paidTicketsOn } from "../flags";
 import { areaByName, insideLagos, LAGOS_CENTER, nearestArea } from "../../geo";
 import { autoPopsFor, defaultMessages, defaultQuestions } from "./defaults";
@@ -159,11 +159,11 @@ function normalize(d: EventDraft, roomId: string | null, hostId: string, existin
   };
 }
 
-/** The silent limit: 5 new events an hour per person. The message is generic on purpose. */
+/** The silent limit: 5 new events an hour per person. The message says what to do, never the number. */
 function checkRateLimit(host: UserRec): void {
   const since = now() - HOUR;
   const recent = Object.values(S().events).filter((e) => e.host_id === host.id && Date.parse(e.created_at) > since);
-  if (recent.length >= 5) throw new Error("Try again later");
+  if (recent.length >= 5) throw new Error(CREATE_LIMIT);
 }
 
 function makeEvent(host: UserRec, draft: EventDraft, copyTypes?: TicketTypeRec[]): EventRec {
