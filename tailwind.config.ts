@@ -38,6 +38,11 @@ const config: Config = {
         fireant: v("fireant"),
         ok: v("keke"),
         brand: { ink: "#0E0B0A", cream: "#F5EBDD", violet: "#5B2EFF" },
+        // Host surfaces (event page, room page, create, dashboards): the Tint engine's CSS variables (src/lib/tint.ts).
+        t: {
+          bg: "var(--t-bg)", tile: "var(--t-tile)", solid: "var(--t-solid)", text: "var(--t-text)", muted: "var(--t-muted)",
+          line: "var(--t-line)", soft: "var(--t-soft)", accent: "var(--t-accent)", ember: "var(--t-ember)", on: "var(--t-on)", bar: "var(--t-bar)",
+        },
       },
       fontFamily: {
         display: ["var(--font-poppins)", "system-ui", "sans-serif"],
@@ -52,6 +57,8 @@ const config: Config = {
       boxShadow: {
         chunk: "0 4px 0 #B83600",
         "chunk-sm": "0 2px 0 #B83600",
+        lip: "0 4px 0 var(--t-ember)",
+        "lip-sm": "0 3px 0 var(--t-ember)",
         sheet: "0 -14px 40px rgb(var(--shadow) / .55)",
       },
       keyframes: {

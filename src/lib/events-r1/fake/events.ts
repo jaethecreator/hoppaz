@@ -2,7 +2,7 @@
 import type { EventsApi } from "../api";
 import type { EventDraft, EventKind, LinkType, ViewerState, Visibility } from "../types";
 import { VIBES } from "../../brand";
-import { PAID_UNAVAILABLE } from "../constants";
+import { CREATE_LIMIT, PAID_UNAVAILABLE } from "../constants";
 import { paidTicketsOn } from "../flags";
 import { areaByName, insideLagos, LAGOS_CENTER, nearestArea } from "../../geo";
 import { autoPopsFor, defaultMessages, defaultQuestions } from "./defaults";
@@ -95,18 +95,22 @@ function normalize(d: EventDraft, roomId: string | null, hostId: string, existin
   let lng = LAGOS_CENTER.lng;
   if (kind !== "online") {
     venue_name = (d.place_name ?? "").trim();
+    // Same as ev_create_event: a name, when given, is 2 to 120 characters.
+    if (venue_name && (venue_name.length < 2 || venue_name.length > 120)) throw new Error("Check the place and try again");
+    // An area the database does not know is ignored, not kept.
     const a = areaByName(d.area);
     if (typeof d.lat === "number" && typeof d.lng === "number") {
       if (!insideLagos(d.lat, d.lng)) throw new Error("Hoppaz is Lagos only for now");
       lat = d.lat;
       lng = d.lng;
-      area = d.area ?? nearestArea(d.lat, d.lng).name;
+      // A pin with no area: the nearest known area, as the database picks it.
+      area = a?.name ?? nearestArea(d.lat, d.lng).name;
     } else if (a) {
       lat = a.lat;
       lng = a.lng;
       area = a.name;
     } else {
-      area = d.area ?? null;
+      area = null;
     }
   }
 
@@ -155,11 +159,11 @@ function normalize(d: EventDraft, roomId: string | null, hostId: string, existin
   };
 }
 
-/** The silent limit: 5 new events an hour per person. The message is generic on purpose. */
+/** The silent limit: 5 new events an hour per person. The message says what to do, never the number. */
 function checkRateLimit(host: UserRec): void {
   const since = now() - HOUR;
   const recent = Object.values(S().events).filter((e) => e.host_id === host.id && Date.parse(e.created_at) > since);
-  if (recent.length >= 5) throw new Error("Try again later");
+  if (recent.length >= 5) throw new Error(CREATE_LIMIT);
 }
 
 function makeEvent(host: UserRec, draft: EventDraft, copyTypes?: TicketTypeRec[]): EventRec {

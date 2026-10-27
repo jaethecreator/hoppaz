@@ -2,6 +2,7 @@ import type { EventsR1Api } from "../api";
 import { auth } from "./auth";
 import { door } from "./door";
 import { events } from "./events";
+import { looks } from "./looks";
 import { pay } from "./pay";
 import { pops } from "./pops";
 import { registrations } from "./registrations";
@@ -24,5 +25,6 @@ export const realApi: EventsR1Api = {
   door,
   clock: { now: () => Date.now() },
   pay,
+  looks,
 };
 

@@ -69,7 +69,13 @@ export default function RoomzTab() {
                     </button>
                   </div>
                 ) : data.mine.length === 0 ? (
-                  <p className="hint">You are not in any Roomz yet. Find one in Discover.</p>
+                  <p className="hint">
+                    You are not in any Roomz yet. Find one in Discover, or{" "}
+                    <Link href="/create?mode=room" className="font-bold text-orange underline underline-offset-2">
+                      create your own
+                    </Link>
+                    .
+                  </p>
                 ) : (
                   data.mine.map((r) => <MineRow key={r.id} room={r} />)
                 )}
@@ -99,7 +105,7 @@ export default function RoomzTab() {
       {/* The same orange + Create as the Map and Events, bottom right above the tab bar. */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3.5 pb-2.5">
         <div className="mx-auto flex max-w-[560px]">
-          <CreateButton className="ml-auto" />
+          <CreateButton kind="room" className="ml-auto" />
         </div>
       </div>
 

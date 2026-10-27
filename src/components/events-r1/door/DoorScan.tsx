@@ -65,11 +65,13 @@ export default function DoorScan({ id }: { id: string }) {
     } catch {}
   };
 
+  // Not host or staff: to the event page. Only a fresh answer counts: the "Not allowed" from before signing in is still held
+  // for a moment after the host signs in at the door, and must not send them away before the counts are asked again.
   const signedIn = api ? !!api.auth.current() : null;
-  const denied = signedIn === true && counts.error?.message === "Not allowed";
+  const notAllowed = counts.error?.message === "Not allowed" ? counts.error : null;
   useEffect(() => {
-    if (denied) router.replace(`/event/${encodeURIComponent(id)}`);
-  }, [denied, id, router]);
+    if (notAllowed && api?.auth.current()) router.replace(`/event/${encodeURIComponent(id)}`);
+  }, [notAllowed, api, id, router]);
 
   /** One call at a time: a camera that sees the same QR twice must not check in twice. */
   const run = async (fn: () => Promise<ScanResult>, then?: (r: ScanResult) => void) => {
@@ -135,7 +137,7 @@ export default function DoorScan({ id }: { id: string }) {
   }
 
   const e = event.data;
-  if (denied) return shell(<p className="hint pad-top">Taking you to the event page</p>);
+  if (notAllowed && counts.loading === false && !counts.data) return shell(<p className="hint pad-top">Checking you can scan</p>);
   if (!e) {
     return shell(
       event.loading ? (

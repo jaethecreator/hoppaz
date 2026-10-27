@@ -4,10 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import EventCard from "@/components/EventCard";
+import CheckInBlock, { type FreshCheckin } from "@/components/event/CheckInBlock";
+import HostStory from "@/components/events-r1/page/HostStory";
+import { asR1, isOnline } from "@/components/events-r1/words";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
 import { haversineKm } from "@/lib/geo";
 import type { EventRow } from "@/lib/types";
 import { useHoppaz } from "@/lib/store";
-import { useCheckin } from "@/lib/useCheckin";
+import { CHECKIN_RADIUS_M, useCheckin, type CheckinOutcome } from "@/lib/useCheckin";
 import { fetchEventById, useEvents, useHop } from "@/lib/useEvents";
 import { useSession } from "@/lib/useSession";
 
@@ -16,6 +20,9 @@ import { useSession } from "@/lib/useSession";
  * or a shared link): the flyer as a hero, the facts, directions and tickets,
  * who is going, check-in, this event's quests, its drop and its photos, with
  * I'M GOING pinned at the bottom. The same pieces as the cards, at full size.
+ *
+ * A Release 1 event (the new host fields) opens the Host Story page instead (HostStory: the event's look, tickets under the
+ * cover), with the door check-in in it around the night itself.
  *
  * The map's list only reaches 45 km around you, so a link shared to someone far
  * away (or to a night that started a few hours ago) is looked up by its id
@@ -29,6 +36,7 @@ export default function EventPage() {
   const { events, ready } = useEvents(fix, 45);
   const hop = useHop();
   const { done, checkedAt, busy, checkIn } = useCheckin(userId, refresh);
+  const [fresh, setFresh] = useState<FreshCheckin | null>(null);
 
   const listed = useMemo(() => events.find((e) => e.id === id) ?? null, [events, id]);
   // undefined: not asked yet. event null: asked, and there is no such live event.
@@ -71,6 +79,39 @@ export default function EventPage() {
           </>
         )}
       </div>
+    );
+  }
+
+  const r1 = EVENTS_R1 ? asR1(event) : null;
+  if (r1) {
+    const start = Date.parse(event.starts_at);
+    const now = Date.now();
+    const closeEnough = !!fix && event.distance_m <= CHECKIN_RADIUS_M;
+    // The door is about the night itself (18 hours before to 12 hours after the start), and an online event has none.
+    const showCheckIn = !isOnline(event) && (done.has(event.id) || closeEnough || (now > start - 18 * 3.6e6 && now < start + 12 * 3.6e6));
+    const doCheckIn = async () => {
+      const res = (await checkIn(event, fix)) as CheckinOutcome | undefined;
+      if (res && res.ok) setFresh({ at: res.at, xp: res.xp, badges: res.badges });
+    };
+    return (
+      <HostStory
+        key={event.id}
+        event={r1}
+        extra={
+          showCheckIn ? (
+            <div className="t-adopt -mx-5">
+              <CheckInBlock
+                checkedIn={done.has(event.id)}
+                busy={busy === event.id}
+                closeEnough={closeEnough}
+                at={fresh?.at ?? checkedAt[event.id] ?? null}
+                fresh={fresh}
+                onCheckIn={() => void doCheckIn()}
+              />
+            </div>
+          ) : undefined
+        }
+      />
     );
   }
 
