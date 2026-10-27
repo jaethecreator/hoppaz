@@ -49,8 +49,16 @@ export async function uploadCoverFile(file: File): Promise<string> {
   if (file.size > MAX_PICK_BYTES) throw new Error("That picture is too big. Pick one under 20 MB.");
   const sb = getSupabase();
   if (!sb) throw new Error("No connection. Try again.");
-  const { data } = await sb.auth.getSession();
-  const uid = data.session?.user.id;
+  // getSession() only reads the browser's cached session. The auth mirror can
+  // still show the user as signed in while an expired access token is waiting
+  // to refresh, which makes the following Storage request look like a sign-in
+  // failure. Ask Auth for the current user and refresh once when needed.
+  let { data: userData } = await sb.auth.getUser();
+  if (!userData.user) {
+    const refreshed = await sb.auth.refreshSession();
+    userData = { user: refreshed.data.user };
+  }
+  const uid = userData.user?.id;
   if (!uid) throw new Error("Sign in to add a cover.");
   let blob: Blob | null = null;
   for (const max of WIDTHS) {
