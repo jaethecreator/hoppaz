@@ -1,5 +1,5 @@
 /** Ids the database wants are uuids. The screens may hold a slug (an event's short link) or "hq" (Lagos HQ's address). */
-import { rpc, UUID } from "./core";
+import { client, rpc, UUID } from "./core";
 
 const clean = (s: string) => String(s).trim();
 
@@ -22,9 +22,15 @@ export async function hqRoomId(): Promise<string | null> {
   return hqId;
 }
 
-/** A room's uuid from a uuid (a room's slug is its id) or "hq". Null when it is not a room. */
+/**
+ * A room's uuid from a uuid, "hq", or its address (hoppaz.fun/r/<slug>, ev_room_by_slug in events_r1_room_profile.sql). Until that file is run
+ * a room's slug is its id, so an address that is not a uuid is simply not a room. Null when it is not a room.
+ */
 export async function roomIdOf(idOrSlug: string): Promise<string | null> {
   const k = clean(idOrSlug);
   if (k === "hq") return hqRoomId();
-  return UUID.test(k) ? k.toLowerCase() : null;
+  if (UUID.test(k)) return k.toLowerCase();
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/i.test(k)) return null;
+  const { data, error } = await client().rpc("ev_room_by_slug", { p_slug: k });
+  return error || !data ? null : String(data);
 }

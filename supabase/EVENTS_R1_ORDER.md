@@ -1,6 +1,6 @@
 # Release 1 database drafts: how to run them (for Ola)
 
-DRAFT FOR OLA, NOT RUN ON PRODUCTION. Six new SQL files, each with a test file. They are drafts written from the fake data layer
+DRAFT FOR OLA, NOT RUN ON PRODUCTION. Eleven new SQL files, each with a test file. They are drafts written from the fake data layer
 (`src/lib/events-r1/fake/`), which is the executable spec of the rules. Nothing here edits an older SQL file or an existing function. Every
 name is new (`ev_` for tables and functions, `_ev_` for helpers). You review them and you run them; nobody else touches production.
 
@@ -31,6 +31,7 @@ Then the new files, in this order, each one once (they are safe to run again):
 | 6 | `events_r1_rooms.sql` | `crews`, `crew_members`, `crew_rooms`, `crew_announcement_seen`, `crew_announcement_seen()` | files 1, 2 and 4 |
 | 9 | `events_r1_covers.sql` | `crew_rooms.sql` (the public `crew-images` bucket), `chat_accounts.sql` (`has_account()`) | nothing, but run it after file 1: a cover link is saved through `ev_create_event` / `ev_update_event` (see 2d) |
 | 10 | `events_r1_looks.sql` | `events`, `crews`, `crew_members`, `auth.users` (from `schema.sql`), `chat_accounts.sql` (`has_account()`), `crew_stage_voice.sql` (`crew_members.role` may be `admin`; the file checks owner and admin) | file 1 (`_ev_manage`, `_ev_staff`, `_ev_can_open`). Event and room looks: pack, Day or Night, tint. Until it runs, pages read the cover and creating never fails. |
+| 11 | `events_r1_room_profile.sql` | `crews` (`logo_url`, `visibility`, `invite_code`), `crew_members`, `profiles`, the public `crew-images` bucket (`crew_rooms.sql`), `crew_stage_voice.sql` (the role check it widens again), `has_account()`, `create_crew` | files 1 (`_ev_open`, `_ev_staff`, `ev_settings`, `events.room_id`), 2 (`ev_registrations`) and 6 (`_ev_room_json`, `ev_hq`). Room profile, join mode and requests, the Host role, "went but haven't joined". See 2f. |
 
 Files 1 and 2 leave small stubs for functions that later files fill in (the going count, the waitlist fill, the ticket issue and void,
 the HQ test). A stub is written only when the real function is missing, so running a file again never puts a stub back over the real one.
@@ -101,6 +102,20 @@ Only the service role and the SQL editor can run it. Separately, an event with n
 
 Each row points at its owner with a real foreign key (`event_id` to `events`, `crew_id` to `crews`, exactly one of the two, matching the kind), both `on delete cascade`: delete the event or the crew and its look goes with it. Deleting a person keeps the look and clears `updated_by`. If you ran the first local draft of this file (one `owner_id` column, no foreign keys), run `drop table public.ev_looks;` once before this one. Test: `tests/events_r1_looks_test.sql`.
 
+## 2f. Room profile, who can join, Host role, "went but haven't joined" (file 11)
+
+`events_r1_room_profile.sql` (test: `tests/events_r1_room_profile_test.sql`). Written from the fake layer (`fake/rooms.ts`), which is the spec. **Nothing in it has been run, not even locally.** What it adds, all new names:
+
+- **Tables** (closed like the other `ev_` tables): `ev_room_profiles` (about up to 600, links, slug, join mode; one row per room, a room with none reads as no about, its id as the slug, join mode from `crews.visibility`), `ev_room_requests` (ask mode), `ev_room_notices` (a quiet "you are in" for an approved person; the app reads it, there is no push; Pops belong to an event and announcements go to the whole room, so neither can address one person).
+- **Profile:** `ev_create_room`, `ev_update_room(room, patch)` (owner, admin or staff), `ev_slug_available`, `ev_room_by_slug`, `ev_room_profile(room, invite)` (opens ask rooms to visitors, invite rooms only with the code), `ev_discover_rooms` (open and ask; `ev_rooms_for_me` only lists `visibility = 'open'`, which would hide ask rooms). The logo is a link kept on `crews.logo_url`, uploaded to the existing public `crew-images` bucket under `room-logos/<user id>/<file>`; the file adds three storage policies (`events_r1_logo_*`) because the cover policies only match `event-covers/`.
+- **Join mode:** `ev_join_room` (open joins, ask files a request, invite needs the code), `ev_room_requests`, `ev_decide_room_request`, `ev_room_invite_code`, `ev_my_room_notices`, `ev_mark_room_notices_seen`. `crews.visibility` is kept in step: open is `open`, ask and invite are `private`. An old private room with no profile reads as invite only (that is what it always was).
+- **Host role:** `crew_members.role` may be `host`: the role check is dropped and re-added in this file with a comment (it is the one edit to an older table; if `crew_stage_voice.sql` is ever re-run, run this file again after it). `ev_room_members`, `ev_set_room_role` (owner sets admin, host or member; an admin sets host or member), `ev_post_events_as_room`.
+- **Went but haven't joined:** `ev_room_guests_not_joined(room)` answers `{ count, guests[first 50] }` for an owner, admin, host or staff.
+
+**Two things in the header of the file need your decision.** (1) A host can post events as the room but cannot yet run the door of a room event they did not make: that needs one line added to `_ev_manage` in `events_r1_events.sql` (the line is in the header; I did not edit the older function). (2) `join_crew` with an invite code still joins any room, so in an ask room the code is a key: do not share it.
+
+Until the file is run the real layer degrades quietly (`real/roomProfile.ts`): a room is made with `create_crew` (name only, `ask` and `invite` become private), joining uses `join_crew`, guests not joined answers 0, requests and notices answer empty, and the profile fields read as empty.
+
 ## 3. The cron line (Pops)
 
 `ev_dispatch_due_pops()` makes the automatic Pops (day before, 1 hour before, doors open) when they are due and sends the scheduled ones. It
@@ -132,7 +147,8 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
 | rooms.list / get / eventChat | `ev_rooms_for_me` / `ev_room` / `ev_event_chat` |
 | rooms.setThreeD / listForStaff | `ev_set_room_3d` (owner or staff, answers `ok` or a reason) / `ev_admin_rooms` (staff, null for anyone else) |
 | rooms.announcements / markRead | `ev_room_announcements` / `ev_room_mark_read` |
-| rooms.create / join / postAnnouncement | the existing `create_crew` / `join_crew` / `crew_announce` (untouched) |
+| rooms.create / join / postAnnouncement | `ev_create_room` / `ev_join_room` (file 11; until it runs, the existing `create_crew` / `join_crew`) and the existing `crew_announce` (untouched) |
+| rooms.update / slugAvailable / get / requests / decideRequest / inviteCode / members / setRole / guestsNotJoined / notices / markNoticesSeen | `ev_update_room` / `ev_slug_available` / `ev_room_profile` / `ev_room_requests` / `ev_decide_room_request` / `ev_room_invite_code` / `ev_room_members` / `ev_set_room_role` / `ev_room_guests_not_joined` / `ev_my_room_notices`, `ev_mark_room_notices_seen` (all file 11) |
 | door.scan / confirm / search / checkInById / counts | `ev_scan` (mode standard, express, confirm) / `ev_scan` / `ev_door_search` / `ev_checkin_manual` / `ev_door_counts` |
 | (new, for the offline scan) | `ev_valid_tickets` |
 | reports.report | `ev_report_event` |

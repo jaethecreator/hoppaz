@@ -5,7 +5,7 @@
  */
 import { haversineKm, LAGOS_CENTER } from "../../geo";
 import type {
-  EventChat, HostRef, Pop, R1Event, RegQuestion, Registration, Report, RoomAnnouncement, RoomMessage, RoomSummary, Ticket, TicketType,
+  EventChat, HostRef, Pop, R1Event, RegQuestion, Registration, Report, RoomAnnouncement, RoomLinks, RoomMessage, RoomRole, RoomSummary, Ticket, TicketType,
 } from "../types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -168,9 +168,13 @@ export function mapAnnouncement(j: J): RoomAnnouncement {
   };
 }
 
-/** `extra` holds what the database cannot say from one call: is_owner, can_post, online (and has_3d, three_d_on for an older answer). */
-export function mapRoom(j: J, extra: Partial<Pick<RoomSummary, "is_owner" | "can_post" | "has_3d" | "three_d_on" | "online">> = {}): RoomSummary {
+/** `extra` holds what the database cannot say from one call: is_owner, can_post, my_role, online (and has_3d, three_d_on for an older answer). */
+export function mapRoom(
+  j: J,
+  extra: Partial<Pick<RoomSummary, "is_owner" | "can_post" | "has_3d" | "three_d_on" | "online" | "my_role">> = {}
+): RoomSummary {
   const kind = j.kind === "hq" || j.kind === "brand" ? j.kind : "crew";
+  const role = j.my_role === "owner" || j.my_role === "admin" || j.my_role === "host" || j.my_role === "member" ? (j.my_role as RoomRole) : (extra.my_role ?? null);
   return {
     id: String(j.id),
     slug: String(j.slug ?? j.id),
@@ -190,7 +194,25 @@ export function mapRoom(j: J, extra: Partial<Pick<RoomSummary, "is_owner" | "can
     has_3d: typeof j.has_3d === "boolean" ? j.has_3d : (extra.has_3d ?? true),
     three_d_on: typeof j.three_d_on === "boolean" ? j.three_d_on : (extra.three_d_on ?? true),
     online: extra.online ?? 0,
+    // The profile fields come from ev_room_profile (supabase/events_r1_room_profile.sql). The older readers do not have them: a room
+    // then reads as open with no about and no links, which is how every room made before that file looks.
+    about: typeof j.about === "string" ? j.about : "",
+    links: mapLinks(j.links),
+    join_mode: j.join_mode === "ask" || j.join_mode === "invite" ? j.join_mode : "open",
+    my_role: role,
+    request: j.request === "pending" || j.request === "declined" ? j.request : "none",
+    pending_requests: num(j.pending_requests),
   };
+}
+
+export function mapLinks(v: unknown): RoomLinks {
+  const out: RoomLinks = {};
+  if (!v || typeof v !== "object") return out;
+  for (const k of ["instagram", "x", "website", "whatsapp"] as const) {
+    const s = (v as Record<string, unknown>)[k];
+    if (typeof s === "string" && s) out[k] = s;
+  }
+  return out;
 }
 
 export function mapChat(j: J): EventChat {

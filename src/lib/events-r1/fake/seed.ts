@@ -6,7 +6,7 @@
  * something on this week. Ids are stable (seedId), which is how the saved user layer finds its way back to a record.
  * The fake clock offset only moves "now"; it does not move the seed.
  */
-import type { EventKind, LinkType, Pop, RegStatus, Registration, Report, RoomAnnouncement, Visibility } from "../types";
+import type { EventKind, JoinMode, LinkType, Pop, RegStatus, Registration, Report, RoomAnnouncement, Visibility } from "../types";
 import type { Vibe } from "../../brand";
 import { AREAS, LAGOS_CENTER } from "../../geo";
 import type { EventRec, FakeState, RoomRec, TicketRec, UserRec } from "./store";
@@ -34,6 +34,11 @@ const U = {
   roof: seedId("user:rooftop-sessions"),
   hq: seedId("user:hoppaz-hq"),
   staff: seedId("user:staff"),
+  // People for the rooms: two asking to join Lagos Run Club, a host and an admin in Kredete's room.
+  chidi: seedId("user:chidi-okafor"),
+  ngozi: seedId("user:ngozi-adeyemi"),
+  tunde: seedId("user:tunde-balogun"),
+  bisi: seedId("user:bisi-ogunleye"),
 };
 
 const R = {
@@ -249,7 +254,7 @@ const MESSAGES: MsgSeed[] = [
 export function buildSeed(now: number): FakeState {
   const st: FakeState = {
     users: {}, events: {}, regs: {}, tickets: {}, pops: {}, announcements: {}, messages: {}, reports: {}, rooms: {},
-    orders: {}, payouts: {}, regSettings: {}, memberships: {}, interest: {}, reads: {},
+    orders: {}, payouts: {}, regSettings: {}, memberships: {}, roles: {}, requests: {}, notices: {}, interest: {}, reads: {},
     viewerId: null, pendingEmail: null, offset: 0, key: null,
   };
   const iso = (ms: number) => new Date(ms).toISOString();
@@ -263,6 +268,10 @@ export function buildSeed(now: number): FakeState {
     { id: U.roof, name: "Rooftop Sessions", email: "crew@rooftopsessions.example.com" },
     { id: U.hq, name: "Lagos HQ", email: "hq@hoppaz.example.com" },
     { id: U.staff, name: "Hoppaz Staff", email: "staff@hoppaz.example.com", staff: true },
+    { id: U.chidi, name: "Chidi Okafor", email: "chidi.okafor@example.com" },
+    { id: U.ngozi, name: "Ngozi Adeyemi", email: "ngozi.adeyemi@example.com" },
+    { id: U.tunde, name: "Tunde Balogun", email: "tunde.balogun@example.com" },
+    { id: U.bisi, name: "Bisi Ogunleye", email: "bisi.ogunleye@example.com" },
   ];
   for (const u of users) st.users[u.id] = u;
 
@@ -291,6 +300,24 @@ export function buildSeed(now: number): FakeState {
   }
   st.memberships[`${U.ada}:${R.p360}`] = true;
   st.memberships[`${U.ada}:${R.lrc}`] = true;
+
+  /* Who can join: most rooms are open, some ask, one is invite only (hidden from Discover). */
+  const modes: Record<string, JoinMode> = {
+    [R.lrc]: "ask", [seedId("room:lagos-film-club")]: "ask", [seedId("room:amapiano-fridays")]: "invite",
+  };
+  for (const [id, m] of Object.entries(modes)) st.rooms[id].join_mode = m;
+  st.rooms[R.kredete].links = { instagram: "https://instagram.com/kredete", whatsapp: "https://whatsapp.com/channel/kredete-demo" };
+  /* Kredete (open): Bisi is an admin and Tunde a host. Lagos Run Club (ask): Chidi and Ngozi wait to be let in. Ada asked Lagos Film Club (ask, no owner: staff answer). */
+  for (const id of [U.bisi, U.tunde]) st.memberships[`${id}:${R.kredete}`] = true;
+  st.roles[`${U.bisi}:${R.kredete}`] = "admin";
+  st.roles[`${U.tunde}:${R.kredete}`] = "host";
+  const ask = (key: string, user: string, name: string, room: string, hoursAgo: number) => {
+    const id = seedId(`request:${key}`);
+    st.requests[id] = { id, room_id: room, user_id: user, name, created_at: iso(now - hoursAgo * HOUR), status: "pending" };
+  };
+  ask("chidi-lrc", U.chidi, "Chidi Okafor", R.lrc, 30);
+  ask("ngozi-lrc", U.ngozi, "Ngozi Adeyemi", R.lrc, 5);
+  ask("ada-film", U.ada, "Ada Obi", seedId("room:lagos-film-club"), 20);
 
   /* Events and their crowds. */
   const eventKey: Record<string, EventRec> = {};

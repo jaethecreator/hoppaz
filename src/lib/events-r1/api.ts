@@ -7,7 +7,8 @@ import type { LooksApi } from "./looks";
 import type { PayApi } from "./pay";
 import type {
   AuthUser, EventChat, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
-  Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomMessage, RoomSummary, ScanResult, Ticket, ViewerState,
+  JoinOutcome, JoinRequest, Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomGuests, RoomMember, RoomMessage, RoomNotice,
+  RoomPatch, RoomRole, RoomSummary, ScanResult, Ticket, ViewerState,
 } from "./types";
 
 export type Unsub = () => void;
@@ -89,11 +90,47 @@ export interface PopsApi {
 export interface RoomsApi {
   /** Rooms tab: Lagos HQ first, then the viewer's rooms, then discoverable rooms. */
   list(): Promise<{ hq: RoomSummary; mine: RoomSummary[]; discover: RoomSummary[]; eventChats: EventChat[] }>;
-  get(idOrSlug: string): Promise<RoomSummary | null>;
+  /** By id or slug. An invite only room opens for members, staff and a visitor holding its invite code (opts.invite); else null. */
+  get(idOrSlug: string, opts?: { invite?: string }): Promise<RoomSummary | null>;
   /** The rooms the viewer owns (the create page offers "Add to <room>" from this). Empty when signed out. */
   mine(): Promise<RoomSummary[]>;
+  /**
+   * Make a room. The signed-in person owns it. Throws plain lines: "Give your room a name", "That address is taken",
+   * "Use 3 to 40 letters, numbers and dashes". The slug is unique and, left out, built from the name (a taken one gets -2, -3).
+   */
   create(draft: RoomDraft): Promise<RoomSummary>;
-  join(roomId: string): Promise<void>;
+  /** Owner or admin: change the profile (name, about, logo, links, address, who can join). Staff too. Anyone else: "Not allowed". */
+  update(roomId: string, patch: RoomPatch): Promise<RoomSummary>;
+  /** Is hoppaz.fun/r/<slug> free? exceptRoomId is the room being edited (its own address counts as free). A bad shape is false. */
+  slugAvailable(slug: string, exceptRoomId?: string): Promise<boolean>;
+  /**
+   * Join by the room's join mode. open: in at once ("joined"). ask: leaves a request ("requested"; asking twice is the same request).
+   * invite: needs the room's invite code (opts.invite), else "This room is invite only". A valid invite code gets into an ask room too.
+   * Someone already in answers "already". Needs a signed in viewer ("Sign in first").
+   */
+  join(roomId: string, opts?: { invite?: string }): Promise<JoinOutcome>;
+  /** Waiting requests, oldest first. Owner, admin or staff; anyone else: "Not allowed". */
+  requests(roomId: string): Promise<JoinRequest[]>;
+  /** Approve (the person becomes a member and gets a notice) or decline (quietly: no notice). Owner, admin or staff. */
+  decideRequest(requestId: string, approve: boolean): Promise<void>;
+  /** The invite code of a room, for its link (hoppaz.fun/r/<slug>?invite=<code>). Owner, admin or staff; null for anyone else. */
+  inviteCode(roomId: string): Promise<string | null>;
+  /** People in the room. Members of the room only (owner, admins and hosts first). */
+  members(roomId: string): Promise<RoomMember[]>;
+  /**
+   * Owner: set a member's role to admin, host or member. Admin: host or member only. Nobody changes the owner. The person must be in the room.
+   * Host = creates events as the room and runs their door; admin = everything except payouts and deleting the room.
+   */
+  setRole(roomId: string, userId: string, role: Exclude<RoomRole, "owner">): Promise<void>;
+  /**
+   * "Went but haven't joined": people with a registration (going or checked in) for any of the room's events who are not members,
+   * with the full count. Owner, admin, host or staff; anyone else: "Not allowed".
+   */
+  guestsNotJoined(roomId: string): Promise<RoomGuests>;
+  /** Notices for the viewer that they have not seen (a join request that was approved). */
+  notices(): Promise<RoomNotice[]>;
+  /** The viewer has seen these notices. */
+  markNoticesSeen(ids: string[]): Promise<void>;
   /**
    * Switch the walkable 3D room on or off. The room's owner (RoomSummary.is_owner) or staff only: anyone else gets "Not allowed",
    * a viewer who is not signed in "Sign in first". Off = chat only and "Enter room" goes away (RoomSummary.three_d_on).

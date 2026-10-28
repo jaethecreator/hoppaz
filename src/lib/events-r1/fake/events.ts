@@ -9,7 +9,7 @@ import { autoPopsFor, defaultMessages, defaultQuestions } from "./defaults";
 import { canSell } from "./payouts";
 import { retimeAutoPops } from "./pops";
 import {
-  assertManage, canList, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, freeTypes, hostRoom,
+  assertManage, canList, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, freeTypes, roomToPostIn,
   isGoing, isHostOf, regOf, regsOf, requireViewer, statusOf, typeFull, typesOf, typeOfReg,
 } from "./rules";
 import { emit, now, S, subscribe, viewer } from "./store";
@@ -168,7 +168,7 @@ function checkRateLimit(host: UserRec): void {
 
 function makeEvent(host: UserRec, draft: EventDraft, copyTypes?: TicketTypeRec[]): EventRec {
   checkRateLimit(host);
-  const room = draft.add_to_room === false ? null : hostRoom(host.id);
+  const room = draft.add_to_room === false ? null : roomToPostIn(host.id);
   const f = normalize(copyTypes ? { ...draft, tickets: undefined } : draft, room?.id ?? null, host.id);
   // Clone: the same types (new ids), prices and all, whatever the paid flag says; nothing new is being offered.
   if (copyTypes) {
@@ -316,7 +316,7 @@ export const events: EventsApi = {
     // Add to the host's room, or take it out. Community events live in the room, so they stay in it.
     let roomId = e.room_id;
     if (patch.add_to_room !== undefined) {
-      roomId = patch.add_to_room ? (hostRoom(e.host_id)?.id ?? null) : null;
+      roomId = patch.add_to_room ? (roomToPostIn(e.host_id)?.id ?? null) : null;
       if (!roomId && e.visibility === "community") throw new Error("Community events need a room");
     }
     Object.assign(e, normalize(merged, roomId, e.host_id, { id: e.id, types: typesOf(e) }));
