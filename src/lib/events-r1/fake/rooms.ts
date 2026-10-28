@@ -186,7 +186,7 @@ export const rooms: RoomsApi = {
       Object.values(S().requests)
         .filter((q) => q.room_id === r.id && q.status === "pending")
         .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
-        .map(({ status: _s, ...q }): JoinRequest => q)
+        .map((q): JoinRequest => ({ id: q.id, room_id: q.room_id, user_id: q.user_id, name: q.name, created_at: q.created_at }))
     );
   },
 
@@ -265,7 +265,7 @@ export const rooms: RoomsApi = {
       Object.values(S().notices)
         .filter((n) => n.user_id === v.id && !n.seen)
         .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
-        .map(({ user_id: _u, seen: _s, ...n }) => n)
+        .map((n) => ({ id: n.id, room_id: n.room_id, room_name: n.room_name, room_slug: n.room_slug, kind: n.kind, created_at: n.created_at }))
     );
   },
 
