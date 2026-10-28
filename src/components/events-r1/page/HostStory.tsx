@@ -62,7 +62,7 @@ function whenWords(e: R1Event) {
 }
 
 /** A cover for an event that has none: one of the Hoppaz templates, the same one every time for that event. */
-function fallbackCover(id: string): string {
+export function fallbackCover(id: string): string {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return COVERS[h % COVERS.length].src;

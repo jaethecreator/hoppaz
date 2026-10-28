@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { copyText, eventUrl, shareOrCopy } from "@/components/events-r1/page/share";
@@ -30,8 +31,8 @@ const MATCH: Record<Filter, (s: RegStatus) => boolean> = {
   checked_in: (s) => s === "checked_in",
 };
 
-/** Audience: who is coming, and letting people in or out. Updates live with the data layer. */
-export default function AudienceTab({ event, regs, loading }: { event: R1Event; regs: Registration[] | null; loading: boolean }) {
+/** Guests (the old Audience): who is coming, letting people in or out, checking them in. Updates live with the data layer. */
+export default function GuestsTab({ event, regs, loading }: { event: R1Event; regs: Registration[] | null; loading: boolean }) {
   const api = useR1Api();
   const now = useR1Now();
   const [filter, setFilter] = useState<Filter>("all");
@@ -60,12 +61,15 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
     return (regs ?? []).filter((r) => MATCH[filter](r.status) && (!needle || r.name.toLowerCase().includes(needle) || r.email.toLowerCase().includes(needle)));
   }, [regs, filter, q]);
 
-  const act = async (r: Registration, what: "approve" | "decline" | "promote") => {
+  const act = async (r: Registration, what: "approve" | "decline" | "promote" | "check_in") => {
     if (!api || busy) return;
     setBusy(r.id);
     setFail(null);
     try {
-      await api.registrations[what](r.id);
+      if (what === "check_in") {
+        const res = await api.door.checkInById(event.id, r.id);
+        if (!res.ok) throw new Error(res.kind === "already_used" ? "Already checked in" : "Could not check in");
+      } else await api.registrations[what](r.id);
     } catch (e) {
       setFail({ id: r.id, text: errWord(e) });
     } finally {
@@ -117,13 +121,15 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
 
   return (
     <div className="flex flex-col gap-4">
-      <div className={clsx(CARD, "grid grid-cols-3 gap-2")} aria-label="Counts">
-        <Count n={c.going} label="Going" />
-        <Count n={c.pending} label="Pending" />
-        <Count n={c.checkedIn} label="Checked in" />
+      <div className="flex flex-wrap items-center gap-2">
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or email" aria-label="Search by name or email" autoComplete="off" className="min-w-0 flex-1 basis-48" />
+        <Link href={`/host/${encodeURIComponent(event.id)}/door`} className="lip flex-none !min-h-[44px] !px-4 !py-2.5">
+          Door scanner
+        </Link>
+        <button type="button" onClick={() => void download()} className="lip-ghost flex-none !min-h-[44px] !px-4">
+          Export
+        </button>
       </div>
-
-      <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or email" aria-label="Search name or email" autoComplete="off" />
 
       <div role="radiogroup" aria-label="Filter" className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {FILTERS.map((f) => (
@@ -135,7 +141,7 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
             onClick={() => setFilter(f.id)}
             className="chip min-h-[40px] flex-none px-4 font-body text-[14px] normal-case tracking-normal"
           >
-            {f.label}
+            {f.label} <span className="ml-1 opacity-60">{f.id === "all" ? (regs ?? []).length : f.id === "going" ? c.going : f.id === "pending" ? c.pending : f.id === "waitlist" ? c.waitlist : c.checkedIn}</span>
           </button>
         ))}
       </div>
@@ -145,15 +151,18 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
       ) : rows.length === 0 ? (
         <p className="hint">{(regs ?? []).length === 0 ? "No one yet. Share your link." : "No one here."}</p>
       ) : (
-        <ul className="divide-y divide-line rounded-hz border border-line bg-ink-2">
+        <ul className="t-card divide-y divide-line">
           {rows.map((r) => {
             const t = typeOf(r);
             const approve = canApprove(r);
             const paid = paidBy.get(r.user_id);
             return (
-              <li key={r.id} className="px-4 py-3">
-                <button type="button" onClick={() => setOpenId(r.id)} className="flex min-h-[44px] w-full items-start justify-between gap-3 text-left">
-                  <span className="min-w-0">
+              <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+                <button type="button" onClick={() => setOpenId(r.id)} className="flex min-h-[44px] min-w-[200px] flex-1 items-center gap-3 text-left">
+                  <span className="grid h-10 w-10 flex-none place-items-center rounded-full bg-t-soft font-body text-[13px] font-extrabold text-t-accent" aria-hidden>
+                    {r.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?"}
+                  </span>
+                  <span className="min-w-0 flex-1">
                     <span className="block truncate font-body text-[16px] text-cream">{r.name}</span>
                     <span className="block font-body text-[13px] text-dim">
                       {[ticketLine(r, t?.price_naira ?? 0, paid), metaWord(r, now)].filter(Boolean).join(" · ")}
@@ -161,8 +170,8 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
                   </span>
                   <Pill tone={STATUS_TONE[r.status]}>{STATUS_WORD[r.status]}</Pill>
                 </button>
-                {(approve || r.status === "waitlisted") && (
-                  <div className="mt-2 flex justify-end gap-2">
+                {(approve || r.status === "waitlisted" || r.status === "going") && (
+                  <div className="ml-auto flex justify-end gap-2">
                     {approve ? (
                       <>
                         {!paid?.length && (
@@ -174,6 +183,10 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
                           Approve
                         </button>
                       </>
+                    ) : r.status === "going" ? (
+                      <button type="button" disabled={busy === r.id} onClick={() => void act(r, "check_in")} className="btn btn-ghost min-h-[40px] px-5 normal-case">
+                        Check in
+                      </button>
                     ) : (
                       <button type="button" disabled={busy === r.id} onClick={() => void act(r, "promote")} className="btn min-h-[40px] px-5 normal-case">
                         Promote
@@ -182,14 +195,14 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
                   </div>
                 )}
                 {paid && paid.length > 0 && (
-                  <div className="mt-2 flex flex-col items-end gap-2">
+                  <div className="flex basis-full flex-col items-end gap-2">
                     {paid.map((o) => (
                       <RefundControl key={o.id} order={o} />
                     ))}
                   </div>
                 )}
                 {fail?.id === r.id && (
-                  <div className="mt-2 text-right">
+                  <div className="basis-full text-right">
                     <ErrorLine>{fail.text}</ErrorLine>
                   </div>
                 )}
@@ -200,9 +213,6 @@ export default function AudienceTab({ event, regs, loading }: { event: R1Event; 
       )}
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <button type="button" onClick={() => void download()} className="btn btn-ghost px-4 normal-case">
-          Download list
-        </button>
         <button type="button" onClick={() => void invite()} className="btn btn-ghost px-4 normal-case">
           Invite people
         </button>
@@ -224,15 +234,6 @@ function ticketLine(r: Registration, price: number, paid?: Order[]): string {
   return price > 0 ? `${r.ticket_name} · ₦${price.toLocaleString("en-NG")}` : r.ticket_name;
 }
 
-function Count({ n, label }: { n: number; label: string }) {
-  return (
-    <div>
-      <p className="num text-[28px]">{n}</p>
-      <p className="mt-1 font-body text-[14px] text-dim">{label}</p>
-    </div>
-  );
-}
-
 /** One person, in place of the list: answers, ticket, who invited them, when they checked in. */
 function Person({
   event, reg, now, busy, canApprove, error, ticket, paid, onBack, onAct,
@@ -246,7 +247,7 @@ function Person({
   ticket: string;
   paid?: Order[];
   onBack: () => void;
-  onAct: (w: "approve" | "decline" | "promote") => void;
+  onAct: (w: "approve" | "decline" | "promote" | "check_in") => void;
 }) {
   const { data: settings } = useR1Query((a) => a.events.getRegistrationSettings(event.id), [event.id]);
   const asked = (settings?.questions ?? []).filter((x) => !x.builtin && reg.answers[x.id]);
@@ -262,7 +263,7 @@ function Person({
   return (
     <div className="flex flex-col gap-4">
       <button type="button" onClick={onBack} className="-ml-2 inline-flex min-h-[44px] items-center gap-1 self-start font-body text-[15px] text-dim">
-        <ChevronLeft size={18} aria-hidden /> Audience
+        <ChevronLeft size={18} aria-hidden /> Guests
       </button>
       <div className="flex items-center justify-between gap-3">
         <h2 className="min-w-0 truncate font-display text-[22px] font-black">{reg.name}</h2>

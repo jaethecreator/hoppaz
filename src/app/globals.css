@@ -1746,6 +1746,58 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
     color: var(--t-muted);
     box-shadow: none;
   }
+  /* More of the brand classes the host dashboard's older blocks (Tickets, Guests, Pops, Payouts) still use. */
+  .tint-ui .t-adopt .divide-line > :not([hidden]) ~ :not([hidden]) {
+    border-color: var(--t-line);
+  }
+  .tint-ui .t-adopt .bg-ink-3\/40 {
+    background: var(--t-bg);
+  }
+  .tint-ui .t-adopt .bg-orange {
+    background: var(--t-accent);
+  }
+  .tint-ui .t-adopt .bg-cream {
+    background: var(--t-on);
+  }
+  .tint-ui .t-adopt .bg-line {
+    background: var(--t-line);
+  }
+  .tint-ui .t-adopt .ring-line {
+    --tw-ring-color: var(--t-line);
+  }
+  .tint-ui .t-adopt .border-dim {
+    border-color: var(--t-muted);
+  }
+  .tint-ui .t-adopt .text-brand-ink {
+    color: var(--t-on);
+  }
+  .tint-ui .t-adopt .seclabel {
+    color: var(--t-muted);
+  }
+  .tint-ui .t-adopt .pill {
+    border-color: var(--t-line);
+    color: var(--t-muted);
+  }
+  .tint-ui .t-adopt .pill-keke {
+    border-color: #1fa847;
+    color: #1fa847;
+  }
+  .tint-ui .t-adopt .pill-danfo {
+    border-color: #b87f00;
+    color: #b87f00;
+  }
+  .tint-ui .t-adopt .chip {
+    border-color: var(--t-line);
+    background: var(--t-solid);
+    color: var(--t-text);
+  }
+  .tint-ui .t-adopt .chip[aria-pressed="true"],
+  .tint-ui .t-adopt .chip[aria-checked="true"],
+  .tint-ui .t-adopt .chip-on {
+    background: var(--t-accent);
+    border-color: var(--t-accent);
+    color: var(--t-on);
+  }
   /* An event or room name: the pack's title font (TintShell sets --t-font). */
   .t-title {
     font-family: var(--t-font, var(--font-poppins));

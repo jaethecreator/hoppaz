@@ -91,7 +91,7 @@ function useWide(): boolean {
 
 /* ------------------------------------------------------------------ small parts -- */
 
-function Seg<T extends string>({ value, options, onChange, label }: { value: T; options: Array<{ value: T; label: string }>; onChange: (v: T) => void; label: string }) {
+export function Seg<T extends string>({ value, options, onChange, label }: { value: T; options: Array<{ value: T; label: string }>; onChange: (v: T) => void; label: string }) {
   return (
     <div role="group" aria-label={label} className="inline-flex rounded-hz border border-t-line bg-t-bg p-[3px]">
       {options.map((o) => (
@@ -109,7 +109,7 @@ function Seg<T extends string>({ value, options, onChange, label }: { value: T; 
   );
 }
 
-function Switch({ on, onChange, label, hint }: { on: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
+export function Switch({ on, onChange, label, hint }: { on: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
   return (
     <label className="flex min-h-[44px] cursor-pointer items-center justify-between gap-3 border-t border-t-line py-2 first:border-t-0">
       <span className="min-w-0">
@@ -211,7 +211,7 @@ function CoverBlock({ cover, setCover, phone }: { cover: string | null; setCover
   );
 }
 
-function LookCard({ look, setLook }: { look: Look; setLook: (l: Look) => void }) {
+export function LookCard({ look, setLook }: { look: Look; setLook: (l: Look) => void }) {
   const i = PACKS.findIndex((p) => p.id === look.pack);
   const step = (k: number) => setLook({ ...look, pack: PACKS[(i + k + PACKS.length) % PACKS.length].id });
   return (
