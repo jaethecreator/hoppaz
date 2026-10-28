@@ -12,6 +12,7 @@ import { shareEvent } from "./share";
 import { useMyLook } from "./useMyLook";
 import { EVENTS_R1 } from "@/lib/events-r1/flags";
 import { asR1, realGoing } from "@/components/events-r1/words";
+import { eventChatHref } from "@/components/events-r1/rooms/words";
 
 const HOUR = 3.6e6;
 
@@ -53,6 +54,8 @@ export default function GoingFoot({
   // Release 1: an event with the new fields is joined with Register (in the block above), so no I'M GOING here, and a
   // right swipe is only interest. Its count is the real going count, never the swipe count.
   const r1 = EVENTS_R1 ? asR1(event) : null;
+  // Release 1 events chat in their room (registering is the only way in); old-app events keep the old chat.
+  const chatHref = r1 ? eventChatHref(r1) : `/chat?c=${event.id}`;
 
   // The count comes from the last load (events_near.swipes_in). Your own tap shows at once:
   // adjust it by one until a fresh load brings the real number.
@@ -173,12 +176,14 @@ export default function GoingFoot({
             {linkLabel(event)} <ArrowUpRight size={14} className={clsx("text-orange", compact && "short:hidden")} aria-hidden />
           </a>
         )}
-        <Link href={`/chat?c=${event.id}`} className={clsx(CELL, compact && SHORT_CELL, compact && event.ig_url && "col-span-2")}>
-          <span>
-            <span className={clsx(compact && "short:hidden")}>EVENT </span>CHAT
-          </span>
-          <ArrowRight size={14} className={clsx("text-orange", compact && "short:hidden")} aria-hidden />
-        </Link>
+        {chatHref && (
+          <Link href={chatHref} className={clsx(CELL, compact && SHORT_CELL, compact && event.ig_url && "col-span-2")}>
+            <span>
+              <span className={clsx(compact && "short:hidden")}>EVENT </span>CHAT
+            </span>
+            <ArrowRight size={14} className={clsx("text-orange", compact && "short:hidden")} aria-hidden />
+          </Link>
+        )}
       </div>
     </>
   );
