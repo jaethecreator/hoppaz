@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Calendar, Check, ChevronLeft, Globe, MapPin, Share2 } from "lucide-react";
 import TintShell, { usePictureTint } from "@/components/host/TintShell";
+import { QUESTS_ON } from "@/lib/events-r1/flags";
 import { useR1Api, useR1Auth, useR1Now, useR1Query, useViewerState } from "@/lib/events-r1/hooks";
 import { DEFAULT_LOOK } from "@/lib/events-r1/looks";
 import type { Look } from "@/lib/events-r1/looks";
@@ -18,7 +19,7 @@ import { peekTint, readTint } from "@/lib/tint";
 import { LINK_LABEL } from "../create/helpers";
 import SignInSheet from "../SignInSheet";
 import { isOnline } from "../words";
-import { downloadIcs } from "./calendar";
+import { downloadIcs, googleCalendarUrl } from "./calendar";
 import HostStrip from "./HostStrip";
 import { eventUrl, shareOrCopy } from "./share";
 import StatusCard from "./StatusCard";
@@ -162,6 +163,7 @@ function Report({ event }: { event: R1Event }) {
 function Quests({ event }: { event: R1Event }) {
   const { user } = useR1Auth();
   const { quests, claims } = useQuests(user?.id ?? null);
+  if (!QUESTS_ON) return null;
   const mine = quests.filter((q) => q.event_id === event.id);
   if (!mine.length) return null;
   const xp = mine.reduce((a, q) => a + q.xp_reward, 0);
@@ -298,7 +300,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   const placeSub = online ? "The link shows once you're in" : [event.venue_name && event.area && !event.venue_name.includes(event.area) ? event.area : "", "Lagos"].filter(Boolean).join(", ");
 
   const coverEl = (
-    <div className={`overflow-hidden rounded-hz leading-[0] shadow-[0_24px_48px_-26px_rgba(0,0,0,.7)] ${wide ? "lg:mb-[22px]" : ""}`}>
+    <div className={`overflow-hidden rounded-hz leading-[0] order-3 lg:order-none shadow-[0_24px_48px_-26px_rgba(0,0,0,.7)] ${wide ? "lg:mb-[22px]" : ""}`}>
       <img
         src={cover}
         alt={`${event.title} cover`}
@@ -341,14 +343,14 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
         )}
 
         <div
-          className={`mx-auto grid max-w-[1240px] gap-[30px] px-[22px] pb-10 pt-[26px] lg:grid-cols-[118px_minmax(0,1fr)_31%] lg:gap-x-7 lg:gap-y-1.5 lg:px-[30px] lg:pb-9 lg:pt-7 ${
+          className={`mx-auto flex max-w-[1240px] flex-col gap-5 lg:grid px-[22px] pb-10 pt-[26px] lg:grid-cols-[118px_minmax(0,1fr)_31%] lg:gap-x-7 lg:gap-y-1.5 lg:px-[30px] lg:pb-9 lg:pt-7 ${
             wide
-              ? "[grid-template-areas:'date'_'head'_'cover'_'side'_'rest'] lg:grid-rows-[auto_auto_1fr] lg:[grid-template-areas:'date_cover_cover'_'date_head_side'_'date_rest_side']"
-              : "[grid-template-areas:'date'_'head'_'side'_'rest'] lg:grid-rows-[auto_1fr] lg:[grid-template-areas:'date_head_side'_'date_rest_side']"
+              ? "lg:grid-rows-[auto_auto_1fr] lg:[grid-template-areas:'date_cover_cover'_'date_head_side'_'date_rest_side']"
+              : "lg:grid-rows-[auto_1fr] lg:[grid-template-areas:'date_head_side'_'date_rest_side']"
           }`}
         >
           {/* the big date */}
-          <div className="flex items-baseline gap-3 font-display font-extrabold leading-[.86] tracking-[-0.02em] text-t-accent [grid-area:date] lg:sticky lg:top-5 lg:block lg:self-start">
+          <div className="hidden font-display font-extrabold leading-[.86] tracking-[-0.02em] text-t-accent [grid-area:date] lg:sticky lg:top-5 lg:block lg:self-start">
             <span className="block text-[58px] lg:text-[80px]">{w.a.day}</span>
             <span className="block text-[22px] lg:mt-2">{MON[w.a.month - 1]}</span>
             <span className="block font-body text-[13px] font-semibold leading-snug tracking-normal text-t-muted lg:mt-2.5">
@@ -357,11 +359,11 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
           </div>
 
           {/* title and the two rows */}
-          <div className="grid min-w-0 content-start gap-5 [grid-area:head] lg:gap-4">
-            <span className="font-body text-[13px] font-semibold text-t-accent">{event.status === "cancelled" ? "This event is cancelled" : kick}</span>
-            <h1 className="t-title m-0 text-balance text-[30px] font-extrabold leading-[1.06] tracking-[-0.02em] lg:text-[38px] lg:leading-[1.02]">{event.title}</h1>
-            {desc && <p className="m-0 max-w-[56ch] font-body text-[15px] leading-relaxed text-t-muted">{desc}</p>}
-            <div className="grid gap-[18px] lg:gap-3">
+          <div className="contents min-w-0 content-start gap-5 [grid-area:head] lg:grid lg:gap-4">
+            <span className="font-body text-[13px] font-semibold text-t-accent order-1 lg:order-none">{event.status === "cancelled" ? "This event is cancelled" : kick}</span>
+            <h1 className="t-title m-0 text-balance text-[30px] font-extrabold leading-[1.06] tracking-[-0.02em] order-2 lg:order-none lg:text-[38px] lg:leading-[1.02]">{event.title}</h1>
+            {desc && <p className="m-0 max-w-[56ch] font-body text-[15px] leading-relaxed text-t-muted order-5 lg:order-none">{desc}</p>}
+            <div className="grid gap-[18px] order-4 lg:order-none lg:gap-3">
               <div className="grid grid-cols-[44px_1fr] items-start gap-3.5 lg:grid-cols-[40px_1fr_auto] lg:items-center lg:gap-3">
                 <Tile>
                   <Calendar />
@@ -370,9 +372,14 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
                   <b className="block font-body text-[15.5px] leading-snug">{w.dayLine}</b>
                   <span className="block font-body text-[13.5px] text-t-muted">{w.timeLine}</span>
                 </div>
-                <button type="button" onClick={() => downloadIcs(event)} className="col-start-2 justify-self-start whitespace-nowrap font-body text-[13.5px] font-semibold text-t-accent lg:col-start-3">
-                  Add to calendar
-                </button>
+                <div className="col-start-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 justify-self-start lg:col-start-3 lg:justify-self-end">
+                  <a href={googleCalendarUrl(event)} target="_blank" rel="noopener noreferrer" className="whitespace-nowrap font-body text-[13.5px] font-semibold text-t-accent">
+                    Add to calendar
+                  </a>
+                  <button type="button" onClick={() => downloadIcs(event)} className="whitespace-nowrap font-body text-[12.5px] text-t-muted underline underline-offset-4">
+                    or download .ics
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-[44px_1fr] items-start gap-3.5 lg:grid-cols-[40px_1fr_auto] lg:items-center lg:gap-3">
                 <Tile>{online ? <Globe /> : <MapPin />}</Tile>
@@ -389,13 +396,13 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
             </div>
           </div>
 
-          {wide && <div className="min-w-0 [grid-area:cover]">{coverEl}</div>}
+          {wide && <div className="min-w-0 [grid-area:cover] order-3 lg:order-none">{coverEl}</div>}
 
           {/* cover, tickets, hosts */}
-          <div className="grid min-w-0 content-start gap-7 [grid-area:side] lg:gap-[18px]">
+          <div className="contents min-w-0 content-start gap-7 [grid-area:side] lg:grid lg:gap-[18px]">
             {!wide && coverEl}
-            {action}
-            <div>
+            <div className="order-6 lg:order-none mt-2.5 lg:mt-0">{action}</div>
+            <div className="order-7 lg:order-none mt-2.5 lg:mt-0">
               <div className="font-body text-[12px] font-semibold text-t-muted">Hosted by</div>
               <div className="mt-2 grid gap-3.5 lg:gap-2.5">
                 <div className="flex items-center gap-2.5 font-body text-[14.5px] font-semibold leading-tight">
@@ -416,14 +423,14 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
           </div>
 
           {/* the rest */}
-          <div className="grid min-w-0 content-start gap-10 [grid-area:rest] lg:gap-[30px] lg:pt-[26px]">
+          <div className="grid min-w-0 content-start gap-10 [grid-area:rest] order-8 lg:order-none mt-5 lg:mt-0 lg:gap-[30px] lg:pt-[26px]">
             {about && (
               <Sec title="About">
                 <p className="m-0 max-w-[62ch] whitespace-pre-line font-body text-[15.5px] leading-relaxed">{about}</p>
               </Sec>
             )}
             {extra}
-            <Quests event={event} />
+            {QUESTS_ON && <Quests event={event} />}
             <MoreFromHost event={event} />
           </div>
         </div>
