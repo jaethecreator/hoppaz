@@ -32,7 +32,7 @@ export default function SalesTab({ event }: { event: R1Event }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <GetPaidCard returnPath={`/host/${encodeURIComponent(event.id)}?tab=sales`} />
+      <GetPaidCard returnPath={`/host/${encodeURIComponent(event.id)}?tab=payouts`} />
 
       {sales.loading && !s ? (
         <p className="hint">Loading</p>
