@@ -3,11 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { CalendarPlus, Check, Flag, MoreHorizontal, Share2 } from "lucide-react";
+import { Check, Flag, MoreHorizontal, Share2 } from "lucide-react";
 import { useR1Api, useViewerState } from "@/lib/events-r1/hooks";
 import type { R1Event, ReportReason } from "@/lib/events-r1/types";
 import SignInSheet from "../SignInSheet";
-import { downloadIcs } from "./calendar";
 import { eventUrl, shareOrCopy } from "./share";
 import { useFreshEvent } from "./useFreshEvent";
 
@@ -158,11 +157,6 @@ export default function EventTabs({ event: given }: { event: R1Event }) {
                 <button type="button" onClick={() => void share()} className={ITEM}>
                   <Share2 size={16} className="text-orange" aria-hidden /> Share
                   {said && <span className="ml-auto text-[13px] text-dim">{said}</span>}
-                </button>
-              </li>
-              <li>
-                <button type="button" onClick={() => downloadIcs(event)} className={ITEM}>
-                  <CalendarPlus size={16} className="text-orange" aria-hidden /> Add to calendar
                 </button>
               </li>
               {!viewer?.isHost && (

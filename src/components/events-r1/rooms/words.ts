@@ -4,6 +4,10 @@
  */
 import type { EventChat, RoomSummary } from "@/lib/events-r1/types";
 
+/** Where an R1 event's chat lives: its room's event chat. Null when the event has no room (then there is no chat to open). */
+export const eventChatHref = (e: { id: string; host: { roomId: string | null } }): string | null =>
+  e.host.roomId ? `/rooms/${encodeURIComponent(e.host.roomId)}/chat/${encodeURIComponent(e.id)}` : null;
+
 const HOUR = 3.6e6;
 const DAY = 24 * HOUR;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

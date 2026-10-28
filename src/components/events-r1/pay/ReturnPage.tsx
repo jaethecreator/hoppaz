@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CalendarPlus, Check, MessageCircle } from "lucide-react";
+import { Check, MessageCircle } from "lucide-react";
 import PageHeader from "@/components/app/PageHeader";
 import SignInSheet from "@/components/events-r1/SignInSheet";
-import { downloadIcs } from "@/components/events-r1/page/calendar";
 import { useR1Api, useR1Auth, useR1Event } from "@/lib/events-r1/hooks";
 import type { Order } from "@/lib/events-r1/pay";
+import { eventChatHref } from "../rooms/words";
 import TicketCards from "./TicketCards";
 import { usePaidOn } from "./usePay";
 import { naira, ticketsWord } from "./words";
@@ -156,6 +156,7 @@ function Body({ order, slow, onRefresh }: { order: Order | null; slow: boolean; 
   }
 
   if (state === "paid" && order) {
+    const chatHref = event ? eventChatHref(event) : null;
     return (
       <div className="flex flex-col gap-4" aria-live="polite">
         <div className="flex items-start gap-3">
@@ -171,14 +172,11 @@ function Body({ order, slow, onRefresh }: { order: Order | null; slow: boolean; 
         </div>
         <TicketCards eventId={order.event_id} regKey={order.id} />
         <div className="grid grid-cols-1 gap-2">
-          {event && (
-            <button type="button" onClick={() => downloadIcs(event)} className="btn btn-ghost w-full justify-start gap-2.5 normal-case">
-              <CalendarPlus size={16} className="flex-none text-orange" aria-hidden /> Add to calendar
-            </button>
+          {chatHref && (
+            <Link href={chatHref} className="btn btn-ghost w-full justify-start gap-2.5 normal-case">
+              <MessageCircle size={16} className="flex-none text-orange" aria-hidden /> Open event chat
+            </Link>
           )}
-          <Link href={`/chat?c=${encodeURIComponent(order.event_id)}`} className="btn btn-ghost w-full justify-start gap-2.5 normal-case">
-            <MessageCircle size={16} className="flex-none text-orange" aria-hidden /> Open event chat
-          </Link>
           <Link href={back()} className="min-h-[44px] self-start py-3 font-body text-[14px] text-dim underline underline-offset-4">
             View event
           </Link>

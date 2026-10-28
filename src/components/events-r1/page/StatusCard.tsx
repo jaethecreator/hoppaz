@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CalendarPlus, Check, Clock, MessageCircle, Send } from "lucide-react";
+import { Check, Clock, MessageCircle, Send } from "lucide-react";
 import { useR1Api, useR1Now, useR1Query } from "@/lib/events-r1/hooks";
 import type { R1Event, ViewerState } from "@/lib/events-r1/types";
-import { downloadIcs, googleCalendarUrl } from "./calendar";
 import JoinCall from "./JoinCall";
 import { hasOnline } from "./link";
 import { eventUrl, shareOrCopy } from "./share";
 import { startsIn } from "./time";
+import { eventChatHref } from "../rooms/words";
 import TicketCards from "../pay/TicketCards";
 import TicketQr from "./TicketQr";
 
@@ -17,7 +17,7 @@ const ROW = "btn btn-ghost w-full justify-start gap-2.5 normal-case";
 
 /**
  * Where the Register button turns into once you have done something: You're in (countdown, QR ticket, the call,
- * calendar, invite, chat, cancel), Pending (the host's message), On the waitlist (your place) or Declined.
+ * invite, chat, cancel), Pending (the host's message), On the waitlist (your place) or Declined.
  */
 export default function StatusCard({ event, viewer }: { event: R1Event; viewer: ViewerState }) {
   const reg = viewer.registration;
@@ -45,6 +45,7 @@ export default function StatusCard({ event, viewer }: { event: R1Event; viewer: 
   // A paid ticket is undone by a refund from the host, not by the buyer.
   const paidTicket = going && (event.ticket_types?.find((t) => t.id === reg.ticket_type_id)?.price_naira ?? 0) > 0;
 
+  const chatHref = eventChatHref(event);
   const title = going ? "You're in" : reg.status === "requested" ? "Pending" : reg.status === "waitlisted" ? "On the waitlist" : "Declined";
   const note =
     reg.status === "requested"
@@ -119,21 +120,15 @@ export default function StatusCard({ event, viewer }: { event: R1Event; viewer: 
 
       {going && (
         <div className="mt-4 space-y-2">
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => downloadIcs(event)} className="btn btn-ghost gap-1.5 px-2 normal-case">
-              <CalendarPlus size={16} className="flex-none text-orange" aria-hidden /> Add to calendar
-            </button>
-            <a href={googleCalendarUrl(event)} target="_blank" rel="noreferrer noopener" className="btn btn-ghost px-2 normal-case">
-              Google Calendar
-            </a>
-          </div>
           <button type="button" onClick={() => void doInvite()} className={ROW}>
             <Send size={16} className="text-orange" aria-hidden /> Invite a friend
             {invite && <span className="ml-auto font-body text-[13px] font-normal text-dim">{invite}</span>}
           </button>
-          <Link href={`/chat?c=${encodeURIComponent(event.id)}`} className={ROW}>
-            <MessageCircle size={16} className="text-orange" aria-hidden /> Open event chat
-          </Link>
+          {chatHref && (
+            <Link href={chatHref} className={ROW}>
+              <MessageCircle size={16} className="text-orange" aria-hidden /> Open event chat
+            </Link>
+          )}
         </div>
       )}
 
