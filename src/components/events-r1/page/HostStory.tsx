@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Calendar, Check, ChevronLeft, Globe, MapPin, Share2 } from "lucide-react";
 import TintShell, { usePictureTint } from "@/components/host/TintShell";
+import { QUESTS_ON } from "@/lib/events-r1/flags";
 import { useR1Api, useR1Auth, useR1Now, useR1Query, useViewerState } from "@/lib/events-r1/hooks";
 import { DEFAULT_LOOK } from "@/lib/events-r1/looks";
 import type { Look } from "@/lib/events-r1/looks";
@@ -162,6 +163,7 @@ function Report({ event }: { event: R1Event }) {
 function Quests({ event }: { event: R1Event }) {
   const { user } = useR1Auth();
   const { quests, claims } = useQuests(user?.id ?? null);
+  if (!QUESTS_ON) return null;
   const mine = quests.filter((q) => q.event_id === event.id);
   if (!mine.length) return null;
   const xp = mine.reduce((a, q) => a + q.xp_reward, 0);
@@ -428,7 +430,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
               </Sec>
             )}
             {extra}
-            <Quests event={event} />
+            {QUESTS_ON && <Quests event={event} />}
             <MoreFromHost event={event} />
           </div>
         </div>

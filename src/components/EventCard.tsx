@@ -18,7 +18,7 @@ import { loadDropReceipts, useEventCollectibles } from "@/lib/useCollectibles";
 import { useGameDrops } from "@/lib/game";
 import { themeForEvent } from "@/lib/theme";
 import { clockShort, eventPrice, eventTitle, hasVenue, isEventLead } from "@/lib/geo";
-import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import { EVENTS_R1, QUESTS_ON } from "@/lib/events-r1/flags";
 import EventBlock from "@/components/events-r1/EventBlock";
 import EventTabs from "@/components/events-r1/page/EventTabs";
 import { asR1, isOnline } from "@/components/events-r1/words";
@@ -241,7 +241,7 @@ function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, i
         />
       )}
 
-      <EventQuestList eventId={event.id} userId={userId} checkedIn={checkedIn} hasPhoto={hasPhoto} onAddPhoto={picker.open} uploading={uploading} />
+      {QUESTS_ON && <EventQuestList eventId={event.id} userId={userId} checkedIn={checkedIn} hasPhoto={hasPhoto} onAddPhoto={picker.open} uploading={uploading} />}
 
       <DropRow
         where={title}

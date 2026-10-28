@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { QUESTS_ON } from "@/lib/events-r1/flags";
 import { useR1Api } from "@/lib/events-r1/hooks";
 import type { R1Event } from "@/lib/events-r1/types";
 import { copyText, eventUrl } from "../page/share";
@@ -56,13 +57,13 @@ export default function DoneSheet({ event, roomName, onNewRoom }: { event: R1Eve
               <span>
                 <b className="block font-display text-[15.5px] font-extrabold leading-tight text-t-accent">{roomName ? `Invite your ${roomName} room` : "Give your guests a room"}</b>
                 <small className="mt-0.5 block font-body text-[12.5px] text-t-muted">
-                  {roomName ? "Members get this event, the chat and its quests" : "One link for every future event. Who's in it?"}
+                  {roomName ? (QUESTS_ON ? "Members get this event, the chat and its quests" : "Members get this event and the chat") : "One link for every future event. Who's in it?"}
                 </small>
               </span>
               <span className="rounded-hz bg-t-accent px-3 py-2 font-display text-[13px] font-extrabold text-t-on">{roomName ? (sent ? "Sent" : "Invite") : "Start"}</span>
             </button>
             <span className="pt-2 font-body text-[12.5px] font-bold text-t-muted">Make it shine (all optional)</span>
-            {["Write a description", "Add the lineup or programme", "Set ticket tiers and prices", "Add quests for guests"].map((t) => (
+            {["Write a description", "Add the lineup or programme", "Set ticket tiers and prices", ...(QUESTS_ON ? ["Add quests for guests"] : [])].map((t) => (
               <button key={t} type="button" onClick={() => router.push(`/host/${event.id}?new=1`)} className="flex items-center gap-3 rounded-hz border border-t-line bg-t-bg px-3 py-2.5 text-left font-body text-[14px]">
                 <i className="h-5 w-5 rounded-[5px] border-2 border-t-line" />
                 {t}
