@@ -1764,6 +1764,56 @@ await test("asking to join from You're going tells the host about the ticket", a
   eq(await api.rooms.join("naija-tech-meetup", { forEvent: run.id }), "joined", "an open room joins at once, forEvent or not");
 });
 
+await test("registrations.mine: going, not ended, not cancelled, soonest first, own only", async () => {
+  eq(await api.registrations.mine(), [], "signed out: nothing");
+  as("Ada Obi");
+  const mine = await api.registrations.mine();
+  ok(mine.length > 0, "Ada has tickets");
+  const now = Date.now();
+  for (const m of mine) {
+    eq(m.registration.status, "going", `going only: ${m.event.title}`);
+    eq(m.registration.event_id, m.event.id, "registration and event match");
+    ok(m.event.status !== "cancelled", "no cancelled event");
+    ok((m.event.ends_at ? Date.parse(m.event.ends_at) : Date.parse(m.event.starts_at) + 3 * HOUR) > now, `not ended: ${m.event.title}`);
+  }
+  const starts = mine.map((m) => Date.parse(m.event.starts_at));
+  eq(starts, [...starts].sort((a, b) => a - b), "soonest first");
+  const one = mine[0].event.id;
+  await api.registrations.cancel(one);
+  ok(!(await api.registrations.mine()).some((m) => m.event.id === one), "a cancelled registration leaves the list");
+  as("Chidi Okafor");
+  eq(await api.registrations.mine(), [], "someone else sees only their own");
+});
+
+await test("Me hosting desk: workspaces, request numbers, live dots, tonight, the ME dot", async () => {
+  const { buildDesk, liveNow } = await import("../src/components/events-r1/workspace/desk.ts");
+  const desk = async () => {
+    const [mine, rooms] = await Promise.all([api.events.listMine(), api.rooms.managed()]);
+    const roomEvents: Record<string, Awaited<ReturnType<typeof api.events.listForRoom>>> = {};
+    for (const r of rooms) roomEvents[r.id] = await api.events.listForRoom(r.id);
+    return buildDesk({ mine, rooms, roomEvents, now: Date.now() });
+  };
+  as("Ada Obi");
+  const ada = await desk();
+  eq([ada.hosted, ada.workspaces.length, ada.tonight, ada.needsYou], [false, 0, null, false], "never hosted: the one row, no dot");
+  as("Lagos Run Club");
+  const lrc = await desk();
+  eq(lrc.workspaces.map((w) => [w.name, w.role, w.href.startsWith("/rooms/") || w.href === "/host"]), [["Personal", null, true], ["Lagos Run Club", "Owner", true]], "Personal first, then the room");
+  ok(lrc.workspaces[1].waiting >= 2 && lrc.needsYou, "join requests: a number and the dot");
+  eq(lrc.workspaces[1].href, "/rooms/lagos-run-club/admin", "a room opens its admin");
+  as("Bisi Ogunleye");
+  eq((await desk()).workspaces.map((w) => w.role), [null, "Admin"], "an admin's room says Admin");
+  as("360Playlist");
+  const p = await desk();
+  ok(p.workspaces[1].live && p.needsYou, "an event on now: the live dot and the ME dot");
+  ok(p.tonight && liveNow(p.tonight, Date.now()), "tonight: the event that is on");
+  as("Lagos HQ");
+  const hq = await desk();
+  eq(hq.workspaces.map((w) => w.name), ["Personal"], "Lagos HQ is never a workspace: Personal only");
+  const t = { status: "live" as const, starts_at: new Date(Date.now() - 4 * HOUR).toISOString(), ends_at: null };
+  eq(liveNow(t, Date.now()), false, "3 hours after the start with no end: over");
+});
+
 await test("reset clears user-made changes", async () => {
   const before = fakeDev.allEvents().length;
   await kredeteEvent();
