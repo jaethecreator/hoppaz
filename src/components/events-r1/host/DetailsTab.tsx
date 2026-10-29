@@ -4,7 +4,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ImagePlus } from "lucide-react";
 import { coverFromFile, uploadCoverFile } from "@/components/events-r1/create/cover";
@@ -19,6 +19,7 @@ import type { Look } from "@/lib/events-r1/looks";
 import type { EventDraft, EventKind, LinkType, R1Event, Visibility } from "@/lib/events-r1/types";
 import { COVERS } from "@/lib/host/covers";
 import { primeTint, readTint } from "@/lib/tint";
+import LineupCard from "./LineupCard";
 import { ErrorLine, useFlash } from "./ui";
 import { errWord } from "./words";
 
@@ -133,6 +134,11 @@ export default function DetailsTab({ event, look, cover, onLook }: { event: R1Ev
     }, 800);
     return () => window.clearTimeout(id);
   }, [api, event.id, event.area, event.lat, event.lng, title, start, end, timeBad, kind, place, area, linkType, link, about, visibility, approval, paid, flash]);
+
+  const savedLine = useCallback(() => {
+    setError("");
+    flash("Saved");
+  }, [flash]);
 
   const saveLook = (next: Look) => {
     onLook(next);
@@ -280,6 +286,8 @@ export default function DetailsTab({ event, look, cover, onLook }: { event: R1Ev
       <Card label="Description">
         <textarea value={about} onChange={(e) => setAbout(e.target.value)} rows={5} maxLength={2000} placeholder="What's it about? Lineup, dress code, what to bring." aria-label="Description" />
       </Card>
+
+      <LineupCard eventId={event.id} onSaved={savedLine} onError={setError} />
 
       <Card label="Cover and look" aside={<span className="font-body text-[12.5px] text-t-muted">Dresses your event page and this dashboard</span>}>
         <input ref={file} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => void pick(e.target.files?.[0])} />

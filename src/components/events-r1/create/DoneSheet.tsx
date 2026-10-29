@@ -11,6 +11,8 @@ import { copyText, eventUrl } from "../page/share";
  * After creating (build brief section 11, "The room push"). The room comes first and loudest: a host with a room invites it,
  * a host who posted as themselves is asked "Where do your guests go after the night?". The rest is optional.
  */
+const LINEUP_STEP = "Add the lineup or programme";
+
 export default function DoneSheet({ event, roomName, onNewRoom }: { event: R1Event; roomName: string | null; onNewRoom: (from?: "event") => void }) {
   const router = useRouter();
   const api = useR1Api();
@@ -63,8 +65,8 @@ export default function DoneSheet({ event, roomName, onNewRoom }: { event: R1Eve
               <span className="rounded-hz bg-t-accent px-3 py-2 font-display text-[13px] font-extrabold text-t-on">{roomName ? (sent ? "Sent" : "Invite") : "Start"}</span>
             </button>
             <span className="pt-2 font-body text-[12.5px] font-bold text-t-muted">Make it shine (all optional)</span>
-            {["Write a description", "Add the lineup or programme", "Set ticket tiers and prices", ...(QUESTS_ON ? ["Add quests for guests"] : [])].map((t) => (
-              <button key={t} type="button" onClick={() => router.push(`/host/${event.id}?new=1`)} className="flex items-center gap-3 rounded-hz border border-t-line bg-t-bg px-3 py-2.5 text-left font-body text-[14px]">
+            {["Write a description", LINEUP_STEP, "Set ticket tiers and prices", ...(QUESTS_ON ? ["Add quests for guests"] : [])].map((t) => (
+              <button key={t} type="button" onClick={() => router.push(t === LINEUP_STEP ? `/host/${event.id}?tab=details&new=1#lineup` : `/host/${event.id}?new=1`)} className="flex items-center gap-3 rounded-hz border border-t-line bg-t-bg px-3 py-2.5 text-left font-body text-[14px]">
                 <i className="h-5 w-5 rounded-[5px] border-2 border-t-line" />
                 {t}
                 <em className="ml-auto font-body text-[13px] font-bold not-italic text-t-accent">Add</em>
