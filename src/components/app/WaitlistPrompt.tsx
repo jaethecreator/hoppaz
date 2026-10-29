@@ -68,7 +68,10 @@ export default function WaitlistPrompt() {
   // The card stays up after joining to say so; the account then keeps both away for good.
   if (!open && !guest) return null;
   // The pill keeps out of the way of the save-your-XP banner, which takes the same corner.
-  const pill = onMap && guest && snoozed && !open && (profile?.xp ?? 0) === 0;
+  // It also waits while a first run layer is up (the location sheet, then Paz at the side): they sit in the same low corner
+  // of the map, and the pill used to cover the sheet's last row.
+  const firstRunUp = step === "location" || step === "events" || step === "home" || step === "arrived";
+  const pill = onMap && guest && snoozed && !open && !firstRunUp && (profile?.xp ?? 0) === 0;
   return (
     <>
       {pill && (

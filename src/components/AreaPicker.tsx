@@ -7,7 +7,7 @@ import { AREAS, nearestArea } from "@/lib/geo";
 import { useHoppaz, useToast } from "@/lib/store";
 
 /** How far a Hopper will go. Plain choices, in kilometres: setRadius takes any number. */
-const REACH: Array<{ km: number; name: string; unit: string }> = [
+export const REACH: Array<{ km: number; name: string; unit: string }> = [
   { km: 3, name: "Walkable", unit: "3 km" },
   { km: 8, name: "My side", unit: "8 km" },
   { km: 20, name: "Across the bridge", unit: "20 km" },

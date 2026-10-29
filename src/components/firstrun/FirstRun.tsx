@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { MapPin, X } from "lucide-react";
-import AreaPicker from "@/components/AreaPicker";
 import Mascot from "@/components/Mascot";
 import { clearSnooze, FIRST_RUN_ENABLED, FIRST_RUN_KEY, markLocationAsked, rememberLocationAsk, snoozed, startingStep, useFirstRun } from "@/lib/firstRun";
 import { insideLagos, nearestArea } from "@/lib/geo";
+import { searchPlaces } from "@/lib/geocode/client";
+import { cleanQuery } from "@/lib/geocode/lagos";
+import type { PlaceSuggestion } from "@/lib/geocode/types";
 import { useHotspots } from "@/lib/hotspots/useHotspots";
 import { useTopNear } from "@/lib/nearEvents";
 import { useHoppaz, useToast } from "@/lib/store";
@@ -15,6 +17,8 @@ import { useSession } from "@/lib/useSession";
 import PazSide from "./PazSide";
 
 /** The beat before a layer comes, so the page (and the camera) land first. */
+/** Everyone starts on "My side, 8 km" (the store's own default); the map's filters button changes it later. */
+const DEFAULT_KM = 8;
 const BEAT_MS = { location: 700, events: 1400, home: 300, arrived: 600 } as const;
 /** The map has been looked at and then left still for this long: bring the hotspot in. */
 const STILL_MS = 4_000;
@@ -50,9 +54,11 @@ export default function FirstRun() {
   const { hasAccount, state: session } = useSession();
   const fix = useHoppaz((s) => s.fix);
   const setFix = useHoppaz((s) => s.setFix);
+  const setRadius = useHoppaz((s) => s.setRadius);
   const say = useToast((s) => s.say);
   const topNear = useTopNear((s) => s.list);
-  const [picking, setPicking] = useState(false);
+  /** The plain line under the button when the phone would not share where it is. */
+  const [denied, setDenied] = useState("");
   const [busy, setBusy] = useState(false);
   /** The third layer is under way: the map is moving, the avatar is running, the room is about to open. */
   const [running, setRunning] = useState(false);
@@ -190,13 +196,15 @@ export default function FirstRun() {
 
   /* ----------------------------------------------------------------- 1. the location card -- */
   const locate = useCallback(() => {
-    if (!("geolocation" in navigator)) return setPicking(true);
+    if (!("geolocation" in navigator)) return setDenied("This browser won't share your location. Type your area instead.");
+    setDenied("");
     setBusy(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude: lat, longitude: lng } = pos.coords;
         setBusy(false);
         rememberLocationAsk("yes");
+        setRadius(DEFAULT_KM);
         const near = nearestArea(lat, lng);
         if (insideLagos(lat, lng)) {
           setFix({ lat, lng, source: "gps", area: near.name });
@@ -209,12 +217,23 @@ export default function FirstRun() {
       },
       () => {
         setBusy(false);
-        say("Could not find you. Pick your area instead.");
-        setPicking(true);
+        setDenied("Location is off. Type your area below instead.");
       },
       { enableHighAccuracy: false, timeout: 10_000, maximumAge: 5 * 60_000 }
     );
-  }, [setFix, say]);
+  }, [setFix, setRadius, say]);
+
+  /** A typed place was picked: the same as the location coming in, minus the GPS (it is the area they chose). */
+  const choose = useCallback(
+    (p: PlaceSuggestion) => {
+      const near = nearestArea(p.lat, p.lng);
+      rememberLocationAsk("yes");
+      setRadius(DEFAULT_KM);
+      setFix({ lat: p.lat, lng: p.lng, source: "area", area: near.name });
+      say(`Showing what's on near ${p.name}.`, "ok");
+    },
+    [setFix, setRadius, say]
+  );
 
   const notNow = () => {
     rememberLocationAsk("no");
@@ -281,8 +300,7 @@ export default function FirstRun() {
   };
 
   /* ---------------------------------------------------------------------------- render -- */
-  const picker = picking ? <Picker onClose={() => setPicking(false)} /> : null;
-  if (!layer || !late || (covered && !running)) return picker;
+  if (!layer || !late || (covered && !running)) return null;
 
   if (layer === "location") {
     return (
@@ -291,7 +309,7 @@ export default function FirstRun() {
           role="dialog"
           aria-label="Set your location"
           data-firstrun
-          className="fixed inset-x-0 z-[42] mx-auto w-[min(calc(100vw-24px),440px)] animate-rise rounded-[12px] border border-line bg-ink-2 px-4 pb-3 pt-3.5 shadow-sheet lg:inset-x-auto lg:left-[88px] lg:mx-0 lg:w-[380px]"
+          className="fixed inset-x-0 z-[42] mx-auto w-[min(calc(100vw-24px),440px)] animate-rise rounded-[12px] border border-line bg-ink-2 px-4 pb-4 pt-3.5 shadow-sheet lg:inset-x-auto lg:left-[88px] lg:mx-0 lg:w-[380px]"
           style={{ bottom: BOTTOM }}
         >
           <button type="button" onClick={notNow} aria-label="Close" className="absolute right-1 top-1 grid h-11 w-11 place-items-center">
@@ -306,16 +324,13 @@ export default function FirstRun() {
           <button type="button" onClick={locate} disabled={busy} className="btn mt-3 w-full">
             <MapPin size={18} aria-hidden /> {busy ? "Finding you…" : "Use my location"}
           </button>
-          <div className="mt-1 flex items-center justify-center gap-5">
-            <button type="button" onClick={() => setPicking(true)} className="min-h-[44px] px-1 font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-dim">
-              Pick my area
-            </button>
-            <button type="button" onClick={notNow} className="min-h-[44px] px-1 font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-dim">
-              Not now
-            </button>
-          </div>
+          {denied && (
+            <p role="status" className="mt-2 text-center font-body text-[13px] text-cream">
+              {denied}
+            </p>
+          )}
+          <AreaField onPick={choose} />
         </div>
-        {picker}
       </>
     );
   }
@@ -344,7 +359,6 @@ export default function FirstRun() {
             </span>
           )}
         </PazSide>
-        {picker}
       </>
     );
   }
@@ -399,12 +413,89 @@ export default function FirstRun() {
   );
 }
 
-/** The area sheet, on a layer of its own: the sheet sits at the bottom of whatever it is put in. */
-function Picker({ onClose }: { onClose: () => void }) {
+/** The one field on the location sheet: type an area or an address, pick a suggestion (Photon, through /api/geocode, Lagos only). */
+function AreaField({ onPick }: { onPick: (p: PlaceSuggestion) => void }) {
+  const uid = useId();
+  const list = `${uid}-list`;
+  const [text, setText] = useState("");
+  const [active, setActive] = useState(-1);
+  const [answer, setAnswer] = useState<{ q: string; rows: PlaceSuggestion[]; error: string } | null>(null);
+  const typed = cleanQuery(text);
+
+  useEffect(() => {
+    if (!typed) return;
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => {
+      searchPlaces(typed, ac.signal).then(
+        (rows) => !ac.signal.aborted && setAnswer({ q: typed, rows, error: "" }),
+        (e: unknown) => !ac.signal.aborted && setAnswer({ q: typed, rows: [], error: e instanceof Error ? e.message : "Search is not working right now." })
+      );
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      ac.abort();
+    };
+  }, [typed]);
+
+  const fresh = typed && answer && answer.q === typed ? answer : null;
+  const rows = fresh?.rows ?? [];
+  const line = fresh?.error ? fresh.error : fresh && !rows.length ? `Nothing found for "${typed}". Try a street or a nearby landmark.` : "";
+
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown" && rows.length) {
+      e.preventDefault();
+      setActive((i) => (i + 1) % rows.length);
+    } else if (e.key === "ArrowUp" && rows.length) {
+      e.preventDefault();
+      setActive((i) => (i <= 0 ? rows.length - 1 : i - 1));
+    } else if (e.key === "Enter" && rows.length) {
+      e.preventDefault();
+      onPick(rows[active >= 0 ? active : 0]);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-[60]">
-      <button type="button" aria-label="Close" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-brand-ink/40" />
-      <AreaPicker open onClose={onClose} onPicked={onClose} />
+    <div className="mt-3">
+      <input
+        type="text"
+        role="combobox"
+        aria-label="Your area or address"
+        aria-expanded={rows.length > 0}
+        aria-controls={list}
+        aria-autocomplete="list"
+        aria-activedescendant={active >= 0 ? `${uid}-o${active}` : undefined}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          setActive(-1);
+        }}
+        onKeyDown={onKey}
+        placeholder="Or type your area or address"
+        inputMode="search"
+        enterKeyHint="search"
+        autoComplete="off"
+        autoCorrect="off"
+        maxLength={80}
+        className="min-h-[44px]"
+      />
+      <ul id={list} role="listbox" aria-label="Places found" hidden={!rows.length} className="mt-1.5 max-h-[220px] overflow-y-auto rounded-hz border border-line bg-ink-3">
+        {rows.map((r, i) => (
+          <li
+            key={r.id}
+            id={`${uid}-o${i}`}
+            role="option"
+            aria-selected={i === active}
+            onClick={() => onPick(r)}
+            className="min-h-[48px] cursor-pointer border-b border-line px-3 py-2 last:border-b-0 aria-selected:bg-ink-2"
+          >
+            <span className="block font-body text-[14.5px] text-cream">{r.name}</span>
+            {r.address && <span className="block font-body text-[12.5px] text-dim">{r.address}</span>}
+          </li>
+        ))}
+      </ul>
+      <p role="status" className={line ? "mt-2 font-body text-[13px] text-cream" : "sr-only"}>
+        {line}
+      </p>
     </div>
   );
 }
