@@ -1677,6 +1677,14 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
   .lip-ghost:active {
     box-shadow: none;
   }
+  /* The map pop-up's perforation: a row in the stub's colour with a half circle bitten out of both ends, so the map shows through. */
+  .stub-perf {
+    background: var(--t-solid);
+    -webkit-mask: radial-gradient(circle 11px at 0 50%, #0000 98%, #000), radial-gradient(circle 11px at 100% 50%, #0000 98%, #000);
+    -webkit-mask-composite: source-in;
+    mask: radial-gradient(circle 11px at 0 50%, #0000 98%, #000), radial-gradient(circle 11px at 100% 50%, #0000 98%, #000);
+    mask-composite: intersect;
+  }
   /* The Hoppaz date picker (DateTimePicker) on a tinted page: brand orange and ink become the page's tint. */
   .tint-ui .dtp .text-dim {
     color: var(--t-muted);
