@@ -291,6 +291,14 @@
     radial-gradient(ellipse 34% 110% at 100% 0, #000 30%, rgb(0 0 0 / .45) 62%, transparent 100%),
     linear-gradient(rgb(0 0 0 / .1), rgb(0 0 0 / .1));
 }
+/* On a phone there is no card: the text sits on the page itself, so the cloth keeps to a short band at the top and fades
+   out early, with only a faint trace behind the words. */
+@media (max-width: 1023px) {
+  .pack-owambe .ow-cloth {
+    -webkit-mask-image: linear-gradient(#000, rgb(0 0 0 / .35) 70px, rgb(0 0 0 / .06) 150px, rgb(0 0 0 / .06));
+    mask-image: linear-gradient(#000, rgb(0 0 0 / .35) 70px, rgb(0 0 0 / .06) 150px, rgb(0 0 0 / .06));
+  }
+}
 .pack-owambe .ow-cloth::before,
 .pack-owambe .ow-cloth::after,
 .pack-owambe .ow-gold { content: ""; position: absolute; inset: 0; -webkit-mask-size: var(--ow-tile); mask-size: var(--ow-tile); }
