@@ -3,7 +3,8 @@
 /* eslint-disable @next/next/no-img-element -- covers are data URLs, template files or bucket links of unknown size */
 
 import { useEffect, useRef, useState } from "react";
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
 import { useR1Api } from "@/lib/events-r1/hooks";
@@ -231,7 +232,7 @@ export function TicketBar({ t, anchor, line }: { t: StoryTickets; anchor: RefObj
 }
 
 /** The checkout sheet: the event, what you picked, the total, then Pay (or Confirm). The host's questions open inside it. */
-export function CheckoutSheet({ t, cover, when }: { t: StoryTickets; cover: string; when: string }) {
+export function CheckoutSheet({ t, cover, when, tint }: { t: StoryTickets; cover: string; when: string; tint?: CSSProperties }) {
   const { flow, event } = t;
   const api = useR1Api();
   const box = useRef<HTMLDivElement>(null);
@@ -274,9 +275,19 @@ export function CheckoutSheet({ t, cover, when }: { t: StoryTickets; cover: stri
   }, [t.sheet]);
 
   const paid = !!t.chosen && t.chosen.price_naira > 0;
+  // Drawn into the page body (above the tab bar, which sits outside the page), carrying the page's tint with it.
+  const portal = (node: React.ReactNode) =>
+    tint && typeof document !== "undefined"
+      ? createPortal(
+          <div className="tint-ui" style={tint}>
+            {node}
+          </div>,
+          document.body
+        )
+      : node;
   return (
     <>
-      {t.sheet && (
+      {t.sheet && portal(
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 lg:items-center lg:p-4" onMouseDown={(e) => e.target === e.currentTarget && close()}>
           <div
             ref={box}
