@@ -1646,6 +1646,21 @@ await test("rooms: a new joiner shows with today's date, and an admin posts an a
   eq(a.body, "Admin note", "an admin posts an announcement");
 });
 
+await test("room growth chart: 8 weekly totals worked back from today's count", async () => {
+  const { growthWeeks } = await import("../src/components/events-r1/workspace/words.ts");
+  const now = Date.parse("2026-10-29T08:00:00Z");
+  const day = 864e5;
+  const iso = (d: number) => new Date(now - d * day).toISOString();
+  // 20 members today: 3 joined this week, 2 joined 3 weeks ago, the rest long ago.
+  const w = growthWeeks(20, [iso(1), iso(2), iso(3), iso(20), iso(22), iso(200)], now);
+  ok(w.length === 8, `8 weeks: ${w.length}`);
+  ok(w[7] === 20, `last week is today's count: ${w[7]}`);
+  ok(w[6] === 17, `a week ago, before this week's 3: ${w[6]}`);
+  ok(w[0] === 15, `8 weeks ago, before all 5 recent joins: ${w[0]}`);
+  ok(w.every((v, k) => k === 0 || v >= w[k - 1]), "never goes down");
+  ok(growthWeeks(2, [iso(1), iso(1), iso(1)], now)[0] === 0, "never below zero");
+});
+
 await test("rooms: went but have not joined counts guests of the room's events who are not members", async () => {
   as("Kredete");
   const room = (await api.rooms.mine())[0];

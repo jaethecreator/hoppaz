@@ -33,3 +33,16 @@ export function isPast(e: Pick<R1Event, "starts_at" | "ends_at" | "status">, now
 }
 
 export const going = (n: number) => `${n.toLocaleString("en-NG")}`;
+
+/**
+ * Members at the end of each of the last 8 weeks, oldest first. Worked back from today's count: each week's total is today's total
+ * minus the members who joined after that week ended. People who left are not in the list, so a past week can read a little low,
+ * never high.
+ */
+export function growthWeeks(total: number, joinedAt: string[], now: number, weeks = 8): number[] {
+  const joins = joinedAt.map((d) => Date.parse(d)).filter((t) => Number.isFinite(t));
+  return Array.from({ length: weeks }, (_, i) => {
+    const end = now - (weeks - 1 - i) * 7 * 864e5;
+    return Math.max(0, total - joins.filter((t) => t > end).length);
+  });
+}

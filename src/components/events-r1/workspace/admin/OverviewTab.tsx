@@ -10,16 +10,42 @@ import { useAnnouncements, useR1Now, useR1Query, useRoomEvents } from "@/lib/eve
 import type { Look } from "@/lib/events-r1/looks";
 import type { RoomSummary } from "@/lib/events-r1/types";
 import { useInviteLink } from "./useInviteLink";
-import { isPast, tileOf, whenLine } from "../words";
+import { growthWeeks, isPast, tileOf, whenLine } from "../words";
 import { Card, Tile, useFlashLine } from "./ui";
 
 const WEEK = 7 * 864e5;
 
 /**
  * Overview: bring in the guests who have not joined (first and loudest, only when there are some), the counts, the invite link,
- * "Grow your room" (each step jumps to the tab where it is done) and what is coming up. The design's 8 week growth chart is not here:
- * the room's count has no history behind it, only the join date of each member who is listed.
+ * the 8 week growth chart, "Grow your room" (each step jumps to the tab where it is done) and what is coming up.
  */
+
+function GrowthChart({ total, joinedAt, now }: { total: number; joinedAt: string[]; now: number }) {
+  const w = growthWeeks(total, joinedAt, now);
+  const max = Math.max(1, ...w);
+  const min = Math.min(...w);
+  // The bars start a little below the lowest week, not at zero, so small growth is visible; the real numbers sit under the ends.
+  const floor = Math.max(0, min - Math.max(1, max - min));
+  const gained = w[w.length - 1] - w[0];
+  return (
+    <Card title="Members over 8 weeks" aside={gained > 0 ? `+${gained.toLocaleString("en-NG")} in 8 weeks` : "No new members yet"}>
+      <div className="flex h-24 items-end gap-1.5" role="img" aria-label={`Members each week for the last 8 weeks: ${w.join(", ")}`}>
+        {w.map((v, i) => (
+          <i
+            key={i}
+            title={`${v.toLocaleString("en-NG")} members`}
+            className={clsx("block flex-1 rounded-t-[4px]", i === w.length - 1 ? "bg-t-accent" : "bg-t-soft")}
+            style={{ height: `${Math.max(6, ((v - floor) / Math.max(1, max - floor)) * 100)}%` }}
+          />
+        ))}
+      </div>
+      <div className="mt-1.5 flex justify-between font-mono text-[11.5px] text-t-muted">
+        <span>8 weeks ago · {w[0].toLocaleString("en-NG")}</span>
+        <span>Now · {w[w.length - 1].toLocaleString("en-NG")}</span>
+      </div>
+    </Card>
+  );
+}
 export default function OverviewTab({ room, look, onTab }: { room: RoomSummary; look: Look; onTab: (t: string) => void }) {
   const now = useR1Now();
   const guests = useR1Query((a) => a.rooms.guestsNotJoined(room.id), [room.id]);
@@ -74,6 +100,8 @@ export default function OverviewTab({ room, look, onTab }: { room: RoomSummary; 
         <Tile n={live.length.toLocaleString("en-NG")} label={live.length === 1 ? "event" : "events"} />
         {lines !== null && <Tile n={chat.data && chat.data.length >= 80 && lines >= 80 ? "80+" : String(lines)} label="chat messages this week" />}
       </section>
+
+      {members.data && <GrowthChart total={room.members} joinedAt={members.data.map((m) => m.joined_at)} now={now} />}
 
       <Card title="Invite link" aside={`Anyone with it can ${room.join_mode === "open" ? "join" : room.join_mode === "ask" ? "ask to join" : "join"}`}>
         <div className="flex items-stretch gap-2">
