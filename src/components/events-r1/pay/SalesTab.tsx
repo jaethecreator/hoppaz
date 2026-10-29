@@ -146,7 +146,9 @@ export default function SalesTab({ event, payoutsHref, onTickets }: { event: R1E
 
   const when: Line[] = [
     { label: "As each ticket sells", small: "Your share goes to your balance" },
-    { label: `Until ${dayWord(release)}`, small: `${rules.reserve_percent}% is held for refunds, then released`, amount: naira(m.held) },
+    released
+      ? { label: `Released ${dayWord(release)}`, small: `${rules.reserve_percent}% was held for refunds`, amount: naira(m.held) }
+      : { label: `Until ${dayWord(release)}`, small: `${rules.reserve_percent}% is held for refunds, then released`, amount: naira(m.held) },
     { label: "Any time", small: "Withdraw from Payouts. Usually lands within a day." },
   ];
 
