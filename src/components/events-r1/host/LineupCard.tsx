@@ -91,7 +91,7 @@ export default function LineupCard({ eventId, onSaved, onError }: { eventId: str
   const hint = HINT[kind];
 
   return (
-    <section id="lineup" className="t-card grid scroll-mt-24 gap-3 p-4 lg:p-5">
+    <section id="lineup" className="t-card grid scroll-mt-32 gap-3 p-4 lg:p-5">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="min-w-0">
           <h3 className="font-body text-[13.5px] font-bold text-t-muted">{LINEUP_TITLE[kind]}</h3>
