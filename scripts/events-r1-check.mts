@@ -1713,6 +1713,14 @@ await test("rooms: leave (members only, owners and HQ cannot), preview of an inv
   const { eventChatHref, enterPath } = await import("../src/components/events-r1/rooms/words.ts");
   eq(eventChatHref({ id: "e1", host: { roomId: "r1" } }), "/rooms/r1?ch=e1", "event chat href is a channel of the room page");
   eq(eventChatHref({ id: "e1", host: { roomId: null } }), null, "no room: no event chat");
+  const { oldChatRedirect } = await import("../src/components/events-r1/rooms/words.ts");
+  as("Ada Obi");
+  const evs = await api.events.list();
+  const withRoom = evs.find((e) => e.host.roomId)!;
+  const noRoom = evs.find((e) => !e.host.roomId);
+  eq(oldChatRedirect(withRoom), `/rooms/${withRoom.host.roomId}?ch=${withRoom.id}`, "/chat?c=<event> with a room goes to its channel");
+  if (noRoom) eq(oldChatRedirect(noRoom), `/event/${noRoom.id}`, "/chat?c=<event> with no room goes to the event page");
+  eq(oldChatRedirect({ id: "e2", host: { roomId: null } }), "/event/e2", "no room: the event page");
   eq(enterPath({ slug: "x", kind: "crew", id: "r1", has_3d: false, three_d_on: false }), "/rooms/x?ch=general", "no walkable room: Enter goes to General");
 });
 

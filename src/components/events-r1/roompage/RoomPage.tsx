@@ -59,7 +59,7 @@ export default function RoomPage({ slug }: { slug: string }) {
         </div>
       );
     }
-    if (preview.data && preview.data.join_mode === "invite") return <Frame logo={preview.data.logo_url}><LockedPage room={preview.data} /></Frame>;
+    if (preview.data && preview.data.join_mode === "invite") return <Frame logo={preview.data.logo_url} roomId={preview.data.id}><LockedPage room={preview.data} /></Frame>;
     return (
       <div className="h-full overflow-y-auto px-4 pb-6">
         <div className="mx-auto w-full max-w-[560px] pad-top">
@@ -76,16 +76,16 @@ export default function RoomPage({ slug }: { slug: string }) {
 /* --------------------------------------------------------------- the frame -- */
 
 /** The tinted page: the room's look from its logo (or what the owner saved), the pack behind it, one scrolling column. */
-function Frame({ logo, roomId, children, scroller }: { logo: string | null; roomId?: string; children: ReactNode; scroller?: React.RefObject<HTMLDivElement | null> }) {
+function Frame({ logo, roomId, children, scroller, fill }: { logo: string | null; roomId?: string; children: ReactNode; scroller?: React.RefObject<HTMLDivElement | null>; fill?: boolean }) {
   const saved = useR1Query((a) => (roomId ? a.looks.get("room", roomId) : Promise.resolve(null)), [roomId]);
   const look = saved.data ?? DEFAULT_LOOK;
   const tint = usePictureTint(logoSrc(logo), look);
   const style: CSSProperties = useLookStyle(look, tint);
   return (
-    <div ref={scroller} className="h-full overflow-y-auto" data-hub-scroll data-room-page data-mood={look.mood}>
-      <div className="tint-ui relative isolate flex min-h-full flex-col font-body" style={style} data-pack={look.pack}>
+    <div ref={scroller} className="relative z-40 h-full overflow-y-auto" data-hub-scroll data-room-page data-mood={look.mood}>
+      <div className={clsx("tint-ui relative isolate flex flex-col font-body", fill ? "h-full min-h-[680px]" : "min-h-full")} style={style} data-pack={look.pack}>
         <PackLayer pack={look.pack} />
-        <div className="relative flex min-h-full flex-1 flex-col">{children}</div>
+        <div className={clsx("relative flex flex-1 flex-col", fill ? "min-h-0" : "min-h-full")}>{children}</div>
       </div>
     </div>
   );
@@ -95,15 +95,19 @@ function Frame({ logo, roomId, children, scroller }: { logo: string | null; room
 function LockedPage({ room }: { room: RoomPreview }) {
   return (
     <>
-      <div className="relative h-[150px] overflow-hidden bg-t-soft lg:h-[200px]" style={{ background: "radial-gradient(45% 80% at 12% 25%, var(--t-glow), transparent 70%), radial-gradient(40% 75% at 88% 70%, var(--t-glow2), transparent 70%), var(--t-soft)" }} />
+      <header className="sticky top-0 z-[8] flex items-center gap-2 border-b border-t-line bg-t-bar py-2.5 pl-1.5 pr-2.5 backdrop-blur-[14px] lg:hidden" style={{ paddingTop: "calc(0.625rem + env(safe-area-inset-top, 0px))" }}>
+        <Link href="/crew" aria-label="Back to Roomz" className="grid h-11 w-10 flex-none place-items-center"><ChevronLeft size={24} aria-hidden /></Link>
+      </header>
+      <div className="relative h-[150px] overflow-hidden bg-t-soft lg:h-[160px]" style={{ background: "radial-gradient(45% 80% at 12% 25%, var(--t-glow), transparent 70%), radial-gradient(40% 75% at 88% 70%, var(--t-glow2), transparent 70%), var(--t-soft)" }} />
       <div className="relative z-[2] -mt-[52px] grid justify-items-center gap-2 px-[22px] text-center lg:-mt-[58px]">
         <RoomLogo url={room.logo_url} name={room.name} size={96} className="border-4 border-t-bg shadow-[0_18px_36px_-18px_rgba(0,0,0,.6)]" />
-        <h1 className="t-title text-balance font-display text-[28px] font-black leading-[1.08] tracking-[-0.02em] lg:text-[36px]">{room.name}</h1>
+        <h1 className="t-title mt-1 text-balance font-display text-[28px] font-black leading-[1.08] tracking-[-0.02em] lg:text-[36px]">{room.name}</h1>
+        <span className="inline-flex items-center rounded-hz bg-t-soft px-2 py-[3px] font-body text-[12px] font-bold">Invite only</span>
       </div>
       <div className="mx-[22px] mb-10 mt-[22px] grid justify-items-center gap-2.5 self-center rounded-hz border border-t-line bg-t-tile p-7 text-center lg:mx-8" data-locked-page>
         <span className="inline-flex items-center rounded-hz bg-t-soft px-2 py-[3px] font-body text-[12px] font-bold">Invite only</span>
         <b className="font-display text-[20px] font-extrabold">You need an invite to see this room</b>
-        <p className="max-w-[44ch] font-body text-t-muted">{room.about ? `${room.about} ` : ""}Ask someone inside to send you their link.</p>
+        <p className="max-w-[44ch] font-body text-t-muted">Ask someone inside to send you their link.</p>
       </div>
     </>
   );
@@ -290,7 +294,7 @@ function Page({ real, invite }: { real: RoomSummary; invite: string | undefined 
   if (desktop === null) return <Frame logo={real.logo_url} roomId={real.id}><span /></Frame>;
 
   return (
-    <Frame logo={real.logo_url} roomId={real.id} scroller={scroller}>
+    <Frame logo={real.logo_url} roomId={real.id} scroller={scroller} fill={desktop === true}>
       {desktop ? <Desktop c={bundle} /> : <Phone c={bundle} />}
       <Toast text={toast} />
       <LeaveDialog open={leaving} room={real.name} phone={!desktop} onStay={() => setLeaving(false)} onLeave={() => void leave()} />
@@ -575,7 +579,7 @@ function Desktop({ c }: { c: Ctx }) {
   ) : null;
 
   const hero = walk ? (
-    <Link href={enterPath(room)} aria-label="Walk into the room" className="relative block h-[250px] overflow-hidden bg-black" data-walk-hero>
+    <Link href={enterPath(room)} aria-label="Walk into the room" className="relative block h-[130px] flex-none overflow-hidden bg-black" data-walk-hero>
       <Scene night={nightOf()} people={Math.max(4, Math.min(14, room.online))} />
       <span aria-hidden className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent from-35% to-t-bg to-[98%]" />
       <span className="absolute right-6 top-[18px] flex items-center gap-2.5 rounded-hz bg-t-solid py-1.5 pl-3 pr-1.5 text-t-text shadow-[0_8px_24px_rgba(0,0,0,.35)]">
@@ -590,7 +594,7 @@ function Desktop({ c }: { c: Ctx }) {
       </span>
     </Link>
   ) : (
-    <div className="relative h-[200px] overflow-hidden bg-t-soft" style={{ background: "radial-gradient(45% 80% at 12% 25%, var(--t-glow), transparent 70%), radial-gradient(40% 75% at 88% 70%, var(--t-glow2), transparent 70%), var(--t-soft)" }} />
+    <div className="relative h-[110px] flex-none overflow-hidden bg-t-soft" style={{ background: "radial-gradient(45% 80% at 12% 25%, var(--t-glow), transparent 70%), radial-gradient(40% 75% at 88% 70%, var(--t-glow2), transparent 70%), var(--t-soft)" }} />
   );
 
   const act = (
@@ -627,7 +631,7 @@ function Desktop({ c }: { c: Ctx }) {
   );
 
   const idrow = (
-    <div className="relative z-[2] -mt-[58px] grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-[22px] px-8">
+    <div className="relative z-[2] flex-none -mt-[58px] grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-[22px] px-8">
       <RoomLogo url={real.logo_url} name={real.name} size={116} className="border-4 border-t-bg shadow-[0_18px_36px_-18px_rgba(0,0,0,.6)]" />
       <div className="grid min-w-0 gap-1 pb-1.5">
         <h1 className="t-title text-balance font-display text-[36px] font-black leading-[1.05] tracking-[-0.02em]" data-hub-title>{room.name}</h1>
@@ -660,8 +664,8 @@ function Desktop({ c }: { c: Ctx }) {
   const stick = useStick([c.chan, c.talk[c.talk.length - 1]?.id, c.anns.length]);
   const readable = c.canReadNow;
   const mainChat = (
-    <div className="grid min-h-[560px] grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-hz border border-t-line bg-t-tile">
-      <nav aria-label="Channels" className="grid content-start gap-0.5 border-r border-t-line bg-t-bg px-2 py-3">
+    <div className="grid min-h-[360px] flex-1 grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-hz border border-t-line bg-t-tile">
+      <nav aria-label="Channels" className="grid min-h-0 content-start gap-0.5 overflow-y-auto border-r border-t-line bg-t-bg px-2 py-3">
         <span className="px-2 pb-1 pt-2 text-[12.5px] font-semibold text-t-muted">Channels</span>
         {rows.map((r) => {
           const head = r.group && group !== r.group ? ((group = r.group), <span key={`h-${r.group}`} className="px-2 pb-1 pt-3 text-[12.5px] font-semibold text-t-muted">{r.group}</span>) : null;
@@ -686,7 +690,7 @@ function Desktop({ c }: { c: Ctx }) {
           );
         })}
       </nav>
-      <section aria-label={title} className="relative flex min-w-0 flex-col">
+      <section aria-label={title} className="relative flex min-h-0 min-w-0 flex-col">
         {c.ticketMode && c.ticketEvent && c.onEvent && <TicketStrip event={c.ticketEvent.event_title} room={room.name} phone={false} join={() => void c.join()} />}
         <div className="flex items-center gap-2.5 border-b border-t-line px-4 py-3">
           <div className="min-w-0">
@@ -694,7 +698,7 @@ function Desktop({ c }: { c: Ctx }) {
             <small className="block text-[12.5px] text-t-muted">{sub}</small>
           </div>
         </div>
-        <div ref={stick.ref} onScroll={stick.onScroll} role="log" aria-live="polite" aria-label={title} className={clsx("relative flex max-h-[430px] min-h-[300px] flex-1 flex-col gap-3.5 overflow-y-auto p-4", !readable && "overflow-hidden")}>
+        <div ref={stick.ref} onScroll={stick.onScroll} role="log" aria-live="polite" aria-label={title} className={clsx("relative flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto p-4", !readable && "overflow-hidden")}>
           <ThreadBody c={c} phone={false} />
         </div>
         <Footer c={c} phone={false} />
@@ -719,12 +723,12 @@ function Desktop({ c }: { c: Ctx }) {
       {hero}
       {idrow}
       {c.invited && <InviteBanner c={c} />}
-      <div className="grid grid-cols-[minmax(0,1fr)_300px] gap-7 px-8 pb-10 pt-[22px]">
-        <div className="grid min-w-0 content-start gap-[18px]">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px] gap-7 px-8 pb-6 pt-4">
+        <div className="flex min-h-0 min-w-0 flex-col gap-3.5">
           {tabsRow}
-          {c.tab === "chat" ? mainChat : c.tab === "events" ? <EventsTab upcoming={c.upcoming} past={c.past} fresh={c.fresh} /> : c.tab === "members" ? <MembersTab room={room} members={c.members} insider={c.insider} /> : <QuestsTab eventIds={c.eventIds} next={c.next} insider={c.insider} />}
+          {c.tab === "chat" ? mainChat : <div className="min-h-0 flex-1 overflow-y-auto">{c.tab === "events" ? <EventsTab upcoming={c.upcoming} past={c.past} fresh={c.fresh} /> : c.tab === "members" ? <MembersTab room={room} members={c.members} insider={c.insider} /> : <QuestsTab eventIds={c.eventIds} next={c.next} insider={c.insider} />}</div>}
         </div>
-        {aside}
+        <div className="min-h-0 overflow-y-auto">{aside}</div>
       </div>
     </>
   );
@@ -960,7 +964,7 @@ function Phone({ c }: { c: Ctx }) {
       <div className="grid gap-3 px-[22px] pt-[22px]">
         <p className="flex justify-between gap-2 text-[12.5px] font-semibold text-t-muted"><span>Chat</span></p>
         <section aria-label="General" className="relative overflow-hidden rounded-hz border border-t-line bg-t-tile">
-          <div role="log" aria-live="polite" className={clsx("relative flex max-h-[420px] min-h-[220px] flex-col gap-3.5 overflow-y-auto p-3.5", !c.canReadNow && "overflow-hidden")}>
+          <div role="log" aria-live="polite" className={clsx("relative flex max-h-[420px] flex-col gap-3.5 overflow-y-auto p-3.5", c.canReadNow ? "min-h-[220px]" : "min-h-[340px] overflow-hidden")}>
             <ThreadBody c={{ ...c, chan: GENERAL, chat: null, onEvent: false }} phone />
           </div>
         </section>

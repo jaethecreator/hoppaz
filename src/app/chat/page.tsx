@@ -15,6 +15,7 @@ import RoomView from "@/components/chat/RoomView";
 import { sentence } from "@/components/event/copy";
 import { EVENTS_R1 } from "@/lib/events-r1/flags";
 import { useR1Event } from "@/lib/events-r1/hooks";
+import { oldChatRedirect } from "@/components/events-r1/rooms/words";
 
 export default function ChatPage() {
   return <Suspense fallback={<div className="grid h-full place-items-center"><span className="hint">LOADING…</span></div>}><Chat /></Suspense>;
@@ -39,12 +40,11 @@ function Chat() {
 function ToRoom({ id }: { id: string }) {
   const router = useRouter();
   const ev = useR1Event(id);
-  const roomId = ev.data?.host.roomId ?? null;
   const known = !ev.loading && !!ev.data;
   useEffect(() => {
     if (!known) return;
-    router.replace(roomId ? `/rooms/${encodeURIComponent(roomId)}?ch=${encodeURIComponent(id)}` : `/event/${encodeURIComponent(id)}`);
-  }, [known, roomId, id, router]);
+    if (ev.data) router.replace(oldChatRedirect(ev.data));
+  }, [known, ev.data, router]);
   if (ev.loading) return <div className="grid h-full place-items-center"><span className="hint">LOADING…</span></div>;
   return known ? <div className="h-full" /> : <EventRoom id={id} />;
 }

@@ -155,7 +155,7 @@ export function Composer({
         autoComplete="off"
         className={clsx("mb-1 min-h-[46px] min-w-0 flex-1 border bg-t-bg px-4 font-body text-[16px] text-t-text", phone ? "rounded-full bg-t-tile" : "rounded-hz")}
       />
-      <button type="submit" disabled={busy || !text.trim()} className={clsx(main ? LIP : GHOST, phone && "!px-4")}>
+      <button type="submit" aria-disabled={busy || !text.trim()} className={clsx(main ? clsx(LIP, "[&[aria-disabled=true]]:!bg-t-accent [&[aria-disabled=true]]:!text-t-on [&[aria-disabled=true]]:!shadow-[0_4px_0_var(--t-ember)]") : GHOST, phone && "!px-4")} data-send>
         {label === "Write an announcement" ? "Post" : "Send"}
       </button>
     </form>

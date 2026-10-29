@@ -8,6 +8,10 @@ import type { EventChat, RoomSummary } from "@/lib/events-r1/types";
 export const eventChatHref = (e: { id: string; host: { roomId: string | null } }): string | null =>
   e.host.roomId ? `/rooms/${encodeURIComponent(e.host.roomId)}?ch=${encodeURIComponent(e.id)}` : null;
 
+/** Where an old /chat?c=<event id> address goes: the room's channel, or the event page when the event has no room. */
+export const oldChatRedirect = (e: { id: string; host: { roomId: string | null } }): string =>
+  eventChatHref(e) ?? `/event/${encodeURIComponent(e.id)}`;
+
 const HOUR = 3.6e6;
 const DAY = 24 * HOUR;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
