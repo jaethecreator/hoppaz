@@ -1724,6 +1724,46 @@ await test("rooms: leave (members only, owners and HQ cannot), preview of an inv
   eq(enterPath({ slug: "x", kind: "crew", id: "r1", has_3d: false, three_d_on: false }), "/rooms/x?ch=general", "no walkable room: Enter goes to General");
 });
 
+await test("saved checkout details: per person, kept, replaced and deleted", async () => {
+  eq(await api.account.savedDetails(), null, "signed out: nothing");
+  await rejects(api.account.saveDetails({ first_name: "A", last_name: "", email: "a@x.co", phone: "" }), "Sign in first", "signed out cannot save");
+  as("Chidi Okafor");
+  eq(await api.account.savedDetails(), null, "nothing saved yet");
+  await api.account.saveDetails({ first_name: " Chidi ", last_name: "Okafor", email: "chidi@example.com", phone: "0803 555 2211" });
+  eq(await api.account.savedDetails(), { first_name: "Chidi", last_name: "Okafor", email: "chidi@example.com", phone: "0803 555 2211" }, "kept, trimmed");
+  await rejects(api.account.saveDetails({ first_name: "", last_name: "", email: "x@y.co", phone: "" }), "Add your name and email", "no first name is refused");
+  await api.account.saveDetails({ first_name: "Chidi", last_name: "O", email: "c@new.co", phone: "" });
+  eq((await api.account.savedDetails())?.email, "c@new.co", "saving again replaces");
+  as("Bisi Ogunleye");
+  eq(await api.account.savedDetails(), null, "someone else sees only their own");
+  await api.account.deleteSavedDetails();
+  as("Chidi Okafor");
+  ok(await api.account.savedDetails(), "their delete did not touch mine");
+  await api.account.deleteSavedDetails();
+  eq(await api.account.savedDetails(), null, "deleted");
+  await api.account.deleteSavedDetails();
+});
+
+await test("asking to join from You're going tells the host about the ticket", async () => {
+  const lrc = (await api.rooms.get("lagos-run-club"))!;
+  eq(lrc.join_mode, "ask", "the run club asks");
+  const run = fakeDev.allEvents().find((e) => e.room_id === lrc.id && e.status === "live" && Date.parse(e.starts_at) > Date.now())!;
+  as("Chidi Okafor");
+  const reg = await api.registrations.register(run.id);
+  eq(await api.rooms.join(lrc.id, { forEvent: run.id }), "requested", "an ask room: requested");
+  as("Bisi Ogunleye");
+  eq(await api.rooms.join(lrc.id, { forEvent: run.id }), "requested", "no ticket: still a request");
+  as("Lagos Run Club");
+  const list = await api.rooms.requests(lrc.id);
+  const chidi = list.find((q) => q.name === "Chidi Okafor")!;
+  const bisi = list.find((q) => q.name === "Bisi Ogunleye")!;
+  const going = reg.status === "going" || reg.status === "checked_in";
+  eq(chidi.ticket_event?.title ?? null, going ? run.title : null, "the ticket holder's request names the event");
+  eq(bisi.ticket_event ?? null, null, "a plain request has none");
+  as("Chidi Okafor");
+  eq(await api.rooms.join("naija-tech-meetup", { forEvent: run.id }), "joined", "an open room joins at once, forEvent or not");
+});
+
 await test("reset clears user-made changes", async () => {
   const before = fakeDev.allEvents().length;
   await kredeteEvent();

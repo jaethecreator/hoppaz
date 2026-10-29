@@ -186,7 +186,7 @@ function RoomCard({ event, roomId, opensAt, state }: { event: R1Event; roomId: s
     </span>
   ) : null;
   const toastEl = toast ? (
-    <div role="status" className="fixed left-1/2 top-3.5 z-[80] max-w-[calc(100%-32px)] -translate-x-1/2 rounded-hz bg-t-text px-3.5 py-2.5 font-body text-[14px] font-bold text-t-bg shadow-[0_14px_34px_rgba(0,0,0,.35)]">
+    <div role="status" className="fixed left-1/2 top-3.5 z-[80] w-max max-w-[calc(100%-32px)] -translate-x-1/2 rounded-hz bg-t-text px-3.5 py-2.5 font-body text-[14px] font-bold text-t-bg shadow-[0_14px_34px_rgba(0,0,0,.35)]">
       {toast}
     </div>
   ) : null;
