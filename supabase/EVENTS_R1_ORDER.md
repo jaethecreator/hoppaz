@@ -32,6 +32,7 @@ Then the new files, in this order, each one once (they are safe to run again):
 | 9 | `events_r1_covers.sql` | `crew_rooms.sql` (the public `crew-images` bucket), `chat_accounts.sql` (`has_account()`) | nothing, but run it after file 1: a cover link is saved through `ev_create_event` / `ev_update_event` (see 2d) |
 | 10 | `events_r1_looks.sql` | `events`, `crews`, `crew_members`, `auth.users` (from `schema.sql`), `chat_accounts.sql` (`has_account()`), `crew_stage_voice.sql` (`crew_members.role` may be `admin`; the file checks owner and admin) | file 1 (`_ev_manage`, `_ev_staff`, `_ev_can_open`). Event and room looks: pack, Day or Night, tint. Until it runs, pages read the cover and creating never fails. |
 | 11 | `events_r1_room_profile.sql` | `crews` (`logo_url`, `visibility`, `invite_code`), `crew_members`, `profiles`, the public `crew-images` bucket (`crew_rooms.sql`), `crew_stage_voice.sql` (the role check it widens again), `has_account()`, `create_crew` | files 1 (`_ev_open`, `_ev_staff`, `ev_settings`, `events.room_id`), 2 (`ev_registrations`) and 6 (`_ev_room_json`, `ev_hq`). Room profile, join mode and requests, the Host role, "went but haven't joined". See 2f. |
+| 12 | `events_r1_room_leave.sql` | `_ev_open()`, `_ev_is_hq()`, `_ev_room_role()`, `ev_room_requests`, `has_account()` | files 1, 6 and 11. `ev_leave_room(room)`: a member leaves a room by themselves (the room page). The owner and Lagos HQ cannot be left; tickets are not touched. See 2g. |
 
 Files 1 and 2 leave small stubs for functions that later files fill in (the going count, the waitlist fill, the ticket issue and void,
 the HQ test). A stub is written only when the real function is missing, so running a file again never puts a stub back over the real one.
@@ -115,6 +116,11 @@ Each row points at its owner with a real foreign key (`event_id` to `events`, `c
 **Two things in the header of the file need your decision.** (1) A host can post events as the room but cannot yet run the door of a room event they did not make: that needs one line added to `_ev_manage` in `events_r1_events.sql` (the line is in the header; I did not edit the older function). (2) `join_crew` with an invite code still joins any room, so in an ask room the code is a key: do not share it.
 
 Until the file is run the real layer degrades quietly (`real/roomProfile.ts`): a room is made with `create_crew` (name only, `ask` and `invite` become private), joining uses `join_crew`, guests not joined answers 0, requests and notices answer empty, and the profile fields read as empty.
+
+## 2g. Leave a room (file 12)
+
+`events_r1_room_leave.sql` (test: `tests/events_r1_room_leave_test.sql`). One new function, `ev_leave_room(room)`, answering `ok`, `not_open`, `need_account`, `not_found`, `hq_fixed`, `not_member` or `owner_fixed`. It deletes the caller's `crew_members` row and their own `ev_room_requests` row (that table is unique per person and room, so an old approved row would block asking again). Tickets are not touched: a registration is separate from membership. **Nothing in it has been run, not even locally.** Until the file is run the real layer falls back to deleting the caller's own `crew_members` row (`rooms.leave` in `real/rooms.ts`), which the row-level policy may refuse; then the person sees "Could not leave right now".
+
 
 ## 3. The cron line (Pops)
 
