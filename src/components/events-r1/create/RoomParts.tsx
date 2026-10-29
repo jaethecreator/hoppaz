@@ -28,8 +28,9 @@ export function Banner({ look, setLook, wide }: { look: Look; setLook?: (l: Look
       style={{ background: "linear-gradient(180deg, var(--t-soft), var(--t-bg))" }}
       data-banner
       data-pack={look.pack}
+      data-mood={look.mood}
     >
-      <PackLayer pack={look.pack} />
+      <PackLayer pack={look.pack} mood={look.mood} tint={look.tint} />
       {setLook && (
         <>
           <span className="absolute left-3 top-3 rounded-hz bg-black/55 px-2.5 py-1 font-body text-[12.5px] font-bold text-white">Banner</span>

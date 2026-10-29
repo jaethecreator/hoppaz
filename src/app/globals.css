@@ -1815,63 +1815,8 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
     background: var(--t-tile);
     border-color: var(--t-line);
   }
-  /* Packs: the background behaviour behind a host page. Drawn once, cheap, quiet behind the content. */
-  .pack-layer {
-    @apply pointer-events-none absolute inset-0 overflow-hidden;
-  }
-  .pack-glow::before,
-  .pack-glow::after {
-    content: "";
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(70px);
-    animation: hz-drift 18s ease-in-out infinite alternate;
-  }
-  .pack-glow::before {
-    width: 60%;
-    height: 50%;
-    left: -10%;
-    top: -12%;
-    background: var(--t-glow);
-  }
-  .pack-glow::after {
-    width: 55%;
-    height: 45%;
-    right: -12%;
-    top: 20%;
-    background: var(--t-glow2);
-    animation-delay: -9s;
-  }
-  .pack-confetti {
-    background-image: radial-gradient(var(--t-accent) 1.6px, transparent 1.8px), radial-gradient(var(--t-glow2) 1.6px, transparent 1.8px);
-    background-size: 46px 46px, 62px 62px;
-    background-position: 0 0, 23px 31px;
-    opacity: 0.35;
-  }
-  .pack-detty {
-    background-image: radial-gradient(circle at 20% 20%, var(--t-glow) 0, transparent 40%),
-      repeating-conic-gradient(from 0deg at 50% -10%, var(--t-soft) 0 6deg, transparent 6deg 18deg);
-    opacity: 0.6;
-  }
-  .pack-owambe {
-    background-image: linear-gradient(45deg, var(--t-soft) 25%, transparent 25%, transparent 75%, var(--t-soft) 75%),
-      linear-gradient(45deg, var(--t-soft) 25%, transparent 25%, transparent 75%, var(--t-soft) 75%);
-    background-size: 36px 36px;
-    background-position: 0 0, 18px 18px;
-    opacity: 0.45;
-  }
 }
-@keyframes hz-drift {
-  to {
-    transform: translate(8%, 6%) scale(1.08);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .pack-glow::before,
-  .pack-glow::after {
-    animation: none;
-  }
-}
+/* Packs (Glow, Confetti, Detty December, Owambe): src/components/host/packs.css, imported by TintShell. */
 
 /* On host surfaces `border-t-line` means the tint's line colour on every side. Tailwind also reads it as "top border in the
    brand line colour" (border-t + line), which paints a dark top edge on light (Day) pages; this puts the tint back. */

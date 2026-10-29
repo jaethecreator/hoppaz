@@ -1,0 +1,361 @@
+/*
+ * Packs: the background behaviour behind a host page (event page, create flows, room page, dashboards), in the host's tint.
+ * Markup comes from PackLayer (src/components/host/TintShell.tsx); Minimal draws nothing. Every colour is read from the tint
+ * variables (--t-*), and Day tuning keys on data-mood="day" on the tinted root. Approved designs: review/packs/<pack>.html.
+ * Relative colours (oklch(from ...)) need Chrome 119+ or Safari 16.4+; the @supports block at the end gives older browsers
+ * color-mix() versions of the same derived colours (a plain fallback line would not work inside a custom property).
+ */
+.pack-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+
+/* ---------------------------------------------------------------- Glow ----
+   A key light, a second light in the --t-glow2 hue and a low haze band, slowly drifting and breathing, film grain on top.
+   The stage is sticky so the light follows the scroll on long pages (the layer uses overflow: clip, not hidden). */
+.pack-glow {
+  overflow: clip;
+  /* Night recipe */
+  --pg-core: oklch(from var(--t-accent) calc(l + 0.08) c h / 0.6);
+  --pg-mid: oklch(from var(--t-accent) calc(l - 0.14) c h / 0.42);
+  --pg-halo: oklch(from var(--t-glow) calc(l + 0.02) calc(c * 1.1) h / 0.75);
+  --pg-two: var(--t-glow2);
+  --pg-two-core: oklch(from var(--t-glow2) calc(l + 0.2) calc(c * 1.3) h / 0.38);
+  --pg-haze: oklch(from var(--t-accent) calc(l - 0.16) c h / 0.42);
+  --pg-vignette: oklch(from var(--t-bg) calc(l - 0.06) c h / 0.55);
+  --pg-grain-op: 0.14;
+  --pg-grain-blend: overlay;
+}
+[data-mood="day"] .pack-glow {
+  /* Day recipe: soft daylight bloom, a near white core in a light tinted wash, never darker than the page */
+  --pg-core: oklch(from var(--t-tile) 1 0.015 h / 0.9);
+  --pg-mid: oklch(from var(--t-accent) 0.93 calc(c * 0.42) h / 0.55);
+  --pg-halo: oklch(from var(--t-glow) 0.9 calc(c * 1.1) h / 0.42);
+  --pg-two: oklch(from var(--t-glow2) 0.87 calc(c * 1.45) h / 0.6);
+  --pg-two-core: oklch(from var(--t-tile) 1 0.012 h / 0.45);
+  --pg-haze: oklch(from var(--t-accent) 0.92 calc(c * 0.35) h / 0.5);
+  --pg-vignette: oklch(from var(--t-glow) 0.9 c h / 0.3);
+  --pg-grain-op: 0.2;
+  --pg-grain-blend: multiply;
+}
+.pg-stage {
+  position: sticky; top: 0; height: 100vh; height: 100lvh; overflow: hidden;
+  /* Edges fall away so the light reads as coming from inside the page */
+  background: radial-gradient(130% 90% at 50% 0%, transparent 55%, var(--pg-vignette) 100%);
+}
+.pg-stage > i { position: absolute; display: block; border-radius: 50%; will-change: transform, opacity; }
+
+/* Key light: hot core, tinted mid, wide halo. Gradient falloff instead of filter blur keeps it cheap. */
+.pg-key {
+  --s: max(820px, 110vw);
+  width: var(--s); height: var(--s); left: calc(22% - var(--s) / 2); top: calc(var(--s) / -2 + 10%);
+  background:
+    radial-gradient(closest-side, var(--pg-core) 0%, color-mix(in oklch, var(--pg-core) 96%, transparent) 4%, color-mix(in oklch, var(--pg-core) 84%, transparent) 8%, color-mix(in oklch, var(--pg-core) 67%, transparent) 11%, color-mix(in oklch, var(--pg-core) 49%, transparent) 15%, color-mix(in oklch, var(--pg-core) 32%, transparent) 19%, color-mix(in oklch, var(--pg-core) 20%, transparent) 23%, color-mix(in oklch, var(--pg-core) 11%, transparent) 27%, color-mix(in oklch, var(--pg-core) 6%, transparent) 30%, color-mix(in oklch, var(--pg-core) 3%, transparent) 34%, transparent 38%),
+    radial-gradient(closest-side, var(--pg-mid) 0%, color-mix(in oklch, var(--pg-mid) 97%, transparent) 7%, color-mix(in oklch, var(--pg-mid) 89%, transparent) 14%, color-mix(in oklch, var(--pg-mid) 76%, transparent) 21%, color-mix(in oklch, var(--pg-mid) 62%, transparent) 28%, color-mix(in oklch, var(--pg-mid) 47%, transparent) 35%, color-mix(in oklch, var(--pg-mid) 34%, transparent) 42%, color-mix(in oklch, var(--pg-mid) 23%, transparent) 49%, color-mix(in oklch, var(--pg-mid) 15%, transparent) 56%, color-mix(in oklch, var(--pg-mid) 9%, transparent) 63%, transparent 70%),
+    radial-gradient(closest-side, var(--pg-halo) 0%, color-mix(in oklch, var(--pg-halo) 97%, transparent) 10%, color-mix(in oklch, var(--pg-halo) 90%, transparent) 20%, color-mix(in oklch, var(--pg-halo) 79%, transparent) 30%, color-mix(in oklch, var(--pg-halo) 66%, transparent) 40%, color-mix(in oklch, var(--pg-halo) 52%, transparent) 50%, color-mix(in oklch, var(--pg-halo) 39%, transparent) 60%, color-mix(in oklch, var(--pg-halo) 28%, transparent) 70%, color-mix(in oklch, var(--pg-halo) 19%, transparent) 80%, color-mix(in oklch, var(--pg-halo) 12%, transparent) 90%, transparent 100%);
+  animation: pg-key 20s ease-in-out infinite, pg-breathe 9s ease-in-out infinite alternate;
+}
+/* Second light in the neighbour hue, lower and to the side */
+.pg-two {
+  --s: max(600px, 72vw);
+  width: var(--s); height: var(--s); left: calc(88% - var(--s) / 2); top: calc(74% - var(--s) / 2);
+  background:
+    radial-gradient(closest-side, var(--pg-two-core) 0%, color-mix(in oklch, var(--pg-two-core) 93%, transparent) 4%, color-mix(in oklch, var(--pg-two-core) 75%, transparent) 8%, color-mix(in oklch, var(--pg-two-core) 53%, transparent) 13%, color-mix(in oklch, var(--pg-two-core) 32%, transparent) 17%, color-mix(in oklch, var(--pg-two-core) 17%, transparent) 21%, color-mix(in oklch, var(--pg-two-core) 8%, transparent) 26%, color-mix(in oklch, var(--pg-two-core) 3%, transparent) 30%, transparent 34%),
+    radial-gradient(closest-side, var(--pg-two) 0%, color-mix(in oklch, var(--pg-two) 97%, transparent) 10%, color-mix(in oklch, var(--pg-two) 89%, transparent) 20%, color-mix(in oklch, var(--pg-two) 78%, transparent) 30%, color-mix(in oklch, var(--pg-two) 64%, transparent) 40%, color-mix(in oklch, var(--pg-two) 50%, transparent) 50%, color-mix(in oklch, var(--pg-two) 36%, transparent) 60%, color-mix(in oklch, var(--pg-two) 25%, transparent) 70%, color-mix(in oklch, var(--pg-two) 17%, transparent) 80%, color-mix(in oklch, var(--pg-two) 10%, transparent) 90%, transparent 100%);
+  animation: pg-two 18s ease-in-out -4s infinite, pg-breathe 12s ease-in-out -5s infinite alternate;
+}
+/* Low haze band, like stage smoke catching the light */
+.pg-haze {
+  width: 160%; height: 52%; left: -30%; bottom: -22%;
+  background:
+    radial-gradient(closest-side, var(--pg-haze) 0%, color-mix(in oklch, var(--pg-haze) 96%, transparent) 12%, color-mix(in oklch, var(--pg-haze) 84%, transparent) 25%, color-mix(in oklch, var(--pg-haze) 67%, transparent) 38%, color-mix(in oklch, var(--pg-haze) 50%, transparent) 50%, color-mix(in oklch, var(--pg-haze) 33%, transparent) 62%, color-mix(in oklch, var(--pg-haze) 21%, transparent) 75%, color-mix(in oklch, var(--pg-haze) 12%, transparent) 88%, transparent 100%);
+  animation: pg-haze 22s ease-in-out -7s infinite;
+}
+/* Film grain over everything (fractal noise tile, a few frames of jitter) */
+.pg-stage::after {
+  content: ""; position: absolute; inset: -60px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 2.2 -.6'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  opacity: var(--pg-grain-op); mix-blend-mode: var(--pg-grain-blend);
+  animation: pg-grain 1.2s steps(6) infinite;
+}
+
+/* Drift: each light moves 12 to 20% of the viewport per leg (vmax, so a phone still sees it move) in 14 to 22s,
+   eased in and out on every leg, so the motion is plain within a few seconds and never jumps. */
+@keyframes pg-key {
+  0%, 100% { transform: translate3d(-8vmax, -4vmax, 0) scale(1); }
+  33% { transform: translate3d(7vmax, 0, 0) scale(1.08); }
+  66% { transform: translate3d(2vmax, 7vmax, 0) scale(1.12); }
+}
+@keyframes pg-two {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  30% { transform: translate3d(-14vmax, -5vmax, 0) scale(1.1); }
+  65% { transform: translate3d(-6vmax, -13vmax, 0) scale(1.16); }
+}
+@keyframes pg-haze {
+  0%, 100% { transform: translate3d(-10vmax, 0, 0) scaleY(1); }
+  50% { transform: translate3d(9vmax, -4vmax, 0) scaleY(1.2); }
+}
+@keyframes pg-breathe { from { opacity: 0.82; } to { opacity: 1; } }
+@keyframes pg-grain {
+  0% { transform: translate3d(0, 0, 0); } 20% { transform: translate3d(-22px, 14px, 0); } 40% { transform: translate3d(18px, -26px, 0); }
+  60% { transform: translate3d(-12px, -8px, 0); } 80% { transform: translate3d(26px, 20px, 0); } 100% { transform: translate3d(0, 0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pg-stage > i, .pg-stage::after { animation: none; }
+}
+
+/* ------------------------------------------------------------ Confetti ----
+   Paper tumbling down the first screen on two canvases (drawn by mountConfetti in packConfetti.ts), soft glows at the top,
+   grain over the text colour. */
+.pack-confetti {
+  /* Paper colours, all from the tint. Read by mount() through a probe, so canvas gets resolved values. */
+  --cf-1: var(--t-accent);
+  --cf-2: oklch(from var(--t-accent) calc(l + .08) calc(c * .9) calc(h + 42));
+  --cf-3: oklch(from var(--t-accent) calc(l + .14) calc(c * .7) calc(h - 38));
+  --cf-4: color-mix(in oklch, var(--t-text) 82%, var(--t-accent));
+  --cf-back: var(--t-bg);
+  background:
+    radial-gradient(60% 42% at 8% -6%, var(--t-glow), transparent 70%),
+    radial-gradient(55% 40% at 96% -4%, var(--t-glow2), transparent 70%);
+}
+[data-mood="day"] .pack-confetti {
+  --cf-2: oklch(from var(--t-accent) calc(l + .12) calc(c * .95) calc(h + 42));
+  --cf-3: oklch(from var(--t-accent) calc(l + .22) calc(c * .8) calc(h - 38));
+  --cf-4: oklch(from var(--t-accent) calc(l + .1) calc(c * .85) calc(h + 85));
+}
+/* Canvases cover the first screen only: confetti is a top-of-page thing, and a long page should not pay for a tall canvas. */
+.pack-confetti canvas { position: absolute; left: 0; top: 0; width: 100%; height: min(100%, 110vh); }
+/* Near pieces draw at 30% resolution and are stretched back up: soft, out-of-focus edges with no blur filter cost. */
+.pack-confetti .cf-near { opacity: .85; }
+/* Film grain: noise used as a mask over the text colour, so it follows the tint in both moods. */
+.pack-confetti .cf-grain {
+  position: absolute; inset: 0; background: var(--t-text); opacity: .085;
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 2.4 -1.25'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 2.4 -1.25'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  -webkit-mask-size: 180px; mask-size: 180px;
+}
+[data-mood="day"] .pack-confetti .cf-grain { opacity: .07; }
+
+/* ------------------------------------------------------ Detty December ----
+   A warm sunburst, two firework blooms, sparkler glints and small Lagos motifs (danfo, agogo, sparkler, star) in one gold
+   taken from the accent. CSS only. */
+
+.pack-detty {
+  /* Festive gold: same lightness logic as the host accent, pushed to a warm gold hue, so Night and Day both work. */
+  --dd-gold: oklch(from var(--t-accent) calc(l + 0.14) 0.14 82);
+  --dd-ray: color-mix(in oklab, var(--dd-gold) 10%, transparent);
+  --dd-grain-op: .2; --dd-grain-blend: overlay;
+  --dd-burst: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-50 -50 100 100'%3E%3Cg stroke='white' stroke-width='1.3' stroke-linecap='round' fill='white'%3E%3Cline x1='13.0' y1='0.0' x2='38.0' y2='0.0'/%3E%3Ccircle cx='43.0' cy='0.0' r='1.9'/%3E%3Cline x1='8.8' y1='2.0' x2='29.2' y2='6.7'/%3E%3Ccircle cx='34.1' cy='7.8' r='1.4'/%3E%3Cline x1='11.7' y1='5.6' x2='34.2' y2='16.5'/%3E%3Ccircle cx='38.7' cy='18.7' r='1.9'/%3E%3Cline x1='7.0' y1='5.6' x2='26.6' y2='21.2'/%3E%3Ccircle cx='30.5' cy='24.3' r='1.4'/%3E%3Cline x1='8.1' y1='10.2' x2='23.7' y2='29.7'/%3E%3Ccircle cx='26.8' cy='33.6' r='1.9'/%3E%3Cline x1='3.9' y1='8.1' x2='13.0' y2='27.0'/%3E%3Ccircle cx='15.2' cy='31.5' r='1.4'/%3E%3Cline x1='2.9' y1='12.7' x2='8.5' y2='37.0'/%3E%3Ccircle cx='9.6' cy='41.9' r='1.9'/%3E%3Cline x1='0.0' y1='9.0' x2='0.0' y2='34.0'/%3E%3Ccircle cx='0.0' cy='39.0' r='1.4'/%3E%3Cline x1='-2.9' y1='12.7' x2='-8.5' y2='37.0'/%3E%3Ccircle cx='-9.6' cy='41.9' r='1.9'/%3E%3Cline x1='-3.9' y1='8.1' x2='-13.0' y2='27.0'/%3E%3Ccircle cx='-15.2' cy='31.5' r='1.4'/%3E%3Cline x1='-8.1' y1='10.2' x2='-23.7' y2='29.7'/%3E%3Ccircle cx='-26.8' cy='33.6' r='1.9'/%3E%3Cline x1='-7.0' y1='5.6' x2='-26.6' y2='21.2'/%3E%3Ccircle cx='-30.5' cy='24.3' r='1.4'/%3E%3Cline x1='-11.7' y1='5.6' x2='-34.2' y2='16.5'/%3E%3Ccircle cx='-38.7' cy='18.7' r='1.9'/%3E%3Cline x1='-8.8' y1='2.0' x2='-29.2' y2='6.7'/%3E%3Ccircle cx='-34.1' cy='7.8' r='1.4'/%3E%3Cline x1='-13.0' y1='0.0' x2='-38.0' y2='0.0'/%3E%3Ccircle cx='-43.0' cy='0.0' r='1.9'/%3E%3Cline x1='-8.8' y1='-2.0' x2='-33.1' y2='-7.6'/%3E%3Ccircle cx='-38.0' cy='-8.7' r='1.4'/%3E%3Cline x1='-11.7' y1='-5.6' x2='-34.2' y2='-16.5'/%3E%3Ccircle cx='-38.7' cy='-18.7' r='1.9'/%3E%3Cline x1='-7.0' y1='-5.6' x2='-23.5' y2='-18.7'/%3E%3Ccircle cx='-27.4' cy='-21.8' r='1.4'/%3E%3Cline x1='-8.1' y1='-10.2' x2='-23.7' y2='-29.7'/%3E%3Ccircle cx='-26.8' cy='-33.6' r='1.9'/%3E%3Cline x1='-3.9' y1='-8.1' x2='-14.8' y2='-30.6'/%3E%3Ccircle cx='-16.9' cy='-35.1' r='1.4'/%3E%3Cline x1='-2.9' y1='-12.7' x2='-8.5' y2='-37.0'/%3E%3Ccircle cx='-9.6' cy='-41.9' r='1.9'/%3E%3Cline x1='-0.0' y1='-9.0' x2='-0.0' y2='-30.0'/%3E%3Ccircle cx='-0.0' cy='-35.0' r='1.4'/%3E%3Cline x1='2.9' y1='-12.7' x2='8.5' y2='-37.0'/%3E%3Ccircle cx='9.6' cy='-41.9' r='1.9'/%3E%3Cline x1='3.9' y1='-8.1' x2='14.8' y2='-30.6'/%3E%3Ccircle cx='16.9' cy='-35.1' r='1.4'/%3E%3Cline x1='8.1' y1='-10.2' x2='23.7' y2='-29.7'/%3E%3Ccircle cx='26.8' cy='-33.6' r='1.9'/%3E%3Cline x1='7.0' y1='-5.6' x2='23.5' y2='-18.7'/%3E%3Ccircle cx='27.4' cy='-21.8' r='1.4'/%3E%3Cline x1='11.7' y1='-5.6' x2='34.2' y2='-16.5'/%3E%3Ccircle cx='38.7' cy='-18.7' r='1.9'/%3E%3Cline x1='8.8' y1='-2.0' x2='33.1' y2='-7.6'/%3E%3Ccircle cx='38.0' cy='-8.7' r='1.4'/%3E%3C/g%3E%3C/svg%3E");
+  --dd-danfo: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 56'%3E%3Cpath fill='white' fill-rule='evenodd' d='M8 8H90Q97 8 101 14L112 29Q115 32 115 37V43Q115 46 112 46H6Q3 46 3 43V13Q3 8 8 8ZM9 13V26H25V13ZM29 13V26H45V13ZM49 13V26H65V13ZM69 13V26H85V13ZM89 13V27H107L99 15Q98 13 95 13ZM3 32V35H115V32Z'/%3E%3Ccircle cx='26' cy='46' r='7.5' fill='white'/%3E%3Ccircle cx='93' cy='46' r='7.5' fill='white'/%3E%3C/svg%3E");
+  --dd-bell: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M20 24C20 7 44 7 43 27' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3Cpath fill='white' fill-rule='evenodd' d='M17 23H23L31 53Q20 57 9 53ZM12.6 43.5L13.3 41Q20 43 27.2 41L27.9 43.5Q20 46 12.6 43.5Z'/%3E%3Cpath fill='white' fill-rule='evenodd' d='M40 26H46L52 50Q43 53 34 50ZM36.7 41.5L37.3 39.2Q43 40.6 48.7 39.2L49.3 41.5Q43 43.4 36.7 41.5Z'/%3E%3Cpath d='M20 60L24 56M43 57L45 54' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  --dd-spark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg stroke='white' stroke-linecap='round' fill='white'%3E%3Cline x1='12' y1='60' x2='38' y2='27' stroke-width='2.4'/%3E%3Cg stroke-width='1.6'%3E%3Cline x1='42' y1='14' x2='42' y2='4'/%3E%3Cline x1='50' y1='22' x2='60' y2='22'/%3E%3Cline x1='48' y1='16' x2='55' y2='9'/%3E%3Cline x1='48' y1='28' x2='55' y2='35'/%3E%3Cline x1='36' y1='16' x2='30' y2='10'/%3E%3Cline x1='34' y1='22' x2='27' y2='21'/%3E%3C/g%3E%3Ccircle cx='42' cy='22' r='4.5' stroke='none'/%3E%3Ccircle cx='58' cy='12' r='1.4' stroke='none'/%3E%3Ccircle cx='30' cy='4' r='1.2' stroke='none'/%3E%3Ccircle cx='60' cy='32' r='1.2' stroke='none'/%3E%3C/g%3E%3C/svg%3E");
+  --dd-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M12 0C13 8 16 11 24 12C16 13 13 16 12 24C11 16 8 13 0 12C8 11 11 8 12 0Z'/%3E%3C/svg%3E");
+  --dd-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23n%29'/%3E%3C/svg%3E");
+  background:
+    radial-gradient(110% 50% at 50% 115%, color-mix(in oklab, var(--dd-gold) 24%, transparent), transparent 70%),
+    radial-gradient(70% 45% at 12% -8%, var(--t-glow), transparent 70%),
+    radial-gradient(60% 40% at 92% 4%, var(--t-glow2), transparent 70%);
+}
+[data-mood="day"] .pack-detty {
+  --dd-ray: color-mix(in oklab, var(--dd-gold) 16%, transparent);
+  --dd-grain-op: .28; --dd-grain-blend: multiply;
+}
+/* Sunburst base: thin rays fanning from above the page, faded out before the content. */
+.pack-detty::before {
+  content: ""; position: absolute; left: 50%; top: -8vh; width: 240vmax; height: 240vmax; margin: -120vmax 0 0 -120vmax;
+  background: repeating-conic-gradient(from 0deg, var(--dd-ray) 0 1.4deg, transparent 1.4deg 7.5deg);
+  -webkit-mask: radial-gradient(closest-side, transparent 4%, #000 14%, rgb(0 0 0 / .5) 30%, transparent 48%);
+          mask: radial-gradient(closest-side, transparent 4%, #000 14%, rgb(0 0 0 / .5) 30%, transparent 48%);
+  animation: dd-sway 90s ease-in-out infinite alternate;
+}
+/* Grain over everything in the pack. */
+.pack-detty::after {
+  content: ""; position: absolute; inset: 0; background-image: var(--dd-grain); background-size: 180px;
+  opacity: var(--dd-grain-op); mix-blend-mode: var(--dd-grain-blend);
+}
+.pack-detty > i { position: absolute; display: block; }
+
+/* Firework blooms: two bursts drawn from one inline SVG mask, filled with gold into the host accent. */
+.dd-fx { inset: 0; }
+.dd-fx::before, .dd-fx::after {
+  content: ""; position: absolute; width: var(--s); height: var(--s); left: var(--x); top: var(--y); margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2);
+  background: radial-gradient(closest-side, var(--dd-gold) 45%, var(--t-accent) 92%);
+  -webkit-mask: var(--dd-burst) center / contain no-repeat; mask: var(--dd-burst) center / contain no-repeat;
+  opacity: 0; transform: scale(.35);
+  animation: dd-bloom 9s cubic-bezier(.2, .7, .2, 1) infinite;
+}
+.dd-fx::before { --s: clamp(170px, 26vw, 300px); --x: 86%; --y: 15%; }
+.dd-fx::after  { --s: clamp(120px, 17vw, 210px); --x: 11%; --y: 40%; animation-delay: -3s; }
+
+/* Sparkler glints: tiny four-point stars that twinkle in two alternating sets. */
+.dd-glint { inset: 0; }
+.dd-glint::before, .dd-glint::after {
+  content: ""; position: absolute; inset: 0; background: var(--dd-gold);
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  animation: dd-twinkle 3.6s ease-in-out infinite;
+}
+.dd-glint::before {
+  -webkit-mask-image: var(--dd-star), var(--dd-star), var(--dd-star), var(--dd-star), var(--dd-star);
+          mask-image: var(--dd-star), var(--dd-star), var(--dd-star), var(--dd-star), var(--dd-star);
+  -webkit-mask-position: 6% 8%, 72% 6%, 95% 44%, 3% 62%, 38% 3%;
+          mask-position: 6% 8%, 72% 6%, 95% 44%, 3% 62%, 38% 3%;
+  -webkit-mask-size: 14px, 10px, 12px, 9px, 8px; mask-size: 14px, 10px, 12px, 9px, 8px;
+}
+.dd-glint::after {
+  -webkit-mask-image: var(--dd-star), var(--dd-star), var(--dd-star), var(--dd-star), var(--dd-star);
+          mask-image: var(--dd-star), var(--dd-star), var(--dd-star), var(--dd-star), var(--dd-star);
+  -webkit-mask-position: 22% 18%, 58% 2%, 97% 76%, 8% 88%, 90% 30%;
+          mask-position: 22% 18%, 58% 2%, 97% 76%, 8% 88%, 90% 30%;
+  -webkit-mask-size: 9px, 12px, 8px, 11px, 7px; mask-size: 9px, 12px, 8px, 11px, 7px;
+  animation-delay: -1.8s;
+}
+
+/* Lagos motifs: agogo bell and sparkler held still in quiet corners; a small yellow danfo crosses the bottom now and then. */
+.dd-motifs { inset: 0; }
+.dd-motifs::before {
+  content: ""; position: absolute; inset: 0; background: var(--dd-gold); opacity: .5;
+  -webkit-mask-image: var(--dd-bell), var(--dd-spark), var(--dd-star);
+          mask-image: var(--dd-bell), var(--dd-spark), var(--dd-star);
+  -webkit-mask-position: 4% 22%, 96% 64%, 93% 92%; mask-position: 4% 22%, 96% 64%, 93% 92%;
+  -webkit-mask-size: 58px, 56px, 18px; mask-size: 58px, 56px, 18px;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+}
+.dd-motifs::after {
+  content: ""; position: absolute; left: 0; bottom: 22px; width: 80px; height: 37px; background: var(--dd-gold); opacity: .6;
+  -webkit-mask: var(--dd-danfo) center / contain no-repeat; mask: var(--dd-danfo) center / contain no-repeat;
+  transform: translateX(-100px);
+  animation: dd-drive 48s linear infinite;
+}
+
+/* Phone: the card fills the width, so the bursts move to the open band above and below it. */
+@media (max-width: 600px) {
+  .dd-fx::before { --x: 82%; --y: 2%; }
+  .dd-fx::after  { --x: 14%; --y: 97%; }
+}
+@keyframes dd-sway  { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+@keyframes dd-bloom {
+  0%   { opacity: 0;   transform: scale(.35) rotate(0deg); }
+  7%   { opacity: var(--dd-peak, .5); }
+  32%  { opacity: calc(var(--dd-peak, .5) * .55); transform: scale(1) rotate(6deg); }
+  64%  { opacity: 0;   transform: scale(1.14) rotate(9deg); }
+  100% { opacity: 0;   transform: scale(1.12) rotate(9deg); }
+}
+@keyframes dd-twinkle { 0%, 100% { opacity: .15; } 50% { opacity: .85; } }
+@keyframes dd-drive {
+  0%   { transform: translateX(-100px); }
+  45%  { transform: translateX(calc(100vw + 20px)); }
+  100% { transform: translateX(calc(100vw + 20px)); }
+}
+[data-mood="day"] .pack-detty { --dd-peak: .7; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pack-detty::before, .dd-glint::before, .dd-glint::after { animation: none; }
+  .dd-glint::before, .dd-glint::after { opacity: .55; }
+  .dd-fx::before, .dd-fx::after { animation: none; opacity: .3; transform: none; }
+  .dd-motifs::after { animation: none; transform: none; left: 6%; }
+}
+
+/* -------------------------------------------------------------- Owambe ----
+   Aso-oke strip weave: ground strips, warp threads and motifs, metallic floats with a slow light sweep, grain on top.
+   The cloth fades out towards the content. */
+.pack-owambe {
+  --ow-tile: 192px 128px;
+  --ow-ground: color-mix(in oklch, var(--t-soft) 85%, var(--t-accent) 15%);
+  --ow-thread: color-mix(in oklch, var(--t-accent) 58%, var(--t-bg));
+  --ow-gold: oklch(from var(--t-accent) calc(l + .1) calc(c * .75) calc(h + 30));
+  --ow-gold-hi: color-mix(in oklch, var(--ow-gold) 45%, var(--t-text));
+  --ow-grain-op: .16;
+  --ow-grain-blend: overlay;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -8%, var(--t-glow), transparent 70%),
+    var(--t-bg);
+}
+[data-mood="day"] .pack-owambe {
+  --ow-ground: color-mix(in oklch, var(--t-soft) 80%, var(--t-accent) 20%);
+  --ow-thread: color-mix(in oklch, var(--t-accent) 50%, var(--t-bg));
+  --ow-gold: oklch(from var(--t-accent) calc(l + .14) calc(c * .9) calc(h + 30));
+  --ow-gold-hi: color-mix(in oklch, var(--ow-gold) 55%, var(--t-tile));
+  --ow-grain-op: .11;
+  --ow-grain-blend: multiply;
+}
+/* The cloth: fades towards the content so the card stays calm. */
+.pack-owambe .ow-cloth {
+  position: absolute; inset: 0;
+  -webkit-mask-image:
+    radial-gradient(ellipse 120% 64% at 50% 0, #000 8%, rgb(0 0 0 / .5) 22%, transparent 42%),
+    radial-gradient(ellipse 34% 110% at 0 0, #000 30%, rgb(0 0 0 / .45) 62%, transparent 100%),
+    radial-gradient(ellipse 34% 110% at 100% 0, #000 30%, rgb(0 0 0 / .45) 62%, transparent 100%),
+    linear-gradient(rgb(0 0 0 / .1), rgb(0 0 0 / .1));
+  mask-image:
+    radial-gradient(ellipse 120% 64% at 50% 0, #000 8%, rgb(0 0 0 / .5) 22%, transparent 42%),
+    radial-gradient(ellipse 34% 110% at 0 0, #000 30%, rgb(0 0 0 / .45) 62%, transparent 100%),
+    radial-gradient(ellipse 34% 110% at 100% 0, #000 30%, rgb(0 0 0 / .45) 62%, transparent 100%),
+    linear-gradient(rgb(0 0 0 / .1), rgb(0 0 0 / .1));
+}
+.pack-owambe .ow-cloth::before,
+.pack-owambe .ow-cloth::after,
+.pack-owambe .ow-gold { content: ""; position: absolute; inset: 0; -webkit-mask-size: var(--ow-tile); mask-size: var(--ow-tile); }
+.pack-owambe .ow-cloth::before { background: var(--ow-ground); -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='128' viewBox='0 0 192 128'%3E%3Cdefs%3E%3Cpattern id='b' width='4' height='4' patternUnits='userSpaceOnUse'%3E%3Crect x='0' y='0' width='4' height='4' fill-opacity='0.62'/%3E%3Crect x='0' y='0' width='2' height='1' fill-opacity='1'/%3E%3Crect x='2' y='2' width='2' height='1' fill-opacity='1'/%3E%3Crect x='1' y='1' width='1' height='1' fill-opacity='0.85'/%3E%3Crect x='3' y='3' width='1' height='1' fill-opacity='0.85'/%3E%3C/pattern%3E%3Cpattern id='v' width='4' height='3' patternUnits='userSpaceOnUse'%3E%3Crect x='0' y='0' width='4' height='1' fill-opacity='0.3'/%3E%3Crect x='2' y='1' width='1' height='2' fill-opacity='0.12'/%3E%3C/pattern%3E%3C/defs%3E%3Crect x='0' y='0' width='84' height='128' fill='url(%23b)'/%3E%3Crect x='84' y='0' width='36' height='128' fill='url(%23v)'/%3E%3Cg opacity='.55'%3E%3Crect x='120' y='0' width='72' height='128' fill='url(%23b)'/%3E%3C/g%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='128' viewBox='0 0 192 128'%3E%3Cdefs%3E%3Cpattern id='b' width='4' height='4' patternUnits='userSpaceOnUse'%3E%3Crect x='0' y='0' width='4' height='4' fill-opacity='0.62'/%3E%3Crect x='0' y='0' width='2' height='1' fill-opacity='1'/%3E%3Crect x='2' y='2' width='2' height='1' fill-opacity='1'/%3E%3Crect x='1' y='1' width='1' height='1' fill-opacity='0.85'/%3E%3Crect x='3' y='3' width='1' height='1' fill-opacity='0.85'/%3E%3C/pattern%3E%3Cpattern id='v' width='4' height='3' patternUnits='userSpaceOnUse'%3E%3Crect x='0' y='0' width='4' height='1' fill-opacity='0.3'/%3E%3Crect x='2' y='1' width='1' height='2' fill-opacity='0.12'/%3E%3C/pattern%3E%3C/defs%3E%3Crect x='0' y='0' width='84' height='128' fill='url(%23b)'/%3E%3Crect x='84' y='0' width='36' height='128' fill='url(%23v)'/%3E%3Cg opacity='.55'%3E%3Crect x='120' y='0' width='72' height='128' fill='url(%23b)'/%3E%3C/g%3E%3C/svg%3E"); }
+.pack-owambe .ow-cloth::after { background: var(--ow-thread); -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='128' viewBox='0 0 192 128'%3E%3Crect x='0' y='0' width='0.8' height='128' fill-opacity='0.6'/%3E%3Crect x='84' y='0' width='0.8' height='128' fill-opacity='0.6'/%3E%3Crect x='120' y='0' width='0.8' height='128' fill-opacity='0.6'/%3E%3Crect x='3' y='0' width='1.2' height='128'/%3E%3Crect x='6' y='0' width='0.6' height='128'/%3E%3Crect x='77.4' y='0' width='0.6' height='128'/%3E%3Crect x='79.8' y='0' width='1.2' height='128'/%3E%3Crect x='88' y='0' width='0.8' height='128'/%3E%3Crect x='91' y='0' width='0.5' height='128'/%3E%3Crect x='112.5' y='0' width='0.5' height='128'/%3E%3Crect x='115.2' y='0' width='0.8' height='128'/%3E%3Crect x='123' y='0' width='1' height='128'/%3E%3Crect x='126' y='0' width='0.5' height='128'/%3E%3Crect x='185.5' y='0' width='0.5' height='128'/%3E%3Crect x='188' y='0' width='1' height='128'/%3E%3Cpath d='M42 8L62 32L42 56L22 32ZM42 72L62 96L42 120L22 96Z' fill='none' stroke='%23000' stroke-width='1.6'/%3E%3Cpath d='M42 17L54.5 32L42 47L29.5 32ZM42 81L54.5 96L42 111L29.5 96Z' fill='none' stroke='%23000' stroke-width='.8' stroke-opacity='.75'/%3E%3Cpath d='M17 28L20 32L17 36L14 32Z'/%3E%3Cpath d='M67 28L70 32L67 36L64 32Z'/%3E%3Cpath d='M17 92L20 96L17 100L14 96Z'/%3E%3Cpath d='M67 92L70 96L67 100L64 96Z'/%3E%3Crect x='14' y='-3.2' width='56' height='1.2'/%3E%3Crect x='14' y='2' width='56' height='1.2'/%3E%3Crect x='16' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='23' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='30' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='37' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='44' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='51' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='58' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='65' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='14' y='60.8' width='56' height='1.2'/%3E%3Crect x='14' y='66' width='56' height='1.2'/%3E%3Crect x='16' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='23' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='30' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='37' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='44' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='51' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='58' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='65' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='14' y='124.8' width='56' height='1.2'/%3E%3Crect x='14' y='130' width='56' height='1.2'/%3E%3Crect x='16' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='23' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='30' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='37' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='44' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='51' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='58' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='65' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='128' y='12' width='4' height='4'/%3E%3Crect x='136' y='12' width='4' height='4'/%3E%3Crect x='144' y='12' width='4' height='4'/%3E%3Crect x='152' y='12' width='4' height='4'/%3E%3Crect x='160' y='12' width='4' height='4'/%3E%3Crect x='168' y='12' width='4' height='4'/%3E%3Crect x='176' y='12' width='4' height='4'/%3E%3Crect x='132' y='16' width='4' height='4'/%3E%3Crect x='140' y='16' width='4' height='4'/%3E%3Crect x='148' y='16' width='4' height='4'/%3E%3Crect x='156' y='16' width='4' height='4'/%3E%3Crect x='164' y='16' width='4' height='4'/%3E%3Crect x='172' y='16' width='4' height='4'/%3E%3Crect x='180' y='16' width='4' height='4'/%3E%3Crect x='128' y='76' width='4' height='4'/%3E%3Crect x='136' y='76' width='4' height='4'/%3E%3Crect x='144' y='76' width='4' height='4'/%3E%3Crect x='152' y='76' width='4' height='4'/%3E%3Crect x='160' y='76' width='4' height='4'/%3E%3Crect x='168' y='76' width='4' height='4'/%3E%3Crect x='176' y='76' width='4' height='4'/%3E%3Crect x='132' y='80' width='4' height='4'/%3E%3Crect x='140' y='80' width='4' height='4'/%3E%3Crect x='148' y='80' width='4' height='4'/%3E%3Crect x='156' y='80' width='4' height='4'/%3E%3Crect x='164' y='80' width='4' height='4'/%3E%3Crect x='172' y='80' width='4' height='4'/%3E%3Crect x='180' y='80' width='4' height='4'/%3E%3Crect x='132' y='48' width='48' height='1.2'/%3E%3Crect x='132' y='49.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='137.6' y='44' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='143.6' y='49.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='149.6' y='44' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='155.6' y='49.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='161.6' y='44' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='167.6' y='49.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='173.6' y='44' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='179.6' y='49.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='132' y='112' width='48' height='1.2'/%3E%3Crect x='132' y='113.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='137.6' y='108' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='143.6' y='113.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='149.6' y='108' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='155.6' y='113.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='161.6' y='108' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='167.6' y='113.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='173.6' y='108' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='179.6' y='113.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='95' y='8' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='24' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='40' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='56' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='72' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='88' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='104' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='120' width='14' height='0.8' fill-opacity='0.6'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='128' viewBox='0 0 192 128'%3E%3Crect x='0' y='0' width='0.8' height='128' fill-opacity='0.6'/%3E%3Crect x='84' y='0' width='0.8' height='128' fill-opacity='0.6'/%3E%3Crect x='120' y='0' width='0.8' height='128' fill-opacity='0.6'/%3E%3Crect x='3' y='0' width='1.2' height='128'/%3E%3Crect x='6' y='0' width='0.6' height='128'/%3E%3Crect x='77.4' y='0' width='0.6' height='128'/%3E%3Crect x='79.8' y='0' width='1.2' height='128'/%3E%3Crect x='88' y='0' width='0.8' height='128'/%3E%3Crect x='91' y='0' width='0.5' height='128'/%3E%3Crect x='112.5' y='0' width='0.5' height='128'/%3E%3Crect x='115.2' y='0' width='0.8' height='128'/%3E%3Crect x='123' y='0' width='1' height='128'/%3E%3Crect x='126' y='0' width='0.5' height='128'/%3E%3Crect x='185.5' y='0' width='0.5' height='128'/%3E%3Crect x='188' y='0' width='1' height='128'/%3E%3Cpath d='M42 8L62 32L42 56L22 32ZM42 72L62 96L42 120L22 96Z' fill='none' stroke='%23000' stroke-width='1.6'/%3E%3Cpath d='M42 17L54.5 32L42 47L29.5 32ZM42 81L54.5 96L42 111L29.5 96Z' fill='none' stroke='%23000' stroke-width='.8' stroke-opacity='.75'/%3E%3Cpath d='M17 28L20 32L17 36L14 32Z'/%3E%3Cpath d='M67 28L70 32L67 36L64 32Z'/%3E%3Cpath d='M17 92L20 96L17 100L14 96Z'/%3E%3Cpath d='M67 92L70 96L67 100L64 96Z'/%3E%3Crect x='14' y='-3.2' width='56' height='1.2'/%3E%3Crect x='14' y='2' width='56' height='1.2'/%3E%3Crect x='16' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='23' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='30' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='37' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='44' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='51' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='58' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='65' y='-1' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='14' y='60.8' width='56' height='1.2'/%3E%3Crect x='14' y='66' width='56' height='1.2'/%3E%3Crect x='16' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='23' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='30' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='37' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='44' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='51' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='58' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='65' y='63' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='14' y='124.8' width='56' height='1.2'/%3E%3Crect x='14' y='130' width='56' height='1.2'/%3E%3Crect x='16' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='23' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='30' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='37' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='44' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='51' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='58' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='65' y='127' width='3' height='2' fill-opacity='0.8'/%3E%3Crect x='128' y='12' width='4' height='4'/%3E%3Crect x='136' y='12' width='4' height='4'/%3E%3Crect x='144' y='12' width='4' height='4'/%3E%3Crect x='152' y='12' width='4' height='4'/%3E%3Crect x='160' y='12' width='4' height='4'/%3E%3Crect x='168' y='12' width='4' height='4'/%3E%3Crect x='176' y='12' width='4' height='4'/%3E%3Crect x='132' y='16' width='4' height='4'/%3E%3Crect x='140' y='16' width='4' height='4'/%3E%3Crect x='148' y='16' width='4' height='4'/%3E%3Crect x='156' y='16' width='4' height='4'/%3E%3Crect x='164' y='16' width='4' height='4'/%3E%3Crect x='172' y='16' width='4' height='4'/%3E%3Crect x='180' y='16' width='4' height='4'/%3E%3Crect x='128' y='76' width='4' height='4'/%3E%3Crect x='136' y='76' width='4' height='4'/%3E%3Crect x='144' y='76' width='4' height='4'/%3E%3Crect x='152' y='76' width='4' height='4'/%3E%3Crect x='160' y='76' width='4' height='4'/%3E%3Crect x='168' y='76' width='4' height='4'/%3E%3Crect x='176' y='76' width='4' height='4'/%3E%3Crect x='132' y='80' width='4' height='4'/%3E%3Crect x='140' y='80' width='4' height='4'/%3E%3Crect x='148' y='80' width='4' height='4'/%3E%3Crect x='156' y='80' width='4' height='4'/%3E%3Crect x='164' y='80' width='4' height='4'/%3E%3Crect x='172' y='80' width='4' height='4'/%3E%3Crect x='180' y='80' width='4' height='4'/%3E%3Crect x='132' y='48' width='48' height='1.2'/%3E%3Crect x='132' y='49.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='137.6' y='44' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='143.6' y='49.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='149.6' y='44' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='155.6' y='49.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='161.6' y='44' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='167.6' y='49.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='173.6' y='44' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='179.6' y='49.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='132' y='112' width='48' height='1.2'/%3E%3Crect x='132' y='113.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='137.6' y='108' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='143.6' y='113.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='149.6' y='108' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='155.6' y='113.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='161.6' y='108' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='167.6' y='113.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='173.6' y='108' width='1' height='4' fill-opacity='0.8'/%3E%3Crect x='179.6' y='113.2' width='1' height='3' fill-opacity='0.8'/%3E%3Crect x='95' y='8' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='24' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='40' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='56' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='72' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='88' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='104' width='14' height='0.8' fill-opacity='0.6'/%3E%3Crect x='95' y='120' width='14' height='0.8' fill-opacity='0.6'/%3E%3C/svg%3E"); }
+.pack-owambe .ow-gold {
+  overflow: hidden;
+  background: color-mix(in oklch, var(--ow-gold) 70%, transparent);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='128' viewBox='0 0 192 128'%3E%3Cpath d='M42 25.5L47 32L42 38.5L37 32ZM42 89.5L47 96L42 102.5L37 96Z'/%3E%3Crect x='40' y='-0.6' width='4' height='1.2'/%3E%3Crect x='14' y='-0.35' width='56' height='0.7' fill-opacity='0.55'/%3E%3Crect x='40' y='63.4' width='4' height='1.2'/%3E%3Crect x='14' y='63.65' width='56' height='0.7' fill-opacity='0.55'/%3E%3Crect x='40' y='127.4' width='4' height='1.2'/%3E%3Crect x='14' y='127.65' width='56' height='0.7' fill-opacity='0.55'/%3E%3Crect x='8.6' y='0' width='0.7' height='128' fill-opacity='0.9'/%3E%3Crect x='74.8' y='0' width='0.7' height='128' fill-opacity='0.9'/%3E%3Crect x='124.6' y='0' width='0.7' height='128' fill-opacity='0.9'/%3E%3Crect x='186.5' y='0' width='0.7' height='128' fill-opacity='0.9'/%3E%3Crect x='101.3' y='0' width='1.4' height='6'/%3E%3Crect x='101.3' y='10' width='1.4' height='6'/%3E%3Crect x='101.3' y='20' width='1.4' height='6'/%3E%3Crect x='101.3' y='30' width='1.4' height='6'/%3E%3Crect x='101.3' y='40' width='1.4' height='6'/%3E%3Crect x='101.3' y='50' width='1.4' height='6'/%3E%3Crect x='101.3' y='60' width='1.4' height='6'/%3E%3Crect x='101.3' y='70' width='1.4' height='6'/%3E%3Crect x='101.3' y='80' width='1.4' height='6'/%3E%3Crect x='101.3' y='90' width='1.4' height='6'/%3E%3Crect x='101.3' y='100' width='1.4' height='6'/%3E%3Crect x='101.3' y='110' width='1.4' height='6'/%3E%3Crect x='101.3' y='120' width='1.4' height='6'/%3E%3Crect x='128' y='21.5' width='56' height='0.9'/%3E%3Crect x='128' y='85.5' width='56' height='0.9'/%3E%3Cpath d='M156 44.1L159.5 48.6L156 53.1L152.5 48.6Z'/%3E%3Cpath d='M156 108.1L159.5 112.6L156 117.1L152.5 112.6Z'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='128' viewBox='0 0 192 128'%3E%3Cpath d='M42 25.5L47 32L42 38.5L37 32ZM42 89.5L47 96L42 102.5L37 96Z'/%3E%3Crect x='40' y='-0.6' width='4' height='1.2'/%3E%3Crect x='14' y='-0.35' width='56' height='0.7' fill-opacity='0.55'/%3E%3Crect x='40' y='63.4' width='4' height='1.2'/%3E%3Crect x='14' y='63.65' width='56' height='0.7' fill-opacity='0.55'/%3E%3Crect x='40' y='127.4' width='4' height='1.2'/%3E%3Crect x='14' y='127.65' width='56' height='0.7' fill-opacity='0.55'/%3E%3Crect x='8.6' y='0' width='0.7' height='128' fill-opacity='0.9'/%3E%3Crect x='74.8' y='0' width='0.7' height='128' fill-opacity='0.9'/%3E%3Crect x='124.6' y='0' width='0.7' height='128' fill-opacity='0.9'/%3E%3Crect x='186.5' y='0' width='0.7' height='128' fill-opacity='0.9'/%3E%3Crect x='101.3' y='0' width='1.4' height='6'/%3E%3Crect x='101.3' y='10' width='1.4' height='6'/%3E%3Crect x='101.3' y='20' width='1.4' height='6'/%3E%3Crect x='101.3' y='30' width='1.4' height='6'/%3E%3Crect x='101.3' y='40' width='1.4' height='6'/%3E%3Crect x='101.3' y='50' width='1.4' height='6'/%3E%3Crect x='101.3' y='60' width='1.4' height='6'/%3E%3Crect x='101.3' y='70' width='1.4' height='6'/%3E%3Crect x='101.3' y='80' width='1.4' height='6'/%3E%3Crect x='101.3' y='90' width='1.4' height='6'/%3E%3Crect x='101.3' y='100' width='1.4' height='6'/%3E%3Crect x='101.3' y='110' width='1.4' height='6'/%3E%3Crect x='101.3' y='120' width='1.4' height='6'/%3E%3Crect x='128' y='21.5' width='56' height='0.9'/%3E%3Crect x='128' y='85.5' width='56' height='0.9'/%3E%3Cpath d='M156 44.1L159.5 48.6L156 53.1L152.5 48.6Z'/%3E%3Cpath d='M156 108.1L159.5 112.6L156 117.1L152.5 112.6Z'/%3E%3C/svg%3E");
+}
+/* Light catching the metallic threads: a soft diagonal band that crosses slowly, then rests. */
+.pack-owambe .ow-gold::before {
+  content: ""; position: absolute; top: -20%; bottom: -20%; left: 0; width: 100%;
+  background: linear-gradient(100deg, transparent 30%, color-mix(in oklch, var(--ow-gold-hi) 60%, transparent) 46%, var(--ow-gold-hi) 50%, color-mix(in oklch, var(--ow-gold-hi) 60%, transparent) 54%, transparent 70%);
+  transform: translateX(-100%);
+  animation: ow-sheen 16s cubic-bezier(.45, 0, .55, 1) infinite;
+  will-change: transform;
+}
+@keyframes ow-sheen {
+  0% { transform: translateX(-100%); }
+  70%, 100% { transform: translateX(100%); }
+}
+/* Film grain over everything in the pack. */
+.pack-owambe::after {
+  content: ""; position: absolute; inset: 0; z-index: 1;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  opacity: var(--ow-grain-op);
+  mix-blend-mode: var(--ow-grain-blend);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pack-owambe .ow-gold::before { animation: none; transform: translateX(-36%); }
+}
+
+/* ------------------------------------------------- Older browsers (no relative colours) ----
+   The same derived colours from color-mix(), so the packs still read as tinted, just a little less exact. */
+@supports not (color: oklch(from red l c h)) {
+  .pack-glow {
+    --pg-core: color-mix(in oklch, color-mix(in oklch, var(--t-accent) 80%, white) 60%, transparent);
+    --pg-mid: color-mix(in oklch, color-mix(in oklch, var(--t-accent) 75%, black) 42%, transparent);
+    --pg-halo: color-mix(in oklch, var(--t-glow) 90%, transparent);
+    --pg-two-core: color-mix(in oklch, color-mix(in oklch, var(--t-glow2) 70%, white) 38%, transparent);
+    --pg-haze: color-mix(in oklch, color-mix(in oklch, var(--t-accent) 72%, black) 42%, transparent);
+    --pg-vignette: color-mix(in oklch, color-mix(in oklch, var(--t-bg) 80%, black) 55%, transparent);
+  }
+  [data-mood="day"] .pack-glow {
+    --pg-core: color-mix(in oklch, var(--t-tile) 90%, transparent);
+    --pg-mid: color-mix(in oklch, color-mix(in oklch, var(--t-accent) 18%, white) 55%, transparent);
+    --pg-halo: color-mix(in oklch, var(--t-glow) 50%, transparent);
+    --pg-two: color-mix(in oklch, var(--t-glow2) 75%, transparent);
+    --pg-two-core: color-mix(in oklch, var(--t-tile) 45%, transparent);
+    --pg-haze: color-mix(in oklch, color-mix(in oklch, var(--t-accent) 15%, white) 50%, transparent);
+    --pg-vignette: color-mix(in oklch, var(--t-glow) 33%, transparent);
+  }
+  .pack-confetti {
+    --cf-2: color-mix(in oklch, var(--t-accent) 70%, var(--t-glow2));
+    --cf-3: color-mix(in oklch, var(--t-accent) 70%, white);
+  }
+  [data-mood="day"] .pack-confetti {
+    --cf-2: color-mix(in oklch, var(--t-accent) 65%, var(--t-glow2));
+    --cf-3: color-mix(in oklch, var(--t-accent) 55%, white);
+    --cf-4: color-mix(in oklch, var(--t-accent) 60%, var(--t-glow));
+  }
+  .pack-detty { --dd-gold: color-mix(in oklch, var(--t-accent) 30%, oklch(0.82 0.14 82)); }
+  [data-mood="day"] .pack-detty { --dd-gold: color-mix(in oklch, var(--t-accent) 30%, oklch(0.62 0.14 82)); }
+  .pack-owambe { --ow-gold: color-mix(in oklch, color-mix(in oklch, var(--t-accent) 65%, var(--t-glow2)) 80%, var(--t-text)); }
+  [data-mood="day"] .pack-owambe { --ow-gold: color-mix(in oklch, var(--t-accent) 70%, var(--t-glow2)); }
+}
