@@ -21,6 +21,8 @@ export default function CreatePage() {
     const asked = new URLSearchParams(window.location.search).get("mode");
     const m = asked === "event" || asked === "room" ? asked : (d.pending ?? d.mode);
     if (m === "event" || m === "room") setMode(m);
+    // From the manage bar's "Make a room" on an event page: same as "Set up my room" on the done sheet.
+    if (asked === "room" && new URLSearchParams(window.location.search).get("from") === "event") setFromEvent(true);
     // A sign up left half way for the other kind must not resume into this one later.
     if (asked === "event" || asked === "room") patchDraft({ mode: asked, ...(d.pending && d.pending !== asked ? { pending: null } : {}) });
     setRestored(true);

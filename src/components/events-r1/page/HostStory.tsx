@@ -21,7 +21,7 @@ import SignInSheet from "../SignInSheet";
 import { buttonFromEvent } from "../labels";
 import { isOnline } from "../words";
 import { downloadIcs, googleCalendarUrl } from "./calendar";
-import HostStrip from "./HostStrip";
+import ManageBar, { HostExtras } from "./ManageBar";
 import { eventUrl, shareOrCopy } from "./share";
 import StatusCard from "./StatusCard";
 import { CheckoutSheet, TicketBar, TicketCard, useStoryTickets } from "./StoryTickets";
@@ -321,13 +321,14 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   );
 
   let action: React.ReactNode;
-  if (viewer?.isHost) action = <div className="t-adopt"><HostStrip event={event} viewer={viewer} /></div>;
+  if (viewer?.isHost) action = <div className="t-adopt"><HostExtras event={event} viewer={viewer} /></div>;
   else if (viewer?.registration) action = <div className="t-adopt"><StatusCard event={event} viewer={viewer} /></div>;
   else action = <TicketCard t={t} anchor={anchor} />;
 
   return (
     <div className="h-full overflow-y-auto">
       <TintShell look={look} tint={tint} className="min-h-full">
+        {viewer?.isHost && <ManageBar event={event} viewer={viewer} />}
         {asVisitor && (
           <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 bg-t-accent px-[22px] py-2 text-[13.5px] font-bold text-t-on lg:px-[30px]" data-visitor-bar>
             <span>Viewing as a visitor. This is what guests see before they get a ticket.</span>
