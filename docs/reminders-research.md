@@ -195,6 +195,18 @@ Web push and in-app cost nothing. WhatsApp comes to about ₦28 a guest, which i
 
 **Realistic WhatsApp go-live is 1 to 3 weeks from the day Jae starts, and business verification sets the pace.** Email can go live in a day once the code is built.
 
+## What the competitors use (from their public DNS records, 29 Oct 2026)
+
+A domain's SPF, DKIM and verification records name the services allowed to send mail for it.
+
+| Platform | Event email | Other mail | WhatsApp |
+|---|---|---|---|
+| Luma | Amazon SES on `luma.com` (SPF includes `amazonses.com`). The old `lu.ma` domain still has SendGrid keys. | Google Workspace | Yes, outside the US and a few other countries. It sends from +1 (415) 212-6297, a US number, and the provider isn't public. Reminders go 1 day and 1 hour before. Reply STOP to stop. |
+| Tix Africa | SendGrid (DKIM keys `s1` and `s2` on `tix.africa`) | Sender.net for newsletters (SPF `sendersrv.com`), Google Workspace | No public sign of WhatsApp messages |
+| PartyVerse (`partyverse.com`) | Amazon SES, Ireland region (`_amazonses` verification, `email.partyverse.com` receives through AWS) | Zoho Mail. The site loads Firebase, likely for push. | No public sign |
+
+DNS shows who sends the email. It can't show the WhatsApp provider. None of the three uses Resend, but all three run their own domains with SPF and DKIM, which is the part that matters for reaching inboxes.
+
 ## Jae's picks
 
 1. Email: Resend (recommended), or another from the table?
