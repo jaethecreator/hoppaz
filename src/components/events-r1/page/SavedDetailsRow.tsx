@@ -7,7 +7,7 @@ import { fullName, maskPhone } from "./CheckoutContact";
 
 /**
  * "Saved checkout details" in Me: what checkout keeps when "Save my details for next time" is on (name, email, phone), with Delete.
- * Nothing saved, signed out of Release 1, or the real function not there yet: no row. It reads the Release 1 sign in itself, as HostEntry does.
+ * Nothing saved, signed out of Release 1, or the real function not there yet: no row. It reads the Release 1 sign in itself (Me still reads its numbers from the app session).
  */
 export default function SavedDetailsRow() {
   const api = useR1Api();

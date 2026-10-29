@@ -13,7 +13,6 @@ import { useR1Api, useR1Auth, useRooms } from "@/lib/events-r1/hooks";
 import type { EventChat, RoomNotice, RoomSummary } from "@/lib/events-r1/types";
 import CreateButton from "../CreateButton";
 import SignInSheet from "../SignInSheet";
-import HostEntry from "../workspace/HostEntry";
 import { closesWord, enterPath, memberWord, roomPath, walkable } from "./words";
 
 const tab = "min-h-[44px] flex-1 rounded-hz border px-4 font-display text-[14px] font-bold";
@@ -74,7 +73,7 @@ export default function RoomzTab() {
   return (
     <div className="h-full overflow-y-auto px-4 pb-28">
       <div className="mx-auto w-full max-w-[560px]">
-        <PageHeader title="ROOMZ" className="pb-3" action={<HostEntry variant="button" />} />
+        <PageHeader title="ROOMZ" className="pb-3" />
         <Notices />
         <div role="tablist" aria-label="Roomz" className="mb-4 flex gap-2">
           {(["mine", "discover"] as const).map((v) => (
@@ -180,12 +179,13 @@ function HqRow({ hq }: { hq: RoomSummary }) {
   );
 }
 
-/** One of your roomz: the body opens the room home, the button goes straight in. */
+/** One of your roomz: the body opens the room home, the button goes straight in. A room you run (owner or admin) also has Manage: its room admin. */
 function MineRow({ room }: { room: RoomSummary }) {
   const a = room.latest_announcement;
+  const runs = room.my_role === "owner" || room.my_role === "admin" || room.is_owner;
   return (
-    <div className="card mb-2 flex items-center gap-2.5 py-3 pr-3" data-room-row={room.slug}>
-      <Link href={roomPath(room)} className="flex min-h-[44px] min-w-0 flex-1 items-center gap-3">
+    <div className="card mb-2 flex flex-wrap items-center gap-2.5 py-3 pr-3" data-room-row={room.slug}>
+      <Link href={roomPath(room)} className="flex min-h-[44px] min-w-0 flex-1 basis-[180px] items-center gap-3">
         <CrewLogo url={room.logo_url} name={room.name} size={44} />
         <span className="min-w-0 flex-1">
           <b className="flex items-center gap-1.5 font-display text-[16px] font-semibold">
@@ -196,11 +196,18 @@ function MineRow({ room }: { room: RoomSummary }) {
           <span className="hint block truncate">{a ? a.body : memberWord(room.members)}</span>
         </span>
       </Link>
-      {walkable(room) && (
-        <Link href={enterPath(room)} className="btn btn-ghost min-h-[40px] flex-none px-3 text-[13px] normal-case" aria-label={`Enter ${room.name}`}>
-          Enter room
-        </Link>
-      )}
+      <span className="ml-auto flex flex-none items-center gap-2">
+        {runs && (
+          <Link href={`/rooms/${encodeURIComponent(room.slug)}/admin`} className="btn btn-ghost min-h-[44px] flex-none px-3 text-[13px] normal-case" aria-label={`Manage ${room.name}`} data-room-manage>
+            Manage
+          </Link>
+        )}
+        {walkable(room) && (
+          <Link href={enterPath(room)} className="btn btn-ghost min-h-[40px] flex-none px-3 text-[13px] normal-case" aria-label={`Enter ${room.name}`}>
+            Enter room
+          </Link>
+        )}
+      </span>
     </div>
   );
 }
