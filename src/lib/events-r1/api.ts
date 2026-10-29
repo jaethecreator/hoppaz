@@ -8,7 +8,7 @@ import type { PayApi } from "./pay";
 import type {
   AuthUser, DoorPerson, EventChat, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
   JoinOutcome, JoinRequest, Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomGuests, RoomMember, RoomMessage, RoomNotice,
-  RoomPatch, RoomPreview, RoomRole, RoomSummary, ScanResult, Ticket, ViewerState,
+  RoomPatch, RoomPreview, RoomRole, RoomSummary, SavedDetails, ScanResult, Ticket, ViewerState,
 } from "./types";
 
 export type Unsub = () => void;
@@ -109,8 +109,10 @@ export interface RoomsApi {
    * Join by the room's join mode. open: in at once ("joined"). ask: leaves a request ("requested"; asking twice is the same request).
    * invite: needs the room's invite code (opts.invite), else "This room is invite only". A valid invite code gets into an ask room too.
    * Someone already in answers "already". Needs a signed in viewer ("Sign in first").
+   * opts.forEvent: the event the viewer just got a ticket for (the "You're going" card). In an ask room the request then carries it
+   * (JoinRequest.ticket_event), so the host sees they bought a ticket. Ignored unless the viewer is going to that event of this room.
    */
-  join(roomId: string, opts?: { invite?: string }): Promise<JoinOutcome>;
+  join(roomId: string, opts?: { invite?: string; forEvent?: string }): Promise<JoinOutcome>;
   /**
    * A member leaves the room by themselves. Their tickets keep working (a registration is not a membership) and they can join again
    * (an ask room: ask again). The owner gets "Owners can't leave" (they hand the room over in Room admin); Lagos HQ cannot be left
@@ -208,6 +210,20 @@ export interface DoorApi {
   setStaff(eventId: string, userId: string, on: boolean): Promise<void>;
 }
 
+/**
+ * The buyer's own account bits that are not the sign-in. Saved checkout details: kept only when the buyer leaves
+ * "Save my details for next time" on, shown and deleted in Me. Real: events_r1_saved_details.sql; until it runs, nothing is saved
+ * (savedDetails answers null and the save is a quiet no-op), so checkout simply asks every time.
+ */
+export interface AccountApi {
+  /** The signed-in person's saved checkout details, or null (none, signed out, or not available yet). */
+  savedDetails(): Promise<SavedDetails | null>;
+  /** Keep (or replace) the details. Needs a signed in viewer ("Sign in first"). Trims; empty first name or email is refused. */
+  saveDetails(d: SavedDetails): Promise<void>;
+  /** Forget them. Nothing saved is fine. */
+  deleteSavedDetails(): Promise<void>;
+}
+
 export interface ClockApi {
   /** Epoch ms. Real time plus an offset the fake lets a tester move (to test "Join call 15 minutes before"). */
   now(): number;
@@ -227,4 +243,6 @@ export interface EventsR1Api {
   pay: PayApi;
   /** Event and room looks (pack, Day or Night, tint). */
   looks: LooksApi;
+  /** Saved checkout details. */
+  account: AccountApi;
 }

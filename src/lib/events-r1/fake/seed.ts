@@ -298,7 +298,7 @@ const MESSAGES: MsgSeed[] = [
 export function buildSeed(now: number): FakeState {
   const st: FakeState = {
     users: {}, events: {}, regs: {}, tickets: {}, pops: {}, announcements: {}, messages: {}, reports: {}, rooms: {},
-    orders: {}, payouts: {}, regSettings: {}, memberships: {}, roles: {}, joinedAt: {}, doorStaff: {}, requests: {}, notices: {}, interest: {}, reads: {},
+    orders: {}, payouts: {}, regSettings: {}, memberships: {}, roles: {}, joinedAt: {}, doorStaff: {}, requests: {}, notices: {}, interest: {}, reads: {}, savedDetails: {},
     viewerId: null, pendingEmail: null, offset: 0, key: null,
   };
   const iso = (ms: number) => new Date(ms).toISOString();

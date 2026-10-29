@@ -177,10 +177,20 @@ export const rooms: RoomsApi = {
     const mine = Object.values(S().requests).find((q) => q.room_id === r.id && q.user_id === v.id);
     if (mode === "invite" && !invited) throw new Error("This room is invite only");
     if (mode === "ask" && !invited) {
-      if (mine?.status === "pending") return "requested";
+      // Asked from "You're going": the request says which of the room's events they hold a ticket for.
+      const ev = opts?.forEvent ? findEvent(opts.forEvent) : undefined;
+      const reg = ev && ev.room_id === r.id ? regOf(ev.id, v.id) : undefined;
+      const ticketFor = ev && reg && isGoing(reg.status) ? ev.id : null;
+      if (mine?.status === "pending") {
+        if (ticketFor && !mine.ticket_event_id) {
+          mine.ticket_event_id = ticketFor;
+          emit();
+        }
+        return "requested";
+      }
       if (mine?.status === "declined") throw new Error("The room's owner has not accepted your request");
       const id = newId();
-      S().requests[id] = { id, room_id: r.id, user_id: v.id, name: v.name, created_at: new Date(now()).toISOString(), status: "pending" };
+      S().requests[id] = { id, room_id: r.id, user_id: v.id, name: v.name, created_at: new Date(now()).toISOString(), status: "pending", ticket_event_id: ticketFor };
       emit();
       return "requested";
     }
@@ -237,7 +247,10 @@ export const rooms: RoomsApi = {
       Object.values(S().requests)
         .filter((q) => q.room_id === r.id && q.status === "pending")
         .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
-        .map((q): JoinRequest => ({ id: q.id, room_id: q.room_id, user_id: q.user_id, name: q.name, created_at: q.created_at }))
+        .map((q): JoinRequest => {
+          const ev = q.ticket_event_id ? S().events[q.ticket_event_id] : undefined;
+          return { id: q.id, room_id: q.room_id, user_id: q.user_id, name: q.name, created_at: q.created_at, ticket_event: ev ? { id: ev.id, title: ev.title } : null };
+        })
     );
   },
 
