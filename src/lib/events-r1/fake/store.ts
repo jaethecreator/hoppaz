@@ -10,6 +10,7 @@
  */
 import type { HostPayoutStatus, Order } from "../pay";
 import { PAID_KEY } from "../flags";
+import type { Lineup } from "../lineup";
 import type {
   AuthUser, JoinMode, JoinRequest, Pop, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement, RoomLinks, RoomMessage, RoomNotice, RoomRole, RoomSummary, Ticket,
 } from "../types";
@@ -99,6 +100,8 @@ export type FakeState = {
   /** By host user id. */
   payouts: Record<string, PayoutRec>;
   regSettings: Record<string, RegSettings>;
+  /** By event id: the lineup or programme. */
+  lineups: Record<string, Lineup>;
   /** "<userId>:<roomId>" */
   memberships: Record<string, boolean>;
   /** "<userId>:<roomId>" to a role. A member with no entry is a plain member; the owner is rooms[].owner_id. */
@@ -125,7 +128,7 @@ export type FakeState = {
 
 const COLLS = [
   "users", "events", "regs", "tickets", "pops", "announcements", "messages", "reports", "rooms",
-  "orders", "payouts", "regSettings", "memberships", "roles", "joinedAt", "doorStaff", "requests", "notices", "interest", "reads",
+  "orders", "payouts", "regSettings", "lineups", "memberships", "roles", "joinedAt", "doorStaff", "requests", "notices", "interest", "reads",
 ] as const;
 type Coll = (typeof COLLS)[number];
 

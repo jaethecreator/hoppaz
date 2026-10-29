@@ -298,7 +298,7 @@ const MESSAGES: MsgSeed[] = [
 export function buildSeed(now: number): FakeState {
   const st: FakeState = {
     users: {}, events: {}, regs: {}, tickets: {}, pops: {}, announcements: {}, messages: {}, reports: {}, rooms: {},
-    orders: {}, payouts: {}, regSettings: {}, memberships: {}, roles: {}, joinedAt: {}, doorStaff: {}, requests: {}, notices: {}, interest: {}, reads: {},
+    orders: {}, payouts: {}, regSettings: {}, lineups: {}, memberships: {}, roles: {}, joinedAt: {}, doorStaff: {}, requests: {}, notices: {}, interest: {}, reads: {},
     viewerId: null, pendingEmail: null, offset: 0, key: null,
   };
   const iso = (ms: number) => new Date(ms).toISOString();
@@ -421,6 +421,16 @@ export function buildSeed(now: number): FakeState {
   st.regSettings[eventKey["listening-party"].id] = {
     questions: [...defaultQuestions(), { id: "q-artist", label: "Who is your favourite artist?", required: false, enabled: true }],
     messages: defaultMessages(),
+  };
+
+  // A lineup on the rooftop night and a programme on the founders call, so the event page has both to show.
+  st.lineups[eventKey["sunset-rooftop"].id] = {
+    kind: "lineup",
+    rows: [{ time: "6:00 PM", name: "DJ Naffy" }, { time: "8:00 PM", name: "Farati Ibeh" }, { time: "10:00 PM", name: "SmallZthedj" }, { time: "Midnight", name: "Titanium" }],
+  };
+  st.lineups[eventKey["founders-zoom"].id] = {
+    kind: "programme",
+    rows: [{ time: "5:00 PM", name: "Welcome and intros" }, { time: "5:15 PM", name: "Office hours, round one", note: "Bring one question" }, { time: "6:15 PM", name: "Open floor" }],
   };
 
   /* Sent Pops (and their copy in the room's Announcements, tagged with the event). */

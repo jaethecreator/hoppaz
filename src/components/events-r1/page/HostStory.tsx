@@ -9,6 +9,7 @@ import { ArrowRight, Calendar, Check, ChevronLeft, Globe, MapPin, Share2 } from 
 import TintShell, { usePictureTint } from "@/components/host/TintShell";
 import { QUESTS_ON } from "@/lib/events-r1/flags";
 import { useR1Api, useR1Auth, useR1Now, useR1Query, useViewerState } from "@/lib/events-r1/hooks";
+import { LINEUP_TITLE } from "@/lib/events-r1/lineup";
 import { DEFAULT_LOOK } from "@/lib/events-r1/looks";
 import type { Look } from "@/lib/events-r1/looks";
 import type { R1Event, ReportReason } from "@/lib/events-r1/types";
@@ -256,6 +257,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
     [asVisitor, real, event]
   );
   const { data: saved, loading: lookLoading } = useR1Query((a) => a.looks.get("event", event.id), [event.id]);
+  const { data: lineup } = useR1Query((a) => a.events.getLineup(event.id), [event.id]);
   const cover = event.flyer_url || fallbackCover(event.id);
   const look: Look = saved ?? { ...DEFAULT_LOOK, mood: themeForEvent(event.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);
@@ -445,6 +447,32 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
             {about && (
               <Sec title="About">
                 <p className="m-0 max-w-[62ch] whitespace-pre-line font-body text-[15.5px] leading-relaxed">{about}</p>
+              </Sec>
+            )}
+            {lineup && lineup.rows.length > 0 && (
+              <Sec title={LINEUP_TITLE[lineup.kind]}>
+                {lineup.kind === "lineup" ? (
+                  <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+                    {lineup.rows.map((r, i) => (
+                      <li key={i} className="rounded-full border border-t-line bg-t-tile px-3.5 py-2 font-body text-[14px] font-semibold">
+                        {r.name}
+                        {r.time && <span className="ml-2 font-mono text-[12px] font-medium text-t-accent">{r.time}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <ul className="m-0 list-none p-0">
+                    {lineup.rows.map((r, i) => (
+                      <li key={i} className={`grid gap-3 border-b border-t-line py-[11px] last:border-b-0 ${lineup.rows.some((x) => x.time) ? "grid-cols-[90px_minmax(0,1fr)]" : "grid-cols-1"}`}>
+                        {lineup.rows.some((x) => x.time) && <b className="font-mono text-[14px] font-medium text-t-accent">{r.time ?? ""}</b>}
+                        <span className="font-body text-[15px]">
+                          {r.name}
+                          {r.note && <small className="block text-[12.5px] text-t-muted">{r.note}</small>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </Sec>
             )}
             {!asVisitor && extra}

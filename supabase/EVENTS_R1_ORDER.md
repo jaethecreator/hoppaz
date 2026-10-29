@@ -33,6 +33,7 @@ Then the new files, in this order, each one once (they are safe to run again):
 | 10 | `events_r1_looks.sql` | `events`, `crews`, `crew_members`, `auth.users` (from `schema.sql`), `chat_accounts.sql` (`has_account()`), `crew_stage_voice.sql` (`crew_members.role` may be `admin`; the file checks owner and admin) | file 1 (`_ev_manage`, `_ev_staff`, `_ev_can_open`). Event and room looks: pack, Day or Night, tint. Until it runs, pages read the cover and creating never fails. |
 | 11 | `events_r1_room_profile.sql` | `crews` (`logo_url`, `visibility`, `invite_code`), `crew_members`, `profiles`, the public `crew-images` bucket (`crew_rooms.sql`), `crew_stage_voice.sql` (the role check it widens again), `has_account()`, `create_crew` | files 1 (`_ev_open`, `_ev_staff`, `ev_settings`, `events.room_id`), 2 (`ev_registrations`) and 6 (`_ev_room_json`, `ev_hq`). Room profile, join mode and requests, the Host role, "went but haven't joined". See 2f. |
 | 12 | `events_r1_room_leave.sql` | `_ev_open()`, `_ev_is_hq()`, `_ev_room_role()`, `ev_room_requests`, `has_account()` | files 1, 6 and 11. `ev_leave_room(room)`: a member leaves a room by themselves (the room page). The owner and Lagos HQ cannot be left; tickets are not touched. Also `ev_room_peek(room)`: the name, address, logo, about and join mode of any room, for the locked page of an invite only room. See 2g. |
+| 13 | `events_r1_lineup.sql` | `_ev_open()`, `_ev_manage()`, `_ev_can_open()` | file 1. The lineup or programme of an event (section 2h); nothing else needs it |
 
 Files 1 and 2 leave small stubs for functions that later files fill in (the going count, the waitlist fill, the ticket issue and void,
 the HQ test). A stub is written only when the real function is missing, so running a file again never puts a stub back over the real one.
@@ -122,6 +123,10 @@ Until the file is run the real layer degrades quietly (`real/roomProfile.ts`): a
 `events_r1_room_leave.sql` (test: `tests/events_r1_room_leave_test.sql`). Two new functions. `ev_leave_room(room)`, answering `ok`, `not_open`, `need_account`, `not_found`, `hq_fixed`, `not_member` or `owner_fixed`. It deletes the caller's `crew_members` row and their own `ev_room_requests` row (that table is unique per person and room, so an old approved row would block asking again). Tickets are not touched: a registration is separate from membership. `ev_room_peek(room)` answers who a room is (name, address, logo, about, join mode, never members) to anyone with the address, so the room page can show the locked page of an invite only room with its name; if you would rather an invite only room's name not be readable by address, do not run that one function and the locked page shows no name. **Nothing in it has been run, not even locally.** Until the file is run the real layer falls back to deleting the caller's own `crew_members` row (`rooms.leave` in `real/rooms.ts`), which the row-level policy may refuse; then the person sees "Could not leave right now".
 
 
+## 2h. Lineup or programme (file 13)
+
+`events_r1_lineup.sql` (test: `tests/events_r1_lineup_test.sql`). One closed table `ev_event_lineups` (event, kind `lineup` or `programme`, rows jsonb of `{ time?, name, note? }`, at most 30) and three functions. `ev_get_lineup(event)` answers `{ kind, rows }` to anyone who may open the event page (`_ev_can_open`), an empty lineup when none was saved, and null when the viewer cannot see the event. `ev_set_lineup(event, lineup)` is for the host or staff (`_ev_manage`) and answers `ok`, `not_open`, `no_session`, `not_found`, `not_allowed` or `bad_lineup` (more than 30 rows, an unknown kind, a name over 80 characters). Rows with no name are not stored. `_ev_copy_lineup(from, to)` is ready for `ev_clone_event` to call so that Duplicate event copies the lineup; it is not wired in (that edits an older file), so until it is a duplicate starts with none. Until the file is run the app degrades quietly: the event page shows no lineup section and the Details card saves nothing and says nothing.
+
 ## 3. The cron line (Pops)
 
 `ev_dispatch_due_pops()` makes the automatic Pops (day before, 1 hour before, doors open) when they are due and sends the scheduled ones. It
@@ -145,6 +150,7 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
 | events.create / update / clone / cancel (draft.tickets = the ticket types) | `ev_create_event` / `ev_update_event` / `ev_clone_event` / `ev_cancel_event` |
 | events.setInterested | the existing swipes (untouched) |
 | events.viewerState | `ev_viewer_state` |
+| events.getLineup / setLineup | `ev_get_lineup` / `ev_set_lineup` |
 | events.get/setRegistrationSettings | `ev_get_registration_settings` / `ev_set_registration_settings` |
 | registrations.register (opts.ticketTypeId) / cancel | `ev_register` / `ev_cancel_registration` |
 | registrations.list / approve / decline / promote / exportCsv | `ev_audience` / `ev_decide` / `ev_decide` / `ev_promote` / `ev_export` (rows) |
