@@ -96,7 +96,7 @@ function LockedPage({ room }: { room: RoomPreview }) {
   return (
     <>
       <div className="relative h-[150px] overflow-hidden bg-t-soft lg:h-[200px]" style={{ background: "radial-gradient(45% 80% at 12% 25%, var(--t-glow), transparent 70%), radial-gradient(40% 75% at 88% 70%, var(--t-glow2), transparent 70%), var(--t-soft)" }} />
-      <div className="-mt-[52px] grid justify-items-center gap-2 px-[22px] text-center lg:-mt-[58px]">
+      <div className="relative z-[2] -mt-[52px] grid justify-items-center gap-2 px-[22px] text-center lg:-mt-[58px]">
         <RoomLogo url={room.logo_url} name={room.name} size={96} className="border-4 border-t-bg shadow-[0_18px_36px_-18px_rgba(0,0,0,.6)]" />
         <h1 className="t-title text-balance font-display text-[28px] font-black leading-[1.08] tracking-[-0.02em] lg:text-[36px]">{room.name}</h1>
       </div>
@@ -461,7 +461,8 @@ function ThreadBody({ c, phone }: { c: Ctx; phone: boolean }) {
 
 function Starters({ c }: { c: Ctx }) {
   const api = useR1Api();
-  const first = c.next ? `Who’s going to ${c.next.title.length > 22 ? "the next one" : c.next.title}?` : STARTERS[1];
+  const when = c.next ? dayTime(c.next.starts_at, c.now) : "";
+  const first = c.next ? `Who\u2019s going ${when.startsWith("today") ? "tonight" : when.startsWith("tomorrow") ? "tomorrow" : `on ${when.split(" ")[0]}`}?` : STARTERS[1];
   return (
     <div className="flex flex-wrap justify-center gap-2">
       {[STARTERS[0], first, STARTERS[2]].map((s) => (
