@@ -191,6 +191,46 @@ export const rooms: RoomsApi = {
     return "joined";
   },
 
+  async leave(roomId) {
+    const v = requireViewer();
+    const r = findRoom(roomId);
+    if (!r) throw new Error("Room not found");
+    if (r.kind === "hq") throw new Error("Everyone is in Lagos HQ");
+    const role = myRole(r.id);
+    if (!role) throw new Error("You are not in this room");
+    if (role === "owner") throw new Error("Owners can't leave");
+    const key = `${v.id}:${r.id}`;
+    delete S().memberships[key];
+    delete S().roles[key];
+    delete S().joinedAt[key];
+    // A request that was answered is cleared, so an ask room can be asked again.
+    for (const q of Object.values(S().requests)) if (q.room_id === r.id && q.user_id === v.id) delete S().requests[q.id];
+    emit();
+  },
+
+  async preview(idOrSlug) {
+    const r = findRoom(idOrSlug);
+    if (!r) return null;
+    return { id: r.id, slug: r.slug, name: r.name, kind: r.kind, logo_url: r.logo_url, wallpaper_url: r.wallpaper_url, about: r.description, verified: r.verified, join_mode: joinModeOf(r) };
+  },
+
+  async channels(roomId) {
+    const r = findRoom(roomId);
+    if (!r) return [];
+    const v = viewer();
+    const out: EventChat[] = [];
+    for (const e of Object.values(S().events)) {
+      if (e.room_id !== r.id || e.status === "cancelled") continue;
+      const reg = v ? regOf(e.id, v.id) : undefined;
+      if (!(canList(e) || isHostOf(e) || (!!reg && isGoing(reg.status)))) continue;
+      const c = chatFor(e);
+      if (c) out.push(c);
+    }
+    const rank = { open: 0, upcoming: 1, closed: 2 } as const;
+    // Open first, then not open yet (soonest first), then closed (latest first).
+    return out.sort((a, b) => rank[a.state] - rank[b.state] || (a.state === "closed" ? Date.parse(b.closes_at) - Date.parse(a.closes_at) : Date.parse(a.opens_at) - Date.parse(b.opens_at)));
+  },
+
   async requests(roomId) {
     const r = needManager(findRoom(roomId));
     return clone(
@@ -388,6 +428,8 @@ export const rooms: RoomsApi = {
     if (!r) return [];
     const byTime = (a: RoomMessage, b: RoomMessage) => Date.parse(a.created_at) - Date.parse(b.created_at);
     if (channel === "general") {
+      // A visitor reads an open room's General; an ask or invite only room keeps it for its members.
+      if (joinModeOf(r) !== "open" && !isMember(r.id) && !viewer()?.staff) return [];
       return clone(Object.values(S().messages).filter((m) => m.room_id === r.id && m.channel === "general").sort(byTime));
     }
     const e = findEvent(channel);

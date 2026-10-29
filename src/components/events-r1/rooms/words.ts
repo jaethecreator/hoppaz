@@ -4,9 +4,9 @@
  */
 import type { EventChat, RoomSummary } from "@/lib/events-r1/types";
 
-/** Where an R1 event's chat lives: its room's event chat. Null when the event has no room (then there is no chat to open). */
+/** Where an R1 event's chat lives: a channel of its room's page (/rooms/<room>?ch=<event id>). Null when the event has no room (then there is no chat to open). */
 export const eventChatHref = (e: { id: string; host: { roomId: string | null } }): string | null =>
-  e.host.roomId ? `/rooms/${encodeURIComponent(e.host.roomId)}/chat/${encodeURIComponent(e.id)}` : null;
+  e.host.roomId ? `/rooms/${encodeURIComponent(e.host.roomId)}?ch=${encodeURIComponent(e.id)}` : null;
 
 const HOUR = 3.6e6;
 const DAY = 24 * HOUR;
@@ -21,7 +21,7 @@ export const walkable = (r: Pick<RoomSummary, "has_3d" | "three_d_on">) => r.has
 
 /** Where Enter room goes: the walkable room when it is on (Lagos HQ too, same as any room), else the General chat. */
 export const enterPath = (r: Pick<RoomSummary, "slug" | "kind" | "id" | "has_3d" | "three_d_on">) =>
-  walkable(r) ? `/crew/${r.id}/room` : `${roomPath(r)}/general`;
+  walkable(r) ? `/crew/${r.id}/room` : `${roomPath(r)}?ch=general`;
 
 export const memberWord = (n: number) => `${n.toLocaleString("en-NG")} ${n === 1 ? "member" : "members"}`;
 

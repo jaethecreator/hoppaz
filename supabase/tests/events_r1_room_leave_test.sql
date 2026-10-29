@@ -92,12 +92,21 @@ begin
     perform pg_temp.ok(pg_temp.t(m, format('select public.ev_leave_room(%L)', hq)) = 'hq_fixed', 'nobody leaves Lagos HQ: hq_fixed');
   end if;
 
+  -- ===================================================== peek ========
+  r := pg_temp.j(o, $q$select public.ev_create_room('Peek Room', 'A quiet place.', 'peek-room', null, '{}', 'invite', null)$q$);
+  perform pg_temp.ok(pg_temp.j(x, format('select public.ev_room_peek(%L)', (r ->> 'id')::uuid)) ->> 'name' = 'Peek Room'
+                     and pg_temp.j(x, format('select public.ev_room_peek(%L)', (r ->> 'id')::uuid)) ->> 'join_mode' = 'invite'
+                     and pg_temp.j(x, format('select public.ev_room_peek(%L)', (r ->> 'id')::uuid)) ->> 'slug' = 'peek-room', 'a stranger can peek at an invite only room: its name, address and mode');
+  perform pg_temp.ok(not (pg_temp.j(x, format('select public.ev_room_peek(%L)', (r ->> 'id')::uuid)) ? 'members'), 'and learns nothing about who is in it');
+  perform pg_temp.ok(pg_temp.j(x, format('select public.ev_room_peek(%L)', gen_random_uuid())) = 'null'::jsonb, 'an unknown room peeks as null');
+
   -- ===================================================== switch off and access ========
   update public.ev_settings set value = 'off' where key = 'events_r1';
   perform pg_temp.ok(pg_temp.t(m, format('select public.ev_leave_room(%L)', room)) = 'not_open', 'with the switch off: not_open');
   update public.ev_settings set value = 'on' where key = 'events_r1';
   perform pg_temp.ok(has_function_privilege('anon', 'public.ev_leave_room(uuid)', 'execute') = false, 'anon cannot execute ev_leave_room');
   perform pg_temp.ok(has_function_privilege('authenticated', 'public.ev_leave_room(uuid)', 'execute'), 'authenticated can execute ev_leave_room');
+  perform pg_temp.ok(has_function_privilege('anon', 'public.ev_room_peek(uuid)', 'execute'), 'anon can execute ev_room_peek');
   raise notice 'ALL EVENTS R1 ROOM LEAVE TESTS PASSED';
 end $$;
 rollback;

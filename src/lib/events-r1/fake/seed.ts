@@ -39,6 +39,8 @@ const U = {
   ngozi: seedId("user:ngozi-adeyemi"),
   tunde: seedId("user:tunde-balogun"),
   bisi: seedId("user:bisi-ogunleye"),
+  // The brand new room (Yaba Book Club): Folake owns it, Ngozi and Tunde joined it.
+  folake: seedId("user:folake-adewale"),
 };
 
 const R = {
@@ -47,10 +49,11 @@ const R = {
   kredete: seedId("room:kredete"),
   lrc: seedId("room:lagos-run-club"),
   roof: seedId("room:rooftop-sessions"),
+  book: seedId("room:yaba-book-club"),
 };
 
-type HostKey = "hq" | "p360" | "kredete" | "lrc" | "roof";
-const HOST_USER: Record<HostKey, string> = { hq: U.hq, p360: U.p360, kredete: U.kredete, lrc: U.lrc, roof: U.roof };
+type HostKey = "hq" | "p360" | "kredete" | "lrc" | "roof" | "book";
+const HOST_USER: Record<HostKey, string> = { hq: U.hq, p360: U.p360, kredete: U.kredete, lrc: U.lrc, roof: U.roof, book: U.folake };
 
 /* --------------------------------------------------------------- events -- */
 
@@ -192,6 +195,38 @@ const SPECS: Spec[] = [
     desc: "Board games, FIFA and ludo. Bring a friend or make one at the door.",
     crowd: { going: 15 },
   },
+  // Event chats for the room page: one open now in 360Playlist (Ada is going and is a member), one open now in Rooftop Sessions (Ada is going and
+  // is NOT a member: the ticket holder), two that closed more than 3 days ago (history), and the new Yaba Book Club's first event.
+  {
+    key: "soundcheck", title: "360Playlist Open Soundcheck", host: "p360", vibe: "afro", kind: "in_person",
+    venue: "Studio 360", area: "Yaba", at: [0.001, 0.002], when: { fromNowMin: -25 }, hours: 3,
+    desc: "Hear the Friday set early and tell the DJs what to change.",
+    crowd: { going: 31 }, ada: "going",
+  },
+  {
+    key: "warmup", title: "Rooftop Warm-up Set", host: "roof", vibe: "rooftop", kind: "in_person",
+    venue: "The Terrace Rooftop", area: "Victoria Island", at: [0.002, -0.001], when: { fromNowMin: 25 }, hours: 3,
+    desc: "A loose set before the doors open for the big night.",
+    crowd: { going: 52 }, ada: "going",
+  },
+  {
+    key: "palm-wine-ended", title: "Palm Wine Sundays Vol. 2", host: "kredete", vibe: "live band", kind: "in_person",
+    venue: "Palm Wine Bar", area: "Ikeja", at: [0.001, -0.001], when: { day: -6, time: "19:00" }, hours: 3,
+    desc: "Highlife and cold palm wine, the second Sunday.",
+    crowd: { going: 0, checkedIn: 26 },
+  },
+  {
+    key: "pool-ended", title: "Pool Party Vol. 3", host: "roof", vibe: "beach", kind: "in_person",
+    venue: "The Terrace Rooftop", area: "Victoria Island", at: [0.003, 0.001], when: { day: -9, time: "14:00" }, hours: 6,
+    desc: "Poolside afrobeats all afternoon.",
+    crowd: { going: 0, checkedIn: 40 },
+  },
+  {
+    key: "book-kickoff", title: "Yaba Book Club Kickoff", host: "book", vibe: "culture", kind: "in_person",
+    venue: "Cafe Lit", area: "Yaba", at: [0.001, -0.002], when: { day: 4, time: "17:00" }, hours: 2,
+    desc: "Meet the first readers, pick the first book and eat too many puff puffs.",
+    crowd: { going: 46 },
+  },
   {
     key: "highlife-ended", title: "Highlife Live Band Night", host: "kredete", vibe: "live band", kind: "in_person",
     venue: "Palm Wine Bar", area: "Ikeja", at: [0.001, -0.002], when: { fromNowMin: -210 }, hours: 1.5,
@@ -244,6 +279,15 @@ const MESSAGES: MsgSeed[] = [
   { room: "p360", channel: "listening-party", who: "Zainab Musa", body: "Is there a dress code?", minAgo: 40 },
   { room: "roof", channel: "sunset-rooftop", who: "Kunle Ojo", body: "Bringing a jacket, the wind is strong up there.", minAgo: 55 },
   { room: "roof", channel: "sunset-rooftop", who: "Folake Alabi", body: "Same. See you by the rail.", minAgo: 44 },
+  { room: "p360", channel: "soundcheck", who: "Ada Obi", body: "Early! Where do I stand?", minAgo: 15 },
+  { room: "p360", channel: "soundcheck", who: "360Playlist", body: "Right by the speaker stack. Tell us what is too loud.", minAgo: 12 },
+  { room: "p360", channel: "soundcheck", who: "Femi Balogun", body: "Not loud enough, turn it up.", minAgo: 8 },
+  { room: "roof", channel: "warmup", who: "Kunle Ojo", body: "Doors at 8, right?", minAgo: 6 },
+  { room: "roof", channel: "warmup", who: "Rooftop Sessions", body: "Warm-up starts now. The main doors open at 8.", minAgo: 4 },
+  { room: "kredete", channel: "palm-wine-ended", who: "Sade Akinola", body: "Same time next month?", minAgo: 8000 },
+  { room: "kredete", channel: "palm-wine-ended", who: "Kredete", body: "Thank you all for coming. See you at the next one.", minAgo: 7900 },
+  { room: "roof", channel: "pool-ended", who: "Folake Alabi", body: "Best pool party yet.", minAgo: 12800 },
+  { room: "roof", channel: "pool-ended", who: "Rooftop Sessions", body: "Photos are up. Thank you for coming.", minAgo: 12700 },
   { room: "kredete", channel: "highlife-ended", who: "Obinna Chukwu", body: "That was amazing", minAgo: 100 },
   { room: "kredete", channel: "highlife-ended", who: "Sade Akinola", body: "Next one is Friday", minAgo: 92 },
   { room: "kredete", channel: "highlife-ended", who: "Kredete", body: "Thank you all for coming. Photos are coming soon.", minAgo: 80 },
@@ -272,6 +316,7 @@ export function buildSeed(now: number): FakeState {
     { id: U.ngozi, name: "Ngozi Adeyemi", email: "ngozi.adeyemi@example.com" },
     { id: U.tunde, name: "Tunde Balogun", email: "tunde.balogun@example.com" },
     { id: U.bisi, name: "Bisi Ogunleye", email: "bisi.ogunleye@example.com" },
+    { id: U.folake, name: "Folake Adewale", email: "folake.adewale@example.com" },
   ];
   for (const u of users) st.users[u.id] = u;
 
@@ -288,6 +333,7 @@ export function buildSeed(now: number): FakeState {
     [seedId("room:lagos-film-club"), "lagos-film-club", "Lagos Film Club", "crew", null, 96, false, null, "Screenings and film talk."],
     [seedId("room:naija-tech-meetup"), "naija-tech-meetup", "Naija Tech Meetup", "crew", null, 150, false, null, "Builders, founders and curious people."],
     [seedId("room:amapiano-fridays"), "amapiano-fridays", "Amapiano Fridays", "crew", null, 380, false, null, "Log drums and dance floors."],
+    [R.book, "yaba-book-club", "Yaba Book Club", "crew", U.folake, 0, false, null, "A small book club that meets in Yaba. One book a month."],
     [seedId("room:surulere-5-a-side"), "surulere-5-a-side", "Surulere 5-a-side", "crew", null, 74, false, null, "Weekly five-a-side football."],
   ];
   for (const [id, slug, name, kind, owner, base, verified, logo, description] of rooms) {
@@ -295,11 +341,13 @@ export function buildSeed(now: number): FakeState {
       id, slug, name, kind, logo_url: logo, wallpaper_url: null, verified, owner_id: owner, description, base_members: base,
       // 360Playlist, Lagos HQ (its lagos-hq room) and the brand rooms have a walkable room and it is switched on by default. Chat stays
       // the main thing: when the walker cap is reached people keep the chat. A plain crew has none in the fake.
-      has_3d: kind !== "crew", ...(kind !== "crew" ? { three_d_on: true } : {}), online: kind === "hq" ? 320 : 0,
+      has_3d: kind !== "crew", ...(kind !== "crew" ? { three_d_on: true } : {}), online: kind === "hq" ? 320 : id === R.p360 ? 12 : id === R.roof ? 7 : 0,
     };
   }
   st.memberships[`${U.ada}:${R.p360}`] = true;
   st.memberships[`${U.ada}:${R.lrc}`] = true;
+  // Yaba Book Club is brand new: its owner and two members, nothing said in General yet.
+  for (const id of [U.folake, U.ngozi, U.tunde]) st.memberships[`${id}:${R.book}`] = true;
 
   /* Who can join: most rooms are open, some ask, one is invite only (hidden from Discover). */
   const modes: Record<string, JoinMode> = {

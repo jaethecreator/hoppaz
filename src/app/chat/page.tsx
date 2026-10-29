@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import clsx from "clsx";
 import { useSession } from "@/lib/useSession";
@@ -13,6 +13,8 @@ import ChatList from "@/components/chat/ChatList";
 import CrewTab from "@/components/chat/CrewTab";
 import RoomView from "@/components/chat/RoomView";
 import { sentence } from "@/components/event/copy";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import { useR1Event } from "@/lib/events-r1/hooks";
 
 export default function ChatPage() {
   return <Suspense fallback={<div className="grid h-full place-items-center"><span className="hint">LOADING…</span></div>}><Chat /></Suspense>;
@@ -26,8 +28,25 @@ export default function ChatPage() {
 function Chat() {
   const params = useSearchParams();
   const linked = params.get("c");
-  if (linked && !linked.startsWith("area:")) return <EventRoom id={linked} />;
+  if (linked && !linked.startsWith("area:")) return EVENTS_R1 && !linked.startsWith("hop-") ? <ToRoom id={linked} /> : <EventRoom id={linked} />;
   return <People />;
+}
+
+/**
+ * /chat?c=<event id> for an event of the new app goes to its room page (/rooms/<room>?ch=<event id>), or to the event page when the event
+ * has no room. Anything else (the Hop, an old event) is still the old event room.
+ */
+function ToRoom({ id }: { id: string }) {
+  const router = useRouter();
+  const ev = useR1Event(id);
+  const roomId = ev.data?.host.roomId ?? null;
+  const known = !ev.loading && !!ev.data;
+  useEffect(() => {
+    if (!known) return;
+    router.replace(roomId ? `/rooms/${encodeURIComponent(roomId)}?ch=${encodeURIComponent(id)}` : `/event/${encodeURIComponent(id)}`);
+  }, [known, roomId, id, router]);
+  if (ev.loading) return <div className="grid h-full place-items-center"><span className="hint">LOADING…</span></div>;
+  return known ? <div className="h-full" /> : <EventRoom id={id} />;
 }
 
 function People() {

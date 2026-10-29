@@ -7,6 +7,7 @@
 import type { RoomsApi } from "../api";
 import type { EventChat, RoomAnnouncement, RoomMessage, RoomRole, RoomSummary } from "../types";
 import { client, emit, failText, reasonText, rpc, rpcText, shared, subscribe, userId, uuid, who } from "./core";
+import { events } from "./events";
 import { eventIdOf, roomIdOf } from "./ids";
 import { iso, mapAnnouncement, mapChat, mapMessage, mapPop, mapRoom } from "./map";
 import { profileApi, soft } from "./roomProfile";
@@ -191,6 +192,52 @@ export const rooms: RoomsApi = {
   },
 
   ...profile,
+
+  /** ev_leave_room (supabase/events_r1_room_leave.sql). Until it is run: the caller's own crew_members row is deleted, if the table lets them. */
+  async leave(roomId) {
+    if (!who()) throw new Error("Sign in first");
+    const id = await roomIdOf(roomId);
+    if (!id) throw new Error("Room not found");
+    const r = await soft<string>("ev_leave_room", { p_room: id });
+    if (r.missing) {
+      const me = await userId();
+      const { error } = await client().from("crew_members").delete().eq("crew_id", id).eq("user_id", me ?? "");
+      if (error) throw new Error("Could not leave right now");
+    } else if (r.error) throw new Error(failText(r.error));
+    else if (r.data !== "ok") {
+      throw new Error(reasonText(r.data, { owner_fixed: "Owners can't leave", hq_fixed: "Everyone is in Lagos HQ", not_member: "You are not in this room" }));
+    }
+    emit();
+  },
+
+  /** ev_room_peek (same file): who the room is, for anyone with the address. Until it is run, only what ev_room_profile lets this viewer see. */
+  async preview(idOrSlug) {
+    const id = await roomIdOf(idOrSlug);
+    if (!id) return null;
+    const p = await soft<Row | null>("ev_room_peek", { p_room: id });
+    let j = p.missing ? null : p.data;
+    if (!j) {
+      const full = await rooms.get(id);
+      if (!full) return null;
+      j = { id: full.id, slug: full.slug, name: full.name, kind: full.kind, logo_url: full.logo_url, wallpaper_url: full.wallpaper_url, about: full.about, verified: full.verified, join_mode: full.join_mode };
+    }
+    return {
+      id: String(j.id), slug: String(j.slug ?? j.id), name: String(j.name ?? ""), kind: j.kind === "hq" || j.kind === "brand" ? j.kind : "crew",
+      logo_url: (j.logo_url as string | null) ?? null, wallpaper_url: (j.wallpaper_url as string | null) ?? null, about: typeof j.about === "string" ? j.about : "",
+      verified: !!j.verified, join_mode: j.join_mode === "ask" || j.join_mode === "invite" ? j.join_mode : "open",
+    };
+  },
+
+  /** Every chat of the room's events the viewer can see, each with the viewer's can_enter (one ev_event_chat call per event). */
+  async channels(roomId) {
+    const id = await roomIdOf(roomId);
+    if (!id) return [];
+    const evs = await events.listForRoom(id).catch(() => []);
+    const out = await Promise.all(evs.filter((e) => e.status !== "cancelled").slice(0, 24).map((e) => chatOf(e.id).catch(() => null)));
+    const list = out.filter((c): c is EventChat => !!c && c.room_id === id);
+    const rank = { open: 0, upcoming: 1, closed: 2 } as const;
+    return list.sort((a, b) => rank[a.state] - rank[b.state] || (a.state === "closed" ? Date.parse(b.closes_at) - Date.parse(a.closes_at) : Date.parse(a.opens_at) - Date.parse(b.opens_at)));
+  },
 
   /** The owner or staff: ev_set_room_3d answers ok or a reason. The entry function refuses a walker when it is off (see EVENTS_R1_ORDER.md). */
   async setThreeD(roomId, on) {

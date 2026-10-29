@@ -220,6 +220,22 @@ export type RoomSummary = {
   pending_requests: number;
 };
 
+/**
+ * What anyone with the address may know about a room, invite only rooms included: who it is and how to get in. No member count, no chat,
+ * no events. The room page shows it as the locked page of an invite only room (RoomsApi.preview).
+ */
+export type RoomPreview = {
+  id: string;
+  slug: string;
+  name: string;
+  kind: RoomKind;
+  logo_url: string | null;
+  wallpaper_url: string | null;
+  about: string;
+  verified: boolean;
+  join_mode: JoinMode;
+};
+
 /** Someone asking to join an ask room. */
 export type JoinRequest = { id: string; room_id: string; user_id: string; name: string; created_at: string };
 

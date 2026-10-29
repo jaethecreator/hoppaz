@@ -794,7 +794,7 @@ await test("rooms: the 3D room switch (defaults, who may set it, Enter room need
   await api.rooms.setThreeD(roof.id, true);
 
   const all = await api.rooms.listForStaff();
-  eq(all.length, 9, "staff list: every room");
+  eq(all.length, 10, "staff list: every room");
   eq(all[0].kind, "hq", "Lagos HQ first");
   ok(all.slice(2).every((r, i) => all[i + 1].members >= r.members), "then the biggest first");
   ok(all.every((r) => typeof r.three_d_on === "boolean" && typeof r.has_3d === "boolean"), "each carries has_3d and three_d_on");
@@ -1685,6 +1685,35 @@ await test("rooms: went but have not joined counts guests of the room's events w
   const mine = await api.events.create({ title: "Before the room", add_to_room: false });
   const made = await api.rooms.create({ name: "After", event_ids: [mine.id] });
   eq((await api.events.get(mine.id))?.room_id, made.id, "the event moved into the new room");
+});
+
+await test("rooms: leave (members only, owners and HQ cannot), preview of an invite room, channels, old addresses resolve to a channel", async () => {
+  as("Tunde Balogun");
+  const book = (await api.rooms.get("yaba-book-club"))!;
+  eq([book.joined, book.members], [true, 3], "Tunde is in the brand new room (owner and two others)");
+  await api.rooms.leave(book.id);
+  const after = (await api.rooms.get("yaba-book-club"))!;
+  eq([after.joined, after.members], [false, 2], "left: not a member, one fewer");
+  await rejects(api.rooms.leave(book.id), "You are not in this room", "leaving twice");
+  as("Folake Adewale");
+  await rejects(api.rooms.leave(book.id), "Owners can't leave", "owners cannot leave");
+  const hq = (await api.rooms.get("hq"))!;
+  await rejects(api.rooms.leave(hq.id), "Everyone is in Lagos HQ", "HQ cannot be left");
+  // An invite only room has a name to show without the code, and nothing else.
+  as("Ada Obi");
+  const pv = await api.rooms.preview("amapiano-fridays");
+  eq([pv?.slug, pv?.join_mode], ["amapiano-fridays", "invite"], "preview of an invite room");
+  eq(await api.rooms.preview("no-such-room"), null, "preview of nothing");
+  // Channels: open first, then upcoming, then closed.
+  const roof = (await api.rooms.get("rooftop-sessions"))!;
+  const states = (await api.rooms.channels(roof.id)).map((c) => c.state);
+  const rank = { open: 0, upcoming: 1, closed: 2 } as const;
+  ok(states.every((v, i) => i === 0 || rank[states[i - 1]] <= rank[v]), `channels are ordered open, upcoming, closed (${states.join(",")})`);
+  // The address an old link resolves to.
+  const { eventChatHref, enterPath } = await import("../src/components/events-r1/rooms/words.ts");
+  eq(eventChatHref({ id: "e1", host: { roomId: "r1" } }), "/rooms/r1?ch=e1", "event chat href is a channel of the room page");
+  eq(eventChatHref({ id: "e1", host: { roomId: null } }), null, "no room: no event chat");
+  eq(enterPath({ slug: "x", kind: "crew", id: "r1", has_3d: false, three_d_on: false }), "/rooms/x?ch=general", "no walkable room: Enter goes to General");
 });
 
 await test("reset clears user-made changes", async () => {

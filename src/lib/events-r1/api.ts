@@ -8,7 +8,7 @@ import type { PayApi } from "./pay";
 import type {
   AuthUser, DoorPerson, EventChat, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
   JoinOutcome, JoinRequest, Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomGuests, RoomMember, RoomMessage, RoomNotice,
-  RoomPatch, RoomRole, RoomSummary, ScanResult, Ticket, ViewerState,
+  RoomPatch, RoomPreview, RoomRole, RoomSummary, ScanResult, Ticket, ViewerState,
 } from "./types";
 
 export type Unsub = () => void;
@@ -111,6 +111,19 @@ export interface RoomsApi {
    * Someone already in answers "already". Needs a signed in viewer ("Sign in first").
    */
   join(roomId: string, opts?: { invite?: string }): Promise<JoinOutcome>;
+  /**
+   * A member leaves the room by themselves. Their tickets keep working (a registration is not a membership) and they can join again
+   * (an ask room: ask again). The owner gets "Owners can't leave" (they hand the room over in Room admin); Lagos HQ cannot be left
+   * ("Everyone is in Lagos HQ"); someone not in the room gets "You are not in this room"; signed out "Sign in first".
+   */
+  leave(roomId: string): Promise<void>;
+  /** Who a room is, for anyone with its address, an invite only room too (the locked page). null when there is no such room. */
+  preview(idOrSlug: string): Promise<RoomPreview | null>;
+  /**
+   * Every event chat of the room the viewer could see, whoever they are: open first, then not open yet, then closed, each with whether the
+   * viewer may come in (can_enter). The room page's channel list; eventChats(roomId) is only the chats the viewer already cares about.
+   */
+  channels(roomId: string): Promise<EventChat[]>;
   /** Waiting requests, oldest first. Owner, admin or staff; anyone else: "Not allowed". */
   requests(roomId: string): Promise<JoinRequest[]>;
   /** Approve (the person becomes a member and gets a notice) or decline (quietly: no notice). Owner, admin or staff. */

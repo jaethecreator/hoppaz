@@ -206,7 +206,7 @@ function MineRow({ room }: { room: RoomSummary }) {
 }
 
 function ChatRow({ chat, room }: { chat: EventChat; room?: RoomSummary }) {
-  const href = room ? `${roomPath(room)}/chat/${chat.event_id}` : `/rooms/events/chat/${chat.event_id}`;
+  const href = room ? `${roomPath(room)}?ch=${chat.event_id}` : `/event/${chat.event_id}`;
   return (
     <Link href={href} className={clsx("card mb-2 flex min-h-[44px] items-center gap-3 py-3", chat.state === "closed" && "opacity-70")} data-chat-row={chat.event_id}>
       <span className="grid h-9 w-9 flex-none place-items-center rounded-full border border-line bg-ink-3 text-cream">
