@@ -791,11 +791,18 @@ function Phone({ c }: { c: Ctx }) {
       <Link href={c.base} className={clsx(GHOST, "!mb-0 !text-t-text")}>Back to my view</Link>
     </div>
   ) : c.manager ? (
-    <div className="flex items-center gap-2 overflow-x-auto border-b border-t-line bg-t-tile px-3.5 py-1.5 text-[13px] [scrollbar-width:none]" data-owner-bar>
-      <b className="mr-auto whitespace-nowrap">You run this room</b>
-      {!walkable(c.real) && <Link href={`${c.base}/admin?tab=twod`} className={clsx(GHOST, "!mb-0 !px-2.5 !text-[12.5px]")}>Add a walkable room</Link>}
-      <Link href={`${c.base}?as=visitor`} className={clsx(GHOST, "!mb-0 !px-2.5 !text-[12.5px]")} data-view-visitor>View as visitor</Link>
-      <Link href={`${c.base}/admin`} className={clsx(GHOST, "!mb-0 !px-2.5 !text-[12.5px]")} data-manage-room>Manage</Link>
+    <div className="border-b border-t-line bg-t-tile px-3.5 py-1.5 text-[13px]" data-owner-bar>
+      <div className="flex items-center gap-2">
+        <b className="mr-auto whitespace-nowrap">You run this room</b>
+        <Link href={`${c.base}?as=visitor`} className={clsx(GHOST, "!mb-0 !px-2.5 !text-[12.5px]")} data-view-visitor>View as visitor</Link>
+        <Link href={`${c.base}/admin`} className={clsx(GHOST, "!mb-0 !px-2.5 !text-[12.5px]")} data-manage-room>Manage</Link>
+      </div>
+      {/* On a phone the third button does not fit beside the other two, so it sits under them as a plain link. */}
+      {!walkable(c.real) && (
+        <Link href={`${c.base}/admin?tab=twod`} className="flex min-h-[44px] items-center font-body text-[13px] font-bold text-t-accent underline underline-offset-2">
+          Add a walkable room
+        </Link>
+      )}
     </div>
   ) : null;
 
