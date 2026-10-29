@@ -334,7 +334,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
         {viewer?.isHost && <ManageBar event={event} viewer={viewer} />}
         {asVisitor && (
           <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 bg-t-accent px-[22px] py-2 text-[13.5px] font-bold text-t-on lg:px-[30px]" data-visitor-bar>
-            <span>Viewing as a visitor. This is what guests see before they get a ticket.</span>
+            <span>Viewing as a visitor. This is your page exactly as guests see it.</span>
             <Link href={path} replace className="lip-ghost !mb-0 !min-h-[44px] whitespace-nowrap !text-t-text">
               Back to my view
             </Link>
