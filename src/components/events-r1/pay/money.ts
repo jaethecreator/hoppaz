@@ -33,7 +33,8 @@ export const isOver = (e: Pick<R1Event, "starts_at" | "ends_at" | "status">, now
 /** When the 5 percent held for refunds is released. */
 export const releaseMs = (e: Pick<R1Event, "starts_at" | "ends_at">, rules: PayoutSummary["rules"]): number => eventEndMs(e) + rules.reserve_days * 864e5;
 
-const DAY_F = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", weekday: "short", day: "numeric", month: "short" });
+const DAY_F = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", weekday: "short", day: "numeric", month: "numeric" });
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const CLOCK_F = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", hour: "numeric", minute: "2-digit", hour12: true });
 const YMD_F = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos", year: "numeric", month: "2-digit", day: "2-digit" });
 
@@ -42,7 +43,7 @@ export function dayWord(ms: number | string | null): string {
   const t = typeof ms === "string" ? Date.parse(ms) : ms;
   if (t === null || !Number.isFinite(t)) return "";
   const p = Object.fromEntries(DAY_F.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
-  return `${p.weekday} ${p.day} ${p.month}`;
+  return `${p.weekday} ${p.day} ${MON[Number(p.month) - 1]}`;
 }
 
 export const sameLagosDay = (a: number, b: number): boolean => YMD_F.format(new Date(a)) === YMD_F.format(new Date(b));

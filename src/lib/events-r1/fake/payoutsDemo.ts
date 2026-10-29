@@ -82,6 +82,8 @@ export function applyPayoutsDemo(st: FakeState, now: number, stage: PayoutsDemoS
   st.roles[`${CHIDI}:${ROOM}`] = "admin";
 
   const status: HostPayoutStatus = stage === "nopaid" || stage === "nobank" ? "not_started" : stage === "checking" ? "in_progress" : stage === "problem" ? "restricted" : "ready";
+  // Only the two nights below sell: the host's other events are free in the demo.
+  for (const e of Object.values(st.events)) if (e.host_id === ROOF) e.price_naira = 0;
   st.payouts[ROOF] = { id: ROOF, status, balance_naira: 500_000, bank_label: status === "not_started" ? null : "GTBank ····4471", withdrawals: [] };
 
   // When the night is: coming up (selling), ended yesterday (after), or ended long enough ago that the 5 percent is released.
