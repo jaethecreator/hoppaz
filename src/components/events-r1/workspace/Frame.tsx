@@ -8,7 +8,7 @@ import type { Look } from "@/lib/events-r1/looks";
 import type { Tint } from "@/lib/tint";
 
 type Icon = ComponentType<{ size?: number; strokeWidth?: number; "aria-hidden"?: boolean }>;
-export type NavItem = { id: string; label: string; icon: Icon; badge?: string };
+export type NavItem = { id: string; label: string; icon: Icon; badge?: string; /** A quiet word after the label on a wide screen ("Owner"). */ tag?: string };
 
 /**
  * The frame of the host workspace (Personal and a room's admin). The same frame as the event dashboard (HostDashboard): the look's
@@ -65,6 +65,7 @@ export default function Frame({
                     <Icon size={18} aria-hidden />
                     <span className="flex-1">{t.label}</span>
                     {t.badge && <span className="rounded-full bg-t-accent px-2 py-0.5 font-body text-[11px] font-extrabold text-t-on">{t.badge}</span>}
+                    {t.tag && <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-t-muted">{t.tag}</span>}
                   </button>
                 );
               })}
@@ -93,7 +94,7 @@ export default function Frame({
             </div>
 
             <div className="t-adopt mx-auto w-full max-w-[860px] lg:mx-0 lg:pt-6">
-              <h2 className="t-title mb-1 text-[26px] font-extrabold leading-tight lg:text-[32px]">{title}</h2>
+              {title && <h2 className="t-title mb-1 text-[26px] font-extrabold leading-tight lg:text-[32px]">{title}</h2>}
               {sub && <p className="mb-4 font-body text-[14.5px] text-t-muted">{sub}</p>}
               <div role="tabpanel" id="ws-panel" aria-labelledby={`ws-tab-${tab}`} className={sub ? "" : "mt-4"}>
                 {children}

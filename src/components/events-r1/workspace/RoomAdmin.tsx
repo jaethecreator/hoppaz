@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Calendar, Eye, Grid3x3, Home, Megaphone, Pencil, Settings, Star, Users } from "lucide-react";
+import { Calendar, Eye, Grid3x3, Home, Megaphone, Pencil, Settings, Star, Users, Wallet } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import SignInSheet from "@/components/events-r1/SignInSheet";
 import { copyText, shareOrCopy } from "@/components/events-r1/page/share";
 import { usePictureTint } from "@/components/host/TintShell";
 import { QUESTS_ON } from "@/lib/events-r1/flags";
-import { useR1Api, useR1Query, useRoom } from "@/lib/events-r1/hooks";
+import PayoutsScreen from "@/components/events-r1/pay/PayoutsScreen";
+import { useR1Api, useR1Query, useRoom, useRoomEvents } from "@/lib/events-r1/hooks";
 import { DEFAULT_LOOK } from "@/lib/events-r1/looks";
 import type { Look } from "@/lib/events-r1/looks";
 import type { RoomSummary } from "@/lib/events-r1/types";
@@ -33,9 +34,16 @@ const ALL: Array<NavItem & { sub?: string }> = [
   { id: "announcements", label: "Announcements", icon: Megaphone, sub: "Goes to every member and sits at the top of your room." },
   { id: "quests", label: "Quests", icon: Star },
   { id: "twod", label: "2D room", icon: Grid3x3, sub: "Your room's walkable space. Members can drop in, see who is around and chat with people near them." },
+  { id: "payouts", label: "Payouts", icon: Wallet, tag: "Owner" },
   { id: "settings", label: "Settings", icon: Settings },
 ];
-export type AdminTab = "overview" | "profile" | "events" | "members" | "announcements" | "quests" | "twod" | "settings";
+export type AdminTab = "overview" | "profile" | "events" | "members" | "announcements" | "quests" | "twod" | "payouts" | "settings";
+
+/** Payouts for the room: the owner's balance and bank, and what the room's events earned. An admin who follows a link gets the lock. */
+function RoomPayouts({ room }: { room: RoomSummary }) {
+  const events = useRoomEvents(room.id);
+  return <PayoutsScreen events={events.data ?? null} name={room.name} newEventHref={`/create?mode=event&room=${encodeURIComponent(room.id)}`} locked={room.my_role !== "owner"} />;
+}
 
 /**
  * /rooms/<slug>/admin (and /r/<slug>/admin): the room admin. Only the owner and admins get in; everyone else goes to the room page.
@@ -118,9 +126,13 @@ export default function RoomAdmin() {
   }
   if (!manager) return plain(<p className="hint pad-top">Taking you to the room</p>);
 
-  const nav = tabs.map((t) => ({ ...t, badge: t.id === "members" && r.pending_requests > 0 ? String(r.pending_requests) : undefined }));
+  // Payouts is the owner's: admins don't see it in the nav (a link to it says only the owner can see it).
+  const owner = r.my_role === "owner";
+  const nav = tabs
+    .filter((t) => t.id !== "payouts" || owner)
+    .map((t) => ({ ...t, badge: t.id === "members" && r.pending_requests > 0 ? String(r.pending_requests) : undefined }));
   const current = tabs.find((t) => t.id === tab) ?? tabs[0];
-  const sub = current.sub;
+  const sub = current.id === "payouts" ? (owner ? `Everything ${r.name}${/s$/i.test(r.name) ? "'" : "'s"} events have earned` : undefined) : current.sub;
 
   const roomPage = `/rooms/${encodeURIComponent(r.slug)}`;
   const invite = async () => {
@@ -149,7 +161,7 @@ export default function RoomAdmin() {
         nav={nav}
         tab={current.id}
         onTab={go}
-        title={current.label}
+        title={current.id === "payouts" && !owner ? "" : current.label}
         sub={sub}
         label="Room sections"
         footer={
@@ -164,6 +176,7 @@ export default function RoomAdmin() {
         {current.id === "members" && <MembersTab room={r} />}
         {current.id === "announcements" && <AnnouncementsTab room={r} />}
         {current.id === "twod" && <TwoDTab key={r.id} room={r} look={lookToUse} onLook={setEdited} />}
+        {current.id === "payouts" && <RoomPayouts room={r} />}
         {current.id === "settings" && <SettingsTab room={r} />}
       </Frame>
       {said && (

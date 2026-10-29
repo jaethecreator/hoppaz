@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Calendar, Plus, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Calendar, Plus, Sparkles, Wallet } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import PayoutsScreen from "@/components/events-r1/pay/PayoutsScreen";
+import { usePaidOn } from "@/components/events-r1/pay/usePay";
 import SignInSheet from "@/components/events-r1/SignInSheet";
 import { readDraft, str } from "@/components/events-r1/create/draft";
 import { useR1Api, useR1Auth, useR1Now, useR1Query, useRooms } from "@/lib/events-r1/hooks";
@@ -15,7 +18,10 @@ import Frame from "./Frame";
 import Switcher, { roomLine } from "./Switcher";
 import { roleLabel } from "./words";
 
-const NAV = [{ id: "events", label: "Events", icon: Calendar }];
+const NAV = [
+  { id: "events", label: "Events", icon: Calendar },
+  { id: "payouts", label: "Payouts", icon: Wallet },
+];
 
 /** How many different people are going to these events (the ones to bring into a room). */
 function useGuestCount(events: R1Event[] | null): number {
@@ -43,7 +49,8 @@ function useGuestCount(events: R1Event[] | null): number {
 
 /**
  * /host: the Personal workspace. Your own events that are not in a room (upcoming, drafts, past), the "Give your N guests a room" card,
- * and the rooms you are in. It works for someone with no room at all.
+ * and the rooms you are in. It works for someone with no room at all. Payouts (?tab=payouts, paid tickets on): your balance, bank and
+ * withdrawals, and what your own events earned.
  */
 export default function PersonalHome() {
   const api = useR1Api();
@@ -52,6 +59,18 @@ export default function PersonalHome() {
   const mine = useR1Query((a) => a.events.listMine(), [user?.id]);
   const rooms = useRooms();
   const [asked, setAsked] = useState(true);
+  const search = useSearchParams();
+  const paidOn = usePaidOn();
+  const [chosen, setChosen] = useState(search.get("tab") === "payouts" ? "payouts" : "events");
+  const tab = chosen === "payouts" && paidOn ? "payouts" : "events";
+  const nav = NAV.filter((t) => t.id !== "payouts" || paidOn);
+  const go = useCallback((t: string) => {
+    setChosen(t);
+    const sp = new URLSearchParams(window.location.search);
+    sp.set("tab", t);
+    window.history.replaceState(null, "", `${window.location.pathname}?${sp.toString()}`);
+    window.scrollTo?.({ top: 0 });
+  }, []);
   const [draft, setDraft] = useState<DraftRow | null>(null);
   useEffect(() => {
     const d = readDraft().event;
@@ -65,7 +84,17 @@ export default function PersonalHome() {
   const roomsIn = rooms.data?.mine ?? [];
 
   const frame = (body: React.ReactNode, actions?: React.ReactNode) => (
-    <Frame look={DEFAULT_LOOK} switcher={<Switcher current="personal" />} actions={actions} nav={NAV} tab="events" onTab={() => {}} title="Your events" sub="Events you post as yourself. They don't belong to a room yet." label="Personal workspace">
+    <Frame
+      look={DEFAULT_LOOK}
+      switcher={<Switcher current="personal" />}
+      actions={actions}
+      nav={nav}
+      tab={tab}
+      onTab={go}
+      title={tab === "payouts" ? "Payouts" : "Your events"}
+      sub={tab === "payouts" ? "Everything your events have earned" : "Events you post as yourself. They don't belong to a room yet."}
+      label="Personal workspace"
+    >
       {body}
     </Frame>
   );
@@ -85,6 +114,13 @@ export default function PersonalHome() {
       </div>
     );
   }
+
+  const newEvent = (
+    <Link href="/create?mode=event" className="lip !min-h-[44px] !px-4" data-new-event>
+      <Plus size={16} strokeWidth={3} aria-hidden /> New event
+    </Link>
+  );
+  if (tab === "payouts") return frame(<PayoutsScreen events={mine.data ? own : null} name="Personal" newEventHref="/create?mode=event" />, newEvent);
 
   return frame(
     <div className="flex flex-col gap-4">
@@ -149,8 +185,6 @@ export default function PersonalHome() {
         )}
       </section>
     </div>,
-    <Link href="/create?mode=event" className="lip !min-h-[44px] !px-4" data-new-event>
-      <Plus size={16} strokeWidth={3} aria-hidden /> New event
-    </Link>
+    newEvent
   );
 }

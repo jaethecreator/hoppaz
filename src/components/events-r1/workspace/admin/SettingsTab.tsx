@@ -2,18 +2,16 @@
 
 import { useState } from "react";
 import { JoinCards } from "@/components/events-r1/create/RoomParts";
-import { usePaidOn } from "@/components/events-r1/pay/usePay";
 import { useR1Api } from "@/lib/events-r1/hooks";
 import type { JoinMode, RoomSummary } from "@/lib/events-r1/types";
-import { Card, Err, errText, SOON, SoonRow } from "./ui";
+import { Err, errText, SOON, SoonRow } from "./ui";
 
 /**
- * Settings: who can join (saved through the rooms data), the rows that have no backend yet (Coming soon), a note on payouts, and
+ * Settings: who can join (saved through the rooms data), the rows that have no backend yet (Coming soon), and
  * Transfer ownership and Delete room for the owner: both Coming soon, nothing destructive is wired.
  */
 export default function SettingsTab({ room }: { room: RoomSummary }) {
   const api = useR1Api();
-  const paidOn = usePaidOn();
   const [mode, setMode] = useState<JoinMode>(room.join_mode);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -51,14 +49,6 @@ export default function SettingsTab({ room }: { room: RoomSummary }) {
           <input type="checkbox" disabled aria-label="Show member count" />
         </SoonRow>
       </section>
-
-      <Card title="Payouts" aside="For paid tickets">
-        <p className="font-body text-[14.5px]">
-          {paidOn
-            ? "Money from paid tickets is paid out per event. Open an event from the Events tab and go to its Payouts tab."
-            : "Paid tickets are not switched on yet. When they are, each event has its own Payouts tab in its dashboard."}
-        </p>
-      </Card>
 
       {room.is_owner && (
         <div className="flex flex-wrap items-center gap-3">
