@@ -13,6 +13,7 @@ import { PAID_KEY } from "../flags";
 import type {
   AuthUser, JoinMode, JoinRequest, Pop, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement, RoomLinks, RoomMessage, RoomNotice, RoomRole, RoomSummary, Ticket,
 } from "../types";
+import { applyPayoutsDemo } from "./payoutsDemo";
 import { buildSeed } from "./seed";
 import { clone } from "./util";
 
@@ -141,7 +142,15 @@ type Saved = {
 
 /* ---------------------------------------------------------------- state -- */
 
-let seed: FakeState = buildSeed(Date.now());
+/** The seed, with the payouts demo laid on when this browser asked for one (payoutsDemo.ts, fake only). */
+function seeded(): FakeState {
+  const t = Date.now();
+  const st = buildSeed(t);
+  applyPayoutsDemo(st, t);
+  return st;
+}
+
+let seed: FakeState = seeded();
 let state: FakeState = clone(seed);
 const listeners = new Set<() => void>();
 
@@ -260,7 +269,7 @@ function read(): Saved | null {
 
 /** Start over: a fresh seed, no saved changes, signed out, real time. */
 export function resetAll(): void {
-  seed = buildSeed(Date.now());
+  seed = seeded();
   state = clone(seed);
   if (hasStorage()) {
     try {

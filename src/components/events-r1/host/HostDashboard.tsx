@@ -10,6 +10,7 @@ import type { ComponentType } from "react";
 import { ChevronLeft, Eye, Grid3x3, Home, LayoutPanelTop, Megaphone, Pencil, Ticket, Users, Wallet } from "lucide-react";
 import TintShell, { usePictureTint } from "@/components/host/TintShell";
 import SalesTab from "@/components/events-r1/pay/SalesTab";
+import { hasPaidTypes } from "@/components/events-r1/pay/money";
 import { usePaidOn } from "@/components/events-r1/pay/usePay";
 import { fallbackCover } from "@/components/events-r1/page/HostStory";
 import { eventUrl, shareOrCopy } from "@/components/events-r1/page/share";
@@ -35,11 +36,11 @@ export const TABS = [
   { id: "overview", label: "Overview", icon: Home as Icon },
   { id: "details", label: "Details", icon: Pencil as Icon },
   { id: "tickets", label: "Tickets", icon: Ticket as Icon },
+  { id: "sales", label: "Sales", icon: Wallet as Icon },
   { id: "guests", label: "Guests", icon: Users as Icon },
   { id: "pops", label: "Pops", icon: Megaphone as Icon },
   { id: "twod", label: "2D room", icon: Grid3x3 as Icon },
   { id: "room", label: "Room", icon: LayoutPanelTop as Icon },
-  { id: "payouts", label: "Payouts", icon: Wallet as Icon },
 ] as const;
 export type TabId = (typeof TABS)[number]["id"];
 
@@ -47,7 +48,7 @@ export type TabId = (typeof TABS)[number]["id"];
 export const LEGACY_TABS: Record<string, TabId> = {
   audience: "guests",
   registration: "tickets",
-  sales: "payouts",
+  payouts: "sales",
   roomz: "room",
   more: "details",
 };
@@ -59,7 +60,6 @@ const SUB: Partial<Record<TabId, string>> = {
   tickets: "Free or paid, spots, the waitlist and the questions we ask.",
   pops: "Messages to your guests. They land in the app; also in your room when you have one.",
   twod: "A walkable space for this event. Guests show up as avatars, chat with people near them and join the voice stage.",
-  payouts: "What you have earned, what you can withdraw, and every order.",
 };
 
 /** "Fri 30 Oct · 8:00 PM" in the event's own time zone. */
@@ -97,9 +97,10 @@ export default function HostDashboard({ id }: { id: string }) {
   const [asked, setAsked] = useState(true);
   const [said, setSaid] = useState("");
   const strip = useRef<HTMLDivElement>(null);
-  // Payouts shows only while paid tickets are on.
+  // Sales: only while paid tickets are on. The nav shows it for an event with a paid ticket type; a link to a free event's Sales
+  // still opens it (it says the event is free).
   const paidOn = usePaidOn();
-  const tabs = TABS.filter((t) => t.id !== "payouts" || paidOn);
+  const tabs = TABS.filter((t) => t.id !== "sales" || paidOn);
 
   const signedIn = api ? !!api.auth.current() : null;
   const denied = signedIn === true && regs.error?.message === "Not allowed";
@@ -109,7 +110,7 @@ export default function HostDashboard({ id }: { id: string }) {
 
   const rawTab = search.get("tab");
   const [chosen, setTab] = useState<TabId>(tabFromParam(rawTab));
-  // With paid tickets off a ?tab=payouts (or ?tab=sales) address, or a tab left open, falls back to Overview.
+  // With paid tickets off a ?tab=sales (or ?tab=payouts) address, or a tab left open, falls back to Overview.
   const tab: TabId = tabs.some((t) => t.id === chosen) ? chosen : "overview";
   const fresh = search.get("new") === "1";
   // The tab is kept in the address bar (?tab=) without a trip to the server, so switching is instant and a refresh stays put.
@@ -203,7 +204,21 @@ export default function HostDashboard({ id }: { id: string }) {
   const pending = countsOf(people).pending;
   const noRoom = !e.room_id;
   const label = TABS.find((t) => t.id === tab)?.label ?? "Overview";
-  const sub = tab === "tickets" && paidOn ? "Payouts go to your bank after the event. Hoppaz fee is inside the price." : SUB[tab];
+  const paidEvent = hasPaidTypes(e);
+  const navTabs = tabs.filter((t) => t.id !== "sales" || paidEvent);
+  const sub =
+    tab === "tickets" && paidOn
+      ? "Payouts go to your bank after the event. Hoppaz fee is inside the price."
+      : tab === "sales" && paidEvent
+        ? `${e.title} · paid tickets`
+        : SUB[tab];
+  // Payouts live in the workspace: the room's (its owner) or Personal (the host's own event).
+  const payoutsHref =
+    e.room_id && inRoom && inRoom.my_role === "owner"
+      ? `/rooms/${encodeURIComponent(inRoom.slug)}/admin?tab=payouts`
+      : !e.room_id && me && e.host.id === me
+        ? "/host?tab=payouts"
+        : null;
 
   const share = async () => {
     const r = await shareOrCopy({ title: e.title, text: e.title, url: eventUrl(e) });
@@ -252,7 +267,7 @@ export default function HostDashboard({ id }: { id: string }) {
         <div className="lg:grid lg:min-h-[calc(100dvh-73px)] lg:grid-cols-[232px_minmax(0,1fr)]">
           <nav aria-label="Event dashboard" className="hidden border-r border-t-line lg:block">
             <div role="tablist" aria-orientation="vertical" className="sticky top-[73px] flex flex-col gap-1 p-4">
-              {tabs.map((t) => {
+              {navTabs.map((t) => {
                 const Icon = t.icon;
                 const on = tab === t.id;
                 const b = badge(t.id);
@@ -285,7 +300,7 @@ export default function HostDashboard({ id }: { id: string }) {
 
           <main className="min-w-0 px-4 pb-28 lg:px-8 lg:pb-16">
             <div ref={strip} role="tablist" aria-label="Event dashboard" className="sticky top-[61px] z-20 -mx-4 mb-4 flex gap-1 overflow-x-auto border-b border-t-line bg-t-bg px-4 py-2 [scrollbar-width:none] lg:hidden [&::-webkit-scrollbar]:hidden">
-              {tabs.map((t) => {
+              {navTabs.map((t) => {
                 const b = badge(t.id);
                 return (
                   <button
@@ -316,7 +331,7 @@ export default function HostDashboard({ id }: { id: string }) {
                 {tab === "pops" && <PopsTab eventId={e.id} />}
                 {tab === "twod" && <TwoDTab key={e.id} event={e} look={look} onLook={setEdited} />}
                 {tab === "room" && <RoomTab event={e} regs={people} />}
-                {tab === "payouts" && <SalesTab event={e} />}
+                {tab === "sales" && <SalesTab event={e} payoutsHref={payoutsHref} onTickets={() => go("tickets")} />}
               </div>
             </div>
           </main>
