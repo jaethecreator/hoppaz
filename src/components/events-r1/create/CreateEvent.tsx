@@ -447,6 +447,121 @@ function PostAs({ f, onNewRoom }: { f: EventFormState; onNewRoom: (from?: "event
   );
 }
 
+
+/* ------------------------------------------------------------------ view as visitor -- */
+
+/**
+ * "View as visitor": the draft as a guest sees the event page, with nothing to edit. Same columns and parts as the event page
+ * (HostStory); the ticket button does nothing, because the event is not live yet.
+ */
+function VisitorView({ f, cover, hostName, wide, onBack }: { f: EventFormState; cover: string | null; hostName: string; wide: boolean; onBack: () => void }) {
+  const p = parts(f.start);
+  const e = f.endShown && !f.endBad ? parts(f.end) : null;
+  const dayLine = `${p.wd}, ${p.day} ${p.mon[0]}${p.mon.slice(1).toLowerCase()}`;
+  const timeLine = `${p.time}${e ? ` to ${e.time}` : " till late"} · GMT+1`;
+  const where = f.inPerson ? f.place || "Place to be announced" : f.link ? `Online · ${LINK_LABEL[f.linkType ?? "other"]}` : "Online";
+  const types = f.tickets.length ? f.tickets : [newTicket()];
+  const free = !f.paid;
+  const about = f.about.trim();
+  const hosted = (
+    <div>
+      <div className="font-body text-[12px] font-semibold text-t-muted">Hosted by</div>
+      <div className="mt-2 flex items-center gap-2.5 font-body text-[14.5px] font-semibold leading-tight">
+        <i className="grid h-[30px] w-[30px] flex-none place-items-center rounded-full bg-t-soft font-body text-[12px] font-bold not-italic text-t-accent">{hostName[0]?.toUpperCase() ?? "H"}</i>
+        {hostName}
+      </div>
+    </div>
+  );
+  const tickets = (
+    <div className="overflow-hidden rounded-hz border border-t-line bg-t-tile" data-visitor-tickets>
+      <div className="flex items-baseline justify-between border-b border-t-line px-4 py-3">
+        <b className="font-body text-[14px]">{types.length > 1 || !free ? "Tickets" : "Registration"}</b>
+        <span className="font-body text-[12px] text-t-muted">{free ? "Free" : "Card or transfer fee added at payment"}</span>
+      </div>
+      {types.map((x) => (
+        <div key={x.key} className="border-b border-t-line px-4 py-3">
+          <b className="block font-body text-[14.5px] leading-tight">{x.name.trim() || "Regular"}</b>
+          {x.capacity && <span className="block font-body text-[12.5px] text-t-muted">{x.capacity} spots</span>}
+          <span className="mt-0.5 block font-display text-[16px] font-extrabold">{free || !Number(x.price) ? "Free" : naira(Number(x.price))}</span>
+        </div>
+      ))}
+      <div className="grid gap-2.5 px-4 py-3">
+        <button type="button" className="lip w-full" aria-disabled onClick={() => undefined}>
+          {free ? (f.approval ? "Request to join" : "Register") : "Get tickets"}
+        </button>
+        <span className="text-center font-body text-[11.5px] text-t-muted">Preview only. This button works once your event is live.</span>
+      </div>
+    </div>
+  );
+  const coverEl = cover ? (
+    <div className="overflow-hidden rounded-hz leading-[0] shadow-[0_24px_48px_-26px_rgba(0,0,0,.7)]">
+      <img src={cover} alt="Event cover" className="block h-auto w-full" />
+    </div>
+  ) : null;
+  const rowCls = wide ? "grid grid-cols-[40px_1fr] items-center gap-3" : "grid grid-cols-[44px_1fr] items-start gap-3.5";
+  const head = (
+    <div className="grid min-w-0 content-start gap-5 lg:gap-4">
+      <h1 className={`t-title m-0 text-balance font-extrabold tracking-[-0.02em] ${wide ? "text-[38px] leading-[1.02]" : "text-[30px] leading-[1.06]"}`}>{f.title.trim() || "Your event name"}</h1>
+      <div className={`grid ${wide ? "gap-3" : "gap-[18px]"}`}>
+        <div className={rowCls}>
+          <IconTile>
+            <Calendar />
+          </IconTile>
+          <div className="min-w-0">
+            <b className="block font-body text-[15.5px] leading-snug">{dayLine}</b>
+            <span className="block font-body text-[13.5px] text-t-muted">{timeLine}</span>
+          </div>
+        </div>
+        <div className={rowCls}>
+          <IconTile>{f.inPerson ? <MapPin /> : <Globe />}</IconTile>
+          <div className="min-w-0">
+            <b className="block font-body text-[15.5px] leading-snug">{where}</b>
+            {!f.inPerson && <span className="block font-body text-[13.5px] text-t-muted">The link shows once you&apos;re in</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+  const aboutEl = about ? (
+    <section>
+      <div className="mb-4 border-b border-t-line pb-2.5 font-body text-[12.5px] font-semibold text-t-muted">About</div>
+      <p className="m-0 max-w-[62ch] whitespace-pre-line font-body text-[15.5px] leading-relaxed">{about}</p>
+    </section>
+  ) : null;
+  return (
+    <div>
+      <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 bg-t-accent px-4 py-2 text-t-on lg:px-8" data-visitor-bar>
+        <span className="font-body text-[13.5px] font-bold">Viewing as a visitor. This is what guests see before they get a ticket.</span>
+        <button type="button" className="min-h-[44px] flex-none rounded-hz bg-t-bg px-3 font-body text-[14px] font-bold text-t-text shadow-[0_3px_0_var(--t-line)]" onClick={onBack}>
+          Back to my view
+        </button>
+      </div>
+      {wide ? (
+        <div className="mx-auto grid max-w-[1180px] grid-cols-[110px_minmax(0,1fr)_380px] gap-8 px-8 pb-16 pt-8">
+          <BigDate iso={f.start} />
+          <div className="grid content-start gap-8">
+            {head}
+            {aboutEl}
+          </div>
+          <div className="grid content-start gap-[18px]">
+            {coverEl}
+            {tickets}
+            {hosted}
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-5 px-[22px] pb-10 pt-[26px]">
+          {head}
+          {coverEl}
+          {tickets}
+          {hosted}
+          {aboutEl}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ the screen -- */
 
 /**
@@ -494,6 +609,7 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: (from?: "event")
   const f = useEventForm({ cover, look: fullLook });
   const [open, setOpen] = useState<string | null>("when");
   const wide = useWide();
+  const [visitor, setVisitor] = useState(false);
   const two = look.two_d ?? { on: true, template: "clubhouse" };
   useEffect(() => {
     if (f.made) clearLook();
@@ -532,12 +648,18 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: (from?: "event")
 
   return (
     <TintShell look={fullLook} className="min-h-full">
-      {wide ? (
+      {visitor ? (
+        <VisitorView f={f} cover={cover} hostName={(f.roomOn ? f.room?.name : f.user?.name) ?? "You"} wide={wide} onBack={() => setVisitor(false)} />
+      ) : wide ? (
         <div className="mx-auto max-w-[1180px] px-8 pb-16 pt-6">
           <div className="mb-6 flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <PostAs f={f} onNewRoom={onNewRoom} />
             </div>
+            <div className="flex items-center gap-4">
+              <button type="button" className="lip-ghost" onClick={() => setVisitor(true)} data-view-visitor>
+                View as visitor
+              </button>
             <label className="flex items-center gap-2">
               <span className="font-body text-[13px] text-t-muted">Who can see it</span>
               <select value={f.visibility} onChange={(e) => f.setVisibility(e.target.value as Visibility)} className="!w-auto font-body text-[14px]">
@@ -548,6 +670,7 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: (from?: "event")
                 ))}
               </select>
             </label>
+            </div>
           </div>
           <div className="grid grid-cols-[110px_minmax(0,1fr)_380px] gap-8">
             <BigDate iso={f.start} />
@@ -612,11 +735,14 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: (from?: "event")
               <X size={18} />
             </button>
             <b className="font-display text-[17px] font-extrabold">New event</b>
-            <div className="ml-auto">
-              <PostAs f={f} onNewRoom={onNewRoom} />
-            </div>
+            <button type="button" className="lip-ghost ml-auto !min-h-[38px] flex-none !px-3" onClick={() => setVisitor(true)} data-view-visitor>
+              View as visitor
+            </button>
           </div>
           <div className="grid gap-4 px-4 pb-6 pt-4">
+            <div className="flex items-center gap-2 font-body text-[13px] text-t-muted">
+              Post as <PostAs f={f} onNewRoom={onNewRoom} />
+            </div>
             <CoverBlock cover={cover} setCover={setCover} phone />
             <LookCard look={fullLook} setLook={setLook} />
             <div className="grid grid-cols-[auto_1fr] items-end gap-4">

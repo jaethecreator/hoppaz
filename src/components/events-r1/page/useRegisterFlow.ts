@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useR1Api, useR1Auth, useViewerState } from "@/lib/events-r1/hooks";
 import type { Quote } from "@/lib/events-r1/pay";
 import type { R1Event, RegQuestion } from "@/lib/events-r1/types";
-import { registerLabel } from "../labels";
+import { buttonFromEvent, registerLabel } from "../labels";
 import { MAX_QTY } from "../pay/PayQuantity";
 import { usePaidOn } from "../pay/usePay";
 import { buyError, naira } from "../pay/words";
@@ -22,10 +22,15 @@ const refFromUrl = (): string | null => (typeof window === "undefined" ? null : 
  * A paid ticket (paid tickets on) runs the same steps, then asks for a checkout and sends the person to the hosted Bachs
  * page. It issues nothing: the ticket arrives with the verified payment, and the person comes back to /tickets/return.
  */
-export function useRegisterFlow(event: R1Event) {
+export function useRegisterFlow(event: R1Event, preview = false) {
   const api = useR1Api();
   const { user } = useR1Auth();
-  const { data: viewer } = useViewerState(event.id);
+  const { data: real } = useViewerState(event.id);
+  // "View as visitor": the host's own state is swapped for a stranger's, so the buttons read as a guest sees them. They do nothing (start is a no-op below).
+  const viewer = useMemo(
+    () => (preview && real ? { ...real, signedIn: false, isHost: false, interested: false, registration: null, button: buttonFromEvent(event), canSeeOnlineLink: false, joinCallOpen: false } : real),
+    [preview, real, event]
+  );
   const paidOn = usePaidOn();
   const [typeId, setTypeId] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
@@ -150,10 +155,10 @@ export function useRegisterFlow(event: R1Event) {
   }, [api, event.id, submit]);
 
   const start = useCallback(() => {
-    if (!api || !viewer || label.disabled || label.status || phase === "busy") return;
+    if (preview || !api || !viewer || label.disabled || label.status || phase === "busy") return;
     if (!viewer.signedIn) setPhase("signin");
     else void proceed();
-  }, [api, viewer, label.disabled, label.status, phase, proceed]);
+  }, [preview, api, viewer, label.disabled, label.status, phase, proceed]);
 
   return {
     ready: !!api && !!viewer,
@@ -172,7 +177,7 @@ export function useRegisterFlow(event: R1Event) {
     maxQty,
     total,
     setQty,
-    openUrl,
+    openUrl: preview ? null : openUrl,
     start,
     proceed,
     submit,

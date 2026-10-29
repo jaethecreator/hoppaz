@@ -24,8 +24,8 @@ import { useRegisterFlow } from "./useRegisterFlow";
  */
 export type StoryTickets = ReturnType<typeof useStoryTickets>;
 
-export function useStoryTickets(event: R1Event) {
-  const flow = useRegisterFlow(event);
+export function useStoryTickets(event: R1Event, preview = false) {
+  const flow = useRegisterFlow(event, preview);
   const [pick, setPick] = useState<{ id: string; n: number } | null>(null);
   const [moved, setMoved] = useState(false);
   const [sheet, setSheet] = useState(false);
@@ -70,6 +70,7 @@ export function useStoryTickets(event: R1Event) {
 
   /** The main button: a free event registers at once (name and email come from the account); anything else opens checkout. */
   const go = () => {
+    if (preview) return;
     if (free) flow.start();
     else if (n) setSheet(true);
   };
@@ -80,7 +81,7 @@ export function useStoryTickets(event: R1Event) {
     if (registered) setSheet(false);
   }, [registered]);
 
-  return { event, flow, types, free, pick, n, chosen, total, from, moved, plus, minus, canPick, maxFor, host, done, shut, cta, go, word, sheet, setSheet };
+  return { event, flow, types, free, pick, n, chosen, total, from, moved, plus, minus, canPick, maxFor, host, done, shut, cta, go, word, sheet, setSheet, preview };
 }
 
 const qtyBtn = "grid h-8 w-8 place-items-center rounded-hz border border-t-line bg-t-bg font-body text-[18px] font-semibold leading-none shadow-[0_2px_0_var(--t-line)] active:translate-y-[2px] active:shadow-none disabled:opacity-35 disabled:shadow-none max-lg:h-[38px] max-lg:w-[38px]";
@@ -160,6 +161,11 @@ export function TicketCard({ t, anchor }: { t: StoryTickets; anchor: RefObject<H
         <span className="text-center font-body text-[11.5px] text-t-muted">
           {allPaidOff ? PAID_UNAVAILABLE : free || (t.chosen && t.chosen.price_naira === 0) ? "Your ticket comes with a QR code for the door" : "You'll pay on the next step"}
         </span>
+        {t.preview && (
+          <span className="text-center font-body text-[11.5px] text-t-muted" data-visitor-note>
+            Preview only. This button works for guests, not for you.
+          </span>
+        )}
         {flow.error && !t.sheet && (
           <p role="alert" className="font-body text-[13px] text-[#E5484D]">
             {flow.error}

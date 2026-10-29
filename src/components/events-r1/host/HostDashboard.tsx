@@ -241,6 +241,9 @@ export default function HostDashboard({ id }: { id: string }) {
           <Link href={`/event/${encodeURIComponent(e.id)}`} className="lip-ghost hidden flex-none lg:inline-flex">
             <Eye size={16} aria-hidden /> View page
           </Link>
+          <Link href={`/event/${encodeURIComponent(e.id)}?as=visitor`} className="lip-ghost hidden flex-none lg:inline-flex" data-view-visitor>
+            View as visitor
+          </Link>
           <button type="button" onClick={() => void share()} className="lip !min-h-[40px] flex-none !px-4 !py-2">
             Share
           </button>
@@ -273,6 +276,9 @@ export default function HostDashboard({ id }: { id: string }) {
               <div className="my-2 h-px bg-t-line" />
               <Link href={`/event/${encodeURIComponent(e.id)}`} className="flex min-h-[44px] items-center gap-3 rounded-hz px-3 font-body text-[15px] font-semibold text-t-muted hover:text-t-text">
                 <Eye size={18} aria-hidden /> View page
+              </Link>
+              <Link href={`/event/${encodeURIComponent(e.id)}?as=visitor`} className="flex min-h-[44px] items-center gap-3 rounded-hz px-3 font-body text-[15px] font-semibold text-t-muted hover:text-t-text">
+                <Eye size={18} aria-hidden /> View as visitor
               </Link>
             </div>
           </nav>

@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Calendar, Check, ChevronLeft, Globe, MapPin, Share2 } from "lucide-react";
 import TintShell, { usePictureTint } from "@/components/host/TintShell";
 import { QUESTS_ON } from "@/lib/events-r1/flags";
@@ -18,6 +18,7 @@ import { themeForEvent } from "@/lib/theme";
 import { peekTint, readTint } from "@/lib/tint";
 import { LINK_LABEL } from "../create/helpers";
 import SignInSheet from "../SignInSheet";
+import { buttonFromEvent } from "../labels";
 import { isOnline } from "../words";
 import { downloadIcs, googleCalendarUrl } from "./calendar";
 import HostStrip from "./HostStrip";
@@ -93,7 +94,7 @@ function Sec({ title, aside, children }: { title: string; aside?: React.ReactNod
   );
 }
 
-function Report({ event }: { event: R1Event }) {
+function Report({ event, inert }: { event: R1Event; inert?: boolean }) {
   const api = useR1Api();
   const { data: viewer } = useViewerState(event.id);
   const [open, setOpen] = useState(false);
@@ -102,7 +103,8 @@ function Report({ event }: { event: R1Event }) {
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  if (viewer?.isHost) return null;
+  if (viewer?.isHost && !inert) return null;
+  if (inert) return <span className="text-left text-t-muted">Report event</span>;
   if (sent)
     return (
       <span role="status" className="flex items-center gap-1.5">
@@ -243,8 +245,16 @@ function MoreFromHost({ event }: { event: R1Event }) {
 export default function HostStory({ event: given, extra }: { event: R1Event; extra?: React.ReactNode }) {
   const event = useFreshEvent(given);
   const router = useRouter();
+  const path = usePathname();
+  const sp = useSearchParams();
   const now = useR1Now();
-  const { data: viewer } = useViewerState(event.id);
+  const { data: real } = useViewerState(event.id);
+  // "View as visitor": the host sees the page exactly as someone who has not registered sees it, under a bar. Only the host can ask.
+  const asVisitor = !!real?.isHost && sp.get("as") === "visitor";
+  const viewer = useMemo(
+    () => (asVisitor && real ? { ...real, signedIn: false, isHost: false, interested: false, registration: null, button: buttonFromEvent(event), canSeeOnlineLink: false, joinCallOpen: false } : real),
+    [asVisitor, real, event]
+  );
   const { data: saved, loading: lookLoading } = useR1Query((a) => a.looks.get("event", event.id), [event.id]);
   const cover = event.flyer_url || fallbackCover(event.id);
   const look: Look = saved ?? { ...DEFAULT_LOOK, mood: themeForEvent(event.starts_at) === "day" ? "day" : "night", auto: true };
@@ -252,7 +262,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   const [wide, setWide] = useState(false);
   const [said, setSaid] = useState("");
   const anchor = useRef<HTMLDivElement>(null);
-  const t = useStoryTickets(event);
+  const t = useStoryTickets(event, asVisitor);
   const w = useMemo(() => whenWords(event), [event]);
   const online = isOnline(event);
 
@@ -318,6 +328,14 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   return (
     <div className="h-full overflow-y-auto">
       <TintShell look={look} tint={tint} className="min-h-full">
+        {asVisitor && (
+          <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 bg-t-accent px-[22px] py-2 text-[13.5px] font-bold text-t-on lg:px-[30px]" data-visitor-bar>
+            <span>Viewing as a visitor. This is what guests see before they get a ticket.</span>
+            <Link href={path} replace className="lip-ghost !mb-0 !min-h-[44px] whitespace-nowrap !text-t-text">
+              Back to my view
+            </Link>
+          </div>
+        )}
         {/* host band */}
         <div className="flex items-center gap-3 bg-t-soft px-[22px] py-3.5 lg:px-[30px] lg:py-4">
           <button type="button" onClick={back} aria-label="Back" className="-ml-2 grid h-10 w-8 flex-none place-items-center text-t-muted">
@@ -417,7 +435,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
                     Message the host in their room
                   </Link>
                 )}
-                <Report event={event} />
+                <Report event={event} inert={asVisitor} />
               </div>
             </div>
           </div>
@@ -429,7 +447,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
                 <p className="m-0 max-w-[62ch] whitespace-pre-line font-body text-[15.5px] leading-relaxed">{about}</p>
               </Sec>
             )}
-            {extra}
+            {!asVisitor && extra}
             {QUESTS_ON && <Quests event={event} />}
             <MoreFromHost event={event} />
           </div>
