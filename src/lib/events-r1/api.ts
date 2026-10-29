@@ -6,7 +6,7 @@
 import type { LooksApi } from "./looks";
 import type { PayApi } from "./pay";
 import type {
-  AuthUser, EventChat, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
+  AuthUser, DoorPerson, EventChat, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
   JoinOutcome, JoinRequest, Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomGuests, RoomMember, RoomMessage, RoomNotice,
   RoomPatch, RoomRole, RoomSummary, ScanResult, Ticket, ViewerState,
 } from "./types";
@@ -186,6 +186,13 @@ export interface DoorApi {
   search(eventId: string, q: string): Promise<Registration[]>;
   checkInById(eventId: string, registrationId: string): Promise<ScanResult>;
   counts(eventId: string): Promise<{ going: number; checked_in: number; pending: number; waitlist: number }>;
+  /**
+   * Door staff: people added for this one event whose only job is scanning at the door (scan, search, check in, counts). They cannot
+   * open the dashboard or add anyone. Listed for whoever manages the event (the host, a room owner or admin, staff); anyone else "Not allowed".
+   */
+  staff(eventId: string): Promise<DoorPerson[]>;
+  /** Add (on) or take away (off) a door person. Up to 20 per event ("That is the most door staff"). Whoever manages the event. */
+  setStaff(eventId: string, userId: string, on: boolean): Promise<void>;
 }
 
 export interface ClockApi {

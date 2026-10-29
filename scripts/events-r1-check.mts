@@ -1600,6 +1600,32 @@ await test("rooms: roles (owner, admin, host, member): owners and admins run the
   await rejects(api.rooms.removeMember(room.id, bisi), "Not allowed", "a visitor cannot remove anyone");
 });
 
+await test("door staff: added per event, they scan but cannot manage or add anyone", async () => {
+  as("Kredete");
+  const room = (await api.rooms.mine())[0];
+  const ev = fakeDev.allEvents().find((e) => e.room_id === room.id && e.kind !== "online" && e.status !== "cancelled")!;
+  eq(await api.door.staff(ev.id), [], "no door staff yet");
+  as("Ada Obi");
+  const guest = { user_id: api.auth.current()!.id };
+  await rejects(api.door.staff(ev.id), "Not allowed", "a guest cannot list door staff");
+  await rejects(api.door.setStaff(ev.id, guest.user_id, true), "Not allowed", "a guest cannot add door staff");
+  await rejects(api.door.counts(ev.id), "Not allowed", "and cannot scan");
+  as("Kredete");
+  await api.door.setStaff(ev.id, guest.user_id, true);
+  eq((await api.door.staff(ev.id)).map((p) => p.user_id), [guest.user_id], "added");
+  fakeDev.signInAs(guest.user_id);
+  eq(typeof (await api.door.counts(ev.id)).going, "number", "door staff open the door");
+  eq((await api.door.search(ev.id, "")).length > 0, true, "and search the guests");
+  await rejects(api.registrations.list(ev.id), "Not allowed", "but cannot open the guest list");
+  await rejects(api.door.staff(ev.id), "Not allowed", "or list door staff");
+  await rejects(api.door.setStaff(ev.id, guest.user_id, false), "Not allowed", "or add more");
+  as("Kredete");
+  await api.door.setStaff(ev.id, guest.user_id, false);
+  eq(await api.door.staff(ev.id), [], "removed");
+  fakeDev.signInAs(guest.user_id);
+  await rejects(api.door.counts(ev.id), "Not allowed", "and the door is shut for them again");
+});
+
 await test("rooms: a new joiner shows with today's date, and an admin posts an announcement", async () => {
   const p = await newPerson();
   void p;

@@ -110,6 +110,19 @@ export function assertManage(e: EventRec | undefined | null): EventRec {
   return e;
 }
 
+/** The door: whoever manages the event, or a person added as its door staff. */
+export function canDoor(e: EventRec): boolean {
+  const v = viewer();
+  return !!v && (canManage(e) || !!S().doorStaff[`${e.id}:${v.id}`]);
+}
+
+export function assertDoor(e: EventRec | undefined | null): EventRec {
+  if (!e) throw new Error("Event not found");
+  if (!viewer()) throw new Error("Sign in first");
+  if (!canDoor(e)) throw new Error("Not allowed");
+  return e;
+}
+
 export function requireViewer(): UserRec {
   const v = viewer();
   if (!v) throw new Error("Sign in first");

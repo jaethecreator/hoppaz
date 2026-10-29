@@ -21,6 +21,8 @@
 --   5. ev_post_events_as_room(room, events[]): put the caller's own events into a room they are owner or admin of.
 --   6. ev_remove_room_member(room, user): the Remove choice in the room admin's member list (owner removes anyone but the owner; an admin
 --      removes plain members only).
+--   7. ev_door_staff_list(event): who has been added as door staff for an event (ev_set_door_staff in events_r1_tickets.sql adds and removes
+--      them but nothing could list them, and ev_door_staff is closed to the app). Read by the Guests tab and the door page.
 --
 -- FOR OLA, THREE THINGS TO KNOW
 --   (a) THE ROLE CHECK. schema.sql allows owner and member; crew_stage_voice.sql widens it to owner, admin and member. This file drops
@@ -44,6 +46,7 @@
 --   crew_stage_voice.sql                                   crew_members.role 'admin' (this file widens it again)
 --   events_r1_events.sql                                   _ev_open(), _ev_staff(), ev_settings, events.room_id
 --   events_r1_registrations.sql                            ev_registrations
+--   events_r1_tickets.sql                                  ev_door_staff (ev_door_staff_list reads it)
 --   events_r1_rooms.sql                                    _ev_room_json(uuid, uuid), _ev_is_hq(uuid)
 --   events_r1_looks.sql is NOT needed here; the room look is set with ev_set_look (that file) as before.
 -- Test: supabase/tests/events_r1_room_profile_test.sql
@@ -54,9 +57,9 @@
 
 do $$
 begin
-  if to_regclass('public.ev_registrations') is null or to_regprocedure('public._ev_room_json(uuid, uuid)') is null
+  if to_regclass('public.ev_registrations') is null or to_regclass('public.ev_door_staff') is null or to_regprocedure('public._ev_room_json(uuid, uuid)') is null
      or to_regprocedure('public._ev_open()') is null then
-    raise exception 'events_r1_room_profile: run events_r1_events.sql, events_r1_registrations.sql and events_r1_rooms.sql first';
+    raise exception 'events_r1_room_profile: run events_r1_events.sql, events_r1_registrations.sql, events_r1_tickets.sql and events_r1_rooms.sql first';
   end if;
   if not exists (select 1 from storage.buckets where id = 'crew-images' and public) then
     raise exception 'events_r1_room_profile: run crew_rooms.sql first (the public crew-images bucket is missing)';
@@ -630,6 +633,19 @@ begin
 end $$;
 revoke all on function public.ev_remove_room_member(uuid, uuid) from public, anon;
 grant execute on function public.ev_remove_room_member(uuid, uuid) to authenticated;
+
+-- Door staff of one event: [{ user_id, name }], by name. null unless the viewer manages the event (_ev_manage: the host, staff and, once (b)
+-- above is done, the room's owner and admins). Door staff themselves cannot list or add staff.
+create or replace function public.ev_door_staff_list(p_event uuid) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  if not public._ev_manage(p_event) then return null; end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('user_id', d.user_id, 'name', public._ev_person_name(d.user_id)) order by public._ev_person_name(d.user_id), d.user_id)
+      from public.ev_door_staff d where d.event_id = p_event), '[]'::jsonb);
+end $$;
+revoke all on function public.ev_door_staff_list(uuid) from public, anon;
+grant execute on function public.ev_door_staff_list(uuid) to authenticated;
 
 -- ------------------------------------------------------------------ went but have not joined ---
 -- { count, guests: [{ user_id, name }] } : people going or checked in at any of the room's events (not cancelled) who are not members.

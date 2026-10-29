@@ -105,6 +105,8 @@ export type FakeState = {
   roles: Record<string, Exclude<RoomRole, "owner" | "member">>;
   /** "<userId>:<roomId>" to an ISO time: when someone joined in this browser. A member with none joined before the seed (a month ago). */
   joinedAt: Record<string, string>;
+  /** "<eventId>:<userId>" for people the host let scan at the door of that event. */
+  doorStaff: Record<string, boolean>;
   /** Join requests by id: one per person per room (a decided one is kept, a new ask after a decline makes it pending again). */
   requests: Record<string, JoinRequestRec>;
   /** Notices by id (a request that was approved). */
@@ -123,7 +125,7 @@ export type FakeState = {
 
 const COLLS = [
   "users", "events", "regs", "tickets", "pops", "announcements", "messages", "reports", "rooms",
-  "orders", "payouts", "regSettings", "memberships", "roles", "joinedAt", "requests", "notices", "interest", "reads",
+  "orders", "payouts", "regSettings", "memberships", "roles", "joinedAt", "doorStaff", "requests", "notices", "interest", "reads",
 ] as const;
 type Coll = (typeof COLLS)[number];
 

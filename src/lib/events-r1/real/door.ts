@@ -1,7 +1,8 @@
 /** Real door scan (supabase/events_r1_tickets.sql). The database checks the signature, the event and the ticket; this only carries the answer. */
 import type { DoorApi } from "../api";
 import type { ScanResult } from "../types";
-import { emit, reasonText, rpc } from "./core";
+import { emit, reasonText, rpc, rpcText } from "./core";
+import { soft } from "./roomProfile";
 import { eventIdOf } from "./ids";
 import { mapRegistration } from "./map";
 
@@ -46,5 +47,21 @@ export const door: DoorApi = {
     if (!out || out.ok !== true) throw new Error(reasonText(out?.reason));
     const n = (v: unknown) => Number(v) || 0;
     return { going: n(out.going), checked_in: n(out.checked_in), pending: n(out.pending), waitlist: n(out.waitlist) };
+  },
+
+  /** The people added for this event. ev_door_staff_list is in events_r1_room_profile.sql (a draft): until it is run the list reads empty. */
+  async staff(eventId) {
+    const r = await soft<Row[] | null>("ev_door_staff_list", { p_event: await eventIdOf(eventId) });
+    if (r.missing) return [];
+    if (r.error) throw new Error("That did not work. Try again");
+    if (!r.data) throw new Error("Not allowed");
+    return r.data.map((p) => ({ user_id: String(p.user_id), name: String(p.name ?? "Hopper") }));
+  },
+
+  async setStaff(eventId, userId, on) {
+    await rpcText("ev_set_door_staff", { p_event: await eventIdOf(eventId), p_user: userId, p_on: !!on }, {
+      not_allowed: "Not allowed", no_such_user: "We can't find that person", too_many: "That is the most door staff for one event",
+    });
+    emit();
   },
 };

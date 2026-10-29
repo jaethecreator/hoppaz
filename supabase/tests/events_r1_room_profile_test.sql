@@ -236,13 +236,13 @@ begin
             where ns.nspname = 'public'
               and p.proname in ('ev_room_by_slug', 'ev_room_profile', 'ev_discover_rooms', 'ev_create_room', 'ev_update_room', 'ev_slug_available', 'ev_join_room',
                                 'ev_room_requests', 'ev_decide_room_request', 'ev_room_invite_code', 'ev_my_room_notices', 'ev_mark_room_notices_seen',
-                                'ev_room_members', 'ev_set_room_role', 'ev_remove_room_member', 'ev_room_guests_not_joined', 'ev_post_events_as_room',
+                                'ev_room_members', 'ev_set_room_role', 'ev_remove_room_member', 'ev_door_staff_list', 'ev_room_guests_not_joined', 'ev_post_events_as_room',
                                 '_ev_slug_ok', '_ev_slug_from_name', '_ev_room_role', '_ev_room_admin', '_ev_room_can_run', '_ev_join_mode', '_ev_person_name',
                                 '_ev_logo_ok', '_ev_links_clean', '_ev_room_profile_json', '_ev_post_events', 'ev_ensure_hq_id')
   loop
     perform pg_temp.ok(has_function_privilege('anon', f.oid, 'execute') = (f.name in ('ev_room_by_slug', 'ev_room_profile', 'ev_discover_rooms', 'ev_slug_available')),
                        f.name || ': anon access is as designed');
-    perform pg_temp.ok(has_function_privilege('authenticated', f.oid, 'execute') = (left(f.name, 4) = 'ev_r' or f.name in ('ev_create_room', 'ev_update_room', 'ev_slug_available', 'ev_join_room', 'ev_discover_rooms', 'ev_decide_room_request', 'ev_my_room_notices', 'ev_mark_room_notices_seen', 'ev_set_room_role', 'ev_remove_room_member', 'ev_post_events_as_room')),
+    perform pg_temp.ok(has_function_privilege('authenticated', f.oid, 'execute') = (left(f.name, 4) = 'ev_r' or f.name in ('ev_create_room', 'ev_update_room', 'ev_slug_available', 'ev_join_room', 'ev_discover_rooms', 'ev_decide_room_request', 'ev_my_room_notices', 'ev_mark_room_notices_seen', 'ev_set_room_role', 'ev_remove_room_member', 'ev_door_staff_list', 'ev_post_events_as_room')),
                        f.name || ': authenticated access is as designed');
   end loop;
   perform pg_temp.ok(pg_temp.denied('anon', 'select * from public.ev_room_profiles') and pg_temp.denied('authenticated', 'select * from public.ev_room_requests')

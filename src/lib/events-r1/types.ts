@@ -293,6 +293,9 @@ export type ScanResult =
   | { ok: false; kind: "already_used"; name: string; at: string; seat_no?: number; seats?: number }
   | { ok: false; kind: "not_valid"; reason: "bad_signature" | "wrong_event" | "void" | "unknown" | "not_going" };
 
+/** Someone added as door staff for one event. */
+export type DoorPerson = { user_id: string; name: string };
+
 export type AuthUser = { id: string; name: string; email: string };
 
 /** Input for create and edit. A name is enough; everything else has a default. */

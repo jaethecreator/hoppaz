@@ -4,6 +4,7 @@ import clsx from "clsx";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChevronLeft } from "lucide-react";
+import DoorStaffCard from "@/components/events-r1/door/DoorStaffCard";
 import { copyText, eventUrl, shareOrCopy } from "@/components/events-r1/page/share";
 import RefundControl from "@/components/events-r1/pay/RefundControl";
 import { useEventOrders, usePaidOn } from "@/components/events-r1/pay/usePay";
@@ -130,6 +131,8 @@ export default function GuestsTab({ event, regs, loading }: { event: R1Event; re
           Export
         </button>
       </div>
+
+      <DoorStaffCard eventId={event.id} />
 
       <div role="radiogroup" aria-label="Filter" className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {FILTERS.map((f) => (

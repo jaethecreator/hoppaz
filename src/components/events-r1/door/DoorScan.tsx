@@ -9,6 +9,7 @@ import SignInSheet from "@/components/events-r1/SignInSheet";
 import { useR1Api, useR1Auth, useR1Event, useR1Query } from "@/lib/events-r1/hooks";
 import type { Registration, ScanResult } from "@/lib/events-r1/types";
 import DoorCamera from "./DoorCamera";
+import DoorStaffCard from "./DoorStaffCard";
 import GuestSearch from "./GuestSearch";
 import ResultBanner from "./ResultBanner";
 import { errLine } from "./helpers";
@@ -285,6 +286,9 @@ export default function DoorScan({ id }: { id: string }) {
 
         <div className="mt-6 lg:mt-0">
           <GuestSearch eventId={e.id} busy={busy} onCheckIn={checkInGuest} />
+          <div className="mt-6">
+            <DoorStaffCard eventId={e.id} plain />
+          </div>
         </div>
       </div>
     </>
