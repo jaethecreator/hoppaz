@@ -63,19 +63,19 @@ export default function Switcher({ current, room }: { current: "personal" | stri
   const row = "flex min-h-[52px] w-full items-center gap-3 rounded-hz px-3 py-2 text-left";
 
   return (
-    <div ref={box} className="relative inline-block max-w-full" data-switcher>
+    <div ref={box} className="relative block w-fit max-w-full" data-switcher>
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Workspace: ${name}. Switch`}
         onClick={() => setOpen(!open)}
-        className={clsx("-ml-1 flex max-w-full items-center gap-3 rounded-hz px-1 py-1", open && "bg-t-soft")}
+        className={clsx("-ml-1 flex w-fit max-w-full items-center gap-3 rounded-hz px-1 py-1", open && "bg-t-soft")}
       >
         <Tile logo={personal ? null : room?.logo_url} name={name} size={44} />
-        <span className="grid min-w-0 text-left leading-tight">
-          <b className="t-title truncate text-[17px] font-extrabold lg:text-[19px]">{name}</b>
-          <span className="truncate font-body text-[13px] text-t-muted">{sub}</span>
+        <span className="flex flex-col text-left leading-tight">
+          <b className="t-title block max-w-[240px] truncate whitespace-nowrap text-[17px] font-extrabold lg:text-[19px]">{name}</b>
+          <span className="block max-w-[240px] truncate whitespace-nowrap font-body text-[13px] text-t-muted">{sub}</span>
         </span>
         <ChevronDown size={16} className="flex-none text-t-muted" aria-hidden />
       </button>
