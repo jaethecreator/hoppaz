@@ -43,7 +43,7 @@ function Tile({ n, label, extra }: { n: string; label: string; extra?: string })
 }
 
 /** The QR of the event link, drawn in black on white so any phone reads it. */
-function Qr({ url, title }: { url: string; title: string }) {
+export function Qr({ url, title }: { url: string; title: string }) {
   const [src, setSrc] = useState("");
   useEffect(() => {
     let live = true;

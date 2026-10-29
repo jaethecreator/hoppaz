@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import RoomHome from "@/components/events-r1/rooms/RoomHome";
 import { EVENTS_R1 } from "@/lib/events-r1/flags";
 
@@ -6,5 +7,9 @@ import { EVENTS_R1 } from "@/lib/events-r1/flags";
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
   if (!EVENTS_R1) notFound();
   const { slug } = await params;
-  return <RoomHome slug={slug} />;
+  return (
+    <Suspense fallback={<div className="h-full" />}>
+      <RoomHome slug={slug} />
+    </Suspense>
+  );
 }

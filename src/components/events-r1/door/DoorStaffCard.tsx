@@ -21,7 +21,7 @@ export default function DoorStaffCard({ eventId, plain }: { eventId: string; pla
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
-  const people = staff.data ?? [];
+  const people = useMemo(() => staff.data ?? [], [staff.data]);
   const taken = useMemo(() => new Set(people.map((p) => p.user_id)), [people]);
   const options = useMemo(() => {
     const needle = q.trim().toLowerCase();

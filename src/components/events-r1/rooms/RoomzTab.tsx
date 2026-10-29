@@ -13,6 +13,7 @@ import { useR1Api, useR1Auth, useRooms } from "@/lib/events-r1/hooks";
 import type { EventChat, RoomNotice, RoomSummary } from "@/lib/events-r1/types";
 import CreateButton from "../CreateButton";
 import SignInSheet from "../SignInSheet";
+import HostEntry from "../workspace/HostEntry";
 import { closesWord, enterPath, memberWord, roomPath, walkable } from "./words";
 
 const tab = "min-h-[44px] flex-1 rounded-hz border px-4 font-display text-[14px] font-bold";
@@ -73,7 +74,7 @@ export default function RoomzTab() {
   return (
     <div className="h-full overflow-y-auto px-4 pb-28">
       <div className="mx-auto w-full max-w-[560px]">
-        <PageHeader title="ROOMZ" className="pb-3" />
+        <PageHeader title="ROOMZ" className="pb-3" action={<HostEntry variant="button" />} />
         <Notices />
         <div role="tablist" aria-label="Roomz" className="mb-4 flex gap-2">
           {(["mine", "discover"] as const).map((v) => (

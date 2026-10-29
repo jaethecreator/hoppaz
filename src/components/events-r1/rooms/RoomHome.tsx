@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { CalendarDays, ChevronRight, DoorOpen, Megaphone, MessageCircle, MessageSquare } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { CalendarDays, ChevronRight, DoorOpen, Megaphone, MessageCircle, MessageSquare, Settings } from "lucide-react";
 import clsx from "clsx";
 import LoadingStub from "@/components/app/LoadingStub";
 import PageHeader from "@/components/app/PageHeader";
@@ -45,8 +46,13 @@ export default function RoomHome({ slug }: { slug: string }) {
   return <Home room={room} />;
 }
 
-function Home({ room }: { room: RoomSummary }) {
+function Home({ room: real }: { room: RoomSummary }) {
   const api = useR1Api();
+  // "View as visitor" (from the room admin): the owner or an admin sees exactly what someone who has not joined sees, under a bar.
+  const manager = real.my_role === "owner" || real.my_role === "admin";
+  const wantsVisitor = useSearchParams().get("as") === "visitor";
+  const asVisitor = manager && wantsVisitor;
+  const room: RoomSummary = asVisitor ? { ...real, joined: false, my_role: null, is_owner: false, can_post: false, unread: 0, request: "none", pending_requests: 0 } : real;
   const base = roomPath(room);
   const hq = room.kind === "hq";
   const { data: events } = useRoomEvents(room.id);
@@ -70,9 +76,22 @@ function Home({ room }: { room: RoomSummary }) {
 
   return (
     <div className="h-full overflow-y-auto pb-24" data-hub-scroll>
+      {asVisitor && (
+        <div className="sticky top-0 z-30 flex items-center justify-between gap-3 bg-orange px-4 py-2.5 text-brand-ink" data-visitor-bar>
+          <span className="font-body text-[14px] font-bold">View as visitor: this is what visitors see</span>
+          <Link href={`${base}/admin?tab=profile`} className="flex min-h-[40px] flex-none items-center rounded-hz bg-ink px-3 font-body text-[14px] font-bold text-cream">
+            Back to my view
+          </Link>
+        </div>
+      )}
       <div className="mx-auto w-full max-w-[760px]">
         <RoomHeader room={room} />
         <div className="px-4">
+          {manager && !asVisitor && (
+            <Link href={`${base}/admin`} className="btn btn-ghost mt-4 w-full text-[15px] normal-case" data-manage-room>
+              <Settings size={18} aria-hidden /> Manage room
+            </Link>
+          )}
           {/* Enter room opens the walkable room, Lagos HQ's too (its lagos-hq room). Chat stays the main thing: the sections below are
               always here, so a full room or a failed entry (the walker cap) never leaves HQ without its chat. A room with its 3D room
               off is chat only. Lagos HQ has no Join: everyone is in it. */}

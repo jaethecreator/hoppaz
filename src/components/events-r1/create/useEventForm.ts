@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { readSpot, spotName } from "@/lib/geocode/lagos";
 import type { PlaceSpot } from "@/lib/geocode/types";
-import { useMyRooms, useR1Api, useR1Auth, useR1Now } from "@/lib/events-r1/hooks";
+import { useManagedRooms, useR1Api, useR1Auth, useR1Now } from "@/lib/events-r1/hooks";
 import type { EventDraft, EventKind, LinkType, R1Event, Visibility } from "@/lib/events-r1/types";
 import { usePaidGate } from "../pay/usePay";
 import { hostPayError } from "../pay/words";
@@ -64,7 +64,7 @@ export function useEventForm({ cover, look }: { cover: string | null; look: Look
     return [newTicket("General")];
   });
   const [visibility, setVisibility] = useState<Visibility>(() => (WHO_VALUES.includes(d0.visibility as Visibility) ? (d0.visibility as Visibility) : "public"));
-  const [addToRoom, setAddToRoom] = useState(() => bool(d0.addToRoom, true));
+  const [addToRoom, setAddToRoom] = useState(() => (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("room") ? true : bool(d0.addToRoom, true)));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [signIn, setSignIn] = useState(false);
@@ -88,8 +88,10 @@ export function useEventForm({ cover, look }: { cover: string | null; look: Look
     });
   }, [title, start, end, endShown, kind, spot, linkType, link, about, approval, capacity, waitlist, paid, tickets, visibility, addToRoom]);
 
-  const mine = useMyRooms();
-  const room = mine.data?.[0] ?? null;
+  // Post as: a room the host owns or is an admin of. ?room=<id> (from the room admin's "+ New event") picks that one.
+  const mine = useManagedRooms();
+  const [askedRoom] = useState(() => (typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("room") ?? "")));
+  const room = (askedRoom ? mine.data?.find((r) => r.id === askedRoom || r.slug === askedRoom) : null) ?? mine.data?.[0] ?? null;
   const roomOn = !!room && addToRoom;
 
   const online = kind !== "in_person";
@@ -166,7 +168,10 @@ export function useEventForm({ cover, look }: { cover: string | null; look: Look
       d.link_type = linkType ?? (link.trim() ? "other" : null);
       d.online_link = cleanLink(link) || null;
     }
-    if (room) d.add_to_room = addToRoom;
+    if (room) {
+      d.add_to_room = addToRoom;
+      if (addToRoom) d.room_id = room.id;
+    }
     return d;
   };
 

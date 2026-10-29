@@ -9,7 +9,7 @@ import { autoPopsFor, defaultMessages, defaultQuestions } from "./defaults";
 import { canSell } from "./payouts";
 import { retimeAutoPops } from "./pops";
 import {
-  assertManage, canList, canManage, canRunRoomEvents, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, freeTypes, roomToPostIn,
+  assertManage, canList, canManage, canManageRoom, canRunRoomEvents, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, freeTypes, roomToPostIn,
   isGoing, isHostOf, regOf, regsOf, requireViewer, statusOf, typeFull, typesOf, typeOfReg,
 } from "./rules";
 import { emit, now, S, subscribe, viewer } from "./store";
@@ -168,7 +168,8 @@ function checkRateLimit(host: UserRec): void {
 
 function makeEvent(host: UserRec, draft: EventDraft, copyTypes?: TicketTypeRec[]): EventRec {
   checkRateLimit(host);
-  const room = draft.add_to_room === false ? null : roomToPostIn(host.id);
+  const asked = draft.room_id ? S().rooms[draft.room_id] : undefined;
+  const room = draft.add_to_room === false ? null : asked && asked.kind !== "hq" && canManageRoom(asked.id) ? asked : roomToPostIn(host.id);
   const f = normalize(copyTypes ? { ...draft, tickets: undefined } : draft, room?.id ?? null, host.id);
   // Clone: the same types (new ids), prices and all, whatever the paid flag says; nothing new is being offered.
   if (copyTypes) {

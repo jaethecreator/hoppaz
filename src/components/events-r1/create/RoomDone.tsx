@@ -49,9 +49,9 @@ export default function RoomDone({
     }
   };
   const todo: Array<[string, string, () => void]> = [
-    ["Post your next event here", "Create", () => router.push("/create?mode=event")],
-    ["Write a welcome announcement", "Write", open],
-    ["Add co-hosts", "Add", open],
+    ["Post your next event here", "Create", () => router.push(`/create?mode=event&room=${encodeURIComponent(room.id)}`)],
+    ["Write a welcome announcement", "Write", () => { onClose?.(); router.push(`/rooms/${encodeURIComponent(room.slug)}/admin?tab=announcements`); }],
+    ["Add admins to help run it", "Add", () => { onClose?.(); router.push(`/rooms/${encodeURIComponent(room.slug)}/admin?tab=members`); }],
   ];
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 lg:items-center lg:p-4" role="dialog" aria-modal="true" aria-label="Your room is live" data-room-done>

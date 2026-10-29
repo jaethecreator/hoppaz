@@ -76,7 +76,7 @@ export default function RoomTab({ event, regs }: { event: R1Event; regs: Registr
   return (
     <div className="flex flex-col gap-4">
       <section className="t-card p-4 lg:p-5" aria-label="Your room">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="grid h-12 w-12 flex-none place-items-center rounded-hz bg-t-accent font-display text-[20px] font-black text-t-on">{name.trim()[0]?.toUpperCase() ?? "R"}</span>
           <div className="min-w-0 flex-1">
             <b className="block truncate font-body text-[16px]">{name}</b>
@@ -87,6 +87,11 @@ export default function RoomTab({ event, regs }: { event: R1Event; regs: Registr
           <Link href={`/rooms/${encodeURIComponent(event.host.roomId ?? event.room_id)}`} className="lip-ghost flex-none">
             Open room
           </Link>
+          {r && (r.my_role === "owner" || r.my_role === "admin") && (
+            <Link href={`/rooms/${encodeURIComponent(r.slug)}/admin`} className="lip flex-none" data-open-room-admin>
+              Open room admin
+            </Link>
+          )}
         </div>
 
         <div className="mt-3 border-t border-t-line pt-1">

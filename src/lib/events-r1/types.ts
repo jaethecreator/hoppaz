@@ -323,6 +323,8 @@ export type EventDraft = {
   tickets?: { name: string; price_naira: number; capacity: number | null }[];
   /** Put the event in the host's room. Default true when the host has a room; false keeps it out. */
   add_to_room?: boolean;
+  /** Post as this room: one the host owns or is an admin of. Left out, the host's own room is used (see add_to_room). */
+  room_id?: string;
 };
 
 /**
