@@ -3,6 +3,7 @@
  * `fake` (fake/) is in memory and seeded; `real` (real/) calls Ola's functions later.
  * Picked by getApi() in index.ts from NEXT_PUBLIC_EVENTS_R1_FAKE.
  */
+import type { Lineup } from "./lineup";
 import type { LooksApi } from "./looks";
 import type { PayApi } from "./pay";
 import type {
@@ -45,6 +46,13 @@ export interface EventsApi {
   /** Registration questions and the three messages (Pending, Going, Declined). */
   getRegistrationSettings(id: string): Promise<{ questions: RegQuestion[]; messages: RegMessages }>;
   setRegistrationSettings(id: string, s: { questions?: RegQuestion[]; messages?: Partial<RegMessages> }): Promise<void>;
+  /**
+   * The lineup or programme shown on the event page: { kind, rows }. Anyone who can see the event can read it; an event with none
+   * answers { kind: "lineup", rows: [] }. Real: until supabase/events_r1_lineup.sql is run this answers empty, quietly.
+   */
+  getLineup(id: string): Promise<Lineup>;
+  /** Host or staff: replace it. Rows with no name are dropped, at most 30 rows ("Not allowed" for anyone else). Real: needs the SQL file. */
+  setLineup(id: string, l: Lineup): Promise<void>;
   subscribe(fn: () => void): Unsub;
 }
 

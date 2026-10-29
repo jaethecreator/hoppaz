@@ -5,6 +5,7 @@ import { client, emit, ready, rpc, rpcOk, rpcText, subscribe, userId, who } from
 import { cleanQuestions, mapEvent, mapRegistration } from "./map";
 import { eventIdOf, roomIdOf } from "./ids";
 import { CREATE_LIMIT } from "../constants";
+import { cleanLineup } from "../lineup";
 import { soft } from "./roomProfile";
 
 /** An id, or a slug the database also finds. */
@@ -97,6 +98,21 @@ export const events: EventsApi = {
     // A guest (the app's anonymous session) has an auth.uid() but no account: the database says signedIn false for them, and so do we.
     await ready();
     return { ...(j as unknown as ViewerState), signedIn: j.signedIn === true && who() !== null, registration: j.registration ? mapRegistration(j.registration) : null };
+  },
+
+  /** supabase/events_r1_lineup.sql. Until it is run this answers empty, quietly. */
+  async getLineup(id) {
+    const r = await soft<unknown>("ev_get_lineup", { p_event: await eventIdOf(id) });
+    return cleanLineup(r.data as Parameters<typeof cleanLineup>[0]);
+  },
+
+  async setLineup(id, l) {
+    const r = await soft<string>("ev_set_lineup", { p_event: await eventIdOf(id), p_lineup: cleanLineup(l) });
+    if (r.missing) return; // the file is not run yet: nothing to save to, and nothing to scare the host with
+    if (r.data === "not_allowed") throw new Error("Not allowed");
+    if (r.data === "no_session") throw new Error("Sign in first");
+    if (r.data !== "ok") throw new Error("That did not work. Try again");
+    emit();
   },
 
   async getRegistrationSettings(id) {

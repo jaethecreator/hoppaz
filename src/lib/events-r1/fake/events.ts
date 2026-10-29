@@ -4,6 +4,7 @@ import type { EventDraft, EventKind, LinkType, ViewerState, Visibility } from ".
 import { VIBES } from "../../brand";
 import { CREATE_LIMIT, PAID_UNAVAILABLE } from "../constants";
 import { paidTicketsOn } from "../flags";
+import { cleanLineup } from "../lineup";
 import { areaByName, insideLagos, LAGOS_CENTER, nearestArea } from "../../geo";
 import { autoPopsFor, defaultMessages, defaultQuestions } from "./defaults";
 import { canSell } from "./payouts";
@@ -339,6 +340,8 @@ export const events: EventsApi = {
     const rec = makeEvent(host, draft, typesOf(src));
     const s = S().regSettings[src.id];
     if (s) S().regSettings[rec.id] = clone(s);
+    const l = S().lineups[src.id];
+    if (l) S().lineups[rec.id] = clone(l);
     emit();
     return eventView(rec);
   },
@@ -358,6 +361,17 @@ export const events: EventsApi = {
 
   async viewerState(id) {
     return viewerStateFor(visibleEvent(id));
+  },
+
+  async getLineup(id) {
+    const e = visibleEvent(id);
+    return clone(S().lineups[e.id] ?? cleanLineup(null));
+  },
+
+  async setLineup(id, l) {
+    const e = assertManage(findEvent(id));
+    S().lineups[e.id] = cleanLineup(l);
+    emit();
   },
 
   async getRegistrationSettings(id) {
