@@ -329,6 +329,9 @@ export default function DetailsTab({ event, look, cover, onLook }: { event: R1Ev
         <Link href={`/event/${encodeURIComponent(event.id)}`} className="font-body text-[15px] font-bold text-t-accent underline underline-offset-4">
           Open event page
         </Link>
+        <Link href={`/event/${encodeURIComponent(event.id)}?as=visitor`} className="ml-5 font-body text-[15px] font-bold text-t-accent underline underline-offset-4" data-view-visitor>
+          View as visitor
+        </Link>
       </Card>
 
       <Card label="Duplicate event">

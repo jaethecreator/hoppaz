@@ -48,9 +48,12 @@ export default function HostStrip({ event, viewer }: { event: R1Event; viewer: V
       )}
       <div className="rounded-hz border border-line bg-ink-3 p-3">
         <p className="font-display text-[15px] font-black">You host this event</p>
-        <div className="mt-2.5 flex gap-2">
+        <div className="mt-2.5 flex flex-wrap gap-2">
           <Link href={`/host/${encodeURIComponent(event.id)}`} className={CELL}>
             Manage
+          </Link>
+          <Link href="?as=visitor" className={`${CELL} basis-full`} data-view-visitor>
+            View as visitor
           </Link>
           <button type="button" onClick={() => void share()} className={CELL}>
             Share
