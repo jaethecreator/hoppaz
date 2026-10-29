@@ -262,7 +262,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   const [wide, setWide] = useState(false);
   const [said, setSaid] = useState("");
   const anchor = useRef<HTMLDivElement>(null);
-  const t = useStoryTickets(event, asVisitor);
+  const t = useStoryTickets(event, asVisitor || !!real?.isHost);
   const w = useMemo(() => whenWords(event), [event]);
   const online = isOnline(event);
 
@@ -321,7 +321,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   );
 
   let action: React.ReactNode;
-  if (viewer?.isHost) action = <div className="t-adopt"><HostExtras event={event} viewer={viewer} /></div>;
+  if (viewer?.isHost) action = <><TicketCard t={t} anchor={anchor} /><div className="t-adopt mt-3"><HostExtras event={event} viewer={viewer} /></div></>;
   else if (viewer?.registration) action = <div className="t-adopt"><StatusCard event={event} viewer={viewer} /></div>;
   else action = <TicketCard t={t} anchor={anchor} />;
 
