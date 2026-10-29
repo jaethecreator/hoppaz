@@ -83,6 +83,8 @@ export type NightMapProps = {
    * then pulls in and stands the venue's house in the strip of map to its left.
    */
   sidePanel?: boolean;
+  /** The open card is the full-width stub low on a phone: the venue sits in the strip of map above it, not beside it. */
+  stubBelow?: boolean;
   /** Every pin orange (the map's opening "next 20" view), not just the busy ones. */
   allHot?: boolean;
   /** Filled with a finder for the side card's arrows: the nearest event left (-1) or right (1) of one, on screen. */
@@ -339,6 +341,7 @@ export default function NightMap({
   hudTop = DEFAULT_HUD.top,
   hudBottom = DEFAULT_HUD.bottom,
   sidePanel = false,
+  stubBelow = false,
   allHot = false,
   navRef,
   onMapUnavailable,
@@ -393,6 +396,8 @@ export default function NightMap({
   selectedRef.current = selectedId;
   const sideRef = useRef(sidePanel);
   sideRef.current = sidePanel;
+  const belowRef = useRef(stubBelow);
+  belowRef.current = stubBelow;
   const stopsRef = useRef(hopStops);
   stopsRef.current = hopStops;
 
@@ -486,7 +491,8 @@ export default function NightMap({
     };
     // The open event's card covers the right of the map: nothing else may hide under it.
     const side = sideRef.current && !!selectedRef.current;
-    if (side) taken.push([vw - sidePanelWidth(vw) - SIDE_PANEL.gap * 2, 0, vw, vh]);
+    if (side && belowRef.current) taken.push([0, vh * 0.3, vw, vh]);
+    else if (side) taken.push([vw - sidePanelWidth(vw) - SIDE_PANEL.gap * 2, 0, vw, vh]);
     // The bus hangs below its own point, the stops and zoom buttons stay clear.
     const h0 = holder.current?.getBoundingClientRect();
     const busEl = busMk.current?.getElement();
@@ -1029,7 +1035,13 @@ export default function NightMap({
     const { clientWidth: W, clientHeight: H } = m.getContainer();
     let offset: [number, number] = [0, -Math.round(H * 0.22)];
     let zoom = PICK_ZOOM;
-    if (sideRef.current) {
+    if (sideRef.current && belowRef.current) {
+      // The card covers most of the screen: the venue label lands in the thin strip of map between the page chrome and the card.
+      const top = insetsRef.current.top;
+      const y = top + 115;
+      offset = [0, Math.round(y - H / 2)];
+      zoom = PICK_ZOOM_SIDE;
+    } else if (sideRef.current) {
       const strip = W - sidePanelWidth(W) - SIDE_PANEL.gap * 3;
       const x = SIDE_PANEL.gap + strip / 2;
       const top = insetsRef.current.top;

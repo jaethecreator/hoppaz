@@ -7,7 +7,6 @@ import Link from "next/link";
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight, Share2, X } from "lucide-react";
 import { shareEvent } from "@/components/event/share";
-import { SIDE_PANEL, SIDE_PANEL_CSS_WIDTH } from "@/components/event/side";
 import { useLookStyle, usePictureTint } from "@/components/host/TintShell";
 import { QUESTS_ON } from "@/lib/events-r1/flags";
 import { useR1Auth, useR1Query } from "@/lib/events-r1/hooks";
@@ -147,12 +146,13 @@ export default function MapStub({
       tabIndex={-1}
       className={clsx(
         "pointer-events-none absolute z-40 flex flex-col outline-none",
-        side ? "hz-slide-in" : "inset-x-2 bottom-0 mx-auto max-h-[85%] max-w-[600px] animate-rise"
+        // A phone: a full-width card (10px gutters) low on the map, the arrows and close floating above its top edge, the map and
+        // pin in the strip above. From lg up: the docked card on the right, as before (the same numbers as event/side.ts).
+        side
+          ? "hz-slide-in inset-x-2.5 bottom-2.5 top-[var(--hz-side-top,140px)] justify-end lg:inset-x-auto lg:bottom-2 lg:right-2 lg:w-[min(58%,320px)] lg:justify-start"
+          : "inset-x-2 bottom-0 mx-auto max-h-[85%] max-w-[600px] animate-rise"
       )}
-      style={{
-        ...style,
-        ...(side ? { top: "var(--hz-side-top, 140px)", bottom: SIDE_PANEL.gap, right: SIDE_PANEL.gap, width: SIDE_PANEL_CSS_WIDTH } : null),
-      }}
+      style={style}
     >
       <div className="pointer-events-auto relative z-10 flex h-11 flex-none items-center">
         {side && (onPrev || onNext) && (
