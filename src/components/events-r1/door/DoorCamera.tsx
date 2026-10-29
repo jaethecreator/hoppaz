@@ -19,7 +19,7 @@ type Phase = "idle" | "starting" | "live" | "blocked";
  * already allowed the camera, otherwise on a tap. When it cannot open it says so calmly; the typed code and the search
  * below it are always there.
  */
-export default function DoorCamera({ onRead, paused }: { onRead: (value: string) => void; paused: boolean }) {
+export default function DoorCamera({ onRead, paused, quiet }: { onRead: (value: string) => void; paused: boolean; quiet?: boolean }) {
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -103,31 +103,31 @@ export default function DoorCamera({ onRead, paused }: { onRead: (value: string)
   }, [start, stop]);
 
   return (
-    <div className="relative overflow-hidden rounded-hz border border-line bg-ink-3">
+    <div className="relative overflow-hidden rounded-hz border border-t-line bg-t-tile">
       <video ref={video} playsInline muted className={phase === "live" ? "aspect-[4/3] max-h-[44vh] w-full object-cover lg:max-h-[360px]" : "hidden"} />
       <canvas ref={canvas} className="hidden" />
       {phase === "live" && (
         <span aria-hidden className="pointer-events-none absolute inset-[16%]">
-          <i className="absolute left-0 top-0 h-7 w-7 rounded-tl-[4px] border-l-[3px] border-t-[3px] border-brand-cream" />
-          <i className="absolute right-0 top-0 h-7 w-7 rounded-tr-[4px] border-r-[3px] border-t-[3px] border-brand-cream" />
-          <i className="absolute bottom-0 left-0 h-7 w-7 rounded-bl-[4px] border-b-[3px] border-l-[3px] border-brand-cream" />
-          <i className="absolute bottom-0 right-0 h-7 w-7 rounded-br-[4px] border-b-[3px] border-r-[3px] border-brand-cream" />
+          <i className="absolute left-0 top-0 h-7 w-7 rounded-tl-[4px] border-l-[3px] border-t-[3px] border-white" />
+          <i className="absolute right-0 top-0 h-7 w-7 rounded-tr-[4px] border-r-[3px] border-t-[3px] border-white" />
+          <i className="absolute bottom-0 left-0 h-7 w-7 rounded-bl-[4px] border-b-[3px] border-l-[3px] border-white" />
+          <i className="absolute bottom-0 right-0 h-7 w-7 rounded-br-[4px] border-b-[3px] border-r-[3px] border-white" />
         </span>
       )}
       {phase !== "live" && (
         <div className="grid min-h-[150px] place-items-center px-4 py-5 text-center">
           {phase === "blocked" ? (
             <div>
-              <p className="font-body text-[14px] text-cream">The camera is not available.</p>
-              <p className="hint mt-1">Type the code under the QR, or search for the guest below.</p>
-              <button type="button" className="btn btn-ghost mt-3 px-4 normal-case" onClick={() => void start()}>
+              <p className="font-body text-[15px] font-semibold text-t-text">The camera is not available.</p>
+              <p className="mt-1 font-body text-[13.5px] text-t-muted">Type the code under the QR, or search for the guest below.</p>
+              <button type="button" className="lip-ghost mt-3 !min-h-[44px] !px-4" onClick={() => void start()}>
                 Try the camera again
               </button>
             </div>
           ) : (
             <div>
-              <p className="hint">The camera scans the ticket QR. Nothing leaves your phone.</p>
-              <button type="button" className="btn mt-3 px-5 normal-case" disabled={phase === "starting"} onClick={() => void start()}>
+              <p className="font-body text-[13.5px] text-t-muted">The camera scans the ticket QR. Nothing leaves your phone.</p>
+              <button type="button" className={quiet ? "lip-ghost mt-3 !min-h-[44px] !px-5" : "lip mt-3"} disabled={phase === "starting"} onClick={() => void start()}>
                 <Camera size={16} aria-hidden /> {phase === "starting" ? "Opening the camera" : "Start the camera"}
               </button>
             </div>

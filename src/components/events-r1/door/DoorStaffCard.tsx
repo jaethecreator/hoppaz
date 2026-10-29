@@ -10,9 +10,10 @@ const msg = (e: unknown) => (e instanceof Error ? e.message : "That did not work
 /**
  * Door staff for one event: the people who only scan at the door. The list, Remove, and "Add door staff" (pick from the people going).
  * Shown to whoever manages the event (the host, a room's owner or admins); a door person asking gets "Not allowed" and sees nothing.
- * Used on the Guests tab (tinted, `plain` off) and on the door page (dark, `plain`).
+ * Used on the Guests tab and on the door page, both inside a TintShell. `quiet` (the door) makes Add door staff a ghost button, because
+ * the door already has its one main button.
  */
-export default function DoorStaffCard({ eventId, plain }: { eventId: string; plain?: boolean }) {
+export default function DoorStaffCard({ eventId, quiet }: { eventId: string; quiet?: boolean }) {
   const api = useR1Api();
   const staff = useR1Query((a) => a.door.staff(eventId), [eventId]);
   const guests = useR1Query((a) => a.registrations.list(eventId), [eventId]);
@@ -54,16 +55,16 @@ export default function DoorStaffCard({ eventId, plain }: { eventId: string; pla
     }
   };
 
-  const muted = plain ? "text-dim" : "text-t-muted";
-  const line = plain ? "border-line" : "border-t-line";
-  const ghost = plain ? "btn btn-ghost min-h-[40px] flex-none px-4 normal-case" : "lip-ghost flex-none !min-h-[40px] !px-4";
-  const main = plain ? "btn min-h-[40px] flex-none px-4 normal-case" : "lip flex-none !min-h-[40px] !px-4 !py-2";
+  const muted = "text-t-muted";
+  const line = "border-t-line";
+  const ghost = "lip-ghost flex-none !min-h-[40px] !px-4";
+  const main = quiet ? ghost : "lip flex-none !min-h-[40px] !px-4 !py-2";
 
   return (
-    <section aria-label="Door staff" data-door-staff className={plain ? "rounded-hz border border-line bg-ink-2 p-4" : "t-card p-4 lg:p-5"}>
+    <section aria-label="Door staff" data-door-staff className={"t-card p-4 lg:p-5"}>
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1 basis-56">
-          <h3 className={clsx("font-body text-[16px] font-extrabold", plain && "text-cream")}>Door staff</h3>
+          <h3 className={clsx("font-body text-[16px] font-extrabold")}>Door staff</h3>
           <p className={clsx("font-body text-[13.5px]", muted)}>People who only scan at the door. They can&apos;t see sales or change anything.</p>
         </div>
         <button type="button" className={main} aria-expanded={open} onClick={() => setOpen(!open)} data-add-door-staff>
@@ -75,7 +76,7 @@ export default function DoorStaffCard({ eventId, plain }: { eventId: string; pla
         <ul className="mt-3">
           {people.map((p) => (
             <li key={p.user_id} className={clsx("flex items-center gap-3 border-t py-2.5", line)}>
-              <span className={clsx("min-w-0 flex-1 truncate font-body text-[15px] font-semibold", plain && "text-cream")}>{p.name}</span>
+              <span className={clsx("min-w-0 flex-1 truncate font-body text-[15px] font-semibold")}>{p.name}</span>
               <button type="button" className={ghost} disabled={busy === p.user_id} onClick={() => void set(p.user_id, false)} aria-label={`Remove ${p.name} from door staff`}>
                 Remove
               </button>
@@ -91,7 +92,7 @@ export default function DoorStaffCard({ eventId, plain }: { eventId: string; pla
           <ul className="mt-1">
             {options.map((r) => (
               <li key={r.user_id} className={clsx("flex items-center gap-3 border-b py-2.5", line)}>
-                <span className={clsx("min-w-0 flex-1 truncate font-body text-[15px]", plain && "text-cream")}>{r.name}</span>
+                <span className={clsx("min-w-0 flex-1 truncate font-body text-[15px]")}>{r.name}</span>
                 <button type="button" className={ghost} disabled={busy === r.user_id} onClick={() => void set(r.user_id, true)}>
                   Add
                 </button>
