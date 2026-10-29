@@ -691,7 +691,7 @@ function Desktop({ c }: { c: Ctx }) {
         })}
       </nav>
       <section aria-label={title} className="relative flex min-h-0 min-w-0 flex-col">
-        {c.ticketMode && c.ticketEvent && c.onEvent && <TicketStrip event={c.ticketEvent.event_title} room={room.name} phone={false} join={() => void c.join()} />}
+        {c.ticketMode && c.ticketEvent && c.chat?.event_id === c.ticketEvent.event_id && <TicketStrip event={c.ticketEvent.event_title} room={room.name} phone={false} join={() => void c.join()} />}
         <div className="flex items-center gap-2.5 border-b border-t-line px-4 py-3">
           <div className="min-w-0">
             <h2 className="text-[15.5px] font-bold leading-tight">{title}</h2>
@@ -898,7 +898,7 @@ function Phone({ c }: { c: Ctx }) {
       body = (
         <>
           {chips}
-          {c.ticketMode && c.ticketEvent && <TicketStrip event={c.ticketEvent.event_title} room={room.name} phone join={() => void c.join()} />}
+          {c.ticketMode && c.ticketEvent && c.chat?.event_id === c.ticketEvent.event_id && <TicketStrip event={c.ticketEvent.event_title} room={room.name} phone join={() => void c.join()} />}
           <section aria-label={threadHead(c)[0]} className="relative flex min-h-[260px] flex-1 flex-col">
             <p className="px-4 pt-2.5 text-[12.5px] text-t-muted">{ts}</p>
             <div role="log" aria-live="polite" className={clsx("relative flex flex-1 flex-col gap-3.5 px-4 pb-5 pt-4", !c.canReadNow && "overflow-hidden")}>
