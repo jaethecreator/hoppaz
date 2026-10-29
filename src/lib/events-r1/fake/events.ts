@@ -9,7 +9,7 @@ import { autoPopsFor, defaultMessages, defaultQuestions } from "./defaults";
 import { canSell } from "./payouts";
 import { retimeAutoPops } from "./pops";
 import {
-  assertManage, canList, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, freeTypes, roomToPostIn,
+  assertManage, canList, canManage, canRunRoomEvents, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, freeTypes, roomToPostIn,
   isGoing, isHostOf, regOf, regsOf, requireViewer, statusOf, typeFull, typesOf, typeOfReg,
 } from "./rules";
 import { emit, now, S, subscribe, viewer } from "./store";
@@ -241,7 +241,7 @@ export function viewerStateFor(e: EventRec): ViewerState {
   const v = viewer();
   const reg = v ? regOf(e.id, v.id) : undefined;
   const active = reg && reg.status !== "cancelled" ? reg : null;
-  const isHost = isHostOf(e);
+  const isHost = isHostOf(e) || canRunRoomEvents(e.room_id);
   const see = canSeeLink(e);
   const t = now();
   const start = Date.parse(e.starts_at);
@@ -293,7 +293,7 @@ export const events: EventsApi = {
   },
 
   async listForRoom(roomId) {
-    return upcomingThenPast(Object.values(S().events).filter((e) => e.room_id === roomId && (isHostOf(e) || (e.status !== "cancelled" && canList(e))))).map((e) => eventView(e));
+    return upcomingThenPast(Object.values(S().events).filter((e) => e.room_id === roomId && (canManage(e) || (e.status !== "cancelled" && canList(e))))).map((e) => eventView(e));
   },
 
   async create(draft) {

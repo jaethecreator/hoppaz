@@ -1,4 +1,4 @@
--- Room profile, who can join, the Host role, and "went but haven't joined". DRAFT FOR OLA, NOT RUN ANYWHERE (not even locally).
+-- Room profile, who can join, the Host role (kept in the data, hidden in the app at launch), and "went but haven't joined". DRAFT FOR OLA, NOT RUN ANYWHERE (not even locally).
 -- Release 1, file 11 in the run order (see EVENTS_R1_ORDER.md). Written from the fake layer (src/lib/events-r1/fake/rooms.ts), which is the
 -- spec of every rule here. Nothing in an older SQL file is edited and no existing function is replaced. Safe to run again.
 --
@@ -13,21 +13,27 @@
 --      ev_room_invite_code. Approving makes the person a member and leaves them a quiet notice in ev_room_notices (read with
 --      ev_my_room_notices; the app shows it, there is no push). Pops belong to an event and announcements go to the whole room, so neither
 --      can address one person; that is why the notice has its own small table.
---   3. Host role: crew_members.role may now be 'host' (see the CHECK below, the one change that touches an older table).
+--   3. Host role: crew_members.role may now be 'host' (see the CHECK below, the one change that touches an older table). The owner decided
+--      (29 Oct) to hide Host at launch: the app never offers it and a host gets nothing a plain member does not have. It stays in the data
+--      and in ev_set_room_role so it can come back without a migration.
 --   4. ev_room_guests_not_joined(room): people who registered (going or checked in) for the room's events and are not members, with the
 --      full count. Used by "Bring your N guests in" on the Create a room done sheet.
---   5. ev_post_events_as_room(room, events[]): put the caller's own events into a room they are owner, admin or host of.
+--   5. ev_post_events_as_room(room, events[]): put the caller's own events into a room they are owner or admin of.
+--   6. ev_remove_room_member(room, user): the Remove choice in the room admin's member list (owner removes anyone but the owner; an admin
+--      removes plain members only).
 --
 -- FOR OLA, THREE THINGS TO KNOW
 --   (a) THE ROLE CHECK. schema.sql allows owner and member; crew_stage_voice.sql widens it to owner, admin and member. This file drops
 --       every CHECK on crew_members that mentions role and adds one allowing owner, admin, host and member. If crew_stage_voice.sql is
 --       ever run again it narrows the check back and fails on any 'host' row: run this file again after it.
---   (b) HOSTS AND THE DOOR. A host can post events as the room (ev_post_events_as_room) but cannot yet run the door of a room event they
---       did not make: _ev_manage(event) in events_r1_events.sql only lets the event's host and staff in. The one-line change, NOT made here
+--   (b) ADMINS AND THE DOOR. Room owners and admins run every event of the room, the door included, even one they did not make. Today
+--       _ev_manage(event) in events_r1_events.sql only lets the event's host, staff and door staff in. The one-line change, NOT made here
 --       because it edits an existing function, is to add to _ev_manage:
---           or (select e.room_id is not null and public._ev_room_can_host(e.room_id, auth.uid()) from public.events e where e.id = p_event)
---       (_ev_room_can_host is defined below: owner, admin or host.) ev_create_event also still posts into the room the caller OWNS
---       (add_to_room); for a room they only host, make the event first and then call ev_post_events_as_room.
+--           or (select e.room_id is not null and public._ev_room_can_run(e.room_id, auth.uid()) from public.events e where e.id = p_event)
+--       (_ev_room_can_run is defined below: owner or admin. Door staff added per event keep working as they do now.) Until that line is added
+--       an admin who is not the event's host gets "not allowed" from the dashboard and the door, and the app falls back to the event page.
+--       ev_create_event also still posts into the room the caller OWNS (add_to_room); for a room they only admin, make the event first and
+--       then call ev_post_events_as_room.
 --   (c) THE OLD join_crew. join_crew(invite code) still lets anyone holding a room's invite code join whatever its mode: that is the
 --       invite link and is meant. ev_join_room does the same: a right code gets in at once, also into an ask room. In an ask room the code
 --       is therefore as good as a key: the owner should not share it. Ask rooms are joined through ev_join_room.
@@ -153,12 +159,13 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke all on function public._ev_room_admin(uuid) from public, anon, authenticated;
 
--- Owner, admin or host: creates events as the room, sees who went but has not joined. (See (b) above for the door.)
-create or replace function public._ev_room_can_host(p_room uuid, p_user uuid) returns boolean
+-- Owner or admin: runs the room's events (see (b) above for the door), posts events as the room, sees who went but has not joined.
+-- Host is not here: the role is hidden at launch and gets what a member gets.
+create or replace function public._ev_room_can_run(p_room uuid, p_user uuid) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
-  select p_user is not null and public._ev_room_role(p_room, p_user) in ('owner', 'admin', 'host');
+  select p_user is not null and public._ev_room_role(p_room, p_user) in ('owner', 'admin');
 $$;
-revoke all on function public._ev_room_can_host(uuid, uuid) from public, anon, authenticated;
+revoke all on function public._ev_room_can_run(uuid, uuid) from public, anon, authenticated;
 
 -- The room's join mode: the profile's, else from the old visibility (open -> open, private -> invite).
 create or replace function public._ev_join_mode(p_room uuid) returns text
@@ -320,12 +327,12 @@ revoke all on function public.ev_ensure_hq_id() from public, anon, authenticated
 
 -- ------------------------------------------------------------------ making and changing ---
 -- Shared by ev_create_room and ev_update_room: a bad value answers its reason, a good patch is applied by the caller.
--- p_events: the caller's own events to put in the room (they must be the event's host and an owner, admin or host of the room).
+-- p_events: the caller's own events to put in the room (they must be the event's host and an owner or admin of the room).
 create or replace function public._ev_post_events(p_room uuid, p_events uuid[], p_user uuid) returns integer
 language plpgsql volatile security definer set search_path = public, pg_temp as $$
 declare n integer;
 begin
-  if p_events is null or cardinality(p_events) = 0 or not public._ev_room_can_host(p_room, p_user) then return 0; end if;
+  if p_events is null or cardinality(p_events) = 0 or not public._ev_room_can_run(p_room, p_user) then return 0; end if;
   update public.events e set room_id = p_room
    where e.id = any (p_events) and coalesce(e.host_id, e.created_by) = p_user and e.room_id is distinct from p_room;
   get diagnostics n = row_count;
@@ -604,14 +611,34 @@ end $$;
 revoke all on function public.ev_set_room_role(uuid, uuid, text) from public, anon;
 grant execute on function public.ev_set_room_role(uuid, uuid, text) to authenticated;
 
+-- Take a member out of the room. 'ok' or not_open, need_account, not_allowed, not_member, owner_fixed. The owner (or staff) removes anyone but the
+-- owner; an admin removes plain members and hosts, not another admin.
+create or replace function public.ev_remove_room_member(p_room uuid, p_user uuid) returns text
+language plpgsql volatile security definer set search_path = public, pg_temp as $$
+declare me uuid := auth.uid(); mine text; theirs text;
+begin
+  if not public._ev_open() then return 'not_open'; end if;
+  if me is null or not public.has_account() then return 'need_account'; end if;
+  if not public._ev_room_admin(p_room) then return 'not_allowed'; end if;
+  mine := public._ev_room_role(p_room, me);
+  theirs := public._ev_room_role(p_room, p_user);
+  if theirs is null then return 'not_member'; end if;
+  if theirs = 'owner' then return 'owner_fixed'; end if;
+  if mine = 'admin' and not public._ev_staff() and theirs = 'admin' then return 'not_allowed'; end if;
+  delete from public.crew_members where crew_id = p_room and user_id = p_user;
+  return 'ok';
+end $$;
+revoke all on function public.ev_remove_room_member(uuid, uuid) from public, anon;
+grant execute on function public.ev_remove_room_member(uuid, uuid) to authenticated;
+
 -- ------------------------------------------------------------------ went but have not joined ---
 -- { count, guests: [{ user_id, name }] } : people going or checked in at any of the room's events (not cancelled) who are not members.
--- count is the full number, guests the first 50 by name. null unless the viewer is an owner, admin or host of the room, or staff.
+-- count is the full number, guests the first 50 by name. null unless the viewer is an owner or admin of the room, or staff.
 create or replace function public.ev_room_guests_not_joined(p_room uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare v_count int; v_guests jsonb;
 begin
-  if not (public._ev_staff() or public._ev_room_can_host(p_room, auth.uid())) then return null; end if;
+  if not (public._ev_staff() or public._ev_room_can_run(p_room, auth.uid())) then return null; end if;
   with g as (
     select r.user_id, min(r.name) as name
       from public.ev_registrations r
@@ -628,7 +655,7 @@ end $$;
 revoke all on function public.ev_room_guests_not_joined(uuid) from public, anon;
 grant execute on function public.ev_room_guests_not_joined(uuid) to authenticated;
 
--- Put events into a room. The caller must be the event's host and an owner, admin or host of the room. Answers { ok, moved }.
+-- Put events into a room. The caller must be the event's host and an owner or admin of the room. Answers { ok, moved }.
 create or replace function public.ev_post_events_as_room(p_room uuid, p_events uuid[]) returns jsonb
 language plpgsql volatile security definer set search_path = public, pg_temp as $$
 declare me uuid := auth.uid();
@@ -636,7 +663,7 @@ begin
   if not public._ev_open() then return jsonb_build_object('ok', false, 'reason', 'not_open'); end if;
   if me is null or not public.has_account() then return jsonb_build_object('ok', false, 'reason', 'need_account'); end if;
   if not exists (select 1 from public.crews c where c.id = p_room) then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
-  if not public._ev_room_can_host(p_room, me) then return jsonb_build_object('ok', false, 'reason', 'not_allowed'); end if;
+  if not public._ev_room_can_run(p_room, me) then return jsonb_build_object('ok', false, 'reason', 'not_allowed'); end if;
   return jsonb_build_object('ok', true, 'moved', public._ev_post_events(p_room, p_events, me));
 end $$;
 revoke all on function public.ev_post_events_as_room(uuid, uuid[]) from public, anon;

@@ -9,7 +9,7 @@ import { ABOUT_MAX } from "../types";
 import { normalizeLinks, slugFromName, slugOk, slugShapeOk, SLUG_HELP } from "../roomRules";
 import { flushDuePops, pops } from "./pops";
 import {
-  canHostInRoom, canList, canManageRoom, chatFor, findEvent, inviteCodeOf, isGoing, isHostOf, isMember, joinModeOf, myRole, regOf,
+  canList, canManageRoom, chatFor, findEvent, inviteCodeOf, isGoing, isHostOf, isMember, joinModeOf, myRole, regOf,
   requireViewer, roleOf, roomSummary,
 } from "./rules";
 import { emit, now, S, subscribe, viewer } from "./store";
@@ -93,6 +93,15 @@ export const rooms: RoomsApi = {
       .map((r) => roomSummary(r));
   },
 
+  async managed() {
+    const v = viewer();
+    if (!v) return [];
+    return Object.values(S().rooms)
+      .filter((r) => r.kind !== "hq" && ["owner", "admin"].includes(roleOf(r.id, v.id) ?? ""))
+      .map((r) => roomSummary(r))
+      .sort((a, b) => Number(b.is_owner) - Number(a.is_owner) || a.name.localeCompare(b.name));
+  },
+
   async create(draft) {
     const v = requireViewer();
     const name = draft.name.trim();
@@ -113,6 +122,7 @@ export const rooms: RoomsApi = {
       description: about, links: normalizeLinks(draft.links), join_mode: draft.join_mode ?? "open", base_members: 0,
     };
     S().memberships[`${v.id}:${id}`] = true;
+    S().joinedAt[`${v.id}:${id}`] = new Date(now()).toISOString();
     // The host's own events that were posted as themselves go into the room.
     for (const eid of draft.event_ids ?? []) {
       const e = S().events[eid];
@@ -168,13 +178,14 @@ export const rooms: RoomsApi = {
     if (mode === "invite" && !invited) throw new Error("This room is invite only");
     if (mode === "ask" && !invited) {
       if (mine?.status === "pending") return "requested";
-      if (mine?.status === "declined") throw new Error("The room's host has not accepted your request");
+      if (mine?.status === "declined") throw new Error("The room's owner has not accepted your request");
       const id = newId();
       S().requests[id] = { id, room_id: r.id, user_id: v.id, name: v.name, created_at: new Date(now()).toISOString(), status: "pending" };
       emit();
       return "requested";
     }
     S().memberships[key] = true;
+    S().joinedAt[key] = new Date(now()).toISOString();
     if (mine && mine.status === "pending") mine.status = "approved";
     emit();
     return "joined";
@@ -198,6 +209,7 @@ export const rooms: RoomsApi = {
     q.status = approve ? "approved" : "declined";
     if (approve) {
       S().memberships[`${q.user_id}:${r.id}`] = true;
+      S().joinedAt[`${q.user_id}:${r.id}`] = new Date(now()).toISOString();
       // A quiet notice the person finds in the app (no push): the room, and that they are in.
       const id = newId();
       S().notices[id] = { id, user_id: q.user_id, room_id: r.id, room_name: r.name, room_slug: r.slug, kind: "request_approved", created_at: new Date(now()).toISOString(), seen: false };
@@ -220,7 +232,7 @@ export const rooms: RoomsApi = {
     for (const u of Object.values(S().users)) {
       const role = roleOf(r.id, u.id);
       if (!role || r.kind === "hq") continue;
-      out.push({ user_id: u.id, name: u.name, role, joined_at: new Date(now()).toISOString() });
+      out.push({ user_id: u.id, name: u.name, role, joined_at: S().joinedAt[`${u.id}:${r.id}`] ?? new Date(now() - 30 * DAY).toISOString() });
     }
     return out.sort((a, b) => rank[a.role] - rank[b.role] || a.name.localeCompare(b.name));
   },
@@ -231,7 +243,7 @@ export const rooms: RoomsApi = {
     if (!r) throw new Error("Room not found");
     const mine = myRole(r.id);
     if (!v.staff && mine !== "owner" && mine !== "admin") throw new Error("Not allowed");
-    if (!["admin", "host", "member"].includes(role)) throw new Error("Pick Admin, Host or Member");
+    if (!["admin", "host", "member"].includes(role)) throw new Error("Pick Admin or Member");
     const theirs = roleOf(r.id, userId);
     if (!theirs) throw new Error("They are not in this room");
     if (theirs === "owner") throw new Error("Nobody changes the owner");
@@ -243,10 +255,27 @@ export const rooms: RoomsApi = {
     emit();
   },
 
+  async removeMember(roomId, userId) {
+    const v = requireViewer();
+    const r = findRoom(roomId);
+    if (!r) throw new Error("Room not found");
+    const mine = myRole(r.id);
+    if (!v.staff && mine !== "owner" && mine !== "admin") throw new Error("Not allowed");
+    const theirs = roleOf(r.id, userId);
+    if (!theirs) throw new Error("They are not in this room");
+    if (theirs === "owner") throw new Error("Nobody changes the owner");
+    if (mine === "admin" && !v.staff && theirs === "admin") throw new Error("Only the owner changes admins");
+    const key = `${userId}:${r.id}`;
+    delete S().memberships[key];
+    delete S().roles[key];
+    delete S().joinedAt[key];
+    emit();
+  },
+
   async guestsNotJoined(roomId): Promise<RoomGuests> {
     const r = findRoom(roomId);
     if (!r) throw new Error("Room not found");
-    if (!canHostInRoom(r.id)) throw new Error("Not allowed");
+    if (!canManageRoom(r.id)) throw new Error("Not allowed");
     const eventIds = new Set(Object.values(S().events).filter((e) => e.room_id === r.id && e.status !== "cancelled").map((e) => e.id));
     const seen = new Map<string, string>();
     for (const g of Object.values(S().regs)) {
@@ -321,7 +350,7 @@ export const rooms: RoomsApi = {
     const v = requireViewer();
     const r = findRoom(roomId);
     if (!r) throw new Error("Room not found");
-    if (r.owner_id !== v.id && !v.staff) throw new Error("Only the room's host can post here");
+    if (!canManageRoom(r.id)) throw new Error("Only the room's owner and admins can post here");
     const text = body.trim();
     if (!text) throw new Error("Write a message first");
     const a = {

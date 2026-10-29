@@ -207,14 +207,17 @@ begin
   perform pg_temp.reg(e1, x, 'going');
   r := pg_temp.j(o, format('select public.ev_room_guests_not_joined(%L)', room));
   perform pg_temp.ok((r ->> 'count')::int = 2 and jsonb_array_length(r -> 'guests') = 2, 'guests not joined: two people (counted once for two events; cancelled, members and cancelled events left out)');
-  perform pg_temp.ok(pg_temp.j(ho, format('select public.ev_room_guests_not_joined(%L)', room)) ->> 'count' = '2', 'a host sees the same');
+  perform pg_temp.ok(pg_temp.j(ho, format('select public.ev_room_guests_not_joined(%L)', room)) = 'null'::jsonb, 'a host (hidden role) gets null, like a member');
   perform pg_temp.ok(pg_temp.j(me, format('select public.ev_room_guests_not_joined(%L)', room)) = 'null'::jsonb, 'a plain member gets null');
   insert into public.crew_members (crew_id, user_id) values (room, w1);
   perform pg_temp.ok(pg_temp.j(o, format('select public.ev_room_guests_not_joined(%L)', room)) ->> 'count' = '1', 'once someone joins they leave the count');
 
   -- ===================================================== post events as the room ========
   e1 := pg_temp.ev(ho, 'Host event', now() + interval '1 day', null);
-  perform pg_temp.ok(pg_temp.j(ho, format('select public.ev_post_events_as_room(%L, array[%L]::uuid[])', room, e1)) ->> 'moved' = '1' and (select room_id from public.events where id = e1) = room, 'a host posts their own event as the room');
+  perform pg_temp.ok(pg_temp.j(ho, format('select public.ev_post_events_as_room(%L, array[%L]::uuid[])', room, e1)) ->> 'reason' = 'not_allowed' and (select room_id from public.events where id = e1) is null, 'a host (hidden role) cannot post as the room');
+  perform pg_temp.ok(pg_temp.j(ad, format('select public.ev_post_events_as_room(%L, array[%L]::uuid[])', room, e1)) ->> 'moved' = '0', 'an admin cannot move someone else''s event');
+  e1 := pg_temp.ev(ad, 'Admin event', now() + interval '1 day', null);
+  perform pg_temp.ok(pg_temp.j(ad, format('select public.ev_post_events_as_room(%L, array[%L]::uuid[])', room, e1)) ->> 'moved' = '1' and (select room_id from public.events where id = e1) = room, 'an admin posts their own event as the room');
   e2 := pg_temp.ev(x, 'Stranger event', now() + interval '1 day', null);
   perform pg_temp.ok(pg_temp.j(ho, format('select public.ev_post_events_as_room(%L, array[%L]::uuid[])', room, e2)) ->> 'moved' = '0', 'but not someone else''s event');
   perform pg_temp.ok(pg_temp.j(x, format('select public.ev_post_events_as_room(%L, array[%L]::uuid[])', room, e2)) ->> 'moved' = '0' or pg_temp.j(x, format('select public.ev_post_events_as_room(%L, array[%L]::uuid[])', room, e2)) ->> 'reason' = 'not_allowed', 'and a plain member cannot post at all');
@@ -233,13 +236,13 @@ begin
             where ns.nspname = 'public'
               and p.proname in ('ev_room_by_slug', 'ev_room_profile', 'ev_discover_rooms', 'ev_create_room', 'ev_update_room', 'ev_slug_available', 'ev_join_room',
                                 'ev_room_requests', 'ev_decide_room_request', 'ev_room_invite_code', 'ev_my_room_notices', 'ev_mark_room_notices_seen',
-                                'ev_room_members', 'ev_set_room_role', 'ev_room_guests_not_joined', 'ev_post_events_as_room',
-                                '_ev_slug_ok', '_ev_slug_from_name', '_ev_room_role', '_ev_room_admin', '_ev_room_can_host', '_ev_join_mode', '_ev_person_name',
+                                'ev_room_members', 'ev_set_room_role', 'ev_remove_room_member', 'ev_room_guests_not_joined', 'ev_post_events_as_room',
+                                '_ev_slug_ok', '_ev_slug_from_name', '_ev_room_role', '_ev_room_admin', '_ev_room_can_run', '_ev_join_mode', '_ev_person_name',
                                 '_ev_logo_ok', '_ev_links_clean', '_ev_room_profile_json', '_ev_post_events', 'ev_ensure_hq_id')
   loop
     perform pg_temp.ok(has_function_privilege('anon', f.oid, 'execute') = (f.name in ('ev_room_by_slug', 'ev_room_profile', 'ev_discover_rooms', 'ev_slug_available')),
                        f.name || ': anon access is as designed');
-    perform pg_temp.ok(has_function_privilege('authenticated', f.oid, 'execute') = (left(f.name, 4) = 'ev_r' or f.name in ('ev_create_room', 'ev_update_room', 'ev_slug_available', 'ev_join_room', 'ev_discover_rooms', 'ev_decide_room_request', 'ev_my_room_notices', 'ev_mark_room_notices_seen', 'ev_set_room_role', 'ev_post_events_as_room')),
+    perform pg_temp.ok(has_function_privilege('authenticated', f.oid, 'execute') = (left(f.name, 4) = 'ev_r' or f.name in ('ev_create_room', 'ev_update_room', 'ev_slug_available', 'ev_join_room', 'ev_discover_rooms', 'ev_decide_room_request', 'ev_my_room_notices', 'ev_mark_room_notices_seen', 'ev_set_room_role', 'ev_remove_room_member', 'ev_post_events_as_room')),
                        f.name || ': authenticated access is as designed');
   end loop;
   perform pg_temp.ok(pg_temp.denied('anon', 'select * from public.ev_room_profiles') and pg_temp.denied('authenticated', 'select * from public.ev_room_requests')

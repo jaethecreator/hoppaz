@@ -847,7 +847,7 @@ await test("rooms: event chat messages carry host Pops pinned; send refuses clos
 await test("rooms: a plain announcement from the owner never shows on an event; Pops show tagged", async () => {
   const ev = seeded("Kredete Open Mic and Laughs");
   as("Ada Obi");
-  await rejects(api.rooms.postAnnouncement(ev.room_id!, "nope"), "Only the room's host can post here", "a guest cannot post");
+  await rejects(api.rooms.postAnnouncement(ev.room_id!, "nope"), "Only the room's owner and admins can post here", "a guest cannot post");
   as("Kredete");
   const a = await api.rooms.postAnnouncement(ev.room_id!, "Doors at 7");
   eq([a.event_id, a.event_title], [null, null], "plain: no event tag");
@@ -1540,38 +1540,84 @@ await test("rooms: join modes (open joins, ask requests and the owner decides, i
   eq((await api.rooms.notices()).length, 0, "seen");
   as("Ngozi Adeyemi");
   eq([(await api.rooms.get(lrc.id))?.joined, (await api.rooms.get(lrc.id))?.request, (await api.rooms.notices()).length], [false, "declined", 0], "declined: not a member, no notice");
-  await rejects(api.rooms.join(lrc.id), "The room's host has not accepted your request", "declined stays declined");
+  await rejects(api.rooms.join(lrc.id), "The room's owner has not accepted your request", "declined stays declined");
   as("Ada Obi");
   await rejects(api.rooms.requests(lrc.id), "Not allowed", "a visitor cannot list requests");
 });
 
-await test("rooms: roles (owner, admin, host, member) and what a host can do", async () => {
+await test("rooms: roles (owner, admin, host, member): owners and admins run the room's events, a hidden host gets what a member gets", async () => {
   as("Kredete");
   const room = (await api.rooms.mine())[0];
   const people = await api.rooms.members(room.id);
   eq(people.map((m) => [m.name, m.role]), [["Kredete", "owner"], ["Bisi Ogunleye", "admin"], ["Tunde Balogun", "host"]], "members, owner first");
+  ok(people.every((m) => Number.isFinite(Date.parse(m.joined_at))), "everyone has a join date");
   const bisi = people[1].user_id, tunde = people[2].user_id;
   eq((await api.rooms.get(room.id))?.my_role, "owner", "my role");
+  eq((await api.rooms.managed()).map((r) => r.id), [room.id], "the owner manages their room");
   as("Bisi Ogunleye");
   eq([(await api.rooms.get(room.id))?.my_role, (await api.rooms.get(room.id))?.can_post], ["admin", true], "admin may post");
+  eq((await api.rooms.managed()).map((r) => r.id), [room.id], "an admin manages the room too");
   await api.rooms.update(room.id, { about: "Admin was here" });
   await rejects(api.rooms.setRole(room.id, tunde, "admin"), "Only the owner changes admins", "admin cannot make an admin");
   await api.rooms.setRole(room.id, tunde, "member");
   await api.rooms.setRole(room.id, tunde, "host");
+  // An admin runs an event they did not make: dashboard data, guests and the door.
+  const kEvent = fakeDev.allEvents().find((e) => e.room_id === room.id && e.status !== "cancelled")!;
+  ok((await api.registrations.list(kEvent.id)).length > 0, "an admin sees the guests of the room's event");
+  eq(typeof (await api.door.counts(kEvent.id)).going, "number", "an admin opens the door of an event they did not make");
+  eq((await api.events.viewerState(kEvent.id)).isHost, true, "and the event page knows they can manage it");
   as("Kredete");
   await rejects(api.rooms.setRole(room.id, (await api.rooms.members(room.id))[0].user_id, "member"), "Nobody changes the owner", "owner fixed");
   await api.rooms.setRole(room.id, bisi, "member");
   as("Tunde Balogun");
   const host = (await api.rooms.get(room.id))!;
   eq([host.my_role, host.can_post, host.is_owner], ["host", false, false], "a host cannot post announcements");
+  eq((await api.rooms.managed()).length, 0, "a host manages no room");
   await rejects(api.rooms.update(room.id, { about: "x" }), "Not allowed", "a host cannot edit the profile");
   await rejects(api.rooms.setRole(room.id, bisi, "host"), "Not allowed", "a host cannot set roles");
-  // A host creates an event posted as the room, and runs its door.
-  const ev = await api.events.create({ title: "Hosted by Tunde" });
-  eq(ev.room_id, room.id, "posted as the room");
-  eq((await api.door.counts(ev.id)).going, 0, "and the host can open the door");
+  await rejects(api.registrations.list(kEvent.id), "Not allowed", "a host cannot see guests of an event they did not make");
+  await rejects(api.door.counts(kEvent.id), "Not allowed", "a host cannot open the door of the room's event");
+  eq((await api.events.viewerState(kEvent.id)).isHost, false, "and the event page does not treat them as a host");
+  // A host's own event is not put in the room for them: only an owner's or an admin's is.
+  const ev = await api.events.create({ title: "Made by Tunde" });
+  eq(ev.room_id, null, "a host's event stays their own");
+  eq((await api.door.counts(ev.id)).going, 0, "and they open the door of their own event");
   as("Ada Obi");
   await rejects(api.rooms.guestsNotJoined(room.id), "Not allowed", "a visitor cannot see guests");
+  as("Kredete");
+  await api.rooms.setRole(room.id, bisi, "admin");
+  as("Bisi Ogunleye");
+  const mine = await api.events.create({ title: "Made by Bisi" });
+  eq(mine.room_id, room.id, "an admin's event is posted as the room");
+  as("Kredete");
+  eq((await api.door.counts(mine.id)).going, 0, "and the owner opens its door");
+  await rejects(api.rooms.removeMember(room.id, people[0].user_id), "Nobody changes the owner", "the owner cannot be removed");
+  await api.rooms.removeMember(room.id, tunde);
+  ok(!(await api.rooms.members(room.id)).some((m) => m.user_id === tunde), "a removed member is out");
+  as("Bisi Ogunleye");
+  await rejects(api.rooms.removeMember(room.id, people[0].user_id), "Nobody changes the owner", "an admin cannot remove the owner");
+  as("Ada Obi");
+  await rejects(api.rooms.removeMember(room.id, bisi), "Not allowed", "a visitor cannot remove anyone");
+});
+
+await test("rooms: a new joiner shows with today's date, and an admin posts an announcement", async () => {
+  const p = await newPerson();
+  void p;
+  as("Kredete");
+  const room = (await api.rooms.mine())[0];
+  const before = (await api.rooms.members(room.id)).length;
+  const q = await newPerson();
+  await api.rooms.join(room.id);
+  as("Kredete");
+  const after = await api.rooms.members(room.id);
+  eq(after.length, before + 1, "one more member");
+  const j = after.find((m) => m.user_id === q.id)!;
+  ok(Date.now() - Date.parse(j.joined_at) < 60_000, "joined just now");
+  ok(after.filter((m) => Date.now() - Date.parse(m.joined_at) < 7 * 86_400_000).length === 1, "new this week counts only the joiner");
+  await api.rooms.setRole(room.id, q.id, "admin");
+  fakeDev.signInAs(q.id);
+  const a = await api.rooms.postAnnouncement(room.id, "Admin note");
+  eq(a.body, "Admin note", "an admin posts an announcement");
 });
 
 await test("rooms: went but have not joined counts guests of the room's events who are not members", async () => {

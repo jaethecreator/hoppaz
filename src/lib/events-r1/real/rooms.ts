@@ -184,6 +184,12 @@ export const rooms: RoomsApi = {
     return (await loadList()).mine.filter((r) => r.is_owner);
   },
 
+  /** The rooms I own or admin, from the list (the role comes from my own crew_members rows). */
+  async managed() {
+    if (!who()) return [];
+    return (await loadList()).mine.filter((r) => r.my_role === "owner" || r.my_role === "admin");
+  },
+
   ...profile,
 
   /** The owner or staff: ev_set_room_3d answers ok or a reason. The entry function refuses a walker when it is off (see EVENTS_R1_ORDER.md). */

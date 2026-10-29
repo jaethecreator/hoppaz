@@ -103,6 +103,8 @@ export type FakeState = {
   memberships: Record<string, boolean>;
   /** "<userId>:<roomId>" to a role. A member with no entry is a plain member; the owner is rooms[].owner_id. */
   roles: Record<string, Exclude<RoomRole, "owner" | "member">>;
+  /** "<userId>:<roomId>" to an ISO time: when someone joined in this browser. A member with none joined before the seed (a month ago). */
+  joinedAt: Record<string, string>;
   /** Join requests by id: one per person per room (a decided one is kept, a new ask after a decline makes it pending again). */
   requests: Record<string, JoinRequestRec>;
   /** Notices by id (a request that was approved). */
@@ -121,7 +123,7 @@ export type FakeState = {
 
 const COLLS = [
   "users", "events", "regs", "tickets", "pops", "announcements", "messages", "reports", "rooms",
-  "orders", "payouts", "regSettings", "memberships", "roles", "requests", "notices", "interest", "reads",
+  "orders", "payouts", "regSettings", "memberships", "roles", "joinedAt", "requests", "notices", "interest", "reads",
 ] as const;
 type Coll = (typeof COLLS)[number];
 

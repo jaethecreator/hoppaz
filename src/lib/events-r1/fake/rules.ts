@@ -71,18 +71,19 @@ export function canManageRoom(roomId: string): boolean {
   const r = myRole(roomId);
   return !!v && (r === "owner" || r === "admin" || !!v.staff);
 }
-/** Also a host: creates events as the room and runs their door. */
-export function canHostInRoom(roomId: string | null): boolean {
-  const v = viewer();
-  const r = myRole(roomId);
-  return !!v && (r === "owner" || r === "admin" || r === "host" || !!v.staff);
+/**
+ * Owner and admins run every event of the room, the door included, even one they did not make. The Host role is kept in the data
+ * (it may come back) but is hidden at launch and gets nothing a member does not have.
+ */
+export function canRunRoomEvents(roomId: string | null): boolean {
+  return !!roomId && canManageRoom(roomId);
 }
 
-/** The room an event made by this person is posted in: their own room, else a room where they are an admin or host. */
+/** The room an event made by this person is posted in: their own room, else a room where they are an admin. */
 export function roomToPostIn(userId: string): RoomRec | null {
   const own = hostRoom(userId);
   if (own) return own;
-  return Object.values(S().rooms).find((r) => r.kind !== "hq" && ["admin", "host"].includes(roleOf(r.id, userId) ?? "")) ?? null;
+  return Object.values(S().rooms).find((r) => r.kind !== "hq" && roleOf(r.id, userId) === "admin") ?? null;
 }
 
 export const joinModeOf = (room: RoomRec): JoinMode => room.join_mode ?? "open";
@@ -98,8 +99,8 @@ export function isHostOf(e: EventRec): boolean {
 /** Host or staff. */
 export function canManage(e: EventRec): boolean {
   const v = viewer();
-  // A room's owner, admins and hosts run the room's events (the door included).
-  return !!v && (e.host_id === v.id || !!v.staff || canHostInRoom(e.room_id));
+  // A room's owner and admins run the room's events (the door included).
+  return !!v && (e.host_id === v.id || !!v.staff || canRunRoomEvents(e.room_id));
 }
 
 export function assertManage(e: EventRec | undefined | null): EventRec {

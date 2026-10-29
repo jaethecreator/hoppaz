@@ -35,11 +35,11 @@ export const ROOM_REASONS: Record<string, string> = {
   bad_logo: "That logo picture did not work",
   bad_links: "Check your links. They start with https://",
   bad_mode: "Pick Open, Ask to join or Invite only",
-  bad_role: "Pick Admin, Host or Member",
+  bad_role: "Pick Admin or Member",
   not_member: "They are not in this room",
   owner_fixed: "Nobody changes the owner",
   invite_only: "This room is invite only",
-  declined: "The room's host has not accepted your request",
+  declined: "The room's owner has not accepted your request",
   already_answered: "That request is already answered",
 };
 
@@ -76,7 +76,7 @@ type Deps = {
 
 export function profileApi({ get, legacyCreate }: Deps): Pick<
   RoomsApi,
-  "create" | "update" | "slugAvailable" | "join" | "requests" | "decideRequest" | "inviteCode" | "members" | "setRole" | "guestsNotJoined" | "notices" | "markNoticesSeen"
+  "create" | "update" | "slugAvailable" | "join" | "requests" | "decideRequest" | "inviteCode" | "members" | "setRole" | "removeMember" | "guestsNotJoined" | "notices" | "markNoticesSeen"
 > {
   const need = (): void => {
     if (!who()) throw new Error("Sign in first");
@@ -192,6 +192,15 @@ export function profileApi({ get, legacyCreate }: Deps): Pick<
       const id = await idOrThrow(roomId);
       const r = await soft<string>("ev_set_room_role", { p_room: id, p_user: userId, p_role: role });
       if (r.missing) throw new Error("Room roles are not open yet");
+      textOrThrow(r);
+      emit();
+    },
+
+    async removeMember(roomId, userId) {
+      need();
+      const id = await idOrThrow(roomId);
+      const r = await soft<string>("ev_remove_room_member", { p_room: id, p_user: userId });
+      if (r.missing) throw new Error("Removing members is not open yet");
       textOrThrow(r);
       emit();
     },

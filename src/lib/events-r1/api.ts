@@ -94,6 +94,8 @@ export interface RoomsApi {
   get(idOrSlug: string, opts?: { invite?: string }): Promise<RoomSummary | null>;
   /** The rooms the viewer owns (the create page offers "Add to <room>" from this). Empty when signed out. */
   mine(): Promise<RoomSummary[]>;
+  /** The rooms the viewer owns or is an admin of: the workspace switcher and the room admin. Lagos HQ is never in it. Empty when signed out. */
+  managed(): Promise<RoomSummary[]>;
   /**
    * Make a room. The signed-in person owns it. Throws plain lines: "Give your room a name", "That address is taken",
    * "Use 3 to 40 letters, numbers and dashes". The slug is unique and, left out, built from the name (a taken one gets -2, -3).
@@ -115,16 +117,19 @@ export interface RoomsApi {
   decideRequest(requestId: string, approve: boolean): Promise<void>;
   /** The invite code of a room, for its link (hoppaz.fun/r/<slug>?invite=<code>). Owner, admin or staff; null for anyone else. */
   inviteCode(roomId: string): Promise<string | null>;
-  /** People in the room. Members of the room only (owner, admins and hosts first). */
+  /** People in the room, with when each joined. Members of the room only (owner and admins first). */
   members(roomId: string): Promise<RoomMember[]>;
   /**
    * Owner: set a member's role to admin, host or member. Admin: host or member only. Nobody changes the owner. The person must be in the room.
-   * Host = creates events as the room and runs their door; admin = everything except payouts and deleting the room.
+   * Admin = runs every event of the room (dashboard, guests, door) and everything except payouts and deleting the room.
+   * Host stays in the data but is hidden in the app for launch (no screen offers it) and gets nothing a member does not have.
    */
   setRole(roomId: string, userId: string, role: Exclude<RoomRole, "owner">): Promise<void>;
+  /** Take a member out. Owner or staff: anyone but the owner. Admin: plain members only. Anyone else "Not allowed". */
+  removeMember(roomId: string, userId: string): Promise<void>;
   /**
    * "Went but haven't joined": people with a registration (going or checked in) for any of the room's events who are not members,
-   * with the full count. Owner, admin, host or staff; anyone else: "Not allowed".
+   * with the full count. Owner, admin or staff; anyone else: "Not allowed".
    */
   guestsNotJoined(roomId: string): Promise<RoomGuests>;
   /** Notices for the viewer that they have not seen (a join request that was approved). */
