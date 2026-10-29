@@ -110,7 +110,14 @@ export default function MembersTab({ room }: { room: RoomSummary }) {
                 <span className="grid h-10 w-10 flex-none place-items-center rounded-full bg-t-soft font-display text-[13px] font-black text-t-accent" aria-hidden>
                   {initials(r.name)}
                 </span>
-                <span className="min-w-0 flex-1 truncate font-body text-[15px] font-semibold">{r.name}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-body text-[15px] font-semibold">{r.name}</span>
+                  {r.ticket_event && (
+                    <span className="block truncate font-body text-[13px] text-t-muted" data-request-ticket>
+                      Bought a ticket for {r.ticket_event.title}
+                    </span>
+                  )}
+                </span>
                 <button type="button" className="lip !min-h-[40px] flex-none !px-4 !py-2" disabled={!!busy} onClick={() => api && void run(r.id, () => api.rooms.decideRequest(r.id, true), "Approved. They get a notice in the app")}>
                   Approve
                 </button>

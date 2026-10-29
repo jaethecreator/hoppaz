@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Calendar, Check, ChevronLeft, Globe, MapPin, Share2 } from "lucide-react";
-import TintShell, { usePictureTint } from "@/components/host/TintShell";
+import TintShell, { useLookStyle, usePictureTint } from "@/components/host/TintShell";
 import { QUESTS_ON } from "@/lib/events-r1/flags";
 import { useR1Api, useR1Auth, useR1Now, useR1Query, useViewerState } from "@/lib/events-r1/hooks";
 import { LINEUP_TITLE } from "@/lib/events-r1/lineup";
@@ -261,6 +261,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   const cover = event.flyer_url || fallbackCover(event.id);
   const look: Look = saved ?? { ...DEFAULT_LOOK, mood: themeForEvent(event.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);
+  const sheetTint = useLookStyle(look, tint);
   const [wide, setWide] = useState(false);
   const [said, setSaid] = useState("");
   const anchor = useRef<HTMLDivElement>(null);
@@ -324,7 +325,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
 
   let action: React.ReactNode;
   if (viewer?.isHost) action = <div className="t-adopt"><HostStrip event={event} viewer={viewer} /></div>;
-  else if (viewer?.registration) action = <div className="t-adopt"><StatusCard event={event} viewer={viewer} /></div>;
+  else if (viewer?.registration) action = <div className="t-adopt"><StatusCard event={event} viewer={viewer} fresh={t.flow.justDone} /></div>;
   else action = <TicketCard t={t} anchor={anchor} />;
 
   return (
@@ -482,7 +483,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
         </div>
 
         <TicketBar t={t} anchor={anchor} line={`${w.short} · ${online ? "Online" : event.venue_name || event.area || "Lagos"}`} />
-        <CheckoutSheet t={t} cover={cover} when={`${w.short} · ${w.a.time}${online ? "" : ` · ${event.venue_name || event.area}`}`} />
+        <CheckoutSheet t={t} tint={sheetTint} cover={cover} when={`${w.short} · ${w.a.time}${online ? "" : ` · ${event.venue_name || event.area}`}`} />
       </TintShell>
     </div>
   );

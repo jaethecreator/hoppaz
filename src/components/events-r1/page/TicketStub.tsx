@@ -91,6 +91,7 @@ export default function TicketStub({
   qr = true,
   own = false,
   cover: showCover = true,
+  actions = true,
 }: {
   event: R1Event;
   reg: Pick<
@@ -103,6 +104,8 @@ export default function TicketStub({
   own?: boolean;
   /** The cover band on top. The event page leaves it off: its own cover sits a screen above, so it would show twice. */
   cover?: boolean;
+  /** The Add to calendar and Event chat row at the foot. "You're going" leaves it off and puts the two as buttons under the stub. */
+  actions?: boolean;
 }) {
   const online = isOnline(event);
   const cover = event.flyer_url || fallbackCover(event.id);
@@ -284,33 +287,35 @@ export default function TicketStub({
 
         {QUESTS_ON && <QuestLines eventId={event.id} />}
 
-        <div className="col-span-2 flex items-center justify-between gap-3 border-t border-t-line pt-1 font-body text-[13px]">
-          <span className="flex min-w-0 flex-wrap items-center gap-x-2.5">
-            <a
-              href={googleCalendarUrl(event)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-h-[44px] items-center font-semibold text-t-accent"
-            >
-              Add to calendar
-            </a>
-            <button
-              type="button"
-              onClick={() => downloadIcs(event)}
-              className="min-h-[44px] text-[12px] text-t-muted underline underline-offset-4"
-            >
-              or download .ics
-            </button>
-          </span>
-          {chat && (
-            <Link
-              href={chat}
-              className="inline-flex min-h-[44px] flex-none items-center text-t-text"
-            >
-              Event chat →
-            </Link>
-          )}
-        </div>
+        {actions && (
+          <div className="col-span-2 flex items-center justify-between gap-3 border-t border-t-line pt-1 font-body text-[13px]">
+            <span className="flex min-w-0 flex-wrap items-center gap-x-2.5">
+              <a
+                href={googleCalendarUrl(event)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-[44px] items-center font-semibold text-t-accent"
+              >
+                Add to calendar
+              </a>
+              <button
+                type="button"
+                onClick={() => downloadIcs(event)}
+                className="min-h-[44px] text-[12px] text-t-muted underline underline-offset-4"
+              >
+                or download .ics
+              </button>
+            </span>
+            {chat && (
+              <Link
+                href={chat}
+                className="inline-flex min-h-[44px] flex-none items-center text-t-text"
+              >
+                Event chat →
+              </Link>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useR1Api, useR1Auth, useViewerState } from "@/lib/events-r1/hooks";
 import type { Quote } from "@/lib/events-r1/pay";
 import type { R1Event, RegQuestion } from "@/lib/events-r1/types";
@@ -60,7 +60,15 @@ export function useRegisterFlow(event: R1Event, preview = false) {
   }
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
+  // Registered from this page just now: the event page shows the big "You're going" header once.
+  const [justDone, setJustDone] = useState(false);
   const [questions, setQuestions] = useState<RegQuestion[]>([]);
+  // Who is paying, from the checkout sheet: { name, email, phone } added to the answers (the host's Audience reads the phone from there).
+  // Null on the one-tap free register, which keeps using the account's name and email.
+  const contact = useRef<Record<string, string> | null>(null);
+  const setContact = useCallback((c: Record<string, string> | null) => {
+    contact.current = c;
+  }, []);
 
   // What the buyer pays, from the data layer (one price: Hoppaz's fee is inside it).
   const paidId = paidType?.id;
@@ -113,8 +121,9 @@ export function useRegisterFlow(event: R1Event, preview = false) {
   }, []);
 
   const submit = useCallback(
-    async (answers: Record<string, string>, asked: boolean) => {
+    async (given: Record<string, string>, asked: boolean) => {
       if (!api) return;
+      const answers = contact.current ? { ...given, ...contact.current } : given;
       setPhase("busy");
       setError("");
       try {
@@ -125,6 +134,7 @@ export function useRegisterFlow(event: R1Event, preview = false) {
           return;
         }
         await api.registrations.register(event.id, { ticketTypeId: selectedId, answers, referrerId: refFromUrl() });
+        setJustDone(true);
         setPhase("idle");
       } catch (e) {
         setError(paidId ? buyError(e) : e instanceof Error ? e.message : "That did not work. Try again.");
@@ -142,7 +152,8 @@ export function useRegisterFlow(event: R1Event, preview = false) {
     setError("");
     try {
       const s = await api.events.getRegistrationSettings(event.id);
-      const ask = s.questions.filter((q) => q.enabled !== false && q.builtin !== "name" && q.builtin !== "email");
+      // The checkout asks for the phone itself, so the host's Phone question is not asked twice.
+      const ask = s.questions.filter((q) => q.enabled !== false && q.builtin !== "name" && q.builtin !== "email" && !(contact.current && q.builtin === "phone"));
       if (ask.length) {
         setQuestions(ask);
         setPhase("form");
@@ -179,6 +190,12 @@ export function useRegisterFlow(event: R1Event, preview = false) {
     setQty,
     openUrl: preview ? null : openUrl,
     start,
+    /** The sign-up wall on its own (checkout opens after it). */
+    askSignIn: () => {
+      if (!preview) setPhase("signin");
+    },
+    setContact,
+    justDone,
     proceed,
     submit,
     cancel: () => {

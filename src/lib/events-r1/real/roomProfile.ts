@@ -135,7 +135,9 @@ export function profileApi({ get, legacyCreate }: Deps): Pick<
     async join(roomId, opts) {
       need();
       const id = await idOrThrow(roomId);
-      const r = await soft<string>("ev_join_room", { p_room: id, p_invite: opts?.invite ?? null });
+      // From "You're going": the request carries the ticket (events_r1_room_request_ticket.sql). Before that file runs, a plain join.
+      let r = opts?.forEvent && !opts.invite ? await soft<string>("ev_join_room_for_ticket", { p_room: id, p_event: opts.forEvent }) : null;
+      if (!r || r.missing) r = await soft<string>("ev_join_room", { p_room: id, p_invite: opts?.invite ?? null });
       if (r.missing) {
         // The app's own join_crew (an open room by id, or any room by its invite code).
         const { data, error } = await client().rpc("join_crew", { p_invite: opts?.invite || id });
@@ -155,11 +157,16 @@ export function profileApi({ get, legacyCreate }: Deps): Pick<
     async requests(roomId) {
       need();
       const id = await idOrThrow(roomId);
-      const r = await soft<Row[] | null>("ev_room_requests", { p_room: id });
+      // With the ticket each request came with (events_r1_room_request_ticket.sql); before that file runs, the plain list.
+      let r = await soft<Row[] | null>("ev_room_requests_with_tickets", { p_room: id });
+      if (r.missing) r = await soft<Row[] | null>("ev_room_requests", { p_room: id });
       if (r.missing) return [];
       if (r.error) throw new Error(failText(r.error));
       if (!r.data) throw new Error("Not allowed");
-      return r.data.map((q): JoinRequest => ({ id: String(q.id), room_id: String(q.room_id), user_id: String(q.user_id), name: String(q.name ?? "Hopper"), created_at: iso(q.created_at) ?? new Date().toISOString() }));
+      return r.data.map((q): JoinRequest => ({
+        id: String(q.id), room_id: String(q.room_id), user_id: String(q.user_id), name: String(q.name ?? "Hopper"), created_at: iso(q.created_at) ?? new Date().toISOString(),
+        ticket_event: q.ticket_event_id ? { id: String(q.ticket_event_id), title: String(q.ticket_event_title ?? "") } : null,
+      }));
     },
 
     async decideRequest(requestId, approve) {

@@ -33,6 +33,7 @@ import { useDailyBox } from "@/lib/useDailyBox";
 import { GENDERS, useNextAsk } from "@/lib/account";
 import type { Profile } from "@/lib/types";
 import HostEntry from "@/components/events-r1/workspace/HostEntry";
+import SavedDetailsRow from "@/components/events-r1/page/SavedDetailsRow";
 import { EVENTS_R1 } from "@/lib/events-r1/flags";
 
 type CatalogBadge = { key: string; name: string; icon: string; description: string };
@@ -398,6 +399,7 @@ function MePagePage() {
         <p className="seclabel mb-2.5">MORE</p>
         <RowGroup>
           {EVENTS_R1 && <HostEntry variant="row" />}
+          {EVENTS_R1 && <SavedDetailsRow />}
           <RowLink
             href="/meet"
             title="Speed Meet"

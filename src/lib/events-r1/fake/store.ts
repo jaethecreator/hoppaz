@@ -12,7 +12,7 @@ import type { HostPayoutStatus, Order } from "../pay";
 import { PAID_KEY } from "../flags";
 import type { Lineup } from "../lineup";
 import type {
-  AuthUser, JoinMode, JoinRequest, Pop, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement, RoomLinks, RoomMessage, RoomNotice, RoomRole, RoomSummary, Ticket,
+  AuthUser, JoinMode, JoinRequest, Pop, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement, RoomLinks, RoomMessage, RoomNotice, RoomRole, RoomSummary, SavedDetails, Ticket,
 } from "../types";
 import { buildSeed } from "./seed";
 import { clone } from "./util";
@@ -80,7 +80,7 @@ export type PayoutRec = { id: string; status: HostPayoutStatus; balance_naira: n
 /** A fake withdrawal (fake clock ms). It reaches the bank, less a N50 fee, once execute_after_ms has passed. */
 export type WithdrawalRec = { id: string; amount_naira: number; execute_after_ms: number; created_ms: number; paid_ms: number | null };
 
-export type JoinRequestRec = JoinRequest & { status: "pending" | "approved" | "declined" };
+export type JoinRequestRec = JoinRequest & { status: "pending" | "approved" | "declined"; ticket_event_id?: string | null };
 export type NoticeRec = RoomNotice & { user_id: string; seen: boolean };
 
 export type RegSettings = { questions: RegQuestion[]; messages: RegMessages };
@@ -118,6 +118,8 @@ export type FakeState = {
   interest: Record<string, boolean>;
   /** "<userId>:<roomId>" to an ISO time: announcements before it are read. */
   reads: Record<string, string>;
+  /** By user id: checkout details the person chose to keep (name, email, phone; never a host's own questions). */
+  savedDetails: Record<string, SavedDetails>;
   viewerId: string | null;
   pendingEmail: string | null;
   /** Fake clock: added to the real time. */
@@ -129,6 +131,7 @@ export type FakeState = {
 const COLLS = [
   "users", "events", "regs", "tickets", "pops", "announcements", "messages", "reports", "rooms",
   "orders", "payouts", "regSettings", "lineups", "memberships", "roles", "joinedAt", "doorStaff", "requests", "notices", "interest", "reads",
+  "savedDetails",
 ] as const;
 type Coll = (typeof COLLS)[number];
 

@@ -237,7 +237,15 @@ export type RoomPreview = {
 };
 
 /** Someone asking to join an ask room. */
-export type JoinRequest = { id: string; room_id: string; user_id: string; name: string; created_at: string };
+export type JoinRequest = {
+  id: string;
+  room_id: string;
+  user_id: string;
+  name: string;
+  created_at: string;
+  /** Set when the person asked right after getting a ticket to one of the room's events: the host sees "Bought a ticket for <title>". */
+  ticket_event?: { id: string; title: string } | null;
+};
 
 /** A person in a room (owner, admins and hosts first). */
 export type RoomMember = { user_id: string; name: string; role: RoomRole; joined_at: string };
@@ -361,3 +369,9 @@ export type RoomDraft = {
 
 /** What an owner or admin can change on a room. Only the fields present change. */
 export type RoomPatch = { name?: string; about?: string; slug?: string; logo_url?: string | null; links?: RoomLinks; join_mode?: JoinMode };
+
+/**
+ * Checkout details the buyer chose to keep on their Hoppaz account ("Save my details for next time"): name, email and phone only.
+ * Answers to a host's own checkout questions are never saved.
+ */
+export type SavedDetails = { first_name: string; last_name: string; email: string; phone: string };

@@ -4,10 +4,16 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import PageHeader from "@/components/app/PageHeader";
+import TintShell, { usePictureTint } from "@/components/host/TintShell";
 import SignInSheet from "@/components/events-r1/SignInSheet";
-import { useR1Api, useR1Auth, useR1Event } from "@/lib/events-r1/hooks";
+import { useR1Api, useR1Auth, useR1Event, useR1Query } from "@/lib/events-r1/hooks";
+import { DEFAULT_LOOK } from "@/lib/events-r1/looks";
+import type { Look } from "@/lib/events-r1/looks";
 import type { Order } from "@/lib/events-r1/pay";
-import TicketStub from "../page/TicketStub";
+import type { R1Event } from "@/lib/events-r1/types";
+import { themeForEvent } from "@/lib/theme";
+import { fallbackCover } from "../page/HostStory";
+import YoureGoing from "../page/YoureGoing";
 import { usePaidOn } from "./usePay";
 import { naira, ticketsWord } from "./words";
 
@@ -94,7 +100,52 @@ export default function ReturnPage() {
       </>
     );
   }
+  if (order && order.status === "paid" && !order.needs_refund) return <PaidGoing order={order} />;
   return shell(<Body order={order} slow={slow} onRefresh={() => setRound((n) => n + 1)} />);
+}
+
+/**
+ * Paid: "You're going" (design "After you pay", B5), dressed in the event's look like the event page (the saved look, else the cover's
+ * colour, Day or Night from the start time). The header, the host's room card, the stub, Add to calendar and Event chat.
+ */
+function PaidGoing({ order }: { order: Order }) {
+  const { data: event } = useR1Event(order.event_id);
+  if (!event) {
+    return (
+      <div className="h-full overflow-y-auto px-4 pb-24">
+        <div className="mx-auto w-full min-w-0 max-w-xl">
+          <PageHeader title="Your ticket" back="/" className="pb-3" />
+          <p className="hint" aria-live="polite">
+            Payment confirmed. Loading your ticket
+          </p>
+        </div>
+      </div>
+    );
+  }
+  return <GoingInLook event={event} order={order} />;
+}
+
+function GoingInLook({ event, order }: { event: R1Event; order: Order }) {
+  const cover = event.flyer_url || fallbackCover(event.id);
+  const { data: saved } = useR1Query((a) => a.looks.get("event", event.id), [event.id]);
+  const look: Look = saved ?? { ...DEFAULT_LOOK, mood: themeForEvent(event.starts_at) === "day" ? "day" : "night", auto: true };
+  const tint = usePictureTint(cover, look);
+  const reg = { id: order.id, status: "going" as const, quantity: order.quantity, ticket_name: order.ticket_name ?? "", ticket_type_id: order.ticket_type_id ?? "" };
+  return (
+    <div className="h-full overflow-y-auto">
+      <TintShell look={look} tint={tint} className="min-h-full bg-t-bg text-t-text">
+        <p className="sr-only" role="status">
+          Payment confirmed. You&apos;re going.
+        </p>
+        <YoureGoing event={event} reg={reg} layout="page" />
+        <div className="mx-auto w-full max-w-[980px] px-[18px] pb-10 lg:px-8">
+          <Link href={`/event/${encodeURIComponent(event.slug || event.id)}`} className="inline-flex min-h-[44px] items-center font-body text-[14px] text-t-muted underline underline-offset-4">
+            View event
+          </Link>
+        </div>
+      </TintShell>
+    </div>
+  );
 }
 
 /**
@@ -107,7 +158,6 @@ function arrivedLate(o: Order): boolean {
 }
 
 function Body({ order, slow, onRefresh }: { order: Order | null; slow: boolean; onRefresh: () => void }) {
-  const { data: event } = useR1Event(order?.event_id);
   const head = useRef<HTMLParagraphElement>(null);
   const state = !order ? "wait" : order.needs_refund ? (arrivedLate(order) ? "late" : "owed") : order.status === "paid" ? "paid" : order.status === "open" ? "wait" : order.status === "expired" || order.status === "failed" ? "gone" : "refund";
   const seen = useRef("");
@@ -149,27 +199,6 @@ function Body({ order, slow, onRefresh }: { order: Order | null; slow: boolean; 
             {line && <p className="mt-3 font-body text-[14px] text-dim">{line}</p>}
           </>
         )}
-      </div>
-    );
-  }
-
-  if (state === "paid" && order) {
-    const reg = {
-      id: order.id,
-      status: "going" as const,
-      quantity: order.quantity,
-      ticket_name: order.ticket_name ?? "",
-      ticket_type_id: order.ticket_type_id ?? "",
-    };
-    return (
-      <div className="flex flex-col gap-3" aria-live="polite">
-        <p ref={head} tabIndex={-1} className="sr-only outline-none">
-          Payment confirmed. You&apos;re going.
-        </p>
-        {event ? <TicketStub event={event} reg={reg} own /> : <p className="hint">Loading your ticket</p>}
-        <Link href={back()} className="min-h-[44px] self-start py-3 font-body text-[14px] text-dim underline underline-offset-4">
-          View event
-        </Link>
       </div>
     );
   }

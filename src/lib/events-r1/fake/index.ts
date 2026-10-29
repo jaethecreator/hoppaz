@@ -7,6 +7,7 @@ import type { EventsR1Api } from "../api";
 import { PAID_KEY, PAID_TICKETS, paidTicketsOn } from "../flags";
 import type { HostPayoutStatus, PayMethod } from "../pay";
 import type { R1Event, Registration } from "../types";
+import { account } from "./account";
 import { auth, signInUser } from "./auth";
 import { door } from "./door";
 import { events } from "./events";
@@ -33,6 +34,7 @@ export const fakeApi: EventsR1Api = {
   clock: { now },
   pay,
   looks: fakeLooks,
+  account,
 };
 
 export type SampleTicket = { registrationId: string; name: string; code: string; token: string };
