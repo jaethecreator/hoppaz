@@ -83,8 +83,8 @@ function Frame({ logo, roomId, children, scroller, fill }: { logo: string | null
   const style: CSSProperties = useLookStyle(look, tint);
   return (
     <div ref={scroller} className="relative z-40 h-full overflow-y-auto" data-hub-scroll data-room-page data-mood={look.mood}>
-      <div className={clsx("tint-ui relative isolate flex flex-col font-body", fill ? "h-full min-h-[680px]" : "min-h-full")} style={style} data-pack={look.pack}>
-        <PackLayer pack={look.pack} />
+      <div className={clsx("tint-ui relative isolate flex flex-col font-body", fill ? "h-full min-h-[680px]" : "min-h-full")} style={style} data-pack={look.pack} data-mood={look.mood}>
+        <PackLayer pack={look.pack} mood={look.mood} tint={tint} />
         <div className={clsx("relative flex flex-1 flex-col", fill ? "min-h-0" : "min-h-full")}>{children}</div>
       </div>
     </div>
