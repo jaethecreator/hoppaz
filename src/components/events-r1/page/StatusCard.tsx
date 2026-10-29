@@ -1,23 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Check, Clock, MessageCircle, Send } from "lucide-react";
+import { Clock, Send } from "lucide-react";
 import { useR1Api, useR1Now, useR1Query } from "@/lib/events-r1/hooks";
 import type { R1Event, ViewerState } from "@/lib/events-r1/types";
 import JoinCall from "./JoinCall";
 import { hasOnline } from "./link";
 import { eventUrl, shareOrCopy } from "./share";
 import { startsIn } from "./time";
-import { eventChatHref } from "../rooms/words";
-import TicketCards from "../pay/TicketCards";
-import TicketQr from "./TicketQr";
+import TicketStub from "./TicketStub";
 
 const ROW = "btn btn-ghost w-full justify-start gap-2.5 normal-case";
 
 /**
- * Where the Register button turns into once you have done something: You're in (countdown, QR ticket, the call,
- * invite, chat, cancel), Pending (the host's message), On the waitlist (your place) or Declined.
+ * Where the Register button turns into once you have done something: You're going (the long ticket stub: countdown, QR, calendar, chat; then the call,
+ * invite, cancel), Pending (the host's message), On the waitlist (your place) or Declined.
  */
 export default function StatusCard({ event, viewer }: { event: R1Event; viewer: ViewerState }) {
   const reg = viewer.registration;
@@ -40,13 +37,10 @@ export default function StatusCard({ event, viewer }: { event: R1Event; viewer: 
   const online = hasOnline(event);
   // With more than one ticket type the card says which one this is.
   const typeName = event.ticket_types?.length > 1 ? reg.ticket_name : "";
-  // An online-only event has no door, so no ticket to scan.
-  const ticket = going && event.kind !== "online";
   // A paid ticket is undone by a refund from the host, not by the buyer.
   const paidTicket = going && (event.ticket_types?.find((t) => t.id === reg.ticket_type_id)?.price_naira ?? 0) > 0;
 
-  const chatHref = eventChatHref(event);
-  const title = going ? "You're in" : reg.status === "requested" ? "Pending" : reg.status === "waitlisted" ? "On the waitlist" : "Declined";
+  const title = reg.status === "requested" ? "Pending" : reg.status === "waitlisted" ? "On the waitlist" : "Declined";
   const note =
     reg.status === "requested"
       ? settings?.messages.pending
@@ -80,40 +74,30 @@ export default function StatusCard({ event, viewer }: { event: R1Event; viewer: 
   };
 
   return (
-    <div className="rounded-hz border border-line bg-ink-3 p-4">
-      <div className="flex items-start gap-3">
-        <span
-          className={`mt-0.5 grid h-8 w-8 flex-none place-items-center rounded-full border ${going ? "border-keke text-keke" : "border-line text-dim"}`}
-          aria-hidden
-        >
-          {going ? <Check size={17} strokeWidth={3} /> : <Clock size={16} />}
-        </span>
-        <div className="min-w-0">
-          <p className="font-display text-[24px] font-black leading-tight">{title}</p>
-          {going && (
-            <p className="font-body text-[14px] text-dim" aria-live="polite">
-              {reg.status === "checked_in" ? "Checked in" : startsIn(event, now)}
-              {online && " · Online"}
-              {typeName && ` · ${typeName}`}
-            </p>
-          )}
-          {!going && typeName && <p className="font-body text-[14px] text-dim">{typeName}</p>}
-          {note && <p className="mt-1 font-body text-[14px] leading-snug text-dim">{note}</p>}
-        </div>
-      </div>
-
-      {ticket && (
-        <div className="mt-4">
-          {(reg.quantity ?? 1) > 1 ? (
-            <TicketCards eventId={event.id} regKey={`${reg.id}:${reg.status}:${reg.quantity}`} />
-          ) : (
-            <TicketQr eventId={event.id} regKey={`${reg.id}:${reg.status}`} />
-          )}
+    <div className={going ? "" : "rounded-hz border border-line bg-ink-3 p-4"}>
+      {going ? (
+        <TicketStub
+          event={event}
+          reg={reg}
+          cover={false}
+          qr={event.kind !== "online"}
+          kicker={reg.status === "checked_in" ? undefined : [startsIn(event, now), online ? "Online" : ""].filter(Boolean).join(" · ")}
+        />
+      ) : (
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 grid h-8 w-8 flex-none place-items-center rounded-full border border-line text-dim" aria-hidden>
+            <Clock size={16} />
+          </span>
+          <div className="min-w-0">
+            <p className="font-display text-[24px] font-black leading-tight">{title}</p>
+            {typeName && <p className="font-body text-[14px] text-dim">{typeName}</p>}
+            {note && <p className="mt-1 font-body text-[14px] leading-snug text-dim">{note}</p>}
+          </div>
         </div>
       )}
 
       {going && online && viewer.canSeeOnlineLink && (
-        <div className="mt-4 border-t border-line pt-4">
+        <div className="mt-4">
           <JoinCall event={event} viewer={viewer} now={now} />
         </div>
       )}
@@ -124,11 +108,6 @@ export default function StatusCard({ event, viewer }: { event: R1Event; viewer: 
             <Send size={16} className="text-orange" aria-hidden /> Invite a friend
             {invite && <span className="ml-auto font-body text-[13px] font-normal text-dim">{invite}</span>}
           </button>
-          {chatHref && (
-            <Link href={chatHref} className={ROW}>
-              <MessageCircle size={16} className="text-orange" aria-hidden /> Open event chat
-            </Link>
-          )}
         </div>
       )}
 

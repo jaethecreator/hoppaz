@@ -31,7 +31,7 @@ function distanceWord(m: number | null): string | null {
 }
 
 /** An Instagram or X link as "@name", a website as its host. Anything else is left out. */
-function handleOf(kind: "instagram" | "x" | "website", url: string): string | null {
+export function handleOf(kind: "instagram" | "x" | "website", url: string): string | null {
   try {
     const u = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`);
     if (kind === "website") return u.hostname.replace(/^www\./, "");
@@ -43,7 +43,7 @@ function handleOf(kind: "instagram" | "x" | "website", url: string): string | nu
 }
 
 /** The quest lines of this event, one per quest, with the reward in the event's tint. Only mounted when quests are on. */
-function QuestLines({ eventId }: { eventId: string }) {
+export function QuestLines({ eventId }: { eventId: string }) {
   const { user } = useR1Auth();
   const { quests, claims } = useQuests(user?.id ?? null);
   const mine = quests.filter((q) => q.event_id === eventId);

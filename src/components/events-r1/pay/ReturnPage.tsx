@@ -3,13 +3,11 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, MessageCircle } from "lucide-react";
 import PageHeader from "@/components/app/PageHeader";
 import SignInSheet from "@/components/events-r1/SignInSheet";
 import { useR1Api, useR1Auth, useR1Event } from "@/lib/events-r1/hooks";
 import type { Order } from "@/lib/events-r1/pay";
-import { eventChatHref } from "../rooms/words";
-import TicketCards from "./TicketCards";
+import TicketStub from "../page/TicketStub";
 import { usePaidOn } from "./usePay";
 import { naira, ticketsWord } from "./words";
 
@@ -156,31 +154,22 @@ function Body({ order, slow, onRefresh }: { order: Order | null; slow: boolean; 
   }
 
   if (state === "paid" && order) {
-    const chatHref = event ? eventChatHref(event) : null;
+    const reg = {
+      id: order.id,
+      status: "going" as const,
+      quantity: order.quantity,
+      ticket_name: order.ticket_name ?? "",
+      ticket_type_id: order.ticket_type_id ?? "",
+    };
     return (
-      <div className="flex flex-col gap-4" aria-live="polite">
-        <div className="flex items-start gap-3">
-          <span className="mt-1 grid h-8 w-8 flex-none place-items-center rounded-full border border-keke text-keke" aria-hidden>
-            <Check size={17} strokeWidth={3} />
-          </span>
-          <div className="min-w-0">
-            <p ref={head} tabIndex={-1} className={title}>
-              You&apos;re in
-            </p>
-            <p className="font-body text-[14px] text-dim">{line}</p>
-          </div>
-        </div>
-        <TicketCards eventId={order.event_id} regKey={order.id} />
-        <div className="grid grid-cols-1 gap-2">
-          {chatHref && (
-            <Link href={chatHref} className="btn btn-ghost w-full justify-start gap-2.5 normal-case">
-              <MessageCircle size={16} className="flex-none text-orange" aria-hidden /> Open event chat
-            </Link>
-          )}
-          <Link href={back()} className="min-h-[44px] self-start py-3 font-body text-[14px] text-dim underline underline-offset-4">
-            View event
-          </Link>
-        </div>
+      <div className="flex flex-col gap-3" aria-live="polite">
+        <p ref={head} tabIndex={-1} className="sr-only outline-none">
+          Payment confirmed. You&apos;re going.
+        </p>
+        {event ? <TicketStub event={event} reg={reg} own /> : <p className="hint">Loading your ticket</p>}
+        <Link href={back()} className="min-h-[44px] self-start py-3 font-body text-[14px] text-dim underline underline-offset-4">
+          View event
+        </Link>
       </div>
     );
   }
