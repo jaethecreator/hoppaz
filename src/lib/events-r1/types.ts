@@ -102,6 +102,9 @@ export type Registration = {
   checked_in_count?: number;
 };
 
+/** One of the viewer's own tickets for Me: a going registration for an event that has not ended, with the event. */
+export type MyRegistration = { registration: Registration; event: R1Event };
+
 /** What the one button on the event page should be, for this viewer. */
 export type ViewerState = {
   signedIn: boolean;

@@ -176,3 +176,9 @@ export function useR1Now(): number {
   }, [api]);
   return t;
 }
+
+/** The viewer's tickets for Me: going, for events that have not ended, soonest first. Empty when signed out. */
+export const useMyRegistrations = () => {
+  const { user } = useR1Auth();
+  return useR1Query((api) => (api.auth.current() ? api.registrations.mine() : Promise.resolve([])), [user?.id]);
+};

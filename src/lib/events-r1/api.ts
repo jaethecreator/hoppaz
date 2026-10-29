@@ -9,7 +9,7 @@ import type { PayApi } from "./pay";
 import type {
   AuthUser, DoorPerson, EventChat, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
   JoinOutcome, JoinRequest, Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomGuests, RoomMember, RoomMessage, RoomNotice,
-  RoomPatch, RoomPreview, RoomRole, RoomSummary, SavedDetails, ScanResult, Ticket, ViewerState,
+  RoomPatch, RoomPreview, RoomRole, RoomSummary, SavedDetails, MyRegistration, ScanResult, Ticket, ViewerState,
 } from "./types";
 
 export type Unsub = () => void;
@@ -77,6 +77,11 @@ export interface RegistrationsApi {
   ticketsFor(eventId: string): Promise<Ticket[]>;
   /** Own invite link id: use as ?ref= on shared links. */
   inviteRef(eventId: string): string;
+  /**
+   * The viewer's tickets for Me: registrations with status going for events that have not ended and are not cancelled, soonest first.
+   * Empty when signed out. Real: ev_my_registrations (supabase/events_r1_my_registrations.sql); until it runs this answers empty, quietly.
+   */
+  mine(): Promise<MyRegistration[]>;
 }
 
 export interface PopsApi {

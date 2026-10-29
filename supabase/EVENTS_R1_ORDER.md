@@ -36,6 +36,7 @@ Then the new files, in this order, each one once (they are safe to run again):
 | 13 | `events_r1_lineup.sql` | `_ev_open()`, `_ev_manage()`, `_ev_can_open()` | file 1. The lineup or programme of an event (section 2h); nothing else needs it |
 | 14 | `events_r1_saved_details.sql` | `profiles`, `has_account()` (`chat_accounts.sql`) | file 1 (`_ev_open()`). Saved checkout details: `ev_saved_details()`, `ev_save_details(first, last, email, phone)`, `ev_delete_saved_details()` on a closed table `ev_saved_details` (one row per person: name, email, phone; never a host's own question answers). Until it runs, checkout asks every time and nothing is saved. Test: `tests/events_r1_saved_details_test.sql`. |
 | 15 | `events_r1_room_request_ticket.sql` | `events`, `ev_registrations` | files 1, 2 and 11. Adds the nullable `ev_room_requests.ticket_event_id` and two new functions: `ev_join_room_for_ticket(room, event)` (ev_join_room, and an ask request carries the event the caller holds a ticket for) and `ev_room_requests_with_tickets(room)` (the requests with the event title, for "Bought a ticket for ..." in Members). `ev_join_room` and `ev_room_requests` are untouched. Test: `tests/events_r1_room_request_ticket_test.sql`. |
+| 16 | `events_r1_my_registrations.sql` | `events` | files 1 (`_ev_open()`, `_ev_event_json()`) and 2 (`ev_registrations`, `_ev_reg_json()`). One read-only function, `ev_my_registrations()`: the caller's going registrations for events that have not ended, each with its event, soonest first ("Your tickets" on Me). Until it runs, Me shows only the Game Time prize codes. Test: `tests/events_r1_my_registrations_test.sql`. |
 
 Files 1 and 2 leave small stubs for functions that later files fill in (the going count, the waitlist fill, the ticket issue and void,
 the HQ test). A stub is written only when the real function is missing, so running a file again never puts a stub back over the real one.
@@ -157,6 +158,7 @@ instead of throwing, as `claim_quest` and the Game Time staff calls do. The real
 | registrations.register (opts.ticketTypeId) / cancel | `ev_register` / `ev_cancel_registration` |
 | registrations.list / approve / decline / promote / exportCsv | `ev_audience` / `ev_decide` / `ev_decide` / `ev_promote` / `ev_export` (rows) |
 | registrations.ticketFor | `ev_my_ticket` |
+| registrations.mine (Your tickets on Me) | `ev_my_registrations` (file 16; until it runs, an empty list) |
 | pops.listForEvent / visibleOnEvent / send | `ev_host_pops` / `ev_event_pops` / `ev_send_pop` |
 | rooms.list / get / eventChat | `ev_rooms_for_me` / `ev_room` / `ev_event_chat` |
 | rooms.setThreeD / listForStaff | `ev_set_room_3d` (owner or staff, answers `ok` or a reason) / `ev_admin_rooms` (staff, null for anyone else) |

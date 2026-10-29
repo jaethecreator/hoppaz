@@ -11,7 +11,7 @@ import { paidTicketsOn } from "../flags";
 import { signToken } from "./crypto";
 import { defaultQuestions } from "./defaults";
 import {
-  admit, assertManage, canOpen, ensureTickets, fillFromWaitlist, findEvent, isFull, isGoing, regOf, regsOf,
+  admit, assertManage, canOpen, ensureTickets, eventEnd, eventView, fillFromWaitlist, findEvent, isFull, isGoing, regOf, regsOf,
   renumberWaitlist, requireViewer, seatsOf, typeFull, typeOfReg, typesOf, userById, voidTicket,
 } from "./rules";
 import type { TicketRec } from "./store";
@@ -243,6 +243,18 @@ export const registrations: RegistrationsApi = {
   inviteRef(eventId) {
     const v = viewer();
     return v ? v.id : `guest-${eventId.slice(0, 8)}`;
+  },
+
+  async mine() {
+    const v = viewer();
+    if (!v) return [];
+    const t = now();
+    return Object.values(S().regs)
+      .filter((r) => r.user_id === v.id && r.status === "going")
+      .map((r) => ({ r, e: S().events[r.event_id] }))
+      .filter(({ e }) => e && e.status !== "cancelled" && eventEnd(e) > t)
+      .sort((a, b) => Date.parse(a.e.starts_at) - Date.parse(b.e.starts_at) || a.e.id.localeCompare(b.e.id))
+      .map(({ r, e }) => ({ registration: clone(r), event: eventView(e) }));
   },
 };
 

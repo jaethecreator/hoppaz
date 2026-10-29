@@ -2,7 +2,8 @@
 import type { RegistrationsApi } from "../api";
 import { emit, reasonText, rpc, rpcOk, who } from "./core";
 import { eventIdOf } from "./ids";
-import { iso, mapRegistration, mapTicket } from "./map";
+import { iso, mapEvent, mapRegistration, mapTicket } from "./map";
+import { soft } from "./roomProfile";
 
 type Row = Record<string, unknown>;
 
@@ -86,5 +87,13 @@ export const registrations: RegistrationsApi = {
   inviteRef(eventId) {
     const v = who();
     return v ? v.id : `guest-${eventId.slice(0, 8)}`;
+  },
+
+  async mine() {
+    if (!who()) return [];
+    // Until supabase/events_r1_my_registrations.sql is run (or on a failed read), Me simply shows no event tickets.
+    const r = await soft<Array<{ registration: Row; event: Row }> | null>("ev_my_registrations");
+    if (r.missing || r.error || !Array.isArray(r.data)) return [];
+    return r.data.filter((x) => x && x.registration && x.event).map((x) => ({ registration: mapRegistration(x.registration), event: mapEvent(x.event) }));
   },
 };
