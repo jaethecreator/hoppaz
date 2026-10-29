@@ -17,7 +17,18 @@ export const GENDERS: ReadonlyArray<[Gender, string]> = [
   ["other", "Other / rather not say"],
 ];
 
-/** Returns an error line, or null once the Hopper is signed in to the new account. */
+const ALREADY = /already|exists|registered/i;
+
+/**
+ * Sign-up with an email that already has an account: they have been here before, so log them in with the password they just
+ * typed. Only when that fails do they hear about it, pointed at the way back in.
+ */
+async function alreadyHere(email: string, password: string): Promise<string | null> {
+  const err = await logIn(email, password);
+  return err ? "You already have an account with this email. Log in with your password, or with Google if you used it before." : null;
+}
+
+/** Returns an error line, or null once the Hopper is signed in to the new account (or back into the one they already had). */
 export async function createAccount(input: { name: string; email: string; password: string; gender?: Gender }): Promise<string | null> {
   const sb = getSupabase();
   if (!sb) return "Not connected";
@@ -26,7 +37,9 @@ export async function createAccount(input: { name: string; email: string; passwo
   if (!token) {
     // No anonymous session to upgrade (anonymous sign-ins switched off): a plain sign-up.
     const { data: made, error } = await sb.auth.signUp({ email: input.email, password: input.password, options: { data: { name: input.name } } });
-    if (error) return error.message;
+    if (error) return ALREADY.test(error.message) ? alreadyHere(input.email, input.password) : error.message;
+    // An email that is taken comes back as a user with no identities (Supabase hides it when confirmations are on).
+    if (made.user && made.user.identities?.length === 0) return alreadyHere(input.email, input.password);
     // Confirm sign up is on: no session until they tap the link in the email.
     if (!made.session) return `Almost there. We sent a link to ${input.email}. Tap it to confirm, then log in.`;
     if (input.gender) await sb.rpc("set_private_details", { p_gender: input.gender });
@@ -38,6 +51,8 @@ export async function createAccount(input: { name: string; email: string; passwo
     body: JSON.stringify(input),
   });
   const out = (await res.json().catch(() => ({}))) as { error?: string };
+  // 409: the email has an account already (or this session is one). Their guest progress stays with the guest, as with Google.
+  if (res.status === 409) return alreadyHere(input.email, input.password);
   if (!res.ok) return out.error ?? "Could not create the account";
   // Same user, now with an email: sign in so the session knows it too.
   const { error } = await sb.auth.signInWithPassword({ email: input.email, password: input.password });
@@ -52,31 +67,39 @@ export async function logIn(email: string, password: string): Promise<string | n
   return /invalid/i.test(error.message) ? "Wrong email or password" : error.message;
 }
 
-/** Start Google OAuth, linking a guest during account creation so their Hoppaz progress stays attached. */
-export async function continueWithGoogle(next: string, linkGuest: boolean): Promise<string | null> {
-  const sb = getSupabase();
-  if (!sb) return "Not connected";
+/** Where Google sends the Hopper back to: the canonical site's /auth/callback, carrying the page to land on. */
+export function googleCallback(next: string): string {
   const returnTo = next.startsWith("/") && !next.startsWith("//") ? next : "/me";
   // Pin production OAuth callbacks to the canonical site even when sign-in is
   // started from a preview URL or an installed app with an unexpected origin.
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || window.location.origin;
   const callback = new URL("/auth/callback", siteUrl);
   callback.searchParams.set("next", returnTo);
-  const redirectTo = callback.toString();
-  const { data, error } = await sb.auth.getUser();
-  if (error) return error.message;
-  const options = { redirectTo };
-  const result = linkGuest && data.user?.is_anonymous
+  return callback.toString();
+}
+
+/** Linking was refused because this Google account is already someone's Hoppaz account. */
+export const IDENTITY_TAKEN = /identity_already_exists|identity already exists|already linked to another user/i;
+
+/**
+ * Start Google OAuth, linking a guest during account creation so their Hoppaz progress stays attached. A Google account that
+ * already has a Hoppaz account just signs in to it (the callback does the same when the refusal comes back from Google).
+ */
+export async function continueWithGoogle(next: string, linkGuest: boolean): Promise<string | null> {
+  const sb = getSupabase();
+  if (!sb) return "Not connected";
+  const options = { redirectTo: googleCallback(next) };
+  // The stored session is enough to tell a guest from an account: no round trip before Google opens.
+  const { data } = await sb.auth.getSession();
+  let result = linkGuest && data.session?.user.is_anonymous
     ? await sb.auth.linkIdentity({ provider: "google", options })
     : await sb.auth.signInWithOAuth({ provider: "google", options });
+  if (result.error && IDENTITY_TAKEN.test(result.error.message)) result = await sb.auth.signInWithOAuth({ provider: "google", options });
   if (result.error && /unsupported provider|provider.*not enabled/i.test(result.error.message)) {
     return "Google sign-in is not configured for this Hoppaz project yet. An admin needs to enable Google and add its OAuth Client ID and Secret in Supabase Authentication settings.";
   }
   if (result.error && /manual.*link.*disabled/i.test(result.error.message)) {
     return "Google sign-up is not enabled yet. The Hoppaz admin needs to enable manual identity linking in Supabase. You can use email sign-up for now.";
-  }
-  if (result.error && /identity_already_exists|identity already exists|already linked to another user/i.test(result.error.message)) {
-    return "This Google account already has a Hoppaz account. Switch to Log in and choose Continue with Google to access it.";
   }
   return result.error?.message ?? null;
 }

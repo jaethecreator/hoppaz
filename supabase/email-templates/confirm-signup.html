@@ -1,9 +1,11 @@
 <!doctype html>
 <!--
   Supabase > Authentication > Emails > Confirm sign up
-  Subject: Confirm your email and get on the bus
+  Subject: Your Hoppaz code is {{ .Token }}
   Paste everything in this file into the message body. {{ .SiteURL }} must be the live site (Authentication > URL Configuration),
   because the logo is loaded from it.
+  A code, not a link: the app signs a new person in with the six digits (src/lib/events-r1/real/auth.ts), so this email must
+  never carry the ConfirmationURL link. Email OTP length (Authentication > Providers > Email) must be 6.
 -->
 <html lang="en">
 <head>
@@ -11,7 +13,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="supported-color-schemes" content="dark">
-  <title>Confirm your email</title>
+  <title>Your Hoppaz code</title>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500&family=DM+Mono:wght@500&family=Poppins:wght@900&display=swap" rel="stylesheet">
   <style>
     body { margin: 0; padding: 0; background: #0E0B0A; }
@@ -24,7 +26,7 @@
 </head>
 <body style="margin:0;padding:0;background:#0E0B0A;">
   <!-- Preview line in the inbox -->
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">One tap to confirm your email. Then you're on the bus.</div>
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your code is {{ .Token }}. Type it into Hoppaz and you're on the bus.</div>
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0E0B0A;">
     <tr>
@@ -44,31 +46,26 @@
           <tr>
             <td class="card" style="background:#171210;border:1px solid #2E2320;border-top:3px solid #FF4D00;border-radius:14px;padding:36px 32px;">
               <p style="margin:0 0 14px;font-family:'DM Mono',ui-monospace,Menlo,monospace;font-size:11px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;color:#9C9087;">
-                Confirm your email
+                Your sign-in code
               </p>
               <h1 class="title" style="margin:0 0 14px;font-family:Poppins,Arial,sans-serif;font-weight:900;font-size:32px;line-height:1.1;letter-spacing:-0.01em;color:#F5EBDD;">
-                One tap and you're on the bus.
+                Six digits and you're on the bus.
               </h1>
               <p style="margin:0 0 28px;font-family:Archivo,Arial,sans-serif;font-size:16px;line-height:1.55;color:#F5EBDD;">
-                {{ if .Data.name }}Hey {{ .Data.name }}, welcome{{ else }}Welcome{{ end }} to Hoppaz. Confirm this is your email so we can keep your WE OUTSIDE list, your crews and your rewards safe.
+                {{ if .Data.name }}Hey {{ .Data.name }}, welcome{{ else }}Welcome{{ end }} to Hoppaz. Type this code into Hoppaz to confirm your email, so we can keep your WE OUTSIDE list, your crews and your rewards safe.
               </p>
 
-              <!-- Button: orange with the ember lip, like the app -->
+              <!-- The code: big, spaced, easy to copy. Orange with the ember lip, like the app's buttons. -->
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td align="center" style="border-radius:12px;background:#FF4D00;box-shadow:0 3px 0 #B83600;">
-                    <a href="{{ .ConfirmationURL }}" style="display:block;padding:16px 20px;font-family:Poppins,Arial,sans-serif;font-weight:900;font-size:15px;letter-spacing:0.04em;text-transform:uppercase;color:#0E0B0A;text-decoration:none;border-radius:12px;">
-                      Confirm my email
-                    </a>
+                  <td align="center" style="border-radius:12px;background:#FF4D00;box-shadow:0 3px 0 #B83600;padding:18px 12px;">
+                    <span style="display:block;font-family:'DM Mono',ui-monospace,Menlo,Consolas,monospace;font-weight:500;font-size:38px;line-height:1;letter-spacing:0.3em;padding-left:0.3em;color:#0E0B0A;">{{ .Token }}</span>
                   </td>
                 </tr>
               </table>
 
-              <p style="margin:28px 0 6px;font-family:Archivo,Arial,sans-serif;font-size:13px;line-height:1.5;color:#9C9087;">
-                Button not working? Paste this into your browser:
-              </p>
-              <p style="margin:0;font-family:'DM Mono',ui-monospace,Menlo,monospace;font-size:12px;line-height:1.5;word-break:break-all;">
-                <a href="{{ .ConfirmationURL }}" style="color:#FF4D00;text-decoration:underline;">{{ .ConfirmationURL }}</a>
+              <p style="margin:28px 0 0;font-family:Archivo,Arial,sans-serif;font-size:13px;line-height:1.5;color:#9C9087;">
+                It works for one hour. Never share it: Hoppaz will never ask you for it.
               </p>
             </td>
           </tr>
