@@ -47,7 +47,7 @@ function at(iso: string, tz: string) {
 }
 
 /** The words of the date row and the big date: "Friday, 30 October" and "8:00 PM to 11:00 PM · GMT+1". */
-function whenWords(e: R1Event) {
+export function whenWords(e: R1Event) {
   const tz = e.timezone || "Africa/Lagos";
   const a = at(e.starts_at, tz);
   const b = e.ends_at && Date.parse(e.ends_at) > Date.parse(e.starts_at) ? at(e.ends_at, tz) : null;
