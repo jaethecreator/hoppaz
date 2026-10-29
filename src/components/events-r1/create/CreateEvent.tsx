@@ -447,21 +447,6 @@ function PostAs({ f, onNewRoom }: { f: EventFormState; onNewRoom: (from?: "event
   );
 }
 
-/** The way to a room from the event creator on a phone, in the open (Post as only has "+ New room" inside a menu). */
-function RoomNudge({ onNewRoom }: { onNewRoom: (from?: "event") => void }) {
-  return (
-    <div className="t-card flex items-center gap-3 p-3">
-      <IconTile>
-        <Users />
-      </IconTile>
-      <span className="min-w-0 flex-1 font-body text-[13px] text-t-muted">Want a home for all your events? Make a room instead.</span>
-      <button type="button" onClick={() => onNewRoom()} className="min-h-[40px] flex-none rounded-hz border border-t-line px-3 font-body text-[13px] font-bold">
-        Create a room
-      </button>
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ the screen -- */
 
 /**
@@ -552,9 +537,6 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: (from?: "event")
           <div className="mb-6 flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <PostAs f={f} onNewRoom={onNewRoom} />
-              <button type="button" onClick={() => onNewRoom()} className="min-h-[40px] font-body text-[13.5px] font-bold text-t-accent">
-                Create a room instead
-              </button>
             </div>
             <label className="flex items-center gap-2">
               <span className="font-body text-[13px] text-t-muted">Who can see it</span>
@@ -667,7 +649,6 @@ export default function CreateEvent({ onNewRoom }: { onNewRoom: (from?: "event")
                 </div>
               ))}
             </div>
-            <RoomNudge onNewRoom={onNewRoom} />
             {errorLine}
           </div>
           <div className="sticky bottom-0 z-30 border-t border-t-line bg-t-bar px-4 pb-3 pt-3 backdrop-blur">

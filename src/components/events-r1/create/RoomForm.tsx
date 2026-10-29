@@ -50,7 +50,7 @@ const joinModeOf = (v: unknown): JoinMode => (v === "ask" || v === "invite" ? v 
  * the room and its look, then the done sheet ("Bring your N guests in", the to-do list, Open my room).
  * Every Release 1 rule of the old form is kept: the sign up wall, the draft, and making the room at once after sign up.
  */
-export default function RoomForm({ onSwitch, fromEvent }: { onSwitch: () => void; fromEvent?: boolean }) {
+export default function RoomForm({ fromEvent }: { fromEvent?: boolean }) {
   const router = useRouter();
   const api = useR1Api();
   // What was typed before a reload or a trip out to Google (see draft.ts). Read once.
@@ -430,9 +430,6 @@ export default function RoomForm({ onSwitch, fromEvent }: { onSwitch: () => void
     <div className="mx-auto max-w-[1180px] px-8 pb-16 pt-6">
       <div className="mb-4 flex items-center justify-between gap-4">
         <b className="font-display text-[18px] font-extrabold">New room</b>
-        <button type="button" onClick={onSwitch} className="min-h-[40px] font-body text-[13.5px] font-bold text-t-accent">
-          Create an event instead
-        </button>
       </div>
       <Banner look={fullLook} setLook={setLook} wide />
       <div className="pointer-events-none [&_a]:pointer-events-auto [&_button]:pointer-events-auto [&_input]:pointer-events-auto relative z-10 -mt-[62px] flex items-end gap-6 px-1">
@@ -507,9 +504,6 @@ export default function RoomForm({ onSwitch, fromEvent }: { onSwitch: () => void
         {settings}
         {aboutBox}
         {tabs}
-        <button type="button" onClick={onSwitch} className="min-h-[44px] justify-self-start font-body text-[14px] font-bold text-t-accent">
-          Making an event instead? Create an event
-        </button>
         {errorLine}
       </div>
       <div className="sticky bottom-0 z-30 border-t border-t-line bg-t-bar px-4 pb-3 pt-3 backdrop-blur">

@@ -41,7 +41,7 @@ export default function CreatePage() {
     );
   return (
     <div className="h-full overflow-y-auto">
-      <RoomForm onSwitch={() => pickMode("event")} fromEvent={fromEvent} />
+      <RoomForm fromEvent={fromEvent} />
     </div>
   );
 }
