@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
@@ -10,12 +10,49 @@ import PageHeader from "@/components/app/PageHeader";
 import { CrewLogo } from "@/components/crew-room/HubHeader";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import { useR1Api, useR1Auth, useRooms } from "@/lib/events-r1/hooks";
-import type { EventChat, RoomSummary } from "@/lib/events-r1/types";
+import type { EventChat, RoomNotice, RoomSummary } from "@/lib/events-r1/types";
 import CreateButton from "../CreateButton";
 import SignInSheet from "../SignInSheet";
 import { closesWord, enterPath, memberWord, roomPath, walkable } from "./words";
 
 const tab = "min-h-[44px] flex-1 rounded-hz border px-4 font-display text-[14px] font-bold";
+
+/** "You are in <room>": a quiet notice when a room's owner approved the viewer's request to join. Seen once, then gone. */
+function Notices() {
+  const api = useR1Api();
+  const { user } = useR1Auth();
+  const [notes, setNotes] = useState<RoomNotice[]>([]);
+  useEffect(() => {
+    if (!api || !user) return setNotes([]);
+    let live = true;
+    void api.rooms.notices().then((n) => live && setNotes(n)).catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [api, user]);
+  if (!api || !notes.length) return null;
+  const dismiss = (n: RoomNotice) => {
+    setNotes(notes.filter((x) => x.id !== n.id));
+    void api.rooms.markNoticesSeen([n.id]);
+  };
+  return (
+    <div className="mb-4 grid gap-2" data-room-notices>
+      {notes.map((n) => (
+        <div key={n.id} className="card flex items-center gap-3 font-body text-[14px]">
+          <span className="min-w-0 flex-1">
+            You are in <b>{n.room_name}</b>. Your request was approved.
+          </span>
+          <Link href={`/rooms/${encodeURIComponent(n.room_slug)}`} onClick={() => dismiss(n)} className="btn min-h-[40px] normal-case">
+            Open
+          </Link>
+          <button type="button" onClick={() => dismiss(n)} className="min-h-[40px] px-2 font-body text-[13px] text-dim">
+            Dismiss
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /**
  * Release 1 ROOMZ tab (flag on): Lagos HQ pinned at the top, then Mine (your roomz and their event chats) or Discover.
@@ -37,6 +74,7 @@ export default function RoomzTab() {
     <div className="h-full overflow-y-auto px-4 pb-28">
       <div className="mx-auto w-full max-w-[560px]">
         <PageHeader title="ROOMZ" className="pb-3" />
+        <Notices />
         <div role="tablist" aria-label="Roomz" className="mb-4 flex gap-2">
           {(["mine", "discover"] as const).map((v) => (
             <button

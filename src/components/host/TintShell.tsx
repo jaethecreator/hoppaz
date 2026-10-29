@@ -47,7 +47,9 @@ export function useLookStyle(look: Look, tint?: Tint): CSSProperties {
 /** The pack's background behaviour, behind the content. Minimal draws nothing. */
 export function PackLayer({ pack }: { pack: Look["pack"] }) {
   if (pack === "minimal") return null;
-  return <div aria-hidden className={`pack-layer pack-${pack}`} />;
+  // Whole class names written out so Tailwind keeps them (a built-up name gets purged from the CSS).
+  const cls = { glow: "pack-glow", confetti: "pack-confetti", detty: "pack-detty", owambe: "pack-owambe" }[pack as string] ?? "";
+  return <div aria-hidden className={`pack-layer ${cls}`} />;
 }
 
 /** A host surface: tinted variables, the page colour, and the pack behind it. */

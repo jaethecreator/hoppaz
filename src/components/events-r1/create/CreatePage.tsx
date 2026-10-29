@@ -1,20 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import PageHeader from "@/components/app/PageHeader";
 import CreateEvent from "./CreateEvent";
-import { Choice } from "./Fields";
 import RoomForm from "./RoomForm";
 import { patchDraft, readDraft } from "./draft";
 
 /**
  * + Create. An event opens the redesigned create screen (CreateEvent: random Hoppaz cover, tinted page, look, tickets, 2D
- * room). A room keeps the Release 1 form until Create a room is rebuilt (build brief section 13). "+ New room" from Post as,
- * and "Set up my room" after creating, switch here.
+ * room). A room opens Create a room (RoomForm: the room profile in edit mode, tinted from its logo, build brief section 13).
+ * "+ New room" from Post as, and "Set up my room" after creating an event, switch here; each screen has its own way back.
  */
 export default function CreatePage() {
   const [mode, setMode] = useState<"event" | "room">("event");
   const [restored, setRestored] = useState(false);
+  // "Set up my room" from the event's done sheet: the room's name starts as the host's own.
+  const [fromEvent, setFromEvent] = useState(false);
   useEffect(() => {
     const d = readDraft();
     // ?mode= is the page that was asked for (Events' Create is event, Roomz' Create is room): it beats whatever the draft last held.
@@ -25,7 +25,8 @@ export default function CreatePage() {
     if (asked === "event" || asked === "room") patchDraft({ mode: asked, ...(d.pending && d.pending !== asked ? { pending: null } : {}) });
     setRestored(true);
   }, []);
-  const pickMode = (m: "event" | "room") => {
+  const pickMode = (m: "event" | "room", from?: "event") => {
+    setFromEvent(m === "room" && from === "event");
     setMode(m);
     patchDraft({ mode: m });
     // Keep the address true to the page, so a reload (or the return from Google) opens the same kind.
@@ -35,25 +36,12 @@ export default function CreatePage() {
   if (mode === "event")
     return (
       <div className="h-full overflow-y-auto">
-        <CreateEvent onNewRoom={() => pickMode("room")} />
+        <CreateEvent onNewRoom={(from) => pickMode("room", from)} />
       </div>
     );
   return (
-    <div className="h-full overflow-y-auto px-4 pb-10">
-      <div className="mx-auto w-full max-w-xl">
-        <PageHeader title="Create" back="/" className="pb-3" />
-        <Choice
-          label="What to create"
-          value={mode}
-          options={[
-            { value: "event", label: "Event" },
-            { value: "room", label: "Roomz" },
-          ]}
-          onChange={pickMode}
-          className="mb-5"
-        />
-        <RoomForm />
-      </div>
+    <div className="h-full overflow-y-auto">
+      <RoomForm onSwitch={() => pickMode("event")} fromEvent={fromEvent} />
     </div>
   );
 }

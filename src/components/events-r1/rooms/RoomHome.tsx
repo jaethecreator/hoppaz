@@ -61,6 +61,8 @@ function Home({ room }: { room: RoomSummary }) {
     setBusy(true);
     try {
       await api.rooms.join(room.id);
+    } catch {
+      /* declined or invite only: the button stays as it is */
     } finally {
       setBusy(false);
     }
@@ -81,8 +83,8 @@ function Home({ room }: { room: RoomSummary }) {
               </Link>
             )
           ) : (
-            <button type="button" className="btn mt-4 w-full text-[15px] normal-case" onClick={join} disabled={busy || !api} data-join>
-              <DoorOpen size={18} aria-hidden /> Join
+            <button type="button" className="btn mt-4 w-full text-[15px] normal-case" onClick={join} disabled={busy || !api || room.request === "pending"} data-join>
+              <DoorOpen size={18} aria-hidden /> {room.request === "pending" ? "Requested" : room.join_mode === "ask" ? "Ask to join" : "Join"}
             </button>
           )}
 

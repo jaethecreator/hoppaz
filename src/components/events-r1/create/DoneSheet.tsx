@@ -11,7 +11,7 @@ import { copyText, eventUrl } from "../page/share";
  * After creating (build brief section 11, "The room push"). The room comes first and loudest: a host with a room invites it,
  * a host who posted as themselves is asked "Where do your guests go after the night?". The rest is optional.
  */
-export default function DoneSheet({ event, roomName, onNewRoom }: { event: R1Event; roomName: string | null; onNewRoom: () => void }) {
+export default function DoneSheet({ event, roomName, onNewRoom }: { event: R1Event; roomName: string | null; onNewRoom: (from?: "event") => void }) {
   const router = useRouter();
   const api = useR1Api();
   const [pop, setPop] = useState(false);
@@ -100,7 +100,7 @@ export default function DoneSheet({ event, roomName, onNewRoom }: { event: R1Eve
               </div>
             ))}
           </div>
-          <button type="button" className="lip mt-1 w-full !min-h-[50px]" onClick={onNewRoom}>
+          <button type="button" className="lip mt-1 w-full !min-h-[50px]" onClick={() => onNewRoom("event")}>
             Set up my room
           </button>
           <button type="button" className="py-1.5 font-body text-[14px] font-semibold text-t-muted" onClick={() => router.push(`/event/${event.slug || event.id}`)}>

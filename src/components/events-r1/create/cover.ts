@@ -72,3 +72,45 @@ export async function uploadCoverFile(file: File): Promise<string> {
   if (error) throw new Error(/row-level|policy|permission|unauthori/i.test(error.message) ? "Sign in with your email to add a cover." : "The upload didn't go through. Try again.");
   return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
 }
+
+/* -------------------------------------------------------------------------- room logos -- */
+
+/** A kept logo is small: the fake layer holds it in localStorage and sessionStorage. */
+const MAX_LOGO_DATA_BYTES = 120 * 1024;
+const LOGO_SIDES = [512, 384, 256, 192];
+
+/**
+ * A picked logo as a small square JPEG data URL (the middle square, up to 512 px). Fake data keeps it as it is; real data keeps it as the
+ * preview until Create room, then sends it with uploadRoomLogo (a guest cannot upload, so nothing is sent before the sign up).
+ */
+export async function logoFromFile(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) throw new Error("That is not a picture. Pick an image.");
+  if (file.size > MAX_PICK_BYTES) throw new Error("That picture is too big. Pick one under 20 MB.");
+  for (const max of LOGO_SIDES) {
+    const blob = await toJpeg(file, { max, square: true });
+    if (blob.size <= MAX_LOGO_DATA_BYTES) return toDataUrl(blob);
+  }
+  throw new Error("That picture is too big. Try another.");
+}
+
+/**
+ * Real data: a logo (a data URL from logoFromFile, or a link already uploaded) as a public link into crew-images/room-logos/<my user id>/
+ * (events_r1_room_profile.sql adds the three storage policies). A link is returned as it is.
+ */
+export async function uploadRoomLogo(logo: string): Promise<string> {
+  if (!logo.startsWith("data:")) return logo;
+  const sb = getSupabase();
+  if (!sb) throw new Error("No connection. Try again.");
+  let { data: userData } = await sb.auth.getUser();
+  if (!userData.user) {
+    const refreshed = await sb.auth.refreshSession();
+    userData = { user: refreshed.data.user };
+  }
+  const uid = userData.user?.id;
+  if (!uid) throw new Error("Sign in to add a logo.");
+  const blob = await (await fetch(logo)).blob();
+  const path = `room-logos/${uid}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+  const { error } = await sb.storage.from(BUCKET).upload(path, blob, { contentType: "image/jpeg", upsert: false, cacheControl: "31536000" });
+  if (error) throw new Error(/row-level|policy|permission|unauthori/i.test(error.message) ? "Sign in with your email to add a logo." : "The upload didn't go through. Try again.");
+  return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+}
