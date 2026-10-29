@@ -322,7 +322,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
 
   let action: React.ReactNode;
   if (viewer?.isHost) action = <div className="t-adopt"><HostStrip event={event} viewer={viewer} /></div>;
-  else if (viewer?.registration) action = <div className="t-adopt"><StatusCard event={event} viewer={viewer} /></div>;
+  else if (viewer?.registration) action = <div className="t-adopt"><StatusCard event={event} viewer={viewer} fresh={t.flow.justDone} /></div>;
   else action = <TicketCard t={t} anchor={anchor} />;
 
   return (

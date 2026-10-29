@@ -8,15 +8,15 @@ import JoinCall from "./JoinCall";
 import { hasOnline } from "./link";
 import { eventUrl, shareOrCopy } from "./share";
 import { startsIn } from "./time";
-import TicketStub from "./TicketStub";
+import YoureGoing from "./YoureGoing";
 
 const ROW = "btn btn-ghost w-full justify-start gap-2.5 normal-case";
 
 /**
- * Where the Register button turns into once you have done something: You're going (the long ticket stub: countdown, QR, calendar, chat; then the call,
- * invite, cancel), Pending (the host's message), On the waitlist (your place) or Declined.
+ * Where the Register button turns into once you have done something: You're going (the host's room card, the long ticket stub with countdown
+ * and QR, Add to calendar and Event chat; then the call, invite, cancel; the big "You're going" header only right after registering here), Pending (the host's message), On the waitlist (your place) or Declined.
  */
-export default function StatusCard({ event, viewer }: { event: R1Event; viewer: ViewerState }) {
+export default function StatusCard({ event, viewer, fresh = false }: { event: R1Event; viewer: ViewerState; fresh?: boolean }) {
   const reg = viewer.registration;
   const api = useR1Api();
   const now = useR1Now();
@@ -76,9 +76,10 @@ export default function StatusCard({ event, viewer }: { event: R1Event; viewer: 
   return (
     <div className={going ? "" : "rounded-hz border border-line bg-ink-3 p-4"}>
       {going ? (
-        <TicketStub
+        <YoureGoing
           event={event}
           reg={reg}
+          header={fresh}
           cover={false}
           qr={event.kind !== "online"}
           kicker={reg.status === "checked_in" ? undefined : [startsIn(event, now), online ? "Online" : ""].filter(Boolean).join(" · ")}
