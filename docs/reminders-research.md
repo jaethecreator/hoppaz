@@ -29,7 +29,7 @@ Naira figures use about ₦1,400 to the dollar (the official rate was ₦1,344 a
 | Provider | Free | 1,000 a month | 10,000 a month | 100,000 a month | Setup | Notes |
 |---|---|---|---|---|---|---|
 | **Resend** | 3,000 a month, **100 a day**, 3 domains | $0 if under 100 a day | $20 (Pro, 50k) | $35 (Pro, 100k) | Easy: one domain, DNS records, Node SDK | Pro overage $0.90 per 1,000. Batch API sends 100 per call. Already the planned auth SMTP. |
-| Amazon SES | No standing free quota. New AWS accounts get up to $200 credits | $0.10 | $1 | $10 | Hardest: AWS account, leave the sandbox (a request), DNS, bounce handling yourself | $0.10 per 1,000 on the pay-as-you-go plan. Cheapest at volume. |
+| Amazon SES | No standing free quota. New AWS accounts get up to $200 credits | $0.10 | $1 | $10 | Hardest: AWS account, leave the sandbox (a request, first answer within 96 hours), DNS, bounce handling yourself | $0.10 per 1,000 only on "a la carte". New accounts start on the Essentials plan at $0.16 per 1,000, so switch on day one (it takes effect at once). In the sandbox: verified addresses only, 200 a day. Cheapest at volume. |
 | Postmark | 100 a month | $15 | $15 | about $126 to $134 | Easy | Best known for inbox placement. Overage $1.20 to $1.80 per 1,000. |
 | Mailgun | 100 a day | $0 | $15 (Basic) | about $100 (Foundation $35 for 50k plus overage) | Medium | Overage "from" $1.30 to $1.80. |
 | Brevo | 300 a day (about 9,000 a month) with a "Sent with Brevo" footer, once Brevo approves the account | $0 | Starter $10.80 for 5,000 (the price Jae saw on 30 Oct), so 10,000 costs more | not confirmed, likely well above Resend | Medium | Works out to $2.16 per 1,000, about 5 times Resend Pro's $0.40. All plans include the transactional API and SMTP. |
