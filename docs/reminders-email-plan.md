@@ -1,6 +1,6 @@
-# Reminders: how sending will work (plan)
+# Reminders by email: draft plan
 
-Written 30 Oct 2026 for Jae, after his picks. The research and prices are in `docs/reminders-research.md`. Nothing here is built yet.
+Written 30 Oct 2026 for Jae, after his picks. The research and prices are in `docs/reminders-research.md`. Nothing here is built yet. The WhatsApp side is in `docs/reminders-whatsapp-plan.md`.
 
 ## Jae's picks
 
@@ -98,7 +98,7 @@ something happens                         every minute (pg_cron)
         +-- email: router picks the provider with room left today
         |          Brevo (cap 300) -> Mailjet (cap 100)
         |          a provider error or limit: try the next one
-        +-- WhatsApp: Meta Cloud API (section 4)
+        +-- WhatsApp: Meta Cloud API (WhatsApp draft)
         +-- push: the existing web push
         +-- in-app: already the Pops and the event page
         v
@@ -132,69 +132,16 @@ sign-in code:  Supabase Auth -> Send Email Hook -> /api/auth/send-email
 - In fake mode (`NEXT_PUBLIC_EVENTS_R1_FAKE=1`), a `log` provider writes to the console and `notify_sends`, and nothing real goes out.
 - Keys only in Vercel.
 
-## 4. The WhatsApp bot, built cheaply
-
-What Luma's does:
-- reminders and blasts as templates, from one number;
-- STOP and START;
-- X to leave one host;
-- only to the phone linked to the account.
-
-Ours is a small version of that.
-
-**No BSP and no AI.** Meta Cloud API direct, one number, and one Next.js route on Vercel. It costs nothing beyond Meta's per-message fee.
-- Meta's AI agent option is $2 per million tokens, about 4 to 5 cents a reply.
-- A keyword bot is free.
-
-**Two routes:**
-- `POST /{phone-number-id}/messages` to send templates and replies.
-- `/api/whatsapp/hook` for Meta's webhook:
-  - `GET` answers Meta's setup check;
-  - `POST` receives messages and delivery statuses;
-  - every call is checked against the `X-Hub-Signature-256` signature.
-
-**Opt-in, cheapest first:**
-1. **"Get my ticket on WhatsApp"** on the ticket page and in G1.
-   - It opens `wa.me/<our number>?text=TICKET%20<short code>`, the guest taps Send, and the code links that WhatsApp number to their account.
-   - We get a proven number (no typos, no paying for wrong numbers) and clear consent from the guest's own action.
-   - A free 24-hour window opens, so the ticket reply costs nothing (inside 1,000 free replies a month per number).
-2. **A switch at checkout,** unticked, with the phone field (After You Pay adds the phone). We store when and how they agreed. These numbers aren't proven until the first message is delivered.
-
-**What the bot understands:**
-
-| They send | We do | Cost |
-|---|---|---|
-| `TICKET` (or the code from the link) | Link the number, then reply with their next ticket as a link (and a QR image) | free in the window |
-| Tap "I'm coming" (button on the day-before message) | Mark them confirmed, reply "See you there", and send the hour-before reminder later as a free reply | free in the window |
-| Tap "Can't make it" | Ask "Free up your spot?" with Yes / No. Yes cancels and the waitlist moves. | free in the window |
-| `STOP` | WhatsApp off for every host, then confirm | free |
-| `START` | WhatsApp back on | free |
-| `HELP` or anything else | "This number sends your Hoppaz tickets and reminders. Reply TICKET for your tickets, STOP to stop." | free in the window |
-
-**Templates to submit (utility, no promotion):**
-
-| Template | Wording | When we pay |
-|---|---|---|
-| `hoppaz_day_before` | "{event} is tomorrow at {time}, {venue}." with buttons "I'm coming", "Can't make it" and "View ticket" | **the one paid message per guest**, $0.0067 |
-| `hoppaz_ticket` | "You're going to {event}, {date} at {time}. Your ticket: {link}" | only for checkout opt-ins who never messaged us |
-| `hoppaz_event_changed` | "{event} has changed: now {date} at {time}, {venue}." | only when it happens |
-| `hoppaz_event_cancelled` | "{event} on {date} is cancelled. {refund line}" | only when it happens |
-
-The hour-before reminder is never a paid template. It goes only as a free reply when the guest tapped a button in the last 24 hours. Every template ends with "Reply STOP to stop".
-
-**Costs are logged exactly.** Meta's delivery status says whether a message was billable and in which category. We write that into `notify_sends.cost_usd` and add it up for the monthly budget cap. At the cap, WhatsApp stops and those guests get email and push only.
-
-**Effort:** about 2 to 3 days of code (hook, linking, bot, templates, budget cap) once Jae has the Meta pieces: verified business, number, display name, card, token.
-
-## 5. Build order
+## 4. Build order
 
 1. Tables and the sending layer with the `log` provider (fake mode): queue, router, caps, priority, send log, tests.
 2. Brevo and Mailjet for guest emails: G1 to G14 first, then G15 and H1.
 3. Send Email Hook with Mailtrap and Mailjet for codes, plus the Google-first sign-in sheet.
 4. Unsubscribe page, Account notification settings, provider webhooks.
 5. The Pops tab shows the channels each Pop went out on and how many people it reached.
-6. WhatsApp: hook, opt-in link, bot, templates, budget cap. This waits for Meta.
-7. SES as a provider, when AWS approves.
+6. SES as a provider, when AWS approves.
+
+WhatsApp plugs into the same queue and send log (see the WhatsApp draft).
 
 ## What Jae does (today, for email)
 
