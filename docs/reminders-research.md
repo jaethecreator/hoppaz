@@ -32,7 +32,8 @@ Naira figures use about ₦1,400 to the dollar (the official rate was ₦1,344 a
 | Amazon SES | No standing free quota. New AWS accounts get up to $200 credits | $0.10 | $1 | $10 | Hardest: AWS account, leave the sandbox (a request), DNS, bounce handling yourself | $0.10 per 1,000 on the pay-as-you-go plan. Cheapest at volume. |
 | Postmark | 100 a month | $15 | $15 | about $126 to $134 | Easy | Best known for inbox placement. Overage $1.20 to $1.80 per 1,000. |
 | Mailgun | 100 a day | $0 | $15 (Basic) | about $100 (Foundation $35 for 50k plus overage) | Medium | Overage "from" $1.30 to $1.80. |
-| Brevo | 300 a day (about 9,000 a month) with Brevo branding | $0 | about $9 to $25 | not confirmed | Medium | The official pricing page wouldn't load for me. These figures are from 2026 reviews that disagree, so treat them as rough. |
+| Brevo | 300 a day (about 9,000 a month) with a "Sent with Brevo" footer, once Brevo approves the account | $0 | Starter $10.80 for 5,000 (the price Jae saw on 30 Oct), so 10,000 costs more | not confirmed, likely well above Resend | Medium | Works out to $2.16 per 1,000, about 5 times Resend Pro's $0.40. All plans include the transactional API and SMTP. |
+| SendGrid (Twilio) | 60-day trial, 100 a day | $19.95 (Essentials, starting price) | $19.95 | not stated | Easy | Pro starts at $89.95. Tix Africa uses it. |
 | ZeptoMail (Zoho) | First credit free (10,000 emails, lasts 6 months) | $0 | $0 | price not shown on the page I read | Medium | Transactional only, priced in prepaid credits of 10,000. Worth a look later if cost matters. |
 | Supabase | No transactional email product | n/a | n/a | n/a | n/a | The built-in mailer is for testing: 2 an hour, team members only. Supabase says to set custom SMTP before production and names Resend, SES, Postmark, SendGrid, ZeptoMail and Brevo. |
 
