@@ -3,12 +3,48 @@
 Written 29 Oct 2026 for Jae. Part 1 only: nothing is built yet. Prices were checked against the official pages on 29 Oct 2026 unless a line says otherwise.
 Naira figures use about ₦1,400 to the dollar (the official rate was ₦1,344 and the parallel rate ₦1,404 on 20 Aug 2026; check the day you pay).
 
-## The short answer
+## The plan: the most reach for the least money (revised 30 Oct)
 
-- **Email: Resend.** Free while we test, then Pro at $20 a month from the first real event. $35 a month covers Detty December.
-- **WhatsApp: Meta's Cloud API directly, with no BSP.** Reminders are utility templates at $0.0067 each in Nigeria (about ₦9.40). That comes to about ₦28 per guest for a confirmation and two reminders.
-- **Detty December (50 events, 10,000 guests), everyone on both channels:** about $236 a month (about ₦330,000). WhatsApp is $201 of that.
-- **The long pole is Meta business verification, not code.** Until Hoppaz is verified, WhatsApp can reach only 250 people a day, which is less than one 300-guest event's reminder. Start this week. If it isn't done by 1 Dec, we launch with email and add WhatsApp when it lands.
+Jae's brief: get the most results for the least spend. This replaces the first recommendation (Resend Pro, plus 3 WhatsApp messages a guest), which would have cost about $236 a month in Detty December.
+
+**The principle:** the free channels carry every message. WhatsApp, the only one that costs real money, carries just the one message that matters most.
+
+| Moment | In-app | Web push | Email | WhatsApp |
+|---|---|---|---|---|
+| Confirmation and ticket | yes | yes | yes | no, unless the guest taps "Get my ticket on WhatsApp", which makes our reply free |
+| "You're in" (approval events) | yes | yes | yes | no |
+| Day before | yes | yes | yes | **yes: the one paid message**, with buttons "I'm coming" and "Can't make it" |
+| About an hour before | yes | yes | yes | only if the guest tapped a button (the reply is then free) |
+| Host Pops | yes | yes | yes | no (later, on host-paid credits) |
+
+**Email on Amazon SES** ($0.10 per 1,000 on the a la carte plan) instead of Resend Pro:
+- About $6 for all of Detty December instead of $35.
+- AWS gives new accounts up to $200 in credits, so the first months are effectively free.
+- The cost is one-time setup: about half a day of bounce handling (my work) and AWS's review to leave the sandbox (up to 96 hours).
+- Resend's free plan covers development and testing while we wait. Sign-in codes move to SES too.
+
+**WhatsApp: one paid message per guest, not three.** That's a utility template the day before, at $0.0067 (about ₦9.40). Its two buttons pay for themselves:
+- When a guest taps "I'm coming" or "Can't make it", a free 24-hour window opens. The hour-before reminder then goes as a free reply, within 1,000 free replies a month per number.
+- "Can't make it" releases the spot to the waitlist and gives the host a real headcount. That's more results, not just less spend.
+
+**Never pay for a message that does nothing:**
+- No reminders to people who have cancelled or already checked in.
+- No day-before message to someone who registered in the last 12 hours, because their confirmation is still fresh.
+- WhatsApp only for people who switched it on.
+
+**A monthly budget cap** in the sending layer. When WhatsApp spend hits the cap Jae sets (for example $50), WhatsApp stops and those guests get email and push only. We can never get a surprise bill.
+
+**Cost at three sizes** (60% of guests switch on WhatsApp):
+
+| Guests a month | Email on SES | WhatsApp | Total | The first plan |
+|---|---|---|---|---|
+| 1,000 | $0.60 | $4 | **about $5 (₦7,000)** | $40 |
+| 10,000 (Detty December) | $6 | $40 | **about $46 (₦65,000)** | $236 |
+| 100,000 | $60 | $402 | **about $462 (₦650,000)** | $2,370 |
+
+While the AWS credits last, the email column is $0. If every guest switched on WhatsApp, Detty December would be about $73.
+
+**Still true:** Meta business verification is the long pole. Without it WhatsApp reaches only 250 people a day. Start it this week. If it isn't done by 1 Dec, we launch on email, push and in-app, and add WhatsApp when it lands.
 
 ## What exists today (checked in the code)
 
@@ -161,6 +197,8 @@ Web push and in-app cost nothing. WhatsApp comes to about ₦28 a guest, which i
 
 ## Recommended setup and the smallest launch version
 
+The first version, kept for reference. The plan at the top replaces its channel choices: SES instead of Resend Pro, and one paid WhatsApp message instead of three. The plumbing below stays the same.
+
 **For 1 Dec:**
 
 **Channels:**
@@ -182,6 +220,8 @@ Web push and in-app cost nothing. WhatsApp comes to about ₦28 a guest, which i
 - An SMS fallback for people without WhatsApp.
 
 ## What Jae has to do, and how long it takes
+
+On the revised plan, swap the Resend rows for: create an AWS account (needs a card that works for dollar billing), verify `hoppaz.fun` in SES (Ireland), ask to leave the sandbox (up to 96 hours), and switch to a la carte pricing. Keep a free Resend account for development.
 
 | Step | Who | Time |
 |---|---|---|
@@ -210,11 +250,12 @@ DNS shows who sends the email. It can't show the WhatsApp provider. None of the 
 
 ## Jae's picks
 
-1. Email: Resend (recommended), or another from the table?
+1. Email: Amazon SES (recommended for the least spend; Resend free for development), or Resend Pro for the simplest setup at about $30 more a month?
 2. WhatsApp: Cloud API direct (recommended), or a BSP?
-3. WhatsApp at launch for confirmation and 2 reminders only, with Pops on email, push and in-app (recommended)? Or WhatsApp Pops too, at Hoppaz's cost?
-4. WhatsApp opt-in: an unticked switch at checkout (recommended), "Tap to message us" later?
-5. Who checks the production SMTP and the Pops cron: Ola or Jae?
+3. WhatsApp: one paid message a guest (day before, with "I'm coming" and "Can't make it" buttons), the hour before only as a free reply (recommended)? Or all three paid?
+4. A monthly WhatsApp budget cap: how much? ($50 covers Detty December at 60% opt-in.)
+5. WhatsApp opt-in: an unticked switch at checkout (recommended), plus "Get my ticket on WhatsApp" for free replies?
+6. Who checks the production SMTP and the Pops cron: Ola or Jae?
 
 ## Sources (read 29 Oct 2026)
 
