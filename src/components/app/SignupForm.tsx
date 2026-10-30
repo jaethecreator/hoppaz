@@ -20,7 +20,7 @@ export default function SignupForm({
 }: {
   onDone: (how: "create" | "login") => void;
   startWith?: "create" | "login";
-  /** The new-account button's words (the waitlist card says JOIN THE WAITLIST). */
+  /** The new-account button's words. */
   createLabel?: string;
 }) {
   const [mode, setMode] = useState<"create" | "login">(startWith);
