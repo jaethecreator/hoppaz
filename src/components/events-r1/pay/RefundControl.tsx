@@ -39,7 +39,7 @@ export default function RefundControl({ order }: { order: Order }) {
   if (!open) {
     return (
       <div className="flex flex-col items-end gap-1">
-        <button type="button" onClick={() => setOpen(true)} className="btn btn-ghost min-h-[40px] px-5 normal-case">
+        <button type="button" onClick={() => setOpen(true)} className="lip-ghost !min-h-[44px] !px-3">
           {order.needs_manual_refund ? "Mark as refunded" : "Refund"}
         </button>
       </div>
@@ -47,14 +47,14 @@ export default function RefundControl({ order }: { order: Order }) {
   }
 
   return (
-    <div role="group" aria-label="Refund" className="rounded-hz border border-line bg-ink-3 p-3">
+    <div role="group" aria-label="Refund" className="rounded-hz border border-t-line bg-t-soft p-3">
       {bank ? (
-        <p className="font-body text-[14px]">Bank transfers cannot be refunded here. Pay the buyer back by bank, then mark it done.</p>
+        <p className="font-body text-[14px] text-t-text">Bank transfers cannot be refunded here. Pay the buyer back by bank, then mark it done.</p>
       ) : (
-        <p className="font-body text-[14px]">Refund {naira(order.gross_naira)} to the buyer&apos;s card? It comes off your earnings.</p>
+        <p className="font-body text-[14px] text-t-text">Refund {naira(order.gross_naira)} to the buyer&apos;s card? It comes off your earnings.</p>
       )}
       <div className="mt-2 flex gap-2">
-        <button type="button" onClick={() => setOpen(false)} disabled={busy} className="btn btn-ghost min-h-[40px] flex-none px-5 normal-case">
+        <button type="button" onClick={() => setOpen(false)} disabled={busy} className="lip-ghost !min-h-[44px] flex-none">
           Keep
         </button>
         {bank ? (
@@ -68,12 +68,12 @@ export default function RefundControl({ order }: { order: Order }) {
                 await api.pay.markManualRefundDone(order.id);
               })
             }
-            className="btn min-h-[40px] flex-1 normal-case"
+            className="lip !min-h-[44px] flex-1"
           >
             {busy ? "Saving" : "Mark as refunded"}
           </button>
         ) : (
-          <button type="button" disabled={busy} onClick={() => void run(async () => api?.pay.refund(order.id))} className="btn min-h-[40px] flex-1 normal-case">
+          <button type="button" disabled={busy} onClick={() => void run(async () => api?.pay.refund(order.id))} className="lip !min-h-[44px] flex-1">
             {busy ? "Refunding" : "Yes, refund"}
           </button>
         )}

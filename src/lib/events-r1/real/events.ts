@@ -5,6 +5,8 @@ import { client, emit, ready, rpc, rpcOk, rpcText, subscribe, userId, who } from
 import { cleanQuestions, mapEvent, mapRegistration } from "./map";
 import { eventIdOf, roomIdOf } from "./ids";
 import { CREATE_LIMIT } from "../constants";
+import { cleanLineup } from "../lineup";
+import { soft } from "./roomProfile";
 
 /** An id, or a slug the database also finds. */
 const key = (idOrSlug: string) => String(idOrSlug).trim();
@@ -40,9 +42,20 @@ export const events: EventsApi = {
   },
 
   async create(draft) {
-    const out = await rpcOk<{ event: Record<string, unknown> }>("ev_create_event", { p_draft: draft }, { try_again_later: CREATE_LIMIT });
+    const { room_id, ...rest } = draft;
+    // Post as a room the host is an admin of: make the event, then put it in the room (ev_create_event only posts into the room the host owns).
+    // Before ev_post_events_as_room is run the event goes to the host's own room if they own one, else stays their own.
+    const asRoom = room_id && draft.add_to_room !== false ? await roomIdOf(room_id) : null;
+    const out = await rpcOk<{ event: Record<string, unknown> }>("ev_create_event", { p_draft: asRoom ? { ...rest, add_to_room: false } : rest }, { try_again_later: CREATE_LIMIT });
+    let ev = mapEvent(out.event);
+    if (asRoom) {
+      const moved = await soft<{ ok?: boolean; moved?: number } | null>("ev_post_events_as_room", { p_room: asRoom, p_events: [ev.id] });
+      if (moved.missing) await rpcOk("ev_update_event", { p_event: ev.id, p_patch: { add_to_room: true } }).catch(() => undefined);
+      const again = await rpc<Record<string, unknown> | null>("ev_get_event", { p_id_or_slug: ev.id });
+      if (again) ev = mapEvent(again);
+    }
     emit();
-    return mapEvent(out.event);
+    return ev;
   },
 
   async update(id, patch) {
@@ -85,6 +98,21 @@ export const events: EventsApi = {
     // A guest (the app's anonymous session) has an auth.uid() but no account: the database says signedIn false for them, and so do we.
     await ready();
     return { ...(j as unknown as ViewerState), signedIn: j.signedIn === true && who() !== null, registration: j.registration ? mapRegistration(j.registration) : null };
+  },
+
+  /** supabase/events_r1_lineup.sql. Until it is run this answers empty, quietly. */
+  async getLineup(id) {
+    const r = await soft<unknown>("ev_get_lineup", { p_event: await eventIdOf(id) });
+    return cleanLineup(r.data as Parameters<typeof cleanLineup>[0]);
+  },
+
+  async setLineup(id, l) {
+    const r = await soft<string>("ev_set_lineup", { p_event: await eventIdOf(id), p_lineup: cleanLineup(l) });
+    if (r.missing) return; // the file is not run yet: nothing to save to, and nothing to scare the host with
+    if (r.data === "not_allowed") throw new Error("Not allowed");
+    if (r.data === "no_session") throw new Error("Sign in first");
+    if (r.data !== "ok") throw new Error("That did not work. Try again");
+    emit();
   },
 
   async getRegistrationSettings(id) {

@@ -15,8 +15,8 @@ import { errWord } from "./words";
 let seq = 0;
 const newQuestionId = () => `q-${Date.now().toString(36)}${(++seq).toString(36)}`;
 
-/** Registration: tickets, approval, capacity, waitlist, what we ask guests, what guests hear back. One Save. */
-export default function RegistrationTab({ event }: { event: R1Event }) {
+/** Tickets (the old Registration): tiers with a sold bar, approval, capacity, waitlist, what we ask guests, what guests hear back. One Save. */
+export default function TicketsTab({ event }: { event: R1Event }) {
   const { data: settings, loading, error } = useR1Query((a) => a.events.getRegistrationSettings(event.id), [event.id]);
   if (error) return <p className="hint">Could not load this.</p>;
   if (loading || !settings) return <p className="hint">Loading</p>;
@@ -79,7 +79,30 @@ function Form({ event, questions: q0, messages: m0 }: { event: R1Event; question
 
   return (
     <div className="flex flex-col gap-4">
-      <GetPaidCard returnPath={`/host/${encodeURIComponent(event.id)}?tab=registration`} />
+      <GetPaidCard returnPath={`/host/${encodeURIComponent(event.id)}?tab=tickets`} />
+
+      <section className="t-card p-4 lg:p-5" aria-label="Sold">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="font-body text-[16px] font-extrabold">Sold</h2>
+          <p className="font-body text-[13.5px] text-t-muted">{event.capacity === null ? "No total limit" : `${event.capacity} spots in total`}</p>
+        </div>
+        <ul className="mt-3 flex flex-col gap-3">
+          {event.ticket_types.map((t) => (
+            <li key={t.id} className="grid grid-cols-[minmax(0,7rem)_1fr] items-center gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,10rem)_1fr]">
+              <span className="truncate font-body text-[14.5px] font-bold">{t.name}</span>
+              <span className="min-w-0">
+                <span className="block h-1.5 overflow-hidden rounded-full bg-t-soft">
+                  <i className="block h-full rounded-full bg-t-accent" style={{ width: `${t.capacity ? Math.min(100, (t.sold / t.capacity) * 100) : t.sold > 0 ? 100 : 0}%` }} />
+                </span>
+                <span className="mt-1 block font-body text-[12.5px] text-t-muted">
+                  {t.sold} sold{t.capacity ? ` of ${t.capacity}` : ""}
+                  {t.price_naira > 0 ? ` · ₦${t.price_naira.toLocaleString("en-NG")}` : " · Free"}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <Section title="Tickets">
         <Tickets paid={paid} onPaid={touch(setPaid)} types={types} onTypes={touch(setTypes)} />

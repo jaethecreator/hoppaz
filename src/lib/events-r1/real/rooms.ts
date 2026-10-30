@@ -5,10 +5,12 @@
  * (crew_room_send to write), an event's chat is the `messages` table with the event id as its channel.
  */
 import type { RoomsApi } from "../api";
-import type { EventChat, RoomAnnouncement, RoomMessage, RoomSummary } from "../types";
+import type { EventChat, RoomAnnouncement, RoomMessage, RoomRole, RoomSummary } from "../types";
 import { client, emit, failText, reasonText, rpc, rpcText, shared, subscribe, userId, uuid, who } from "./core";
+import { events } from "./events";
 import { eventIdOf, roomIdOf } from "./ids";
 import { iso, mapAnnouncement, mapChat, mapMessage, mapPop, mapRoom } from "./map";
+import { profileApi, soft } from "./roomProfile";
 
 type Row = Record<string, unknown>;
 
@@ -47,7 +49,7 @@ async function desk<T>(json?: { room: string; on: boolean }): Promise<T> {
 
 /* ------------------------------------------------------------ my roles -- */
 
-/** My role in each room I am in, from the app's own membership table (readable for my own rows). owner | admin | member. */
+/** My role in each room I am in, from the app's own membership table (readable for my own rows). owner | admin | host | member. */
 async function roles(): Promise<Map<string, string>> {
   return shared("rooms.roles", 3000, async () => {
     const out = new Map<string, string>();
@@ -62,7 +64,11 @@ async function roles(): Promise<Map<string, string>> {
 /** What the database cannot say in one call: do I own it, may I post, and (Lagos HQ) who is in the room now. The 3D switch comes in the room's own answer. */
 function extras(roomId: string, role: Map<string, string>) {
   const r = role.get(roomId);
-  return { is_owner: r === "owner", can_post: !!r && r !== "member" };
+  // A host runs events and the door; announcements are for the owner and admins.
+  return {
+    is_owner: r === "owner", can_post: r === "owner" || r === "admin",
+    my_role: (r === "owner" || r === "admin" || r === "host" || r === "member" ? r : null) as RoomRole | null,
+  };
 }
 
 async function hqOnline(id: string): Promise<number> {
@@ -78,6 +84,7 @@ async function hqOnline(id: string): Promise<number> {
 const NO_HQ: RoomSummary = {
   id: "hq", slug: "hq", name: "Lagos HQ", kind: "hq", logo_url: null, wallpaper_url: null, members: 0, verified: true, joined: false,
   unread: 0, latest_announcement: null, is_owner: false, can_post: false, has_3d: false, three_d_on: false, online: 0,
+  about: "", links: {}, join_mode: "open", my_role: null, request: "none", pending_requests: 0,
 };
 
 type List = { hq: RoomSummary; mine: RoomSummary[]; discover: RoomSummary[]; eventChats: EventChat[] };
@@ -89,10 +96,13 @@ function loadList(): Promise<List> {
     const hqRow = j?.hq ?? null;
     const hq = hqRow ? mapRoom(hqRow, { ...extras(String(hqRow.id), role), online: await hqOnline(String(hqRow.id)) }) : NO_HQ;
     const room = (r: Row) => mapRoom(r, extras(String(r.id), role));
+    // Discover: open and ask rooms (ev_discover_rooms). ev_rooms_for_me only lists crews.visibility open, which leaves out ask rooms; until
+    // the new file is run its own list is used.
+    const disc = await soft<Row[]>("ev_discover_rooms");
     return {
       hq,
       mine: (j?.mine ?? []).map(room),
-      discover: (j?.discover ?? []).map(room),
+      discover: (disc.data ?? j?.discover ?? []).map(room),
       eventChats: (j?.eventChats ?? []).map(mapChat),
     };
   });
@@ -143,16 +153,28 @@ function chatError(message: string): Error {
 
 /* ------------------------------------------------------------------ api -- */
 
+/** The app's own create_crew: a name and open or private. Used only while ev_create_room is missing (see roomProfile.ts). */
+async function legacyCreate(name: string, mode: "open" | "ask" | "invite" | undefined): Promise<string> {
+  const { data, error } = await client().rpc("create_crew", { p_name: name, p_visibility: !mode || mode === "open" ? "open" : "private" });
+  if (error) throw chatError(error.message);
+  return String(data);
+}
+
+const profile = profileApi({ get: (id) => rooms.get(id), legacyCreate });
+
 export const rooms: RoomsApi = {
   async list() {
     const l = await loadList();
     return { hq: l.hq, mine: l.mine, discover: l.discover, eventChats: l.eventChats };
   },
 
-  async get(idOrSlug) {
+  async get(idOrSlug, opts) {
     const id = await roomIdOf(idOrSlug);
     if (!id) return null;
-    const j = await rpc<Row | null>("ev_room", { p_room: id });
+    // ev_room_profile opens ask rooms to visitors and invite rooms to a visitor with the code, and carries the profile. Before the new file
+    // is run, ev_room (open rooms and members only) answers.
+    const p = await soft<Row | null>("ev_room_profile", { p_room: id, p_invite: opts?.invite ?? null });
+    const j = p.missing ? await rpc<Row | null>("ev_room", { p_room: id }) : p.data;
     if (!j) return null;
     const role = await roles();
     return mapRoom(j, { ...extras(id, role), ...(j.kind === "hq" ? { online: await hqOnline(id) } : {}) });
@@ -163,25 +185,58 @@ export const rooms: RoomsApi = {
     return (await loadList()).mine.filter((r) => r.is_owner);
   },
 
-  async create(draft) {
-    const name = draft.name.trim();
-    if (!name) throw new Error("Give your room a name");
-    if (name.length > 50) throw new Error("Keep the name under 50 characters");
-    const { data, error } = await client().rpc("create_crew", { p_name: name, p_visibility: "open" });
-    if (error) throw chatError(error.message);
-    emit();
-    const made = await rooms.get(String(data));
-    if (!made) throw new Error("That did not work. Try again");
-    return made;
+  /** The rooms I own or admin, from the list (the role comes from my own crew_members rows). */
+  async managed() {
+    if (!who()) return [];
+    return (await loadList()).mine.filter((r) => r.my_role === "owner" || r.my_role === "admin");
   },
 
-  async join(roomId) {
+  ...profile,
+
+  /** ev_leave_room (supabase/events_r1_room_leave.sql). Until it is run: the caller's own crew_members row is deleted, if the table lets them. */
+  async leave(roomId) {
+    if (!who()) throw new Error("Sign in first");
     const id = await roomIdOf(roomId);
     if (!id) throw new Error("Room not found");
-    const { data, error } = await client().rpc("join_crew", { p_invite: id });
-    if (error) throw chatError(error.message);
-    if (!data) throw new Error("Room not found");
+    const r = await soft<string>("ev_leave_room", { p_room: id });
+    if (r.missing) {
+      const me = await userId();
+      const { error } = await client().from("crew_members").delete().eq("crew_id", id).eq("user_id", me ?? "");
+      if (error) throw new Error("Could not leave right now");
+    } else if (r.error) throw new Error(failText(r.error));
+    else if (r.data !== "ok") {
+      throw new Error(reasonText(r.data, { owner_fixed: "Owners can't leave", hq_fixed: "Everyone is in Lagos HQ", not_member: "You are not in this room" }));
+    }
     emit();
+  },
+
+  /** ev_room_peek (same file): who the room is, for anyone with the address. Until it is run, only what ev_room_profile lets this viewer see. */
+  async preview(idOrSlug) {
+    const id = await roomIdOf(idOrSlug);
+    if (!id) return null;
+    const p = await soft<Row | null>("ev_room_peek", { p_room: id });
+    let j = p.missing ? null : p.data;
+    if (!j) {
+      const full = await rooms.get(id);
+      if (!full) return null;
+      j = { id: full.id, slug: full.slug, name: full.name, kind: full.kind, logo_url: full.logo_url, wallpaper_url: full.wallpaper_url, about: full.about, verified: full.verified, join_mode: full.join_mode };
+    }
+    return {
+      id: String(j.id), slug: String(j.slug ?? j.id), name: String(j.name ?? ""), kind: j.kind === "hq" || j.kind === "brand" ? j.kind : "crew",
+      logo_url: (j.logo_url as string | null) ?? null, wallpaper_url: (j.wallpaper_url as string | null) ?? null, about: typeof j.about === "string" ? j.about : "",
+      verified: !!j.verified, join_mode: j.join_mode === "ask" || j.join_mode === "invite" ? j.join_mode : "open",
+    };
+  },
+
+  /** Every chat of the room's events the viewer can see, each with the viewer's can_enter (one ev_event_chat call per event). */
+  async channels(roomId) {
+    const id = await roomIdOf(roomId);
+    if (!id) return [];
+    const evs = await events.listForRoom(id).catch(() => []);
+    const out = await Promise.all(evs.filter((e) => e.status !== "cancelled").slice(0, 24).map((e) => chatOf(e.id).catch(() => null)));
+    const list = out.filter((c): c is EventChat => !!c && c.room_id === id);
+    const rank = { open: 0, upcoming: 1, closed: 2 } as const;
+    return list.sort((a, b) => rank[a.state] - rank[b.state] || (a.state === "closed" ? Date.parse(b.closes_at) - Date.parse(a.closes_at) : Date.parse(a.opens_at) - Date.parse(b.opens_at)));
   },
 
   /** The owner or staff: ev_set_room_3d answers ok or a reason. The entry function refuses a walker when it is off (see EVENTS_R1_ORDER.md). */

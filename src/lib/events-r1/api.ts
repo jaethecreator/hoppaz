@@ -3,11 +3,13 @@
  * `fake` (fake/) is in memory and seeded; `real` (real/) calls Ola's functions later.
  * Picked by getApi() in index.ts from NEXT_PUBLIC_EVENTS_R1_FAKE.
  */
+import type { Lineup } from "./lineup";
 import type { LooksApi } from "./looks";
 import type { PayApi } from "./pay";
 import type {
-  AuthUser, EventChat, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
-  Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomMessage, RoomSummary, ScanResult, Ticket, ViewerState,
+  AuthUser, DoorPerson, EventChat, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
+  JoinOutcome, JoinRequest, Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomGuests, RoomMember, RoomMessage, RoomNotice,
+  RoomPatch, RoomPreview, RoomRole, RoomSummary, SavedDetails, MyRegistration, ScanResult, Ticket, ViewerState,
 } from "./types";
 
 export type Unsub = () => void;
@@ -44,6 +46,13 @@ export interface EventsApi {
   /** Registration questions and the three messages (Pending, Going, Declined). */
   getRegistrationSettings(id: string): Promise<{ questions: RegQuestion[]; messages: RegMessages }>;
   setRegistrationSettings(id: string, s: { questions?: RegQuestion[]; messages?: Partial<RegMessages> }): Promise<void>;
+  /**
+   * The lineup or programme shown on the event page: { kind, rows }. Anyone who can see the event can read it; an event with none
+   * answers { kind: "lineup", rows: [] }. Real: until supabase/events_r1_lineup.sql is run this answers empty, quietly.
+   */
+  getLineup(id: string): Promise<Lineup>;
+  /** Host or staff: replace it. Rows with no name are dropped, at most 30 rows ("Not allowed" for anyone else). Real: needs the SQL file. */
+  setLineup(id: string, l: Lineup): Promise<void>;
   subscribe(fn: () => void): Unsub;
 }
 
@@ -68,6 +77,11 @@ export interface RegistrationsApi {
   ticketsFor(eventId: string): Promise<Ticket[]>;
   /** Own invite link id: use as ?ref= on shared links. */
   inviteRef(eventId: string): string;
+  /**
+   * The viewer's tickets for Me: registrations with status going for events that have not ended and are not cancelled, soonest first.
+   * Empty when signed out. Real: ev_my_registrations (supabase/events_r1_my_registrations.sql); until it runs this answers empty, quietly.
+   */
+  mine(): Promise<MyRegistration[]>;
 }
 
 export interface PopsApi {
@@ -89,11 +103,67 @@ export interface PopsApi {
 export interface RoomsApi {
   /** Rooms tab: Lagos HQ first, then the viewer's rooms, then discoverable rooms. */
   list(): Promise<{ hq: RoomSummary; mine: RoomSummary[]; discover: RoomSummary[]; eventChats: EventChat[] }>;
-  get(idOrSlug: string): Promise<RoomSummary | null>;
+  /** By id or slug. An invite only room opens for members, staff and a visitor holding its invite code (opts.invite); else null. */
+  get(idOrSlug: string, opts?: { invite?: string }): Promise<RoomSummary | null>;
   /** The rooms the viewer owns (the create page offers "Add to <room>" from this). Empty when signed out. */
   mine(): Promise<RoomSummary[]>;
+  /** The rooms the viewer owns or is an admin of: the workspace switcher and the room admin. Lagos HQ is never in it. Empty when signed out. */
+  managed(): Promise<RoomSummary[]>;
+  /**
+   * Make a room. The signed-in person owns it. Throws plain lines: "Give your room a name", "That address is taken",
+   * "Use 3 to 40 letters, numbers and dashes". The slug is unique and, left out, built from the name (a taken one gets -2, -3).
+   */
   create(draft: RoomDraft): Promise<RoomSummary>;
-  join(roomId: string): Promise<void>;
+  /** Owner or admin: change the profile (name, about, logo, links, address, who can join). Staff too. Anyone else: "Not allowed". */
+  update(roomId: string, patch: RoomPatch): Promise<RoomSummary>;
+  /** Is hoppaz.fun/r/<slug> free? exceptRoomId is the room being edited (its own address counts as free). A bad shape is false. */
+  slugAvailable(slug: string, exceptRoomId?: string): Promise<boolean>;
+  /**
+   * Join by the room's join mode. open: in at once ("joined"). ask: leaves a request ("requested"; asking twice is the same request).
+   * invite: needs the room's invite code (opts.invite), else "This room is invite only". A valid invite code gets into an ask room too.
+   * Someone already in answers "already". Needs a signed in viewer ("Sign in first").
+   * opts.forEvent: the event the viewer just got a ticket for (the "You're going" card). In an ask room the request then carries it
+   * (JoinRequest.ticket_event), so the host sees they bought a ticket. Ignored unless the viewer is going to that event of this room.
+   */
+  join(roomId: string, opts?: { invite?: string; forEvent?: string }): Promise<JoinOutcome>;
+  /**
+   * A member leaves the room by themselves. Their tickets keep working (a registration is not a membership) and they can join again
+   * (an ask room: ask again). The owner gets "Owners can't leave" (they hand the room over in Room admin); Lagos HQ cannot be left
+   * ("Everyone is in Lagos HQ"); someone not in the room gets "You are not in this room"; signed out "Sign in first".
+   */
+  leave(roomId: string): Promise<void>;
+  /** Who a room is, for anyone with its address, an invite only room too (the locked page). null when there is no such room. */
+  preview(idOrSlug: string): Promise<RoomPreview | null>;
+  /**
+   * Every event chat of the room the viewer could see, whoever they are: open first, then not open yet, then closed, each with whether the
+   * viewer may come in (can_enter). The room page's channel list; eventChats(roomId) is only the chats the viewer already cares about.
+   */
+  channels(roomId: string): Promise<EventChat[]>;
+  /** Waiting requests, oldest first. Owner, admin or staff; anyone else: "Not allowed". */
+  requests(roomId: string): Promise<JoinRequest[]>;
+  /** Approve (the person becomes a member and gets a notice) or decline (quietly: no notice). Owner, admin or staff. */
+  decideRequest(requestId: string, approve: boolean): Promise<void>;
+  /** The invite code of a room, for its link (hoppaz.fun/r/<slug>?invite=<code>). Owner, admin or staff; null for anyone else. */
+  inviteCode(roomId: string): Promise<string | null>;
+  /** People in the room, with when each joined. Members of the room only (owner and admins first). */
+  members(roomId: string): Promise<RoomMember[]>;
+  /**
+   * Owner: set a member's role to admin, host or member. Admin: host or member only. Nobody changes the owner. The person must be in the room.
+   * Admin = runs every event of the room (dashboard, guests, door) and everything except payouts and deleting the room.
+   * Host stays in the data but is hidden in the app for launch (no screen offers it) and gets nothing a member does not have.
+   */
+  setRole(roomId: string, userId: string, role: Exclude<RoomRole, "owner">): Promise<void>;
+  /** Take a member out. Owner or staff: anyone but the owner. Admin: plain members only. Anyone else "Not allowed". */
+  removeMember(roomId: string, userId: string): Promise<void>;
+  /**
+   * "Went but haven't joined": people with a registration (going or checked in) for any of the room's events who are not members,
+   * with the full count. Owner, admin or staff; anyone else: "Not allowed".
+   */
+  guestsNotJoined(roomId: string): Promise<RoomGuests>;
+  /** Notices for the viewer that they have not seen (a join request that was approved). */
+  notices(): Promise<RoomNotice[]>;
+  /** The viewer has seen these notices. */
+  markNoticesSeen(ids: string[]): Promise<void>;
   /**
    * Switch the walkable 3D room on or off. The room's owner (RoomSummary.is_owner) or staff only: anyone else gets "Not allowed",
    * a viewer who is not signed in "Sign in first". Off = chat only and "Enter room" goes away (RoomSummary.three_d_on).
@@ -144,6 +214,27 @@ export interface DoorApi {
   search(eventId: string, q: string): Promise<Registration[]>;
   checkInById(eventId: string, registrationId: string): Promise<ScanResult>;
   counts(eventId: string): Promise<{ going: number; checked_in: number; pending: number; waitlist: number }>;
+  /**
+   * Door staff: people added for this one event whose only job is scanning at the door (scan, search, check in, counts). They cannot
+   * open the dashboard or add anyone. Listed for whoever manages the event (the host, a room owner or admin, staff); anyone else "Not allowed".
+   */
+  staff(eventId: string): Promise<DoorPerson[]>;
+  /** Add (on) or take away (off) a door person. Up to 20 per event ("That is the most door staff"). Whoever manages the event. */
+  setStaff(eventId: string, userId: string, on: boolean): Promise<void>;
+}
+
+/**
+ * The buyer's own account bits that are not the sign-in. Saved checkout details: kept only when the buyer leaves
+ * "Save my details for next time" on, shown and deleted in Me. Real: events_r1_saved_details.sql; until it runs, nothing is saved
+ * (savedDetails answers null and the save is a quiet no-op), so checkout simply asks every time.
+ */
+export interface AccountApi {
+  /** The signed-in person's saved checkout details, or null (none, signed out, or not available yet). */
+  savedDetails(): Promise<SavedDetails | null>;
+  /** Keep (or replace) the details. Needs a signed in viewer ("Sign in first"). Trims; empty first name or email is refused. */
+  saveDetails(d: SavedDetails): Promise<void>;
+  /** Forget them. Nothing saved is fine. */
+  deleteSavedDetails(): Promise<void>;
 }
 
 export interface ClockApi {
@@ -165,4 +256,6 @@ export interface EventsR1Api {
   pay: PayApi;
   /** Event and room looks (pack, Day or Night, tint). */
   looks: LooksApi;
+  /** Saved checkout details. */
+  account: AccountApi;
 }

@@ -1,5 +1,6 @@
 import { supabaseConfigured } from "@/lib/supabase/client";
 import type { GameDrop, Quest } from "@/lib/game";
+import type { GtTicket } from "@/lib/game-time/types";
 import type { Profile } from "@/lib/types";
 import type { CollectionEntry, DropReceipt } from "@/lib/useCollectibles";
 
@@ -21,6 +22,11 @@ export const demoEmpty = () => DEMO && typeof window !== "undefined" && new URLS
 const HOUR = 3.6e6;
 const DAY = 24 * HOUR;
 const iso = (ms: number) => new Date(ms).toISOString();
+
+/** One Game Time prize code, so the tickets carousel on Me has a code stub to show. */
+export function demoPrizeCodes(now: number): GtTicket[] {
+  return [{ id: "demo-code-1", game_id: "demo-game", crew_id: "demo-crew", title: "Free drink", brand: "Lagos HQ", code: "HZ7K4M2Q", won_at: iso(now - 5 * DAY) }];
+}
 
 export function demoProfile(): Profile {
   return { id: "demo", display_name: "Temi", area: "Victoria Island", xp: 410, is_admin: false, handle: "JollofRaver4821", avatar: null };

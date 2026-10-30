@@ -7,7 +7,7 @@
 import type { DoorApi } from "../api";
 import type { Registration, ScanResult } from "../types";
 import { readToken } from "./crypto";
-import { assertManage, ensureTickets, findEvent, isGoing, regsOf, seatsOf, statusOf, ticketsOfReg, usedSeats } from "./rules";
+import { assertDoor, assertManage, ensureTickets, findEvent, isGoing, regsOf, seatsOf, statusOf, ticketsOfReg, usedSeats } from "./rules";
 import { registrationCode, ticketCode } from "./registrations";
 import type { TicketRec } from "./store";
 import { emit, now, S } from "./store";
@@ -107,23 +107,25 @@ function confirmCard(reg: Registration, t: TicketRec): ScanResult {
   return { ok: true, kind: "confirm", name: reg.name, ticket: ticketOf(reg), checked_in: c.checked_in, total: c.going, ...seatOf(reg, t) };
 }
 
+const MAX_STAFF = 20;
+
 export const door: DoorApi = {
   async scan(eventId, token, mode) {
-    assertManage(findEvent(eventId));
+    assertDoor(findEvent(eventId));
     const f = await find(eventId, token);
     if ("result" in f) return f.result;
     return mode === "express" ? checkIn(f.reg, f.ticket) : confirmCard(f.reg, f.ticket);
   },
 
   async confirm(eventId, token) {
-    assertManage(findEvent(eventId));
+    assertDoor(findEvent(eventId));
     const f = await find(eventId, token);
     if ("result" in f) return f.result;
     return checkIn(f.reg, f.ticket);
   },
 
   async search(eventId, q) {
-    assertManage(findEvent(eventId));
+    assertDoor(findEvent(eventId));
     const needle = q.trim().toLowerCase();
     return clone(
       regsOf(eventId)
@@ -134,7 +136,7 @@ export const door: DoorApi = {
   },
 
   async checkInById(eventId, registrationId) {
-    assertManage(findEvent(eventId));
+    assertDoor(findEvent(eventId));
     const reg = S().regs[registrationId];
     if (!reg || reg.event_id !== eventId) return notValid("unknown").result;
     const next = nextOf(reg);
@@ -142,8 +144,30 @@ export const door: DoorApi = {
   },
 
   async counts(eventId) {
-    assertManage(findEvent(eventId));
+    assertDoor(findEvent(eventId));
     return counts(eventId);
   },
-};
 
+  async staff(eventId) {
+    const e = assertManage(findEvent(eventId));
+    return Object.keys(S().doorStaff)
+      .filter((k) => S().doorStaff[k] && k.startsWith(`${e.id}:`))
+      .map((k) => {
+        const user_id = k.slice(e.id.length + 1);
+        return { user_id, name: S().users[user_id]?.name ?? regsOf(e.id).find((r) => r.user_id === user_id)?.name ?? "Hopper" };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  },
+
+  async setStaff(eventId, userId, on) {
+    const e = assertManage(findEvent(eventId));
+    if (!S().users[userId] && !regsOf(e.id).some((r) => r.user_id === userId)) throw new Error("We can't find that person");
+    const key = `${e.id}:${userId}`;
+    if (on) {
+      const n = Object.keys(S().doorStaff).filter((k) => S().doorStaff[k] && k.startsWith(`${e.id}:`)).length;
+      if (n >= MAX_STAFF && !S().doorStaff[key]) throw new Error("That is the most door staff for one event");
+      S().doorStaff[key] = true;
+    } else delete S().doorStaff[key];
+    emit();
+  },
+};

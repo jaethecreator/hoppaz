@@ -32,6 +32,6 @@ export function ticketCount(r: ScanResult): string | null {
 export function errLine(e: unknown): string {
   const m = e instanceof Error ? e.message : "";
   if (m === "Sign in first") return "Sign in to check people in.";
-  if (m === "Not allowed") return "Only the host and door staff can check people in.";
+  if (m === "Not allowed") return "Only the event team and door staff can check people in.";
   return m || "That did not work. Try again.";
 }

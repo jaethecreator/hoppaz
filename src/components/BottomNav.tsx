@@ -8,6 +8,8 @@ import { useLeaveStore } from "@/lib/crew-room/rails";
 import { useRoomStore } from "@/lib/crew-room/roomStore";
 import { sfx } from "@/lib/sound/sfx";
 import { useSocial } from "@/lib/social";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import { useHostDesk } from "@/components/events-r1/workspace/useHostDesk";
 
 type Tab = { href: string; label: string; Icon: LucideIcon };
 
@@ -41,6 +43,20 @@ const PARENT: Array<[string, string]> = [
  */
 const ROOM = /^\/crew\/[^/]+\/room(?:\/|$)/;
 const FULL_SCREEN = [/^\/chat\/dm\//, /^\/circle(?:\/|$)/, /^\/drop$/, /^\/me\/avatar/, /^\/admin/, /^\/report\//, /^\/phone/];
+
+/**
+ * The small green dot on ME (CHANGE-003): something you host needs you, join requests waiting or an event live now. Release 1 only.
+ * The same dot on the phone's tab bar and the desktop rail.
+ */
+function MeDot() {
+  const { desk } = useHostDesk();
+  if (!desk?.needsYou) return null;
+  return (
+    <i className="absolute -right-1.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-ink-2 bg-keke" data-me-dot>
+      <span className="sr-only">Something you host needs you</span>
+    </i>
+  );
+}
 
 export default function BottomNav() {
   const path = usePathname();
@@ -81,6 +97,7 @@ export default function BottomNav() {
           >
             <span className="relative">
               <Icon size={19} strokeWidth={on ? 2.4 : 1.9} aria-hidden />
+              {href === "/me" && EVENTS_R1 && <MeDot />}
               {href === "/chat" && waiting > 0 && (
                 <i
                   className="absolute -right-2.5 -top-1.5 grid h-[15px] min-w-[15px] place-items-center rounded-full bg-orange px-1 font-mono text-[9px] font-medium not-italic leading-none text-ink"

@@ -794,7 +794,7 @@ await test("rooms: the 3D room switch (defaults, who may set it, Enter room need
   await api.rooms.setThreeD(roof.id, true);
 
   const all = await api.rooms.listForStaff();
-  eq(all.length, 9, "staff list: every room");
+  eq(all.length, 10, "staff list: every room");
   eq(all[0].kind, "hq", "Lagos HQ first");
   ok(all.slice(2).every((r, i) => all[i + 1].members >= r.members), "then the biggest first");
   ok(all.every((r) => typeof r.three_d_on === "boolean" && typeof r.has_3d === "boolean"), "each carries has_3d and three_d_on");
@@ -847,7 +847,7 @@ await test("rooms: event chat messages carry host Pops pinned; send refuses clos
 await test("rooms: a plain announcement from the owner never shows on an event; Pops show tagged", async () => {
   const ev = seeded("Kredete Open Mic and Laughs");
   as("Ada Obi");
-  await rejects(api.rooms.postAnnouncement(ev.room_id!, "nope"), "Only the room's host can post here", "a guest cannot post");
+  await rejects(api.rooms.postAnnouncement(ev.room_id!, "nope"), "Only the room's owner and admins can post here", "a guest cannot post");
   as("Kredete");
   const a = await api.rooms.postAnnouncement(ev.room_id!, "Doors at 7");
   eq([a.event_id, a.event_title], [null, null], "plain: no event tag");
@@ -1475,6 +1475,343 @@ await test("place search helpers: the Lagos box, query cleaning, result filterin
   eq([found[0].name, found[0].address, found[0].lat, found[0].lng], ["Ikeja City Mall", "174/194 Obafemi Awolowo Way, Agidingbi, Ikeja", 6.6143785, 3.357768], "Photon: name, address, lat and lng the right way round");
   eq([found[1].address, found[2].name], ["Maroko, Lekki Phase I", "5 Allen Avenue"], "Photon: address without a street, unnamed house");
   eq([parsePhoton(null), parsePhoton({}), parsePhoton({ features: "no" })], [[], [], []], "Photon: junk in, nothing out");
+});
+
+await test("rooms: a new room has a profile, a unique editable address, and who can join", async () => {
+  await newPerson();
+  const made = await api.rooms.create({ name: "South Social", about: "Lagos nights.", links: { instagram: "@southsocial", x: "nonsense words", website: "southsocial.fun" }, join_mode: "ask" });
+  eq([made.slug, made.about, made.join_mode, made.my_role, made.is_owner], ["south-social", "Lagos nights.", "ask", "owner", true], "profile");
+  eq(made.links, { instagram: "https://instagram.com/southsocial", website: "https://southsocial.fun" }, "links: a handle becomes a link, junk is dropped");
+  eq((await api.rooms.create({ name: "South Social" })).slug, "south-social-2", "the same name gets -2");
+  await rejects(api.rooms.create({ name: "Other", slug: "south-social" }), "That address is taken", "taken");
+  await rejects(api.rooms.create({ name: "Other", slug: "Bad Slug" }), "Use 3 to 40 letters, numbers and dashes", "shape");
+  await rejects(api.rooms.create({ name: "Other", slug: "admin" }), "That address is taken", "reserved");
+  await rejects(api.rooms.create({ name: "Other", about: "a".repeat(601) }), "Keep the about under 600 characters", "about");
+  await rejects(api.rooms.create({ name: "X" }), "Give your room a longer name", "name");
+  eq([await api.rooms.slugAvailable("south-social"), await api.rooms.slugAvailable("south-social", made.id), await api.rooms.slugAvailable("fresh-one")], [false, true, true], "availability");
+  const edited = await api.rooms.update(made.id, { slug: "south-social-lagos", about: "New words", join_mode: "invite" });
+  eq([edited.slug, edited.about, edited.join_mode], ["south-social-lagos", "New words", "invite"], "owner edits");
+  eq((await api.rooms.get("south-social-lagos"))?.id, made.id, "found by the new address");
+  await rejects(api.rooms.update(made.id, { slug: "south-social-2" }), "That address is taken", "the other room's address");
+  fakeDev.resetAll();
+  as("Ada Obi");
+  await rejects(api.rooms.update((await api.rooms.list()).discover[0].id, { about: "x" }), "Not allowed", "a stranger cannot edit");
+});
+
+await test("rooms: join modes (open joins, ask requests and the owner decides, invite needs the code), Discover hides invite rooms", async () => {
+  as("Ada Obi");
+  const list = await api.rooms.list();
+  ok(!list.discover.some((r) => r.slug === "amapiano-fridays"), "invite only is not in Discover");
+  ok(list.discover.some((r) => r.slug === "naija-tech-meetup" && r.join_mode === "open"), "open is");
+  eq((await api.rooms.get("amapiano-fridays")), null, "an invite room is not found without its code");
+  const film = (await api.rooms.get("lagos-film-club"))!;
+  eq([film.join_mode, film.request], ["ask", "pending"], "Ada's seeded request shows as pending");
+  eq(await api.rooms.join(film.id), "requested", "asking again is the same request");
+  eq(await api.rooms.join("naija-tech-meetup"), "joined", "open joins");
+  eq(await api.rooms.join("naija-tech-meetup"), "already", "and again");
+  // Invite only: needs the code, which the owner (here: staff) can read.
+  as("Hoppaz Staff");
+  const code = (await api.rooms.inviteCode((await api.rooms.list()).discover.find((r) => r.slug === "lagos-film-club")!.id)) ?? "";
+  ok(code.startsWith("HZ"), "staff read an invite code");
+  const ama = (await api.rooms.list()).mine.concat((await api.rooms.list()).discover);
+  ok(!ama.some((r) => r.slug === "amapiano-fridays"), "still hidden");
+  const amaId = (await api.rooms.listForStaff()).find((r) => r.slug === "amapiano-fridays")!.id;
+  const amaCode = (await api.rooms.inviteCode(amaId))!;
+  as("Ada Obi");
+  await rejects(api.rooms.join(amaId), "This room is invite only", "no code");
+  await rejects(api.rooms.join(amaId, { invite: "WRONG" }), "This room is invite only", "wrong code");
+  eq((await api.rooms.get("amapiano-fridays", { invite: amaCode }))?.join_mode, "invite", "the code opens the page");
+  eq(await api.rooms.join(amaId, { invite: amaCode.toLowerCase() }), "joined", "the code joins (any case)");
+  // Ask: the owner approves, the person is a member and gets a notice; a decline is quiet.
+  as("Lagos Run Club");
+  const lrc = (await api.rooms.mine())[0];
+  eq(lrc.pending_requests, 2, "the owner sees two waiting");
+  const reqs = await api.rooms.requests(lrc.id);
+  eq(reqs.map((r) => r.name), ["Chidi Okafor", "Ngozi Adeyemi"], "oldest first");
+  await api.rooms.decideRequest(reqs[0].id, true);
+  await api.rooms.decideRequest(reqs[1].id, false);
+  await rejects(api.rooms.decideRequest(reqs[0].id, true), "That request is already answered", "twice");
+  eq((await api.rooms.requests(lrc.id)).length, 0, "none waiting");
+  as("Chidi Okafor");
+  eq((await api.rooms.get(lrc.id))?.joined, true, "approved: a member");
+  const notes = await api.rooms.notices();
+  eq([notes.length, notes[0]?.kind, notes[0]?.room_slug], [1, "request_approved", "lagos-run-club"], "approved: one notice");
+  await api.rooms.markNoticesSeen(notes.map((n) => n.id));
+  eq((await api.rooms.notices()).length, 0, "seen");
+  as("Ngozi Adeyemi");
+  eq([(await api.rooms.get(lrc.id))?.joined, (await api.rooms.get(lrc.id))?.request, (await api.rooms.notices()).length], [false, "declined", 0], "declined: not a member, no notice");
+  await rejects(api.rooms.join(lrc.id), "The room's owner has not accepted your request", "declined stays declined");
+  as("Ada Obi");
+  await rejects(api.rooms.requests(lrc.id), "Not allowed", "a visitor cannot list requests");
+});
+
+await test("rooms: roles (owner, admin, host, member): owners and admins run the room's events, a hidden host gets what a member gets", async () => {
+  as("Kredete");
+  const room = (await api.rooms.mine())[0];
+  const people = await api.rooms.members(room.id);
+  eq(people.map((m) => [m.name, m.role]), [["Kredete", "owner"], ["Bisi Ogunleye", "admin"], ["Tunde Balogun", "host"]], "members, owner first");
+  ok(people.every((m) => Number.isFinite(Date.parse(m.joined_at))), "everyone has a join date");
+  const bisi = people[1].user_id, tunde = people[2].user_id;
+  eq((await api.rooms.get(room.id))?.my_role, "owner", "my role");
+  eq((await api.rooms.managed()).map((r) => r.id), [room.id], "the owner manages their room");
+  as("Bisi Ogunleye");
+  eq([(await api.rooms.get(room.id))?.my_role, (await api.rooms.get(room.id))?.can_post], ["admin", true], "admin may post");
+  eq((await api.rooms.managed()).map((r) => r.id), [room.id], "an admin manages the room too");
+  await api.rooms.update(room.id, { about: "Admin was here" });
+  await rejects(api.rooms.setRole(room.id, tunde, "admin"), "Only the owner changes admins", "admin cannot make an admin");
+  await api.rooms.setRole(room.id, tunde, "member");
+  await api.rooms.setRole(room.id, tunde, "host");
+  // An admin runs an event they did not make: dashboard data, guests and the door.
+  const kEvent = fakeDev.allEvents().find((e) => e.room_id === room.id && e.status !== "cancelled")!;
+  ok((await api.registrations.list(kEvent.id)).length > 0, "an admin sees the guests of the room's event");
+  eq(typeof (await api.door.counts(kEvent.id)).going, "number", "an admin opens the door of an event they did not make");
+  eq((await api.events.viewerState(kEvent.id)).isHost, true, "and the event page knows they can manage it");
+  as("Kredete");
+  await rejects(api.rooms.setRole(room.id, (await api.rooms.members(room.id))[0].user_id, "member"), "Nobody changes the owner", "owner fixed");
+  await api.rooms.setRole(room.id, bisi, "member");
+  as("Tunde Balogun");
+  const host = (await api.rooms.get(room.id))!;
+  eq([host.my_role, host.can_post, host.is_owner], ["host", false, false], "a host cannot post announcements");
+  eq((await api.rooms.managed()).length, 0, "a host manages no room");
+  await rejects(api.rooms.update(room.id, { about: "x" }), "Not allowed", "a host cannot edit the profile");
+  await rejects(api.rooms.setRole(room.id, bisi, "host"), "Not allowed", "a host cannot set roles");
+  await rejects(api.registrations.list(kEvent.id), "Not allowed", "a host cannot see guests of an event they did not make");
+  await rejects(api.door.counts(kEvent.id), "Not allowed", "a host cannot open the door of the room's event");
+  eq((await api.events.viewerState(kEvent.id)).isHost, false, "and the event page does not treat them as a host");
+  // A host's own event is not put in the room for them: only an owner's or an admin's is.
+  const ev = await api.events.create({ title: "Made by Tunde" });
+  eq(ev.room_id, null, "a host's event stays their own");
+  eq((await api.door.counts(ev.id)).going, 0, "and they open the door of their own event");
+  as("Ada Obi");
+  await rejects(api.rooms.guestsNotJoined(room.id), "Not allowed", "a visitor cannot see guests");
+  as("Kredete");
+  await api.rooms.setRole(room.id, bisi, "admin");
+  as("Bisi Ogunleye");
+  const mine = await api.events.create({ title: "Made by Bisi" });
+  eq(mine.room_id, room.id, "an admin's event is posted as the room");
+  as("Kredete");
+  eq((await api.door.counts(mine.id)).going, 0, "and the owner opens its door");
+  await rejects(api.rooms.removeMember(room.id, people[0].user_id), "Nobody changes the owner", "the owner cannot be removed");
+  await api.rooms.removeMember(room.id, tunde);
+  ok(!(await api.rooms.members(room.id)).some((m) => m.user_id === tunde), "a removed member is out");
+  as("Bisi Ogunleye");
+  await rejects(api.rooms.removeMember(room.id, people[0].user_id), "Nobody changes the owner", "an admin cannot remove the owner");
+  as("Ada Obi");
+  await rejects(api.rooms.removeMember(room.id, bisi), "Not allowed", "a visitor cannot remove anyone");
+});
+
+await test("door staff: added per event, they scan but cannot manage or add anyone", async () => {
+  as("Kredete");
+  const room = (await api.rooms.mine())[0];
+  const ev = fakeDev.allEvents().find((e) => e.room_id === room.id && e.kind !== "online" && e.status !== "cancelled")!;
+  eq(await api.door.staff(ev.id), [], "no door staff yet");
+  as("Ada Obi");
+  const guest = { user_id: api.auth.current()!.id };
+  await rejects(api.door.staff(ev.id), "Not allowed", "a guest cannot list door staff");
+  await rejects(api.door.setStaff(ev.id, guest.user_id, true), "Not allowed", "a guest cannot add door staff");
+  await rejects(api.door.counts(ev.id), "Not allowed", "and cannot scan");
+  as("Kredete");
+  await api.door.setStaff(ev.id, guest.user_id, true);
+  eq((await api.door.staff(ev.id)).map((p) => p.user_id), [guest.user_id], "added");
+  fakeDev.signInAs(guest.user_id);
+  eq(typeof (await api.door.counts(ev.id)).going, "number", "door staff open the door");
+  eq((await api.door.search(ev.id, "")).length > 0, true, "and search the guests");
+  await rejects(api.registrations.list(ev.id), "Not allowed", "but cannot open the guest list");
+  await rejects(api.door.staff(ev.id), "Not allowed", "or list door staff");
+  await rejects(api.door.setStaff(ev.id, guest.user_id, false), "Not allowed", "or add more");
+  as("Kredete");
+  await api.door.setStaff(ev.id, guest.user_id, false);
+  eq(await api.door.staff(ev.id), [], "removed");
+  fakeDev.signInAs(guest.user_id);
+  await rejects(api.door.counts(ev.id), "Not allowed", "and the door is shut for them again");
+});
+
+await test("rooms: a new joiner shows with today's date, and an admin posts an announcement", async () => {
+  const p = await newPerson();
+  void p;
+  as("Kredete");
+  const room = (await api.rooms.mine())[0];
+  const before = (await api.rooms.members(room.id)).length;
+  const q = await newPerson();
+  await api.rooms.join(room.id);
+  as("Kredete");
+  const after = await api.rooms.members(room.id);
+  eq(after.length, before + 1, "one more member");
+  const j = after.find((m) => m.user_id === q.id)!;
+  ok(Date.now() - Date.parse(j.joined_at) < 60_000, "joined just now");
+  ok(after.filter((m) => Date.now() - Date.parse(m.joined_at) < 7 * 86_400_000).length === 1, "new this week counts only the joiner");
+  await api.rooms.setRole(room.id, q.id, "admin");
+  fakeDev.signInAs(q.id);
+  const a = await api.rooms.postAnnouncement(room.id, "Admin note");
+  eq(a.body, "Admin note", "an admin posts an announcement");
+});
+
+await test("room growth chart: 8 weekly totals worked back from today's count", async () => {
+  const { growthWeeks } = await import("../src/components/events-r1/workspace/words.ts");
+  const now = Date.parse("2026-10-29T08:00:00Z");
+  const day = 864e5;
+  const iso = (d: number) => new Date(now - d * day).toISOString();
+  // 20 members today: 3 joined this week, 2 joined 3 weeks ago, the rest long ago.
+  const w = growthWeeks(20, [iso(1), iso(2), iso(3), iso(20), iso(22), iso(200)], now);
+  ok(w.length === 8, `8 weeks: ${w.length}`);
+  ok(w[7] === 20, `last week is today's count: ${w[7]}`);
+  ok(w[6] === 17, `a week ago, before this week's 3: ${w[6]}`);
+  ok(w[0] === 15, `8 weeks ago, before all 5 recent joins: ${w[0]}`);
+  ok(w.every((v, k) => k === 0 || v >= w[k - 1]), "never goes down");
+  ok(growthWeeks(2, [iso(1), iso(1), iso(1)], now)[0] === 0, "never below zero");
+});
+
+await test("rooms: went but have not joined counts guests of the room's events who are not members", async () => {
+  as("Kredete");
+  const room = (await api.rooms.mine())[0];
+  const g = await api.rooms.guestsNotJoined(room.id);
+  const roomEvents = fakeDev.allEvents().filter((e) => e.room_id === room.id && e.status !== "cancelled");
+  const going = new Set<string>();
+  for (const e of roomEvents) for (const r of await api.registrations.list(e.id)) if (r.status === "going" || r.status === "checked_in") going.add(r.user_id);
+  eq(g.count, going.size, "everyone going who is not a member");
+  ok(g.count > 20 && g.guests.length === 50, "the first 50 are listed");
+  // A new person registers for a room event: the count goes up by one. Then they join: it drops back.
+  const open = roomEvents.find((e) => e.requires_approval === false && e.capacity === null && Date.parse(e.starts_at) > Date.now())!;
+  const p = await newPerson();
+  await api.registrations.register(open.id);
+  as("Kredete");
+  eq((await api.rooms.guestsNotJoined(room.id)).count, g.count + 1, "a new guest is counted");
+  fakeDev.signInAs(p.id);
+  await api.rooms.join(room.id);
+  as("Kredete");
+  eq((await api.rooms.guestsNotJoined(room.id)).count, g.count, "a joiner leaves the count");
+  // A new room takes the host's own events, so its guests are there to bring in.
+  await newPerson();
+  const mine = await api.events.create({ title: "Before the room", add_to_room: false });
+  const made = await api.rooms.create({ name: "After", event_ids: [mine.id] });
+  eq((await api.events.get(mine.id))?.room_id, made.id, "the event moved into the new room");
+});
+
+await test("rooms: leave (members only, owners and HQ cannot), preview of an invite room, channels, old addresses resolve to a channel", async () => {
+  as("Tunde Balogun");
+  const book = (await api.rooms.get("yaba-book-club"))!;
+  eq([book.joined, book.members], [true, 3], "Tunde is in the brand new room (owner and two others)");
+  await api.rooms.leave(book.id);
+  const after = (await api.rooms.get("yaba-book-club"))!;
+  eq([after.joined, after.members], [false, 2], "left: not a member, one fewer");
+  await rejects(api.rooms.leave(book.id), "You are not in this room", "leaving twice");
+  as("Folake Adewale");
+  await rejects(api.rooms.leave(book.id), "Owners can't leave", "owners cannot leave");
+  const hq = (await api.rooms.get("hq"))!;
+  await rejects(api.rooms.leave(hq.id), "Everyone is in Lagos HQ", "HQ cannot be left");
+  // An invite only room has a name to show without the code, and nothing else.
+  as("Ada Obi");
+  const pv = await api.rooms.preview("amapiano-fridays");
+  eq([pv?.slug, pv?.join_mode], ["amapiano-fridays", "invite"], "preview of an invite room");
+  eq(await api.rooms.preview("no-such-room"), null, "preview of nothing");
+  // Channels: open first, then upcoming, then closed.
+  const roof = (await api.rooms.get("rooftop-sessions"))!;
+  const states = (await api.rooms.channels(roof.id)).map((c) => c.state);
+  const rank = { open: 0, upcoming: 1, closed: 2 } as const;
+  ok(states.every((v, i) => i === 0 || rank[states[i - 1]] <= rank[v]), `channels are ordered open, upcoming, closed (${states.join(",")})`);
+  // The address an old link resolves to.
+  const { eventChatHref, enterPath } = await import("../src/components/events-r1/rooms/words.ts");
+  eq(eventChatHref({ id: "e1", host: { roomId: "r1" } }), "/rooms/r1?ch=e1", "event chat href is a channel of the room page");
+  eq(eventChatHref({ id: "e1", host: { roomId: null } }), null, "no room: no event chat");
+  const { oldChatRedirect } = await import("../src/components/events-r1/rooms/words.ts");
+  as("Ada Obi");
+  const evs = await api.events.list();
+  const withRoom = evs.find((e) => e.host.roomId)!;
+  const noRoom = evs.find((e) => !e.host.roomId);
+  eq(oldChatRedirect(withRoom), `/rooms/${withRoom.host.roomId}?ch=${withRoom.id}`, "/chat?c=<event> with a room goes to its channel");
+  if (noRoom) eq(oldChatRedirect(noRoom), `/event/${noRoom.id}`, "/chat?c=<event> with no room goes to the event page");
+  eq(oldChatRedirect({ id: "e2", host: { roomId: null } }), "/event/e2", "no room: the event page");
+  eq(enterPath({ slug: "x", kind: "crew", id: "r1", has_3d: false, three_d_on: false }), "/rooms/x?ch=general", "no walkable room: Enter goes to General");
+});
+
+await test("saved checkout details: per person, kept, replaced and deleted", async () => {
+  eq(await api.account.savedDetails(), null, "signed out: nothing");
+  await rejects(api.account.saveDetails({ first_name: "A", last_name: "", email: "a@x.co", phone: "" }), "Sign in first", "signed out cannot save");
+  as("Chidi Okafor");
+  eq(await api.account.savedDetails(), null, "nothing saved yet");
+  await api.account.saveDetails({ first_name: " Chidi ", last_name: "Okafor", email: "chidi@example.com", phone: "0803 555 2211" });
+  eq(await api.account.savedDetails(), { first_name: "Chidi", last_name: "Okafor", email: "chidi@example.com", phone: "0803 555 2211" }, "kept, trimmed");
+  await rejects(api.account.saveDetails({ first_name: "", last_name: "", email: "x@y.co", phone: "" }), "Add your name and email", "no first name is refused");
+  await api.account.saveDetails({ first_name: "Chidi", last_name: "O", email: "c@new.co", phone: "" });
+  eq((await api.account.savedDetails())?.email, "c@new.co", "saving again replaces");
+  as("Bisi Ogunleye");
+  eq(await api.account.savedDetails(), null, "someone else sees only their own");
+  await api.account.deleteSavedDetails();
+  as("Chidi Okafor");
+  ok(await api.account.savedDetails(), "their delete did not touch mine");
+  await api.account.deleteSavedDetails();
+  eq(await api.account.savedDetails(), null, "deleted");
+  await api.account.deleteSavedDetails();
+});
+
+await test("asking to join from You're going tells the host about the ticket", async () => {
+  const lrc = (await api.rooms.get("lagos-run-club"))!;
+  eq(lrc.join_mode, "ask", "the run club asks");
+  const run = fakeDev.allEvents().find((e) => e.room_id === lrc.id && e.status === "live" && Date.parse(e.starts_at) > Date.now())!;
+  as("Chidi Okafor");
+  const reg = await api.registrations.register(run.id);
+  eq(await api.rooms.join(lrc.id, { forEvent: run.id }), "requested", "an ask room: requested");
+  as("Bisi Ogunleye");
+  eq(await api.rooms.join(lrc.id, { forEvent: run.id }), "requested", "no ticket: still a request");
+  as("Lagos Run Club");
+  const list = await api.rooms.requests(lrc.id);
+  const chidi = list.find((q) => q.name === "Chidi Okafor")!;
+  const bisi = list.find((q) => q.name === "Bisi Ogunleye")!;
+  const going = reg.status === "going" || reg.status === "checked_in";
+  eq(chidi.ticket_event?.title ?? null, going ? run.title : null, "the ticket holder's request names the event");
+  eq(bisi.ticket_event ?? null, null, "a plain request has none");
+  as("Chidi Okafor");
+  eq(await api.rooms.join("naija-tech-meetup", { forEvent: run.id }), "joined", "an open room joins at once, forEvent or not");
+});
+
+await test("registrations.mine: going, not ended, not cancelled, soonest first, own only", async () => {
+  eq(await api.registrations.mine(), [], "signed out: nothing");
+  as("Ada Obi");
+  const mine = await api.registrations.mine();
+  ok(mine.length > 0, "Ada has tickets");
+  const now = Date.now();
+  for (const m of mine) {
+    eq(m.registration.status, "going", `going only: ${m.event.title}`);
+    eq(m.registration.event_id, m.event.id, "registration and event match");
+    ok(m.event.status !== "cancelled", "no cancelled event");
+    ok((m.event.ends_at ? Date.parse(m.event.ends_at) : Date.parse(m.event.starts_at) + 3 * HOUR) > now, `not ended: ${m.event.title}`);
+  }
+  const starts = mine.map((m) => Date.parse(m.event.starts_at));
+  eq(starts, [...starts].sort((a, b) => a - b), "soonest first");
+  const one = mine[0].event.id;
+  await api.registrations.cancel(one);
+  ok(!(await api.registrations.mine()).some((m) => m.event.id === one), "a cancelled registration leaves the list");
+  as("Chidi Okafor");
+  eq(await api.registrations.mine(), [], "someone else sees only their own");
+});
+
+await test("Me hosting desk: workspaces, request numbers, live dots, tonight, the ME dot", async () => {
+  const { buildDesk, liveNow } = await import("../src/components/events-r1/workspace/desk.ts");
+  const desk = async () => {
+    const [mine, rooms] = await Promise.all([api.events.listMine(), api.rooms.managed()]);
+    const roomEvents: Record<string, Awaited<ReturnType<typeof api.events.listForRoom>>> = {};
+    for (const r of rooms) roomEvents[r.id] = await api.events.listForRoom(r.id);
+    return buildDesk({ mine, rooms, roomEvents, now: Date.now() });
+  };
+  as("Ada Obi");
+  const ada = await desk();
+  eq([ada.hosted, ada.workspaces.length, ada.tonight, ada.needsYou], [false, 0, null, false], "never hosted: the one row, no dot");
+  as("Lagos Run Club");
+  const lrc = await desk();
+  eq(lrc.workspaces.map((w) => [w.name, w.role, w.href.startsWith("/rooms/") || w.href === "/host"]), [["Personal", null, true], ["Lagos Run Club", "Owner", true]], "Personal first, then the room");
+  ok(lrc.workspaces[1].waiting >= 2 && lrc.needsYou, "join requests: a number and the dot");
+  eq(lrc.workspaces[1].href, "/rooms/lagos-run-club/admin", "a room opens its admin");
+  as("Bisi Ogunleye");
+  eq((await desk()).workspaces.map((w) => w.role), [null, "Admin"], "an admin's room says Admin");
+  as("360Playlist");
+  const p = await desk();
+  ok(p.workspaces[1].live && p.needsYou, "an event on now: the live dot and the ME dot");
+  ok(p.tonight && liveNow(p.tonight, Date.now()), "tonight: the event that is on");
+  as("Lagos HQ");
+  const hq = await desk();
+  eq(hq.workspaces.map((w) => w.name), ["Personal"], "Lagos HQ is never a workspace: Personal only");
+  const t = { status: "live" as const, starts_at: new Date(Date.now() - 4 * HOUR).toISOString(), ends_at: null };
+  eq(liveNow(t, Date.now()), false, "3 hours after the start with no end: over");
 });
 
 await test("reset clears user-made changes", async () => {

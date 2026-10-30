@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
@@ -10,12 +10,49 @@ import PageHeader from "@/components/app/PageHeader";
 import { CrewLogo } from "@/components/crew-room/HubHeader";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import { useR1Api, useR1Auth, useRooms } from "@/lib/events-r1/hooks";
-import type { EventChat, RoomSummary } from "@/lib/events-r1/types";
+import type { EventChat, RoomNotice, RoomSummary } from "@/lib/events-r1/types";
 import CreateButton from "../CreateButton";
 import SignInSheet from "../SignInSheet";
 import { closesWord, enterPath, memberWord, roomPath, walkable } from "./words";
 
 const tab = "min-h-[44px] flex-1 rounded-hz border px-4 font-display text-[14px] font-bold";
+
+/** "You are in <room>": a quiet notice when a room's owner approved the viewer's request to join. Seen once, then gone. */
+function Notices() {
+  const api = useR1Api();
+  const { user } = useR1Auth();
+  const [notes, setNotes] = useState<RoomNotice[]>([]);
+  useEffect(() => {
+    if (!api || !user) return setNotes([]);
+    let live = true;
+    void api.rooms.notices().then((n) => live && setNotes(n)).catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [api, user]);
+  if (!api || !notes.length) return null;
+  const dismiss = (n: RoomNotice) => {
+    setNotes(notes.filter((x) => x.id !== n.id));
+    void api.rooms.markNoticesSeen([n.id]);
+  };
+  return (
+    <div className="mb-4 grid gap-2" data-room-notices>
+      {notes.map((n) => (
+        <div key={n.id} className="card flex items-center gap-3 font-body text-[14px]">
+          <span className="min-w-0 flex-1">
+            You are in <b>{n.room_name}</b>. Your request was approved.
+          </span>
+          <Link href={`/rooms/${encodeURIComponent(n.room_slug)}`} onClick={() => dismiss(n)} className="btn min-h-[40px] normal-case">
+            Open
+          </Link>
+          <button type="button" onClick={() => dismiss(n)} className="min-h-[40px] px-2 font-body text-[13px] text-dim">
+            Dismiss
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /**
  * Release 1 ROOMZ tab (flag on): Lagos HQ pinned at the top, then Mine (your roomz and their event chats) or Discover.
@@ -37,6 +74,7 @@ export default function RoomzTab() {
     <div className="h-full overflow-y-auto px-4 pb-28">
       <div className="mx-auto w-full max-w-[560px]">
         <PageHeader title="ROOMZ" className="pb-3" />
+        <Notices />
         <div role="tablist" aria-label="Roomz" className="mb-4 flex gap-2">
           {(["mine", "discover"] as const).map((v) => (
             <button
@@ -141,12 +179,13 @@ function HqRow({ hq }: { hq: RoomSummary }) {
   );
 }
 
-/** One of your roomz: the body opens the room home, the button goes straight in. */
+/** One of your roomz: the body opens the room home, the button goes straight in. A room you run (owner or admin) also has Manage: its room admin. */
 function MineRow({ room }: { room: RoomSummary }) {
   const a = room.latest_announcement;
+  const runs = room.my_role === "owner" || room.my_role === "admin" || room.is_owner;
   return (
-    <div className="card mb-2 flex items-center gap-2.5 py-3 pr-3" data-room-row={room.slug}>
-      <Link href={roomPath(room)} className="flex min-h-[44px] min-w-0 flex-1 items-center gap-3">
+    <div className="card mb-2 flex flex-wrap items-center gap-2.5 py-3 pr-3" data-room-row={room.slug}>
+      <Link href={roomPath(room)} className="flex min-h-[44px] min-w-0 flex-1 basis-[180px] items-center gap-3">
         <CrewLogo url={room.logo_url} name={room.name} size={44} />
         <span className="min-w-0 flex-1">
           <b className="flex items-center gap-1.5 font-display text-[16px] font-semibold">
@@ -157,17 +196,24 @@ function MineRow({ room }: { room: RoomSummary }) {
           <span className="hint block truncate">{a ? a.body : memberWord(room.members)}</span>
         </span>
       </Link>
-      {walkable(room) && (
-        <Link href={enterPath(room)} className="btn btn-ghost min-h-[40px] flex-none px-3 text-[13px] normal-case" aria-label={`Enter ${room.name}`}>
-          Enter room
-        </Link>
-      )}
+      <span className="ml-auto flex flex-none items-center gap-2">
+        {runs && (
+          <Link href={`/rooms/${encodeURIComponent(room.slug)}/admin`} className="btn btn-ghost min-h-[44px] flex-none px-3 text-[13px] normal-case" aria-label={`Manage ${room.name}`} data-room-manage>
+            Manage
+          </Link>
+        )}
+        {walkable(room) && (
+          <Link href={enterPath(room)} className="btn btn-ghost min-h-[40px] flex-none px-3 text-[13px] normal-case" aria-label={`Enter ${room.name}`}>
+            Enter room
+          </Link>
+        )}
+      </span>
     </div>
   );
 }
 
 function ChatRow({ chat, room }: { chat: EventChat; room?: RoomSummary }) {
-  const href = room ? `${roomPath(room)}/chat/${chat.event_id}` : `/rooms/events/chat/${chat.event_id}`;
+  const href = room ? `${roomPath(room)}?ch=${chat.event_id}` : `/event/${chat.event_id}`;
   return (
     <Link href={href} className={clsx("card mb-2 flex min-h-[44px] items-center gap-3 py-3", chat.state === "closed" && "opacity-70")} data-chat-row={chat.event_id}>
       <span className="grid h-9 w-9 flex-none place-items-center rounded-full border border-line bg-ink-3 text-cream">

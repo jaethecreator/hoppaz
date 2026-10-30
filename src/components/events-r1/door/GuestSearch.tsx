@@ -36,7 +36,7 @@ export default function GuestSearch({ eventId, busy, onCheckIn }: { eventId: str
 
   return (
     <section aria-label="Search guests">
-      <h2 className="font-display text-[16px] font-black">Search</h2>
+      <h2 className="t-title text-[18px] font-extrabold">Search guests</h2>
       <input
         type="search"
         value={q}
@@ -48,7 +48,7 @@ export default function GuestSearch({ eventId, busy, onCheckIn }: { eventId: str
       />
       <div role="group" aria-label="Filter guests" className="mt-2 flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {FILTERS.map((f) => (
-          <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)} className="chip min-h-[40px] flex-none !font-body !text-[13px] !normal-case !tracking-normal">
+          <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)} className="chip min-h-[40px] flex-none px-4 font-body text-[14px] normal-case tracking-normal">
             {f.label}
           </button>
         ))}
@@ -56,25 +56,25 @@ export default function GuestSearch({ eventId, busy, onCheckIn }: { eventId: str
 
       <ul className="mt-2">
         {rows.map((r) => (
-          <li key={r.id} className="flex items-center gap-3 border-t border-line py-2.5 first:border-0">
+          <li key={r.id} className="flex items-center gap-3 border-t border-t-line py-2.5 first:border-0">
             <div className="min-w-0 flex-1">
-              <p className="truncate font-body text-[15px] font-medium text-cream">{r.name}</p>
-              <p className="truncate font-body text-[13px] text-dim">
+              <p className="truncate font-body text-[16px] font-semibold text-t-text">{r.name}</p>
+              <p className="truncate font-body text-[13px] text-t-muted">
                 {r.email} · {r.ticket_name || "General"}
               </p>
             </div>
             {r.status === "checked_in" ? (
-              <span className="flex-none font-body text-[13px] text-cream">Checked in{r.checked_in_at ? ` ${lagosClock(r.checked_in_at)}` : ""}</span>
+              <span className="flex-none font-body text-[13px] font-semibold text-t-text">Checked in{r.checked_in_at ? ` ${lagosClock(r.checked_in_at)}` : ""}</span>
             ) : (
-              <button type="button" disabled={busy} onClick={() => onCheckIn(r)} className="btn min-h-[44px] flex-none px-4 normal-case">
+              <button type="button" disabled={busy} onClick={() => onCheckIn(r)} className="lip-ghost !min-h-[44px] flex-none !px-4">
                 Check in
               </button>
             )}
           </li>
         ))}
       </ul>
-      {found.loading && !found.data && <p className="hint mt-2">Loading</p>}
-      {!found.loading && !rows.length && <p className="hint mt-2">{needle || filter !== "all" ? "No one matches." : "No guests yet."}</p>}
+      {found.loading && !found.data && <p className="mt-2 font-body text-[13.5px] text-t-muted">Loading</p>}
+      {!found.loading && !rows.length && <p className="mt-2 font-body text-[13.5px] text-t-muted">{needle || filter !== "all" ? "No one matches." : "No guests yet."}</p>}
       {found.error && <p role="alert" className="mt-2 font-body text-[14px] text-fireant">{found.error.message}</p>}
     </section>
   );

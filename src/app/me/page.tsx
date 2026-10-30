@@ -12,7 +12,6 @@ import MeHeader from "@/components/me/MeHeader";
 import MonthCard, { useMonthCard } from "@/components/me/MonthCard";
 import NumberTiles, { type TileKey } from "@/components/me/NumberTiles";
 import TodaysBox from "@/components/me/TodaysBox";
-import YourTickets from "@/components/game-time/YourTickets";
 import ShelfStrip from "@/components/me/ShelfStrip";
 import BadgeShelf, { shelfBadges } from "@/components/me/BadgeShelf";
 import WaysToEarn from "@/components/me/WaysToEarn";
@@ -32,6 +31,10 @@ import { useGameDashboard, useGameDrops } from "@/lib/game";
 import { useDailyBox } from "@/lib/useDailyBox";
 import { GENDERS, useNextAsk } from "@/lib/account";
 import type { Profile } from "@/lib/types";
+import SavedDetailsRow from "@/components/events-r1/page/SavedDetailsRow";
+import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import { useR1Auth } from "@/lib/events-r1/hooks";
+import { MeHostSection, MeSignIn, MeTicketsSection } from "@/components/me/MeR1";
 
 type CatalogBadge = { key: string; name: string; icon: string; description: string };
 type Seen = { streak: number; xp: number; level: string };
@@ -46,9 +49,15 @@ const WAVE_KEY = "hoppaz.me.wave";
 const lastSeen = (key: string, userId: string | null) => (userId ? `${key}.${userId}` : key);
 const DAY_MS = 24 * 3.6e6;
 
-function MePagePage() {
+/** The Release 1 sign in, for the build that has it (null without): Hosting, tickets and the signed out strip read it. */
+type R1Sign = { ready: boolean; signedIn: boolean } | null;
+
+function MePagePage({ r1 = null }: { r1?: R1Sign }) {
   const session = useSession();
   const { userId, email, hasAccount, state } = session;
+  // Signed out (CHANGE-003): the same Me with "Sign in to keep all this" on top. Decided by the Release 1 sign in; while the session is
+  // still loading, or the app session already has an account (the same Supabase session in the real build), it is not shown.
+  const signedOut = !!r1 && r1.ready && !r1.signedIn && !hasAccount && state !== "loading";
   const ask = useNextAsk(userId, hasAccount);
   const { stats, makeReport, busy: reportBusy, ready: statsReady, reload: reloadStats } = useGameDashboard(userId, { lite: true });
   const daily = useDailyBox(userId, { demo: DEMO });
@@ -294,153 +303,162 @@ function MePagePage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto px-4 pb-8">
-      {month.card && (
-        <div className="pad-top">
-          <MonthCard card={month.card} busy={reportBusy} onOpen={() => void makeCard(true)} onDismiss={month.dismiss} />
-        </div>
-      )}
+    <div className="h-full overflow-y-auto px-4 pb-8 lg:grid lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] lg:content-start lg:items-start lg:gap-x-10 lg:px-10 lg:pb-12">
+      {/* Desktop: you, hosting and tickets on the left; the shelf, badges, nights, More and Settings on the right. A phone stacks them. */}
+      <div className="min-w-0">
+        {signedOut && <MeSignIn />}
+        {month.card && (
+          <div className={signedOut ? "pt-4" : "pad-top"}>
+            <MonthCard card={month.card} busy={reportBusy} onOpen={() => void makeCard(true)} onDismiss={month.dismiss} />
+          </div>
+        )}
 
-      <MeHeader
-        look={profile?.avatar ?? look}
-        name={profile?.display_name || "Hopper"}
-        levelNo={lvl.index + 1}
-        level={lvl.name}
-        status={status}
-        mascot={waving ? "wave" : mood}
-        stampLevel={!!stamp.level}
-        belowCard={!!month.card}
-      />
-
-      <NumberTiles
-        streak={streak}
-        xp={xp}
-        level={lvl}
-        stamp={stamp}
-        ready={numbersReady}
-        week={week}
-        weekDone={weekDone}
-        today={today}
-        onXp={() => setEarn(true)}
-      />
-
-      {boxShown && (
-        <TodaysBox
-          status={daily.status === "unavailable" ? "loading" : daily.status}
-          box={daily.box}
-          onOpen={() => setRevealing(true)}
+        <MeHeader
+          look={profile?.avatar ?? look}
+          name={profile?.display_name || "Hopper"}
+          levelNo={lvl.index + 1}
+          level={lvl.name}
+          status={status}
+          mascot={waving ? "wave" : mood}
+          stampLevel={!!stamp.level}
+          belowCard={!!month.card || signedOut}
         />
-      )}
 
-      <YourTickets enabled={!DEMO && !!userId} />
+        <NumberTiles
+          streak={streak}
+          xp={xp}
+          level={lvl}
+          stamp={stamp}
+          ready={numbersReady}
+          week={week}
+          weekDone={weekDone}
+          today={today}
+          onXp={() => setEarn(true)}
+        />
 
-      <ShelfStrip userId={userId} offline={state === "offline"} />
+        {boxShown && (
+          <TodaysBox
+            status={daily.status === "unavailable" ? "loading" : daily.status}
+            box={daily.box}
+            onOpen={() => setRevealing(true)}
+          />
+        )}
 
-      <BadgeShelf badges={badges} earned={owned} fresh={fresh} />
+        {EVENTS_R1 && !signedOut && <MeHostSection />}
 
-      {ask.next?.key === "gender" && (
-        <div className="card mt-4">
-          <p className="font-display font-black">One quick one: your gender?</p>
-          <p className="hint mt-0.5">Helps us plan nights for everyone. Only you see this.</p>
-          <div role="group" aria-label="Your gender" className="mt-3 flex flex-wrap gap-1.5">
-            {GENDERS.map(([k, label]) => (
-              <button
-                key={k}
-                type="button"
-                className="chip min-h-[44px] px-4"
-                onClick={async () => {
-                  const saved = await ask.answer({ gender: k });
-                  say(saved ? "Saved. Thanks." : "That didn't save. Try again.", saved ? "ok" : "error");
-                }}
-              >
-                {label}
-              </button>
-            ))}
+        <MeTicketsSection codesOn={!DEMO && !!userId} demo={DEMO} signedOut={signedOut} />
+      </div>
+
+      <div className="min-w-0 lg:pad-top lg:[&>section:first-child]:mt-0">
+        <ShelfStrip userId={userId} offline={state === "offline"} />
+
+        <BadgeShelf badges={badges} earned={owned} fresh={fresh} />
+
+        {ask.next?.key === "gender" && (
+          <div className="card mt-4">
+            <p className="font-display font-black">One quick one: your gender?</p>
+            <p className="hint mt-0.5">Helps us plan nights for everyone. Only you see this.</p>
+            <div role="group" aria-label="Your gender" className="mt-3 flex flex-wrap gap-1.5">
+              {GENDERS.map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  className="chip min-h-[44px] px-4"
+                  onClick={async () => {
+                    const saved = await ask.answer({ gender: k });
+                    say(saved ? "Saved. Thanks." : "That didn't save. Try again.", saved ? "ok" : "error");
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="mt-2 min-h-[44px] font-body text-[14px] text-dim underline underline-offset-4" onClick={ask.later}>
+              Later
+            </button>
           </div>
-          <button type="button" className="mt-2 min-h-[44px] font-body text-[14px] text-dim underline underline-offset-4" onClick={ask.later}>
-            Later
-          </button>
-        </div>
-      )}
+        )}
 
-      {ask.next?.key === "birthday" && (
-        <form
-          className="card mt-4"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!birthday) return;
-            const saved = await ask.answer({ birthday });
-            say(saved ? "Saved. We'll remember it." : "That date didn't work.", saved ? "ok" : "error");
+        {ask.next?.key === "birthday" && (
+          <form
+            className="card mt-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!birthday) return;
+              const saved = await ask.answer({ birthday });
+              say(saved ? "Saved. We'll remember it." : "That date didn't work.", saved ? "ok" : "error");
+            }}
+          >
+            <p className="font-display font-black">When&apos;s your birthday?</p>
+            <p className="hint mt-0.5">So the bus can do something for it. Only you see this.</p>
+            <input
+              type="date"
+              value={birthday}
+              onChange={(e) => setBirthday(e.target.value)}
+              max={new Date().toISOString().slice(0, 10)}
+              aria-label="Your birthday"
+              className="mt-3"
+            />
+            <div className="mt-3 flex gap-2">
+              <button type="submit" className="btn flex-1" disabled={!birthday}>SAVE</button>
+              <button type="button" className="btn btn-ghost flex-none" onClick={ask.later}>LATER</button>
+            </div>
+          </form>
+        )}
+
+        <YourNights visits={visits} loaded={loaded} failed={!DEMO && (loadFailed || state === "offline")} />
+
+        <section aria-label="More" className="mt-7">
+          <p className="seclabel mb-2.5">MORE</p>
+          <RowGroup>
+            {EVENTS_R1 && <SavedDetailsRow />}
+            <RowLink
+              href="/meet"
+              title="Speed Meet"
+              hint="4 minute voice chats with people who like what you like."
+              lead={<Mic size={19} strokeWidth={1.9} aria-hidden className="flex-none text-violet" />}
+            />
+            <RowLink
+              href="/drops"
+              title="Live drops"
+              hint={dropsHint}
+              lead={<Gift size={19} strokeWidth={1.9} aria-hidden className={liveDrops ? "flex-none text-violet" : "flex-none text-dim"} />}
+            />
+            <RowButton
+              icon={FileText}
+              title="Month report card"
+              hint={reportBusy ? "Making your card." : "Last month, as a link you can send."}
+              disabled={reportBusy}
+              trailing={<Link2 size={18} aria-hidden className="flex-none text-dim" />}
+              onClick={() => void makeCard()}
+            />
+          </RowGroup>
+        </section>
+
+        <SettingsGroup
+          className="mt-3"
+          name={profile?.display_name ?? null}
+          handle={profile?.handle ?? null}
+          area={profile?.area || fix?.area || "Not set"}
+          hasAccount={hasAccount}
+          email={email}
+          accountReady={state !== "loading" && state !== "offline"}
+          isAdmin={!!profile?.is_admin}
+          onSaveName={async (name) => {
+            await patchProfile({ display_name: name });
+            say("Saved.", "ok");
           }}
-        >
-          <p className="font-display font-black">When&apos;s your birthday?</p>
-          <p className="hint mt-0.5">So the bus can do something for it. Only you see this.</p>
-          <input
-            type="date"
-            value={birthday}
-            onChange={(e) => setBirthday(e.target.value)}
-            max={new Date().toISOString().slice(0, 10)}
-            aria-label="Your birthday"
-            className="mt-3"
-          />
-          <div className="mt-3 flex gap-2">
-            <button type="submit" className="btn flex-1" disabled={!birthday}>SAVE</button>
-            <button type="button" className="btn btn-ghost flex-none" onClick={ask.later}>LATER</button>
-          </div>
-        </form>
-      )}
+          onChangeArea={() => setPicking(true)}
+          onDelete={deleteAccount}
+        />
 
-      <YourNights visits={visits} loaded={loaded} failed={!DEMO && (loadFailed || state === "offline")} />
-
-      <section aria-label="More" className="mt-7">
-        <p className="seclabel mb-2.5">MORE</p>
-        <RowGroup>
-          <RowLink
-            href="/meet"
-            title="Speed Meet"
-            hint="4 minute voice chats with people who like what you like."
-            lead={<Mic size={19} strokeWidth={1.9} aria-hidden className="flex-none text-violet" />}
-          />
-          <RowLink
-            href="/drops"
-            title="Live drops"
-            hint={dropsHint}
-            lead={<Gift size={19} strokeWidth={1.9} aria-hidden className={liveDrops ? "flex-none text-violet" : "flex-none text-dim"} />}
-          />
-          <RowButton
-            icon={FileText}
-            title="Month report card"
-            hint={reportBusy ? "Making your card." : "Last month, as a link you can send."}
-            disabled={reportBusy}
-            trailing={<Link2 size={18} aria-hidden className="flex-none text-dim" />}
-            onClick={() => void makeCard()}
-          />
-        </RowGroup>
-      </section>
-
-      <SettingsGroup
-        className="mt-3"
-        name={profile?.display_name ?? null}
-        handle={profile?.handle ?? null}
-        area={profile?.area || fix?.area || "Not set"}
-        hasAccount={hasAccount}
-        email={email}
-        accountReady={state !== "loading" && state !== "offline"}
-        isAdmin={!!profile?.is_admin}
-        onSaveName={async (name) => {
-          await patchProfile({ display_name: name });
-          say("Saved.", "ok");
-        }}
-        onChangeArea={() => setPicking(true)}
-        onDelete={deleteAccount}
-      />
-
-      {state === "offline" && (
-        <p className="mt-5 flex items-start gap-2.5 font-body text-[13px] leading-snug text-dim">
-          <i aria-hidden className="mt-[5px] h-2 w-2 flex-none rounded-full bg-dim" />
-          You&apos;re offline. Your nights will save when you&apos;re back.
-        </p>
-      )}
+        {state === "offline" && (
+          <p className="mt-5 flex items-start gap-2.5 font-body text-[13px] leading-snug text-dim">
+            <i aria-hidden className="mt-[5px] h-2 w-2 flex-none rounded-full bg-dim" />
+            You&apos;re offline. Your nights will save when you&apos;re back.
+          </p>
+        )}
+      </div>
 
       <Sheet open={earnOpen} onClose={() => setEarn(false)} label="Ways to earn">
         <WaysToEarn userId={userId} xp={xp} />
@@ -462,8 +480,18 @@ function MePagePage() {
   );
 }
 
-/** Needs an account: anonymous Hoppers get the sign-up here instead. */
+/** The Release 1 sign in for Me. */
+function MeR1Page() {
+  const { ready, user } = useR1Auth();
+  return <MePagePage r1={{ ready, signedIn: !!user }} />;
+}
+
+/**
+ * Release 1: open to everyone, signed out Hoppers see the same Me with a sign in strip on top (CHANGE-003). Without Release 1 it needs an
+ * account as before: anonymous Hoppers get the sign-up here instead.
+ */
 export default function MePage() {
+  if (EVENTS_R1) return <MeR1Page />;
   return (
     <RequireAccount title="Make it yours." caption="Your nights, XP, badges and your Hopper live here.">
       <MePagePage />

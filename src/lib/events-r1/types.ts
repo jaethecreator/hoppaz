@@ -102,6 +102,9 @@ export type Registration = {
   checked_in_count?: number;
 };
 
+/** One of the viewer's own tickets for Me: a going registration for an event that has not ended, with the event. */
+export type MyRegistration = { registration: Registration; event: R1Event };
+
 /** What the one button on the event page should be, for this viewer. */
 export type ViewerState = {
   signedIn: boolean;
@@ -165,6 +168,20 @@ export type Pop = {
 
 export type RoomKind = "hq" | "crew" | "brand";
 
+/** Who can join a room. open: anyone. ask: a request the owner or an admin approves. invite: hidden from Discover, link only. */
+export type JoinMode = "open" | "ask" | "invite";
+/** A person's role in a room. host: creates events as the room and runs the door. admin: everything except payouts and deleting the room. */
+export type RoomRole = "owner" | "admin" | "host" | "member";
+export type RoomLinks = { instagram?: string; x?: string; website?: string; whatsapp?: string };
+/** The viewer's own request to join an ask room. */
+export type RequestState = "none" | "pending" | "declined";
+/** What join() did: joined at once, left a request for the owner, or the viewer was in already. */
+export type JoinOutcome = "joined" | "requested" | "already";
+
+export const ABOUT_MAX = 600;
+export const SLUG_MIN = 3;
+export const SLUG_MAX = 40;
+
 export type RoomSummary = {
   id: string;
   slug: string;
@@ -192,7 +209,55 @@ export type RoomSummary = {
   three_d_on: boolean;
   /** People in the room right now (shown on Lagos HQ). 0 when not counted. */
   online: number;
+  /** The room's own words, up to ABOUT_MAX characters. Empty when none. */
+  about: string;
+  /** Instagram, X, website and WhatsApp channel links. Only the ones that are set. */
+  links: RoomLinks;
+  /** Who can join. Old rooms read as open (visibility open) or invite (visibility private, which is what a private crew always was). */
+  join_mode: JoinMode;
+  /** The viewer's role in this room, null for a visitor. */
+  my_role: RoomRole | null;
+  /** The viewer's own join request (ask rooms). */
+  request: RequestState;
+  /** Waiting requests: counted for the owner and admins, 0 for everyone else. */
+  pending_requests: number;
 };
+
+/**
+ * What anyone with the address may know about a room, invite only rooms included: who it is and how to get in. No member count, no chat,
+ * no events. The room page shows it as the locked page of an invite only room (RoomsApi.preview).
+ */
+export type RoomPreview = {
+  id: string;
+  slug: string;
+  name: string;
+  kind: RoomKind;
+  logo_url: string | null;
+  wallpaper_url: string | null;
+  about: string;
+  verified: boolean;
+  join_mode: JoinMode;
+};
+
+/** Someone asking to join an ask room. */
+export type JoinRequest = {
+  id: string;
+  room_id: string;
+  user_id: string;
+  name: string;
+  created_at: string;
+  /** Set when the person asked right after getting a ticket to one of the room's events: the host sees "Bought a ticket for <title>". */
+  ticket_event?: { id: string; title: string } | null;
+};
+
+/** A person in a room (owner, admins and hosts first). */
+export type RoomMember = { user_id: string; name: string; role: RoomRole; joined_at: string };
+
+/** People who registered for (or checked in at) the room's events and are not members. count is the full number; guests is the first 50. */
+export type RoomGuests = { count: number; guests: { user_id: string; name: string }[] };
+
+/** A quiet notice for the viewer, shown in the app (not a push): their request was approved. */
+export type RoomNotice = { id: string; room_id: string; room_name: string; room_slug: string; kind: "request_approved"; created_at: string };
 
 export type RoomAnnouncement = {
   id: string;
@@ -255,6 +320,9 @@ export type ScanResult =
   | { ok: false; kind: "already_used"; name: string; at: string; seat_no?: number; seats?: number }
   | { ok: false; kind: "not_valid"; reason: "bad_signature" | "wrong_event" | "void" | "unknown" | "not_going" };
 
+/** Someone added as door staff for one event. */
+export type DoorPerson = { user_id: string; name: string };
+
 export type AuthUser = { id: string; name: string; email: string };
 
 /** Input for create and edit. A name is enough; everything else has a default. */
@@ -282,6 +350,31 @@ export type EventDraft = {
   tickets?: { name: string; price_naira: number; capacity: number | null }[];
   /** Put the event in the host's room. Default true when the host has a room; false keeps it out. */
   add_to_room?: boolean;
+  /** Post as this room: one the host owns or is an admin of. Left out, the host's own room is used (see add_to_room). */
+  room_id?: string;
 };
 
-export type RoomDraft = { name: string; description?: string };
+/**
+ * A new room. description is the old name for about (both are read, about wins). slug is the hoppaz.fun/r/<slug> address; left out, it is made
+ * from the name. logo_url is a link (an upload to crew-images, or a data URL in the fake layer). event_ids puts those of the host's own events
+ * into the new room. The look (pack, tint, mood, 2D room) is saved afterwards with looks.set("room", room.id, look).
+ */
+export type RoomDraft = {
+  name: string;
+  description?: string;
+  about?: string;
+  slug?: string;
+  logo_url?: string | null;
+  links?: RoomLinks;
+  join_mode?: JoinMode;
+  event_ids?: string[];
+};
+
+/** What an owner or admin can change on a room. Only the fields present change. */
+export type RoomPatch = { name?: string; about?: string; slug?: string; logo_url?: string | null; links?: RoomLinks; join_mode?: JoinMode };
+
+/**
+ * Checkout details the buyer chose to keep on their Hoppaz account ("Save my details for next time"): name, email and phone only.
+ * Answers to a host's own checkout questions are never saved.
+ */
+export type SavedDetails = { first_name: string; last_name: string; email: string; phone: string };

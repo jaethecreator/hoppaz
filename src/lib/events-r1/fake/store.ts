@@ -10,9 +10,11 @@
  */
 import type { HostPayoutStatus, Order } from "../pay";
 import { PAID_KEY } from "../flags";
+import type { Lineup } from "../lineup";
 import type {
-  AuthUser, Pop, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement, RoomMessage, RoomSummary, Ticket,
+  AuthUser, JoinMode, JoinRequest, Pop, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement, RoomLinks, RoomMessage, RoomNotice, RoomRole, RoomSummary, SavedDetails, Ticket,
 } from "../types";
+import { applyPayoutsDemo } from "./payoutsDemo";
 import { buildSeed } from "./seed";
 import { clone } from "./util";
 
@@ -33,7 +35,7 @@ export type EventRec = Omit<
   "going" | "spots_left" | "host" | "distance_m" | "heat" | "checkins" | "swipes_in" | "here_now" | "ticket_types"
 > & { host_id: string; ticket_types?: TicketTypeRec[] };
 
-export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "latest_announcement" | "is_owner" | "can_post" | "has_3d" | "three_d_on" | "online"> & {
+export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "latest_announcement" | "is_owner" | "can_post" | "has_3d" | "three_d_on" | "online" | "about" | "links" | "join_mode" | "my_role" | "request" | "pending_requests"> & {
   owner_id: string | null;
   /** Missing means no walkable 3D room (the fake has none; a tester can switch one on with fakeDev.setHas3d). */
   has_3d?: boolean;
@@ -41,7 +43,11 @@ export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "lates
   three_d_on?: boolean;
   /** Missing means not counted. */
   online?: number;
+  /** The room's about text (RoomSummary.about). */
   description: string;
+  links?: RoomLinks;
+  /** Missing means open. */
+  join_mode?: JoinMode;
   /** Members before anyone joins in this browser. */
   base_members: number;
 };
@@ -75,6 +81,9 @@ export type PayoutRec = { id: string; status: HostPayoutStatus; balance_naira: n
 /** A fake withdrawal (fake clock ms). It reaches the bank, less a N50 fee, once execute_after_ms has passed. */
 export type WithdrawalRec = { id: string; amount_naira: number; execute_after_ms: number; created_ms: number; paid_ms: number | null };
 
+export type JoinRequestRec = JoinRequest & { status: "pending" | "approved" | "declined"; ticket_event_id?: string | null };
+export type NoticeRec = RoomNotice & { user_id: string; seen: boolean };
+
 export type RegSettings = { questions: RegQuestion[]; messages: RegMessages };
 
 /** Every collection is a record by id, so the saved layer can be a plain difference. */
@@ -92,12 +101,26 @@ export type FakeState = {
   /** By host user id. */
   payouts: Record<string, PayoutRec>;
   regSettings: Record<string, RegSettings>;
+  /** By event id: the lineup or programme. */
+  lineups: Record<string, Lineup>;
   /** "<userId>:<roomId>" */
   memberships: Record<string, boolean>;
+  /** "<userId>:<roomId>" to a role. A member with no entry is a plain member; the owner is rooms[].owner_id. */
+  roles: Record<string, Exclude<RoomRole, "owner" | "member">>;
+  /** "<userId>:<roomId>" to an ISO time: when someone joined in this browser. A member with none joined before the seed (a month ago). */
+  joinedAt: Record<string, string>;
+  /** "<eventId>:<userId>" for people the host let scan at the door of that event. */
+  doorStaff: Record<string, boolean>;
+  /** Join requests by id: one per person per room (a decided one is kept, a new ask after a decline makes it pending again). */
+  requests: Record<string, JoinRequestRec>;
+  /** Notices by id (a request that was approved). */
+  notices: Record<string, NoticeRec>;
   /** "<userId or guest>:<eventId>" */
   interest: Record<string, boolean>;
   /** "<userId>:<roomId>" to an ISO time: announcements before it are read. */
   reads: Record<string, string>;
+  /** By user id: checkout details the person chose to keep (name, email, phone; never a host's own questions). */
+  savedDetails: Record<string, SavedDetails>;
   viewerId: string | null;
   pendingEmail: string | null;
   /** Fake clock: added to the real time. */
@@ -108,7 +131,8 @@ export type FakeState = {
 
 const COLLS = [
   "users", "events", "regs", "tickets", "pops", "announcements", "messages", "reports", "rooms",
-  "orders", "payouts", "regSettings", "memberships", "interest", "reads",
+  "orders", "payouts", "regSettings", "lineups", "memberships", "roles", "joinedAt", "doorStaff", "requests", "notices", "interest", "reads",
+  "savedDetails",
 ] as const;
 type Coll = (typeof COLLS)[number];
 
@@ -124,7 +148,15 @@ type Saved = {
 
 /* ---------------------------------------------------------------- state -- */
 
-let seed: FakeState = buildSeed(Date.now());
+/** The seed, with the payouts demo laid on when this browser asked for one (payoutsDemo.ts, fake only). */
+function seeded(): FakeState {
+  const t = Date.now();
+  const st = buildSeed(t);
+  applyPayoutsDemo(st, t);
+  return st;
+}
+
+let seed: FakeState = seeded();
 let state: FakeState = clone(seed);
 const listeners = new Set<() => void>();
 
@@ -243,7 +275,7 @@ function read(): Saved | null {
 
 /** Start over: a fresh seed, no saved changes, signed out, real time. */
 export function resetAll(): void {
-  seed = buildSeed(Date.now());
+  seed = seeded();
   state = clone(seed);
   if (hasStorage()) {
     try {

@@ -99,6 +99,9 @@ export const useRoom = (idOrSlug: string | null | undefined) =>
 /** The rooms the viewer owns (create offers "Add to <room>" from this). */
 export const useMyRooms = () => useR1Query((api) => api.rooms.mine(), []);
 
+/** The rooms the viewer owns or is an admin of (the workspace switcher, Post as, the room admin). Empty when signed out. */
+export const useManagedRooms = () => useR1Query((api) => api.rooms.managed(), []);
+
 /** A room's events, upcoming first, then past. */
 export const useRoomEvents = (roomId: string | null | undefined) =>
   useR1Query((api) => (roomId ? api.events.listForRoom(roomId) : Promise.resolve([])), [roomId]);
@@ -173,3 +176,9 @@ export function useR1Now(): number {
   }, [api]);
   return t;
 }
+
+/** The viewer's tickets for Me: going, for events that have not ended, soonest first. Empty when signed out. */
+export const useMyRegistrations = () => {
+  const { user } = useR1Auth();
+  return useR1Query((api) => (api.auth.current() ? api.registrations.mine() : Promise.resolve([])), [user?.id]);
+};

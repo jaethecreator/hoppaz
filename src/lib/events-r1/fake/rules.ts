@@ -2,7 +2,7 @@
  * The rules the fake layer shares between its modules: capacity, the waitlist, who may see what, and how a stored
  * event becomes the R1Event a screen gets. Nothing here is async or touches the network.
  */
-import type { EventChat, EventStatus, HostRef, R1Event, RegStatus, Registration, RoomSummary, TicketType } from "../types";
+import type { EventChat, EventStatus, HostRef, JoinMode, R1Event, RegStatus, Registration, RoomRole, RoomSummary, TicketType } from "../types";
 import { haversineKm, LAGOS_CENTER } from "../../geo";
 import type { EventRec, RoomRec, TicketRec, TicketTypeRec, UserRec } from "./store";
 import { S, now, viewer } from "./store";
@@ -54,6 +54,43 @@ export function isMember(roomId: string | null): boolean {
   return room.kind === "hq" || room.owner_id === v.id || !!S().memberships[`${v.id}:${roomId}`];
 }
 
+/** A user's role in a room: the owner, an admin or host (kept in S().roles), or a plain member. Null when not in the room. */
+export function roleOf(roomId: string | null, userId: string | null): RoomRole | null {
+  if (!roomId || !userId) return null;
+  const room = S().rooms[roomId];
+  if (!room) return null;
+  if (room.owner_id === userId) return "owner";
+  if (!S().memberships[`${userId}:${roomId}`] && room.kind !== "hq") return null;
+  return S().roles[`${userId}:${roomId}`] ?? "member";
+}
+export const myRole = (roomId: string | null): RoomRole | null => roleOf(roomId, viewer()?.id ?? null);
+
+/** Owner, admin or staff: manages the room (profile, requests, roles). */
+export function canManageRoom(roomId: string): boolean {
+  const v = viewer();
+  const r = myRole(roomId);
+  return !!v && (r === "owner" || r === "admin" || !!v.staff);
+}
+/**
+ * Owner and admins run every event of the room, the door included, even one they did not make. The Host role is kept in the data
+ * (it may come back) but is hidden at launch and gets nothing a member does not have.
+ */
+export function canRunRoomEvents(roomId: string | null): boolean {
+  return !!roomId && canManageRoom(roomId);
+}
+
+/** The room an event made by this person is posted in: their own room, else a room where they are an admin. */
+export function roomToPostIn(userId: string): RoomRec | null {
+  const own = hostRoom(userId);
+  if (own) return own;
+  return Object.values(S().rooms).find((r) => r.kind !== "hq" && roleOf(r.id, userId) === "admin") ?? null;
+}
+
+export const joinModeOf = (room: RoomRec): JoinMode => room.join_mode ?? "open";
+
+/** The room's invite code (fake: made from its id; the real one is crews.invite_code). */
+export const inviteCodeOf = (room: RoomRec): string => `HZ${room.id.replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+
 export function isHostOf(e: EventRec): boolean {
   const v = viewer();
   return !!v && e.host_id === v.id;
@@ -62,13 +99,27 @@ export function isHostOf(e: EventRec): boolean {
 /** Host or staff. */
 export function canManage(e: EventRec): boolean {
   const v = viewer();
-  return !!v && (e.host_id === v.id || !!v.staff);
+  // A room's owner and admins run the room's events (the door included).
+  return !!v && (e.host_id === v.id || !!v.staff || canRunRoomEvents(e.room_id));
 }
 
 export function assertManage(e: EventRec | undefined | null): EventRec {
   if (!e) throw new Error("Event not found");
   if (!viewer()) throw new Error("Sign in first");
   if (!canManage(e)) throw new Error("Not allowed");
+  return e;
+}
+
+/** The door: whoever manages the event, or a person added as its door staff. */
+export function canDoor(e: EventRec): boolean {
+  const v = viewer();
+  return !!v && (canManage(e) || !!S().doorStaff[`${e.id}:${v.id}`]);
+}
+
+export function assertDoor(e: EventRec | undefined | null): EventRec {
+  if (!e) throw new Error("Event not found");
+  if (!viewer()) throw new Error("Sign in first");
+  if (!canDoor(e)) throw new Error("Not allowed");
   return e;
 }
 
@@ -367,6 +418,9 @@ export function roomSummary(room: RoomRec): RoomSummary {
     .filter((a) => a.room_id === room.id)
     .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const joined = room.kind === "hq" || isMember(room.id);
+  const role = myRole(room.id);
+  const manager = canManageRoom(room.id);
+  const mine = v ? Object.values(s.requests).find((q) => q.room_id === room.id && q.user_id === v.id) : undefined;
   // Unread: announcements after the last time the viewer opened the room, or from the two days before this load.
   const lastRead = v ? Date.parse(s.reads[`${v.id}:${room.id}`] ?? "") : NaN;
   const since = Number.isFinite(lastRead) ? lastRead : now() - 2 * DAY;
@@ -383,9 +437,15 @@ export function roomSummary(room: RoomRec): RoomSummary {
     unread: joined ? anns.filter((a) => Date.parse(a.created_at) > since).length : 0,
     latest_announcement: anns[0] ? clone(anns[0]) : null,
     is_owner: !!v && room.owner_id === v.id,
-    can_post: !!v && (room.owner_id === v.id || !!v.staff),
+    can_post: !!v && (room.owner_id === v.id || role === "admin" || !!v.staff),
     has_3d: !!room.has_3d,
     three_d_on: room.three_d_on ?? !!room.has_3d,
     online: room.online ?? 0,
+    about: room.description,
+    links: { ...(room.links ?? {}) },
+    join_mode: joinModeOf(room),
+    my_role: role,
+    request: mine && !joined ? (mine.status === "pending" ? "pending" : mine.status === "declined" ? "declined" : "none") : "none",
+    pending_requests: manager ? Object.values(s.requests).filter((q) => q.room_id === room.id && q.status === "pending").length : 0,
   };
 }

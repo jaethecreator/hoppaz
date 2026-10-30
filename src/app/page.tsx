@@ -39,6 +39,7 @@ import { DEMO_DROP_TITLES } from "@/lib/demoData";
 import { closeHotspots, useHotspotNav } from "@/lib/hotspots/open";
 import YouMarker from "@/components/map/YouMarker";
 import { EVENTS_R1, ROOMS_SEAL } from "@/lib/events-r1/flags";
+import { asR1 } from "@/components/events-r1/words";
 import CreateButton from "@/components/events-r1/CreateButton";
 import EventsHeading from "@/components/events-r1/EventsHeading";
 import LagosHqMarker from "@/components/events-r1/map/LagosHqMarker";
@@ -258,6 +259,16 @@ export default function MapPage() {
   const closeCard = useCallback(() => setSelected(null), []);
   const closeSearch = useCallback(() => setSearching(false), []);
   const event = useMemo(() => allEvents.find((e) => e.id === selected) ?? null, [allEvents, selected]);
+  // Below lg an R1 event opens as the full-width stub low on the map (MapStub); from lg up it docks on the right.
+  const [desk, setDesk] = useState(true);
+  useEffect(() => {
+    const q = window.matchMedia("(min-width: 1024px)");
+    const on = () => setDesk(q.matches);
+    on();
+    q.addEventListener("change", on);
+    return () => q.removeEventListener("change", on);
+  }, []);
+  const stubPhone = EVENTS_R1 && !desk && !!event && !!asR1(event);
   const isHopStop = useMemo(() => {
     if (!event || !hop) return false;
     return hop.stops.some((s) => haversineKm(s.lat, s.lng, event.lat, event.lng) < 0.2);
@@ -386,6 +397,7 @@ export default function MapPage() {
           onMapReady={onMapReady}
           onMapUnavailable={onMapUnavailable}
           sidePanel={!!event}
+          stubBelow={stubPhone}
           allHot={mode === "next"}
           navRef={navRef}
         />

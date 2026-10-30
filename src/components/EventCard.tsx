@@ -18,8 +18,9 @@ import { loadDropReceipts, useEventCollectibles } from "@/lib/useCollectibles";
 import { useGameDrops } from "@/lib/game";
 import { themeForEvent } from "@/lib/theme";
 import { clockShort, eventPrice, eventTitle, hasVenue, isEventLead } from "@/lib/geo";
-import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import { EVENTS_R1, QUESTS_ON } from "@/lib/events-r1/flags";
 import EventBlock from "@/components/events-r1/EventBlock";
+import MapStub from "@/components/events-r1/MapStub";
 import EventTabs from "@/components/events-r1/page/EventTabs";
 import { asR1, isOnline } from "@/components/events-r1/words";
 import { dayLabel } from "@/lib/filters";
@@ -143,6 +144,73 @@ function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, i
     }
   };
 
+  const checkInBlock = showCheckIn ? (
+    <CheckInBlock
+      checkedIn={checkedIn}
+      busy={busy}
+      closeEnough={closeEnough}
+      at={fresh?.at ?? checkedAt ?? stampedAt.get(event.id) ?? null}
+      fresh={fresh}
+      onCheckIn={() => void doCheckIn()}
+    />
+  ) : null;
+  const dropRow = (
+    <DropRow
+      where={title}
+      closeEnough={closeEnough}
+      gameDrops={gameDrops}
+      gameBusy={dropBusy}
+      onClaimGame={async (drop, code) => {
+        // The sample drop on a sample event has no database to claim from.
+        if (sample && drop.id === sample.id) return { reward: "A free drink on us", description: "Show this at the bar.", code: "HZ-4821" };
+        return claimDrop(drop, fix, code);
+      }}
+      collectibles={collectibles}
+      collected={claimed}
+      collectBusy={collecting}
+      onCollect={(drop) => collect(drop.id, fix)}
+      openedIds={openedIds}
+      onOpened={(id) => setJustOpened((s) => new Set(s).add(id))}
+      onClaimHunt={(drop, at) => claimDrop(drop, at)}
+      eventPoint={{ lat: event.lat, lng: event.lng }}
+      fix={fix}
+    />
+  );
+
+  // Release 1, on the map and in the Events sheet: the tinted ticket stub. The event page keeps the full card below.
+  if (r1 && !page) {
+    return (
+      <MapStub
+        event={r1}
+        placement={placement === "side" ? "side" : "sheet"}
+        distanceM={fix && hasVenue(event) ? event.distance_m : null}
+        onClose={onClose}
+        onPrev={onPrev}
+        onNext={onNext}
+      >
+        {(showOnMap || isHopStop) && (
+          <div className="px-5 pt-3">
+            {showOnMap && (
+              <Link href={`/?e=${encodeURIComponent(event.id)}`} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-line px-4 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-cream transition-colors hover:border-orange">
+                <MapPin size={15} className="text-orange" aria-hidden />
+                Show on map
+              </Link>
+            )}
+            {isHopStop && (
+              <p className="flex items-center gap-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-dim">
+                <Bus size={14} aria-hidden /> ON THE HOP ROUTE
+              </p>
+            )}
+          </div>
+        )}
+        {checkInBlock}
+        {dropRow}
+        <Photos photos={photos} title={title} checkedIn={checkedIn} uploading={uploading} onAdd={picker.open} />
+        {picker.input}
+      </MapStub>
+    );
+  }
+
   return (
     <StubSheet
       label={title}
@@ -230,39 +298,11 @@ function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, i
         )}
       </div>
 
-      {showCheckIn && (
-        <CheckInBlock
-          checkedIn={checkedIn}
-          busy={busy}
-          closeEnough={closeEnough}
-          at={fresh?.at ?? checkedAt ?? stampedAt.get(event.id) ?? null}
-          fresh={fresh}
-          onCheckIn={() => void doCheckIn()}
-        />
-      )}
+      {checkInBlock}
 
-      <EventQuestList eventId={event.id} userId={userId} checkedIn={checkedIn} hasPhoto={hasPhoto} onAddPhoto={picker.open} uploading={uploading} />
+      {QUESTS_ON && <EventQuestList eventId={event.id} userId={userId} checkedIn={checkedIn} hasPhoto={hasPhoto} onAddPhoto={picker.open} uploading={uploading} />}
 
-      <DropRow
-        where={title}
-        closeEnough={closeEnough}
-        gameDrops={gameDrops}
-        gameBusy={dropBusy}
-        onClaimGame={async (drop, code) => {
-          // The sample drop on a sample event has no database to claim from.
-          if (sample && drop.id === sample.id) return { reward: "A free drink on us", description: "Show this at the bar.", code: "HZ-4821" };
-          return claimDrop(drop, fix, code);
-        }}
-        collectibles={collectibles}
-        collected={claimed}
-        collectBusy={collecting}
-        onCollect={(drop) => collect(drop.id, fix)}
-        openedIds={openedIds}
-        onOpened={(id) => setJustOpened((s) => new Set(s).add(id))}
-        onClaimHunt={(drop, at) => claimDrop(drop, at)}
-        eventPoint={{ lat: event.lat, lng: event.lng }}
-        fix={fix}
-      />
+      {dropRow}
 
       <Photos photos={photos} title={title} checkedIn={checkedIn} uploading={uploading} onAdd={picker.open} />
       {picker.input}

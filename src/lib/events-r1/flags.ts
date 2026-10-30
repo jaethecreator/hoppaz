@@ -4,6 +4,7 @@
  * NEXT_PUBLIC_EVENTS_R1=1        every new screen. Off: the app is exactly as it was.
  * NEXT_PUBLIC_EVENTS_R1_FAKE=1   the in-memory data layer with seeded Lagos events (no database).
  * NEXT_PUBLIC_ROOMS_SEAL=1       home base and every hotspot sealed; Lagos HQ is the one central room (WP7).
+ * NEXT_PUBLIC_QUESTS=1            quests show on events (event page, map card, host lists). Nobody can use them yet. Default off.
  * NEXT_PUBLIC_PAID_TICKETS=1      a paid ticket type may be saved (front end only). Paid tickets need the Release 2 payment layer:
  *                                 nobody can buy one, whatever this says. Default off.
  *
@@ -12,6 +13,7 @@
 export const EVENTS_R1 = process.env.NEXT_PUBLIC_EVENTS_R1 === "1";
 export const EVENTS_R1_FAKE = process.env.NEXT_PUBLIC_EVENTS_R1_FAKE === "1";
 export const ROOMS_SEAL = process.env.NEXT_PUBLIC_ROOMS_SEAL === "1";
+export const QUESTS_ON = process.env.NEXT_PUBLIC_QUESTS === "1";
 export const PAID_TICKETS = process.env.NEXT_PUBLIC_PAID_TICKETS === "1";
 
 /** localStorage key of the demo switch for paid tickets (fake data only). */

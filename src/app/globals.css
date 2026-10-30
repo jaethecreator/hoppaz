@@ -1677,6 +1677,14 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
   .lip-ghost:active {
     box-shadow: none;
   }
+  /* The map pop-up's perforation: a row in the stub's colour with a half circle bitten out of both ends, so the map shows through. */
+  .stub-perf {
+    background: var(--t-solid);
+    -webkit-mask: radial-gradient(circle 11px at 0 50%, #0000 98%, #000), radial-gradient(circle 11px at 100% 50%, #0000 98%, #000);
+    -webkit-mask-composite: source-in;
+    mask: radial-gradient(circle 11px at 0 50%, #0000 98%, #000), radial-gradient(circle 11px at 100% 50%, #0000 98%, #000);
+    mask-composite: intersect;
+  }
   /* The Hoppaz date picker (DateTimePicker) on a tinted page: brand orange and ink become the page's tint. */
   .tint-ui .dtp .text-dim {
     color: var(--t-muted);
@@ -1746,6 +1754,58 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
     color: var(--t-muted);
     box-shadow: none;
   }
+  /* More of the brand classes the host dashboard's older blocks (Tickets, Guests, Pops, Payouts) still use. */
+  .tint-ui .t-adopt .divide-line > :not([hidden]) ~ :not([hidden]) {
+    border-color: var(--t-line);
+  }
+  .tint-ui .t-adopt .bg-ink-3\/40 {
+    background: var(--t-bg);
+  }
+  .tint-ui .t-adopt .bg-orange {
+    background: var(--t-accent);
+  }
+  .tint-ui .t-adopt .bg-cream {
+    background: var(--t-on);
+  }
+  .tint-ui .t-adopt .bg-line {
+    background: var(--t-line);
+  }
+  .tint-ui .t-adopt .ring-line {
+    --tw-ring-color: var(--t-line);
+  }
+  .tint-ui .t-adopt .border-dim {
+    border-color: var(--t-muted);
+  }
+  .tint-ui .t-adopt .text-brand-ink {
+    color: var(--t-on);
+  }
+  .tint-ui .t-adopt .seclabel {
+    color: var(--t-muted);
+  }
+  .tint-ui .t-adopt .pill {
+    border-color: var(--t-line);
+    color: var(--t-muted);
+  }
+  .tint-ui .t-adopt .pill-keke {
+    border-color: #1fa847;
+    color: #1fa847;
+  }
+  .tint-ui .t-adopt .pill-danfo {
+    border-color: #b87f00;
+    color: #b87f00;
+  }
+  .tint-ui .t-adopt .chip {
+    border-color: var(--t-line);
+    background: var(--t-solid);
+    color: var(--t-text);
+  }
+  .tint-ui .t-adopt .chip[aria-pressed="true"],
+  .tint-ui .t-adopt .chip[aria-checked="true"],
+  .tint-ui .t-adopt .chip-on {
+    background: var(--t-accent);
+    border-color: var(--t-accent);
+    color: var(--t-on);
+  }
   /* An event or room name: the pack's title font (TintShell sets --t-font). */
   .t-title {
     font-family: var(--t-font, var(--font-poppins));
@@ -1755,63 +1815,8 @@ svg.rig.poke #character { animation: rig-poke 0.42s cubic-bezier(0.3, 1.6, 0.5, 
     background: var(--t-tile);
     border-color: var(--t-line);
   }
-  /* Packs: the background behaviour behind a host page. Drawn once, cheap, quiet behind the content. */
-  .pack-layer {
-    @apply pointer-events-none absolute inset-0 overflow-hidden;
-  }
-  .pack-glow::before,
-  .pack-glow::after {
-    content: "";
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(70px);
-    animation: hz-drift 18s ease-in-out infinite alternate;
-  }
-  .pack-glow::before {
-    width: 60%;
-    height: 50%;
-    left: -10%;
-    top: -12%;
-    background: var(--t-glow);
-  }
-  .pack-glow::after {
-    width: 55%;
-    height: 45%;
-    right: -12%;
-    top: 20%;
-    background: var(--t-glow2);
-    animation-delay: -9s;
-  }
-  .pack-confetti {
-    background-image: radial-gradient(var(--t-accent) 1.6px, transparent 1.8px), radial-gradient(var(--t-glow2) 1.6px, transparent 1.8px);
-    background-size: 46px 46px, 62px 62px;
-    background-position: 0 0, 23px 31px;
-    opacity: 0.35;
-  }
-  .pack-detty {
-    background-image: radial-gradient(circle at 20% 20%, var(--t-glow) 0, transparent 40%),
-      repeating-conic-gradient(from 0deg at 50% -10%, var(--t-soft) 0 6deg, transparent 6deg 18deg);
-    opacity: 0.6;
-  }
-  .pack-owambe {
-    background-image: linear-gradient(45deg, var(--t-soft) 25%, transparent 25%, transparent 75%, var(--t-soft) 75%),
-      linear-gradient(45deg, var(--t-soft) 25%, transparent 25%, transparent 75%, var(--t-soft) 75%);
-    background-size: 36px 36px;
-    background-position: 0 0, 18px 18px;
-    opacity: 0.45;
-  }
 }
-@keyframes hz-drift {
-  to {
-    transform: translate(8%, 6%) scale(1.08);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .pack-glow::before,
-  .pack-glow::after {
-    animation: none;
-  }
-}
+/* Packs (Glow, Confetti, Detty December, Owambe): src/components/host/packs.css, imported by TintShell. */
 
 /* On host surfaces `border-t-line` means the tint's line colour on every side. Tailwind also reads it as "top border in the
    brand line colour" (border-t + line), which paints a dark top edge on light (Day) pages; this puts the tint back. */

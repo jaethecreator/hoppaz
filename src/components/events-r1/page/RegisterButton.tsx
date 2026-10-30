@@ -30,10 +30,13 @@ export default function RegisterButton({
   event: given,
   placement,
   trailing,
+  lip = false,
 }: {
   event: R1Event;
   placement: "sheet" | "side" | "page";
   trailing?: React.ReactNode;
+  /** The tinted stub on the map: the main button is the host layer's `.lip` (the one filled button), full width, with `trailing` under it. */
+  lip?: boolean;
 }) {
   const event = useFreshEvent(given);
   const flow = useRegisterFlow(event);
@@ -57,7 +60,8 @@ export default function RegisterButton({
   }, [page, ready, host, registered, start]);
 
   const busy = phase === "busy";
-  const btn = "btn normal-case";
+  const btn = lip ? "lip w-full" : "btn normal-case";
+  const fill = (base: string) => (lip ? undefined : clsx(base, !side && "flex-1"));
   let body: React.ReactNode;
 
   if (host && page && viewer) {
@@ -79,25 +83,25 @@ export default function RegisterButton({
     let main: React.ReactNode;
     if (host) {
       main = (
-        <Link href={`/host/${encodeURIComponent(event.id)}`} className={clsx(btn, !side && "flex-1")}>
+        <Link href={`/host/${encodeURIComponent(event.id)}`} className={clsx(btn, fill(""))}>
           <Settings2 size={15} aria-hidden /> Manage
         </Link>
       );
     } else if (label.disabled) {
       main = (
-        <button type="button" disabled className={clsx(btn, !side && "flex-1")}>
+        <button type="button" disabled className={clsx(btn, fill(""))}>
           {label.text}
         </button>
       );
     } else if (label.status) {
       main = (
-        <Link href={`/event/${encodeURIComponent(event.id)}`} className={clsx(btn, "btn-ghost border-keke text-cream", !side && "flex-1")}>
+        <Link href={`/event/${encodeURIComponent(event.id)}`} className={lip ? "lip-ghost min-h-[44px] w-full" : clsx(btn, "btn-ghost border-keke text-cream", !side && "flex-1")}>
           {label.text}
         </Link>
       );
     } else {
       main = (
-        <button type="button" onClick={flow.start} disabled={!flow.ready || busy} aria-busy={busy} className={clsx(btn, !side && "flex-1")}>
+        <button type="button" onClick={flow.start} disabled={!flow.ready || busy} aria-busy={busy} className={clsx(btn, fill(""))}>
           {label.text}
         </button>
       );
@@ -119,7 +123,7 @@ export default function RegisterButton({
             </button>
           </div>
         )}
-        <div className={clsx("gap-2", side ? "grid" : "flex")}>
+        <div className={clsx("gap-2", side || lip ? "grid" : "flex")}>
           {!resume && main}
           {trailing}
         </div>

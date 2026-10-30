@@ -4,12 +4,13 @@ import type { EventDraft, EventKind, LinkType, ViewerState, Visibility } from ".
 import { VIBES } from "../../brand";
 import { CREATE_LIMIT, PAID_UNAVAILABLE } from "../constants";
 import { paidTicketsOn } from "../flags";
+import { cleanLineup } from "../lineup";
 import { areaByName, insideLagos, LAGOS_CENTER, nearestArea } from "../../geo";
 import { autoPopsFor, defaultMessages, defaultQuestions } from "./defaults";
 import { canSell } from "./payouts";
 import { retimeAutoPops } from "./pops";
 import {
-  assertManage, canList, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, freeTypes, hostRoom,
+  assertManage, canList, canManage, canManageRoom, canRunRoomEvents, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, freeTypes, roomToPostIn,
   isGoing, isHostOf, regOf, regsOf, requireViewer, statusOf, typeFull, typesOf, typeOfReg,
 } from "./rules";
 import { emit, now, S, subscribe, viewer } from "./store";
@@ -168,7 +169,8 @@ function checkRateLimit(host: UserRec): void {
 
 function makeEvent(host: UserRec, draft: EventDraft, copyTypes?: TicketTypeRec[]): EventRec {
   checkRateLimit(host);
-  const room = draft.add_to_room === false ? null : hostRoom(host.id);
+  const asked = draft.room_id ? S().rooms[draft.room_id] : undefined;
+  const room = draft.add_to_room === false ? null : asked && asked.kind !== "hq" && canManageRoom(asked.id) ? asked : roomToPostIn(host.id);
   const f = normalize(copyTypes ? { ...draft, tickets: undefined } : draft, room?.id ?? null, host.id);
   // Clone: the same types (new ids), prices and all, whatever the paid flag says; nothing new is being offered.
   if (copyTypes) {
@@ -241,7 +243,7 @@ export function viewerStateFor(e: EventRec): ViewerState {
   const v = viewer();
   const reg = v ? regOf(e.id, v.id) : undefined;
   const active = reg && reg.status !== "cancelled" ? reg : null;
-  const isHost = isHostOf(e);
+  const isHost = isHostOf(e) || canRunRoomEvents(e.room_id);
   const see = canSeeLink(e);
   const t = now();
   const start = Date.parse(e.starts_at);
@@ -293,7 +295,7 @@ export const events: EventsApi = {
   },
 
   async listForRoom(roomId) {
-    return upcomingThenPast(Object.values(S().events).filter((e) => e.room_id === roomId && (isHostOf(e) || (e.status !== "cancelled" && canList(e))))).map((e) => eventView(e));
+    return upcomingThenPast(Object.values(S().events).filter((e) => e.room_id === roomId && (canManage(e) || (e.status !== "cancelled" && canList(e))))).map((e) => eventView(e));
   },
 
   async create(draft) {
@@ -316,7 +318,7 @@ export const events: EventsApi = {
     // Add to the host's room, or take it out. Community events live in the room, so they stay in it.
     let roomId = e.room_id;
     if (patch.add_to_room !== undefined) {
-      roomId = patch.add_to_room ? (hostRoom(e.host_id)?.id ?? null) : null;
+      roomId = patch.add_to_room ? (roomToPostIn(e.host_id)?.id ?? null) : null;
       if (!roomId && e.visibility === "community") throw new Error("Community events need a room");
     }
     Object.assign(e, normalize(merged, roomId, e.host_id, { id: e.id, types: typesOf(e) }));
@@ -338,6 +340,8 @@ export const events: EventsApi = {
     const rec = makeEvent(host, draft, typesOf(src));
     const s = S().regSettings[src.id];
     if (s) S().regSettings[rec.id] = clone(s);
+    const l = S().lineups[src.id];
+    if (l) S().lineups[rec.id] = clone(l);
     emit();
     return eventView(rec);
   },
@@ -357,6 +361,17 @@ export const events: EventsApi = {
 
   async viewerState(id) {
     return viewerStateFor(visibleEvent(id));
+  },
+
+  async getLineup(id) {
+    const e = visibleEvent(id);
+    return clone(S().lineups[e.id] ?? cleanLineup(null));
+  },
+
+  async setLineup(id, l) {
+    const e = assertManage(findEvent(id));
+    S().lineups[e.id] = cleanLineup(l);
+    emit();
   },
 
   async getRegistrationSettings(id) {

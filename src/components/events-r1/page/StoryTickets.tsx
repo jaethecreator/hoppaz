@@ -3,13 +3,16 @@
 /* eslint-disable @next/next/no-img-element -- covers are data URLs, template files or bucket links of unknown size */
 
 import { useEffect, useRef, useState } from "react";
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
+import { useR1Api } from "@/lib/events-r1/hooks";
 import type { R1Event, TicketType } from "@/lib/events-r1/types";
 import SignInSheet from "../SignInSheet";
 import { MAX_QTY } from "../pay/PayQuantity";
 import { naira } from "../pay/words";
+import CheckoutContact, { fullName, SAVED_NOW, useContact } from "./CheckoutContact";
 import QuestionsForm from "./QuestionsForm";
 import { pickable } from "./TicketPicker";
 import { useRegisterFlow } from "./useRegisterFlow";
@@ -24,11 +27,13 @@ import { useRegisterFlow } from "./useRegisterFlow";
  */
 export type StoryTickets = ReturnType<typeof useStoryTickets>;
 
-export function useStoryTickets(event: R1Event) {
-  const flow = useRegisterFlow(event);
+export function useStoryTickets(event: R1Event, preview = false) {
+  const flow = useRegisterFlow(event, preview);
   const [pick, setPick] = useState<{ id: string; n: number } | null>(null);
   const [moved, setMoved] = useState(false);
   const [sheet, setSheet] = useState(false);
+  // The sign-up wall comes first for a signed-out buyer: "sheet" means checkout opens once they are in.
+  const [wall, setWall] = useState<"sheet" | null>(null);
   const { selectType, setQty } = flow;
 
   useEffect(() => {
@@ -70,8 +75,16 @@ export function useStoryTickets(event: R1Event) {
 
   /** The main button: a free event registers at once (name and email come from the account); anything else opens checkout. */
   const go = () => {
-    if (free) flow.start();
-    else if (n) setSheet(true);
+    if (preview) return;
+    if (free) {
+      setWall(null);
+      flow.start();
+    } else if (n) {
+      if (flow.viewer && !flow.viewer.signedIn) {
+        setWall("sheet");
+        flow.askSignIn();
+      } else setSheet(true);
+    }
   };
 
   // Registered (or the payment page is opening): the sheet has done its job.
@@ -80,7 +93,7 @@ export function useStoryTickets(event: R1Event) {
     if (registered) setSheet(false);
   }, [registered]);
 
-  return { event, flow, types, free, pick, n, chosen, total, from, moved, plus, minus, canPick, maxFor, host, done, shut, cta, go, word, sheet, setSheet };
+  return { event, flow, types, free, pick, n, chosen, total, from, moved, plus, minus, canPick, maxFor, host, done, shut, cta, go, word, sheet, setSheet, wall, setWall, preview };
 }
 
 const qtyBtn = "grid h-8 w-8 place-items-center rounded-hz border border-t-line bg-t-bg font-body text-[18px] font-semibold leading-none shadow-[0_2px_0_var(--t-line)] active:translate-y-[2px] active:shadow-none disabled:opacity-35 disabled:shadow-none max-lg:h-[38px] max-lg:w-[38px]";
@@ -160,6 +173,11 @@ export function TicketCard({ t, anchor }: { t: StoryTickets; anchor: RefObject<H
         <span className="text-center font-body text-[11.5px] text-t-muted">
           {allPaidOff ? PAID_UNAVAILABLE : free || (t.chosen && t.chosen.price_naira === 0) ? "Your ticket comes with a QR code for the door" : "You'll pay on the next step"}
         </span>
+        {t.preview && (
+          <span className="text-center font-body text-[11.5px] text-t-muted" data-visitor-note>
+            Preview only. This button works for guests, not for you.
+          </span>
+        )}
         {flow.error && !t.sheet && (
           <p role="alert" className="font-body text-[13px] text-[#E5484D]">
             {flow.error}
@@ -214,12 +232,37 @@ export function TicketBar({ t, anchor, line }: { t: StoryTickets; anchor: RefObj
 }
 
 /** The checkout sheet: the event, what you picked, the total, then Pay (or Confirm). The host's questions open inside it. */
-export function CheckoutSheet({ t, cover, when }: { t: StoryTickets; cover: string; when: string }) {
+export function CheckoutSheet({ t, cover, when, tint }: { t: StoryTickets; cover: string; when: string; tint?: CSSProperties }) {
   const { flow, event } = t;
+  const api = useR1Api();
   const box = useRef<HTMLDivElement>(null);
+  const cs = useContact(t.sheet && !!flow.viewer?.signedIn);
   const close = () => {
     t.setSheet(false);
+    flow.setContact(null);
     flow.cancel();
+  };
+  /** Pay (or Confirm): the details must be there; keep them if the switch is on; then the Release 1 flow as before. */
+  const pay = async () => {
+    if (flow.phase === "busy" || !flow.ready) return;
+    const c = cs.contact;
+    if (!c.complete) {
+      cs.setTried(true);
+      if (cs.card) cs.setEdit(true);
+      return;
+    }
+    const d = { first_name: c.details.first_name.trim(), last_name: c.details.last_name.trim(), email: c.details.email.trim(), phone: c.details.phone.trim() };
+    if (c.save && api) {
+      try {
+        await api.account.saveDetails(d);
+        // "Your details are saved for next time" on You're going, for this event, in this tab only.
+        if (!c.hadSaved) window.sessionStorage.setItem(SAVED_NOW, event.id);
+      } catch {
+        // Saving is a convenience: the purchase goes on without it.
+      }
+    }
+    flow.setContact({ name: fullName(d), email: d.email, phone: d.phone });
+    flow.start();
   };
   useEffect(() => {
     if (!t.sheet) return;
@@ -232,9 +275,19 @@ export function CheckoutSheet({ t, cover, when }: { t: StoryTickets; cover: stri
   }, [t.sheet]);
 
   const paid = !!t.chosen && t.chosen.price_naira > 0;
+  // Drawn into the page body (above the tab bar, which sits outside the page), carrying the page's tint with it.
+  const portal = (node: React.ReactNode) =>
+    tint && typeof document !== "undefined"
+      ? createPortal(
+          <div className="tint-ui" style={tint}>
+            {node}
+          </div>,
+          document.body
+        )
+      : node;
   return (
     <>
-      {t.sheet && (
+      {t.sheet && portal(
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 lg:items-center lg:p-4" onMouseDown={(e) => e.target === e.currentTarget && close()}>
           <div
             ref={box}
@@ -282,9 +335,12 @@ export function CheckoutSheet({ t, cover, when }: { t: StoryTickets; cover: stri
                   />
                 </div>
               ) : (
-                <button type="button" className="lip w-full" disabled={flow.phase === "busy" || !flow.ready} onClick={flow.start}>
-                  {flow.phase === "busy" ? "One moment" : paid ? `Pay ${naira(t.total)}` : "Confirm registration"}
-                </button>
+                <>
+                  <CheckoutContact c={cs} />
+                  <button type="button" className="lip w-full" disabled={flow.phase === "busy" || !flow.ready || !cs.ready} onClick={() => void pay()}>
+                    {flow.phase === "busy" ? "One moment" : paid ? `Pay ${naira(t.total)}` : "Confirm registration"}
+                  </button>
+                </>
               )}
               {flow.error && (
                 <p role="alert" className="font-body text-[13px] text-[#E5484D]">
@@ -301,8 +357,18 @@ export function CheckoutSheet({ t, cover, when }: { t: StoryTickets; cover: stri
       <SignInSheet
         open={flow.phase === "signin"}
         reason={paid ? `Buy a ticket for ${event.title}` : `Register for ${event.title}`}
-        onClose={flow.cancel}
-        onSignedIn={() => void flow.proceed()}
+        onClose={() => {
+          t.setWall(null);
+          flow.cancel();
+        }}
+        onSignedIn={() => {
+          // Bought from the ticket card: checkout opens, with the name and email the account now has. The one-tap free register goes on.
+          if (t.wall === "sheet") {
+            t.setWall(null);
+            flow.cancel();
+            t.setSheet(true);
+          } else void flow.proceed();
+        }}
       />
     </>
   );

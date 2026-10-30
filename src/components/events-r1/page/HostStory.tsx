@@ -4,10 +4,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Calendar, Check, ChevronLeft, Globe, MapPin, Share2 } from "lucide-react";
-import TintShell, { usePictureTint } from "@/components/host/TintShell";
+import TintShell, { useLookStyle, usePictureTint } from "@/components/host/TintShell";
+import { QUESTS_ON } from "@/lib/events-r1/flags";
 import { useR1Api, useR1Auth, useR1Now, useR1Query, useViewerState } from "@/lib/events-r1/hooks";
+import { LINEUP_TITLE } from "@/lib/events-r1/lineup";
 import { DEFAULT_LOOK } from "@/lib/events-r1/looks";
 import type { Look } from "@/lib/events-r1/looks";
 import type { R1Event, ReportReason } from "@/lib/events-r1/types";
@@ -17,9 +19,10 @@ import { themeForEvent } from "@/lib/theme";
 import { peekTint, readTint } from "@/lib/tint";
 import { LINK_LABEL } from "../create/helpers";
 import SignInSheet from "../SignInSheet";
+import { buttonFromEvent } from "../labels";
 import { isOnline } from "../words";
-import { downloadIcs } from "./calendar";
-import HostStrip from "./HostStrip";
+import { downloadIcs, googleCalendarUrl } from "./calendar";
+import ManageBar, { HostExtras } from "./ManageBar";
 import { eventUrl, shareOrCopy } from "./share";
 import StatusCard from "./StatusCard";
 import { CheckoutSheet, TicketBar, TicketCard, useStoryTickets } from "./StoryTickets";
@@ -46,7 +49,7 @@ function at(iso: string, tz: string) {
 }
 
 /** The words of the date row and the big date: "Friday, 30 October" and "8:00 PM to 11:00 PM · GMT+1". */
-function whenWords(e: R1Event) {
+export function whenWords(e: R1Event) {
   const tz = e.timezone || "Africa/Lagos";
   const a = at(e.starts_at, tz);
   const b = e.ends_at && Date.parse(e.ends_at) > Date.parse(e.starts_at) ? at(e.ends_at, tz) : null;
@@ -61,7 +64,7 @@ function whenWords(e: R1Event) {
 }
 
 /** A cover for an event that has none: one of the Hoppaz templates, the same one every time for that event. */
-function fallbackCover(id: string): string {
+export function fallbackCover(id: string): string {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return COVERS[h % COVERS.length].src;
@@ -92,7 +95,7 @@ function Sec({ title, aside, children }: { title: string; aside?: React.ReactNod
   );
 }
 
-function Report({ event }: { event: R1Event }) {
+function Report({ event, inert }: { event: R1Event; inert?: boolean }) {
   const api = useR1Api();
   const { data: viewer } = useViewerState(event.id);
   const [open, setOpen] = useState(false);
@@ -101,7 +104,8 @@ function Report({ event }: { event: R1Event }) {
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  if (viewer?.isHost) return null;
+  if (viewer?.isHost && !inert) return null;
+  if (inert) return <span className="text-left text-t-muted">Report event</span>;
   if (sent)
     return (
       <span role="status" className="flex items-center gap-1.5">
@@ -162,6 +166,7 @@ function Report({ event }: { event: R1Event }) {
 function Quests({ event }: { event: R1Event }) {
   const { user } = useR1Auth();
   const { quests, claims } = useQuests(user?.id ?? null);
+  if (!QUESTS_ON) return null;
   const mine = quests.filter((q) => q.event_id === event.id);
   if (!mine.length) return null;
   const xp = mine.reduce((a, q) => a + q.xp_reward, 0);
@@ -241,16 +246,26 @@ function MoreFromHost({ event }: { event: R1Event }) {
 export default function HostStory({ event: given, extra }: { event: R1Event; extra?: React.ReactNode }) {
   const event = useFreshEvent(given);
   const router = useRouter();
+  const path = usePathname();
+  const sp = useSearchParams();
   const now = useR1Now();
-  const { data: viewer } = useViewerState(event.id);
+  const { data: real } = useViewerState(event.id);
+  // "View as visitor": the host sees the page exactly as someone who has not registered sees it, under a bar. Only the host can ask.
+  const asVisitor = !!real?.isHost && sp.get("as") === "visitor";
+  const viewer = useMemo(
+    () => (asVisitor && real ? { ...real, signedIn: false, isHost: false, interested: false, registration: null, button: buttonFromEvent(event), canSeeOnlineLink: false, joinCallOpen: false } : real),
+    [asVisitor, real, event]
+  );
   const { data: saved, loading: lookLoading } = useR1Query((a) => a.looks.get("event", event.id), [event.id]);
+  const { data: lineup } = useR1Query((a) => a.events.getLineup(event.id), [event.id]);
   const cover = event.flyer_url || fallbackCover(event.id);
   const look: Look = saved ?? { ...DEFAULT_LOOK, mood: themeForEvent(event.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);
+  const sheetTint = useLookStyle(look, tint);
   const [wide, setWide] = useState(false);
   const [said, setSaid] = useState("");
   const anchor = useRef<HTMLDivElement>(null);
-  const t = useStoryTickets(event);
+  const t = useStoryTickets(event, asVisitor || !!real?.isHost);
   const w = useMemo(() => whenWords(event), [event]);
   const online = isOnline(event);
 
@@ -298,7 +313,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   const placeSub = online ? "The link shows once you're in" : [event.venue_name && event.area && !event.venue_name.includes(event.area) ? event.area : "", "Lagos"].filter(Boolean).join(", ");
 
   const coverEl = (
-    <div className={`overflow-hidden rounded-hz leading-[0] shadow-[0_24px_48px_-26px_rgba(0,0,0,.7)] ${wide ? "lg:mb-[22px]" : ""}`}>
+    <div className={`overflow-hidden rounded-hz leading-[0] order-3 lg:order-none shadow-[0_24px_48px_-26px_rgba(0,0,0,.7)] ${wide ? "lg:mb-[22px]" : ""}`}>
       <img
         src={cover}
         alt={`${event.title} cover`}
@@ -309,13 +324,22 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   );
 
   let action: React.ReactNode;
-  if (viewer?.isHost) action = <div className="t-adopt"><HostStrip event={event} viewer={viewer} /></div>;
-  else if (viewer?.registration) action = <div className="t-adopt"><StatusCard event={event} viewer={viewer} /></div>;
+  if (viewer?.isHost) action = <><TicketCard t={t} anchor={anchor} /><div className="t-adopt mt-3"><HostExtras event={event} viewer={viewer} /></div></>;
+  else if (viewer?.registration) action = <div className="t-adopt"><StatusCard event={event} viewer={viewer} fresh={t.flow.justDone} /></div>;
   else action = <TicketCard t={t} anchor={anchor} />;
 
   return (
     <div className="h-full overflow-y-auto">
       <TintShell look={look} tint={tint} className="min-h-full">
+        {viewer?.isHost && <ManageBar event={event} viewer={viewer} />}
+        {asVisitor && (
+          <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 bg-t-accent px-[22px] py-2 text-[13.5px] font-bold text-t-on lg:px-[30px]" data-visitor-bar>
+            <span>Viewing as a visitor. This is your page exactly as guests see it.</span>
+            <Link href={path} replace className="lip-ghost !mb-0 !min-h-[44px] whitespace-nowrap !text-t-text">
+              Back to my view
+            </Link>
+          </div>
+        )}
         {/* host band */}
         <div className="flex items-center gap-3 bg-t-soft px-[22px] py-3.5 lg:px-[30px] lg:py-4">
           <button type="button" onClick={back} aria-label="Back" className="-ml-2 grid h-10 w-8 flex-none place-items-center text-t-muted">
@@ -341,14 +365,14 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
         )}
 
         <div
-          className={`mx-auto grid max-w-[1240px] gap-[30px] px-[22px] pb-10 pt-[26px] lg:grid-cols-[118px_minmax(0,1fr)_31%] lg:gap-x-7 lg:gap-y-1.5 lg:px-[30px] lg:pb-9 lg:pt-7 ${
+          className={`mx-auto flex max-w-[1240px] flex-col gap-5 lg:grid px-[22px] pb-10 pt-[26px] lg:grid-cols-[118px_minmax(0,1fr)_31%] lg:gap-x-7 lg:gap-y-1.5 lg:px-[30px] lg:pb-9 lg:pt-7 ${
             wide
-              ? "[grid-template-areas:'date'_'head'_'cover'_'side'_'rest'] lg:grid-rows-[auto_auto_1fr] lg:[grid-template-areas:'date_cover_cover'_'date_head_side'_'date_rest_side']"
-              : "[grid-template-areas:'date'_'head'_'side'_'rest'] lg:grid-rows-[auto_1fr] lg:[grid-template-areas:'date_head_side'_'date_rest_side']"
+              ? "lg:grid-rows-[auto_auto_1fr] lg:[grid-template-areas:'date_cover_cover'_'date_head_side'_'date_rest_side']"
+              : "lg:grid-rows-[auto_1fr] lg:[grid-template-areas:'date_head_side'_'date_rest_side']"
           }`}
         >
           {/* the big date */}
-          <div className="flex items-baseline gap-3 font-display font-extrabold leading-[.86] tracking-[-0.02em] text-t-accent [grid-area:date] lg:sticky lg:top-5 lg:block lg:self-start">
+          <div className="hidden font-display font-extrabold leading-[.86] tracking-[-0.02em] text-t-accent [grid-area:date] lg:sticky lg:top-5 lg:block lg:self-start">
             <span className="block text-[58px] lg:text-[80px]">{w.a.day}</span>
             <span className="block text-[22px] lg:mt-2">{MON[w.a.month - 1]}</span>
             <span className="block font-body text-[13px] font-semibold leading-snug tracking-normal text-t-muted lg:mt-2.5">
@@ -357,11 +381,11 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
           </div>
 
           {/* title and the two rows */}
-          <div className="grid min-w-0 content-start gap-5 [grid-area:head] lg:gap-4">
-            <span className="font-body text-[13px] font-semibold text-t-accent">{event.status === "cancelled" ? "This event is cancelled" : kick}</span>
-            <h1 className="t-title m-0 text-balance text-[30px] font-extrabold leading-[1.06] tracking-[-0.02em] lg:text-[38px] lg:leading-[1.02]">{event.title}</h1>
-            {desc && <p className="m-0 max-w-[56ch] font-body text-[15px] leading-relaxed text-t-muted">{desc}</p>}
-            <div className="grid gap-[18px] lg:gap-3">
+          <div className="contents min-w-0 content-start gap-5 [grid-area:head] lg:grid lg:gap-4">
+            <span className="font-body text-[13px] font-semibold text-t-accent order-1 lg:order-none">{event.status === "cancelled" ? "This event is cancelled" : kick}</span>
+            <h1 className="t-title m-0 text-balance text-[30px] font-extrabold leading-[1.06] tracking-[-0.02em] order-2 lg:order-none lg:text-[38px] lg:leading-[1.02]">{event.title}</h1>
+            {desc && <p className="m-0 max-w-[56ch] font-body text-[15px] leading-relaxed text-t-muted order-5 lg:order-none">{desc}</p>}
+            <div className="grid gap-[18px] order-4 lg:order-none lg:gap-3">
               <div className="grid grid-cols-[44px_1fr] items-start gap-3.5 lg:grid-cols-[40px_1fr_auto] lg:items-center lg:gap-3">
                 <Tile>
                   <Calendar />
@@ -370,9 +394,14 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
                   <b className="block font-body text-[15.5px] leading-snug">{w.dayLine}</b>
                   <span className="block font-body text-[13.5px] text-t-muted">{w.timeLine}</span>
                 </div>
-                <button type="button" onClick={() => downloadIcs(event)} className="col-start-2 justify-self-start whitespace-nowrap font-body text-[13.5px] font-semibold text-t-accent lg:col-start-3">
-                  Add to calendar
-                </button>
+                <div className="col-start-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 justify-self-start lg:col-start-3 lg:justify-self-end">
+                  <a href={googleCalendarUrl(event)} target="_blank" rel="noopener noreferrer" className="whitespace-nowrap font-body text-[13.5px] font-semibold text-t-accent">
+                    Add to calendar
+                  </a>
+                  <button type="button" onClick={() => downloadIcs(event)} className="whitespace-nowrap font-body text-[12.5px] text-t-muted underline underline-offset-4">
+                    or download .ics
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-[44px_1fr] items-start gap-3.5 lg:grid-cols-[40px_1fr_auto] lg:items-center lg:gap-3">
                 <Tile>{online ? <Globe /> : <MapPin />}</Tile>
@@ -389,13 +418,13 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
             </div>
           </div>
 
-          {wide && <div className="min-w-0 [grid-area:cover]">{coverEl}</div>}
+          {wide && <div className="min-w-0 [grid-area:cover] order-3 lg:order-none">{coverEl}</div>}
 
           {/* cover, tickets, hosts */}
-          <div className="grid min-w-0 content-start gap-7 [grid-area:side] lg:gap-[18px]">
+          <div className="contents min-w-0 content-start gap-7 [grid-area:side] lg:grid lg:gap-[18px]">
             {!wide && coverEl}
-            {action}
-            <div>
+            <div className="order-6 lg:order-none mt-2.5 lg:mt-0">{action}</div>
+            <div className="order-7 lg:order-none mt-2.5 lg:mt-0">
               <div className="font-body text-[12px] font-semibold text-t-muted">Hosted by</div>
               <div className="mt-2 grid gap-3.5 lg:gap-2.5">
                 <div className="flex items-center gap-2.5 font-body text-[14.5px] font-semibold leading-tight">
@@ -410,26 +439,52 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
                     Message the host in their room
                   </Link>
                 )}
-                <Report event={event} />
+                <Report event={event} inert={asVisitor} />
               </div>
             </div>
           </div>
 
           {/* the rest */}
-          <div className="grid min-w-0 content-start gap-10 [grid-area:rest] lg:gap-[30px] lg:pt-[26px]">
+          <div className="grid min-w-0 content-start gap-10 [grid-area:rest] order-8 lg:order-none mt-5 lg:mt-0 lg:gap-[30px] lg:pt-[26px]">
             {about && (
               <Sec title="About">
                 <p className="m-0 max-w-[62ch] whitespace-pre-line font-body text-[15.5px] leading-relaxed">{about}</p>
               </Sec>
             )}
-            {extra}
-            <Quests event={event} />
+            {lineup && lineup.rows.length > 0 && (
+              <Sec title={LINEUP_TITLE[lineup.kind]}>
+                {lineup.kind === "lineup" ? (
+                  <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+                    {lineup.rows.map((r, i) => (
+                      <li key={i} className="rounded-full border border-t-line bg-t-tile px-3.5 py-2 font-body text-[14px] font-semibold">
+                        {r.name}
+                        {r.time && <span className="ml-2 font-mono text-[12px] font-medium text-t-accent">{r.time}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <ul className="m-0 list-none p-0">
+                    {lineup.rows.map((r, i) => (
+                      <li key={i} className={`grid gap-3 border-b border-t-line py-[11px] last:border-b-0 ${lineup.rows.some((x) => x.time) ? "grid-cols-[90px_minmax(0,1fr)]" : "grid-cols-1"}`}>
+                        {lineup.rows.some((x) => x.time) && <b className="font-mono text-[14px] font-medium text-t-accent">{r.time ?? ""}</b>}
+                        <span className="font-body text-[15px]">
+                          {r.name}
+                          {r.note && <small className="block text-[12.5px] text-t-muted">{r.note}</small>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Sec>
+            )}
+            {!asVisitor && extra}
+            {QUESTS_ON && <Quests event={event} />}
             <MoreFromHost event={event} />
           </div>
         </div>
 
         <TicketBar t={t} anchor={anchor} line={`${w.short} · ${online ? "Online" : event.venue_name || event.area || "Lagos"}`} />
-        <CheckoutSheet t={t} cover={cover} when={`${w.short} · ${w.a.time}${online ? "" : ` · ${event.venue_name || event.area}`}`} />
+        <CheckoutSheet t={t} tint={sheetTint} cover={cover} when={`${w.short} · ${w.a.time}${online ? "" : ` · ${event.venue_name || event.area}`}`} />
       </TintShell>
     </div>
   );

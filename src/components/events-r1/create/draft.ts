@@ -5,6 +5,7 @@
  */
 const KEY = "hz-create-draft";
 const COVER = "hz-create-draft-cover";
+const LOGO = "hz-create-draft-room-logo";
 
 export type Mode = "event" | "room";
 export type Draft = {
@@ -50,10 +51,29 @@ export function writeCover(cover: string | null): void {
   }
 }
 
+/** The room's logo preview (a small data URL), kept apart like the cover. */
+export function readLogo(): string | null {
+  try {
+    return window.sessionStorage.getItem(LOGO);
+  } catch {
+    return null;
+  }
+}
+
+export function writeLogo(logo: string | null): void {
+  try {
+    if (logo) window.sessionStorage.setItem(LOGO, logo);
+    else window.sessionStorage.removeItem(LOGO);
+  } catch {
+    /* too big to keep: the draft goes on without the logo */
+  }
+}
+
 export function clearDraft(): void {
   try {
     window.sessionStorage.removeItem(KEY);
     window.sessionStorage.removeItem(COVER);
+    window.sessionStorage.removeItem(LOGO);
   } catch {
     /* nothing to clear */
   }
