@@ -3,6 +3,40 @@
 Written 29 Oct 2026 for Jae. Part 1 only: nothing is built yet. Prices were checked against the official pages on 29 Oct 2026 unless a line says otherwise.
 Naira figures use about ₦1,400 to the dollar (the official rate was ₦1,344 and the parallel rate ₦1,404 on 20 Aug 2026; check the day you pay).
 
+## Email launch path (Jae, 30 Oct): free tiers first, SES alongside
+
+Start today on providers that take an afternoon to set up, then move to SES once AWS approves it. The sending code reads the provider from settings, so a switch is a settings change, not a rebuild.
+
+**Free tiers checked today (30 Oct).** For events the daily cap matters more than the monthly one, because reminders go out in bursts.
+
+| Provider | Free a day | Free a month | Footer on free | Next step up |
+|---|---|---|---|---|
+| **Brevo** | **300** | about 9,000 | "Sent with Brevo" | Starter $10.80 for 5,000 |
+| Mailjet | 200 | 6,000 | Mailjet logo | Starter $9 for 8,000, no daily cap |
+| Mailtrap | 150 | 4,000 | not stated | Basic $15 for 10,000 |
+| Resend | 100 | 3,000 | **none** | Pro $20 for 50,000 |
+| SendPulse | 50 an hour | 12,000 | not stated | $15 for 10,000 (pay as you go) |
+| ZeptoMail | no daily cap stated | 10,000 once (lasts 6 months) | none | pay per 10,000 credit |
+| SMTP2GO | not stated | 1,000 | not stated | $10 for 10,000 |
+| MailerSend | 100 API calls | 500 | MailerSend logo | Hobby $7 for 5,000 |
+
+**The setup:**
+1. **Guest emails (confirmations, reminders, Pops) on Brevo free:** 300 a day, the biggest daily allowance.
+2. **Sign-in codes on Resend free (100 a day, no footer), kept apart.** A reminder burst can then never use up the codes and lock people out of signing in. Codes are the one email that must always arrive.
+3. **Overflow on Mailjet free (200 a day).** If Brevo hits 300 in a day, the sender moves on to Mailjet. With all three, that's about 600 free emails a day and 18,000 a month.
+4. **SES set up at the same time.** Start the AWS account and the sandbox review this week. When monthly volume passes the free tiers (Detty December needs about 60,000), SES takes over at about $6 a month.
+5. **A paid fallback if SES isn't approved in time:** Mailjet Starter ($9 for 8,000, no daily cap) or Brevo Starter. Watch the send log, and move up a step before a big event instead of after.
+
+Each provider needs its own records on `hoppaz.fun` (a signing key, and for some a verification line). They can all live side by side.
+
+**Why doesn't everyone use SES?** Not because of the code. The reasons:
+- **AWS has to approve you first.** It sometimes turns down brand-new accounts.
+- **You build what the others include:** bounce handling, a do-not-email list, logs and templates.
+- **AWS pauses a whole account that bounces too much.** That pause takes the sign-in codes down with everything else.
+- **Billing is in dollars,** and some naira cards fail.
+
+Bigger teams (Luma, PartyVerse) use it because they have the engineers to build the rest. For us the blockers are the approval and the card, which is why we start on the free tiers.
+
 ## The plan: the most reach for the least money (revised 30 Oct)
 
 Jae's brief: get the most results for the least spend. This replaces the first recommendation (Resend Pro, plus 3 WhatsApp messages a guest), which would have cost about $236 a month in Detty December.
@@ -51,6 +85,7 @@ While the AWS credits last, the email column is $0. If every guest switched on W
 | Area | What I found |
 |---|---|
 | Sign-in codes | Supabase Auth `signInWithOtp` (`src/lib/events-r1/real/auth.ts:49`). The templates in `supabase/email-templates/` are pasted into the Supabase dashboard. There is no mail provider in the code. |
+| `hoppaz.fun` mail records | **None.** DNS (on 30 Oct) is at Hostinger (`dns-parking.com`) and the site points at Vercel, but there's no SPF, DKIM, DMARC or MX. So no provider sends from `hoppaz.fun` today. Production sign-in codes are either on Supabase's built-in mailer (team members only, so strangers can't sign in) or on custom SMTP from another domain. **Check this now: it may be a launch blocker.** |
 | Who sends the codes | It can't be checked from the repo. Supabase's built-in mailer sends only to the project's own team members, 2 an hour, so if strangers can sign in, production already has custom SMTP set in the dashboard. `docs/PLAY-MODE.md` and `docs/PLAY-BUILD-PLAN.md` planned Resend for it. **Ask Ola, or look in Supabase: Authentication, Emails, SMTP settings.** |
 | Transactional email | None. There's no Resend, Postmark, SendGrid, Mailgun, Brevo, SES, nodemailer or SMTP in `src/`, `supabase/` or `package.json`, on this branch or on `origin/main`. The only sending package is `web-push`. |
 | Pops worker | `ev_dispatch_due_pops()` (`supabase/events_r1_pops.sql:310`) makes the automatic Pops, then flips the due ones to `sent` and copies them to the room. **It delivers nothing.** The file doesn't schedule it: Ola runs `select cron.schedule('hoppaz-ev-pops', '* * * * *', ...)` himself (`supabase/EVENTS_R1_ORDER.md:125`). `src/app/api/cron/` has only `purge-rooms` (daily, `vercel.json`). Whether the Pops cron is on in production is unknown. **Ask Ola.** `ev_pop_recipient_ids(pop)` already returns who a Pop is for. |
