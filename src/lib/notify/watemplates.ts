@@ -10,9 +10,8 @@ import { formatWhen, oneLine } from "./templates/format";
  *
  * META'S RULES for a parameter (template fundamentals, components, error codes; checked 31 Oct 2026): a value is never empty (error 132012),
  * and in host-written text there is no newline, no tab and no run of 4 or more spaces. oneLine/param below turn every run of white space,
- * which includes all of those, into one space, so none can get through. KNOWN CONFLICT: Meta's error 2388299 says a body cannot START or END
- * with a variable, and these four bodies (as the guide has them) start with {{1}}. Meta may refuse them at submission; the fix is a lead word
- * in the text below (for example "Hoppaz: "), nothing else changes. scripts/whatsapp-setup.mts prints this warning on its dry run.
+ * which includes all of those, into one space, so none can get through. Meta's error 2388299 says a body cannot START or END with a
+ * variable, so each body opens with a lead word ("Reminder:", "Update:"). templateProblems below checks that, and that no two variables sit side by side.
  */
 
 export const WA_TEMPLATE_NAMES = ["hoppaz_day_before", "hoppaz_hour_before", "hoppaz_event_changed", "hoppaz_event_cancelled"] as const;
@@ -46,7 +45,7 @@ export const WA_TEMPLATES: readonly WaTemplateDef[] = [
     name: "hoppaz_day_before",
     category: "UTILITY",
     language: "en",
-    body: "{{1}} is tomorrow at {{2}}, {{3}}. Reply STOP to stop.",
+    body: "Reminder: {{1}} is tomorrow at {{2}}, {{3}}. Reply STOP to stop.",
     samples: ["Detty December Night", "7:30 PM", "Eko Hotel, Victoria Island"],
     buttonSample: "detty-december-night",
   },
@@ -54,7 +53,7 @@ export const WA_TEMPLATES: readonly WaTemplateDef[] = [
     name: "hoppaz_hour_before",
     category: "UTILITY",
     language: "en",
-    body: "{{1}} starts at {{2}} at {{3}}. Reply STOP to stop.",
+    body: "Reminder: {{1}} starts at {{2}} at {{3}}. Reply STOP to stop.",
     samples: ["Detty December Night", "7:30 PM", "Eko Hotel, Victoria Island"],
     buttonSample: "detty-december-night",
   },
@@ -62,7 +61,7 @@ export const WA_TEMPLATES: readonly WaTemplateDef[] = [
     name: "hoppaz_event_changed",
     category: "UTILITY",
     language: "en",
-    body: "{{1}} has changed: now {{2}} at {{3}}, {{4}}. Reply STOP to stop.",
+    body: "Update: {{1}} has changed: now {{2}} at {{3}}, {{4}}. Reply STOP to stop.",
     samples: ["Detty December Night", "Saturday 20 Dec", "9:00 PM", "Eko Hotel, Victoria Island"],
     buttonSample: "detty-december-night",
   },
@@ -70,7 +69,7 @@ export const WA_TEMPLATES: readonly WaTemplateDef[] = [
     name: "hoppaz_event_cancelled",
     category: "UTILITY",
     language: "en",
-    body: "{{1}} on {{2}} is cancelled. {{3}} Reply STOP to stop.",
+    body: "Update: {{1}} on {{2}} is cancelled. {{3}} Reply STOP to stop.",
     samples: ["Detty December Night", "Saturday 20 Dec", "You will be refunded, and we will email you when it is sent."],
     buttonSample: "detty-december-night",
   },
@@ -97,7 +96,8 @@ export function templateProblems(t: WaTemplateDef): string[] {
   if (vars.some((v, i) => v !== i + 1)) out.push("the variables are not numbered 1, 2, 3 in order");
   if (vars.length !== t.samples.length) out.push(`${vars.length} variables but ${t.samples.length} samples`);
   if (t.body.length > 1024) out.push("the body is longer than 1024 characters");
-  if (/^\{\{/.test(t.body) || /\}\}[.!?]?\s*$/.test(t.body)) out.push("the body starts or ends with a variable (Meta error 2388299)");
+  if (/^\s*\{\{/.test(t.body) || /\}\}[.!?]?\s*$/.test(t.body)) out.push("the body starts or ends with a variable (Meta error 2388299)");
+  if (/\}\}\s*\{\{/.test(t.body)) out.push("two variables are side by side");
   if (t.samples.some((s) => !s.trim() || /[\n\t]|\s{4,}/.test(s))) out.push("a sample is empty or has a newline, a tab or 4 spaces in a row");
   if (WA_BUTTON_LABEL.length > 25) out.push("the button text is longer than 25 characters");
   return out;

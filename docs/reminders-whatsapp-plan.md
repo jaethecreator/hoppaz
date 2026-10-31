@@ -34,7 +34,7 @@ Plain steps for Jae. The code is written and tested against fakes only: it has n
 
 - `node --no-warnings scripts/whatsapp-setup.mts` is a dry run. It prints the four templates and what it would send, and sends nothing.
 - With `WHATSAPP_TOKEN` and `WHATSAPP_WABA_ID` set in that terminal, `node --no-warnings scripts/whatsapp-setup.mts --send` submits them. It checks first whether each one already exists, so it is safe to run again, and it prints no key.
-- **Heads-up before you send:** Meta's documentation (error 2388299) says a template body cannot start with a variable, and all four bodies start with `{{1}}`. Meta may refuse them. If it does, the fix is one lead word in the text in `src/lib/notify/watemplates.ts`, for example "Hoppaz: ". Nothing else changes. The dry run prints this warning.
+- Each body opens with a lead word ("Reminder:" or "Update:") because Meta does not allow a body to start or end with a variable (error 2388299). The dry run warns if a body ever breaks that rule or the other documented ones.
 - Review takes up to 24 hours per template. Watch the status in WhatsApp Manager.
 
 **5. Switch it on for one small event.** `select public.notify_set_flag('notify_whatsapp', 'on');` Only paid guests who agreed (the checkout switch comes later) get a message. Check `notify_sends` and the cost after the first send.
@@ -107,10 +107,11 @@ The same kind as Luma's: a notifications sender with a small keyword bot. No AI,
 2. **An unticked switch at checkout,** next to the phone field. We store when and how they agreed.
 
 **Templates to submit** (category Utility, English, no promotion, each ends "Reply STOP to stop"):
-- `hoppaz_day_before`: "{event} is tomorrow at {time}, {venue}." Buttons: I'm coming, Can't make it, View ticket.
-- `hoppaz_ticket`: "You're going to {event}, {date} at {time}. Your ticket: {link}". Only for checkout opt-ins who never messaged us.
-- `hoppaz_event_changed`: "{event} has changed: now {date} at {time}, {venue}."
-- `hoppaz_event_cancelled`: "{event} on {date} is cancelled. {refund line}"
+- `hoppaz_day_before`: "Reminder: {event} is tomorrow at {time}, {venue}. Reply STOP to stop." Button: View ticket. (The "I'm coming" and "Can't make it" buttons were dropped on 31 Oct.)
+- `hoppaz_hour_before`: "Reminder: {event} starts at {time} at {venue}. Reply STOP to stop." Button: View ticket.
+- `hoppaz_event_changed`: "Update: {event} has changed: now {date} at {time}, {venue}. Reply STOP to stop." Button: View ticket.
+- `hoppaz_event_cancelled`: "Update: {event} on {date} is cancelled. {refund line} Reply STOP to stop." Button: View ticket.
+- Each starts with a lead word because Meta does not allow a body to start or end with a variable (error 2388299).
 
 **Costs:** about $40 a month for Detty December (10,000 guests, 60% on WhatsApp). There's a monthly budget cap: when it's reached, WhatsApp stops and those guests get email and push.
 

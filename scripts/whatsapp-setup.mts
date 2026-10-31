@@ -62,7 +62,7 @@ for (const t of WA_TEMPLATES) {
   }
   if (!send) console.log(`  would send: POST ${GRAPH_BASE}/${GRAPH_VERSION}/<WHATSAPP_WABA_ID>/message_templates (after asking Meta whether ${t.name} exists)\n  ${JSON.stringify(creationPayload(t))}`);
 }
-if (problems) console.log(`\n${problems} warning(s) above: Meta's documentation says it will refuse a body that starts or ends with a variable. Nothing is changed by the warning.`);
+if (problems) console.log(`\n${problems} warning(s) above: Meta's documentation says it will refuse these. Nothing is changed by the warning.`);
 
 if (!send) {
   console.log("\nDry run done. Add --send to submit.");

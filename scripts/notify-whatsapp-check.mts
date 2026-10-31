@@ -254,10 +254,10 @@ await test("sender: the log sender sends nothing and writes a masked line; the b
 await test("templates: the four exact bodies, category utility, English, one View ticket button, with samples", () => {
   const bodies = Object.fromEntries(tpl.WA_TEMPLATES.map((t) => [t.name, t.body]));
   eq(bodies, {
-    hoppaz_day_before: "{{1}} is tomorrow at {{2}}, {{3}}. Reply STOP to stop.",
-    hoppaz_hour_before: "{{1}} starts at {{2}} at {{3}}. Reply STOP to stop.",
-    hoppaz_event_changed: "{{1}} has changed: now {{2}} at {{3}}, {{4}}. Reply STOP to stop.",
-    hoppaz_event_cancelled: "{{1}} on {{2}} is cancelled. {{3}} Reply STOP to stop.",
+    hoppaz_day_before: "Reminder: {{1}} is tomorrow at {{2}}, {{3}}. Reply STOP to stop.",
+    hoppaz_hour_before: "Reminder: {{1}} starts at {{2}} at {{3}}. Reply STOP to stop.",
+    hoppaz_event_changed: "Update: {{1}} has changed: now {{2}} at {{3}}, {{4}}. Reply STOP to stop.",
+    hoppaz_event_cancelled: "Update: {{1}} on {{2}} is cancelled. {{3}} Reply STOP to stop.",
   }, "the bodies");
   eq(tpl.WA_TEMPLATES.map((t) => [t.category, t.language]), [["UTILITY", "en"], ["UTILITY", "en"], ["UTILITY", "en"], ["UTILITY", "en"]], "utility, English");
   for (const t of tpl.WA_TEMPLATES) {
@@ -271,20 +271,27 @@ await test("templates: the four exact bodies, category utility, English, one Vie
   }
   eq(Object.entries(tpl.WA_KIND_TEMPLATE).sort(), [["event_cancelled", "hoppaz_event_cancelled"], ["event_changed", "hoppaz_event_changed"], ["reminder_day", "hoppaz_day_before"], ["reminder_hour", "hoppaz_hour_before"]], "kind to template");
 });
-await test("templates: the only problem the documented rules find is the leading variable (Meta error 2388299), reported openly", () => {
+await test("templates: no body starts or ends with a variable, no two variables are side by side, and the documented rules find no problem", () => {
   for (const t of tpl.WA_TEMPLATES) {
-    const p = tpl.templateProblems(t);
-    ok(p.every((x) => /2388299/.test(x)), `${t.name}: ${p.join("; ")}`);
+    ok(!/^\s*\{\{/.test(t.body), `${t.name}: starts with a variable`);
+    ok(!/\}\}[.!?]?\s*$/.test(t.body), `${t.name}: ends with a variable`);
+    ok(!/\}\}\s*\{\{/.test(t.body), `${t.name}: two variables side by side`);
+    ok(/^[A-Za-z]+: /.test(t.body), `${t.name}: opens with a lead word`);
+    eq(tpl.templateProblems(t), [], `${t.name}: no problems`);
   }
+  const sideBySide = { ...tpl.WA_TEMPLATES[0], body: "Reminder: {{1}} {{2}} at {{3}}. Reply STOP to stop." };
+  ok(tpl.templateProblems(sideBySide).some((x) => /side by side/.test(x)), "side by side variables are caught");
+  const starts = { ...tpl.WA_TEMPLATES[0], body: "{{1}} is tomorrow at {{2}}, {{3}}. Reply STOP to stop." };
+  ok(tpl.templateProblems(starts).some((x) => /2388299/.test(x)), "a leading variable is caught");
+  const ends = { ...tpl.WA_TEMPLATES[0], body: "Reminder: {{1}} at {{2}}, {{3}}" };
+  ok(tpl.templateProblems(ends).some((x) => /2388299/.test(x)), "a trailing variable is caught");
   const bad = { ...tpl.WA_TEMPLATES[0], body: "Hi {{2}} and {{1}}", samples: ["a"] };
   ok(tpl.templateProblems(bad).length >= 2, "a template with variables out of order or no samples is caught");
-  const lead = { ...tpl.WA_TEMPLATES[0], body: "Hoppaz: " + tpl.WA_TEMPLATES[0].body };
-  eq(tpl.templateProblems(lead), [], "a lead word clears it");
 });
 await test("templates: values are in the event's own timezone, with the exact time, and one line each", () => {
   const day = tpl.messageFor("reminder_day", PAYLOAD, NOW);
   eq(day, { template: "hoppaz_day_before", bodyParams: ["Detty Night", "7:30 PM", "Eko Hotel"], buttonSuffix: PAYLOAD.event_id }, "day before (18:30Z is 7:30 PM in Lagos)");
-  eq(tpl.renderBody("hoppaz_day_before", day.bodyParams), "Detty Night is tomorrow at 7:30 PM, Eko Hotel. Reply STOP to stop.", "what the guest reads");
+  eq(tpl.renderBody("hoppaz_day_before", day.bodyParams), "Reminder: Detty Night is tomorrow at 7:30 PM, Eko Hotel. Reply STOP to stop.", "what the guest reads");
   const hour = tpl.messageFor("reminder_hour", { ...PAYLOAD, slug: "detty-night" }, NOW);
   eq([hour.template, hour.bodyParams, hour.buttonSuffix], ["hoppaz_hour_before", ["Detty Night", "7:30 PM", "Eko Hotel"], "detty-night"], "hour before, the slug for the button");
   const changed = tpl.messageFor("event_changed", { ...PAYLOAD, starts_at: "2026-11-21T20:00:00Z" }, NOW);
