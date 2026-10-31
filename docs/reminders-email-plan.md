@@ -2,6 +2,14 @@
 
 Written 30 Oct 2026 for Jae, after his picks. The research and prices are in `docs/reminders-research.md`. Nothing here is built yet. The WhatsApp side is in `docs/reminders-whatsapp-plan.md`.
 
+## Update, 31 Oct (replaces anything below that disagrees)
+
+- **Timing:** day-before and hour-before go exactly 24 hours and 1 hour before, as Luma's do. The every-minute database timer calls our site only when something is due. Action emails go instantly.
+- **Sending names:** guest mail from `mail.hoppaz.fun`, codes from `auth.hoppaz.fun`, instead of `hoppaz.fun`. Add `hello@hoppaz.fun` as a real inbox for replies and DMARC reports.
+- **Required before any real send:** unsubscribe, bounce and complaint handling move ahead of go-live, and sign-in gets Turnstile, because a bot could otherwise burn the daily codes.
+- **Also added:** check that Google's sign-in screen is in production, a hosted image for the QR code, a 2-week ramp-up, and a `/privacy` update.
+- **Build order:** sending system, guest emails, unsubscribe and bounces, sign-in, WhatsApp, SES.
+
 ## Jae's picks
 
 | What | Primary | Backup |

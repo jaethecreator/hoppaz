@@ -2,6 +2,14 @@
 
 Written 30 Oct 2026 for Jae. Prices and rules were checked on Meta's official pages that day (details and sources in `docs/reminders-research.md`). The email side is in `docs/reminders-email-plan.md`. Nothing here is built yet.
 
+## Update, 31 Oct (replaces anything below that disagrees)
+
+- **Paid guests only:** WhatsApp goes only to a guest with a paid order for that event (`ev_orders.status = 'paid'`) who agreed at checkout. Free events get email and push.
+- **Messages, as on Luma:** day before and hour before, exactly 24 hours and 1 hour ahead, both paid utility templates, plus event changed and event cancelled when they happen. That's about $0.0134 (₦19) per paid guest. The ticket and the thank you go by email.
+- **Templates:** `hoppaz_day_before`, `hoppaz_hour_before`, `hoppaz_event_changed`, `hoppaz_event_cancelled`. `hoppaz_ticket` is dropped.
+- **Bot:** `STOP`, `START`, `TICKET` and `HELP` only. The "I'm coming" and "Can't make it" buttons and the free hour-before reply are dropped.
+- **App:** a checkout switch and "WhatsApp reminders" labels on paid tickets. Use a new Hoppaz app and portfolio, not the side project's.
+
 ## 1. What "the Meta API" and "a bot" mean
 
 | Thing | What it is | Automation | Cost |
