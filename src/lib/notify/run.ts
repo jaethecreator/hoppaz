@@ -3,6 +3,8 @@ import type { EmailProvider } from "./provider";
 import { newRouterState, routeRow, type CapStore } from "./router";
 import type { CapStatus, ClaimedRow, RowOutcome } from "./types";
 
+const SETTLE_TRIES = 3;
+
 /**
  * One run of the sender (what /api/notify/run does): claim due rows, route each one, write what happened. Kept out of the route file so
  * scripts/notify-check.mts can run it with a stub database and fake providers.
@@ -19,6 +21,8 @@ export type RunDeps = {
   budgetMs?: number;
   now?: () => Date;
   clock?: () => number;
+  /** Waits between tries to record a send. Tests pass a no-op. */
+  sleep?: (ms: number) => Promise<void>;
   log?: (line: string) => void;
 };
 
@@ -48,6 +52,7 @@ export async function runNotify(deps: RunDeps): Promise<RunSummary> {
   const now = deps.now ?? (() => new Date());
   const clock = deps.clock ?? Date.now;
   const log = deps.log ?? ((line: string) => console.warn(line));
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const stopAt = clock() + (deps.budgetMs ?? 40_000);
 
   const out: RunSummary = { claimed: 0, sent: 0, failed: 0, skipped: 0, requeued: 0, stuck: 0, warnings: [] };
@@ -57,10 +62,30 @@ export async function runNotify(deps: RunDeps): Promise<RunSummary> {
     const caps: CapStore = { take: (p, k) => db.takeCap(p, k), give: (p, k) => db.giveCap(p, k) };
     const state = newRouterState();
 
-    const settle = async (row: ClaimedRow, outcome: RowOutcome) => {
-      if (!(await db.complete(row.id, outcome))) log(`[hoppaz] notify: row ${row.id} was not claimed any more when it was settled`);
+    const count = (outcome: RowOutcome) => {
       if (outcome.final === "queued") out.requeued++;
       else out[outcome.final]++;
+    };
+    const settle = async (row: ClaimedRow, outcome: RowOutcome) => {
+      if (!(await db.complete(row.id, outcome))) log(`[hoppaz] notify: row ${row.id} was not claimed any more when it was settled`);
+      count(outcome);
+    };
+    // A provider has accepted the message, so the row must never go back to the queue: that would send it a second time. Recording the
+    // outcome is retried a few times; if it still fails the row stays 'claimed' and the database hands it out again after 10 minutes.
+    // KNOWN GAP: that reclaim (and a crash between the send and the settle) can send the same message twice. Real providers are given
+    // the row's dedupeKey so they can use it as an idempotency key.
+    const settleSent = async (row: ClaimedRow, outcome: RowOutcome) => {
+      for (let attempt = 1; attempt <= SETTLE_TRIES; attempt++) {
+        try {
+          await settle(row, outcome);
+          return;
+        } catch (e) {
+          log(`[hoppaz] notify: row ${row.id} was sent but recording it failed (try ${attempt} of ${SETTLE_TRIES}): ${(e as Error).message}`);
+          if (attempt < SETTLE_TRIES) await sleep(attempt * 300);
+        }
+      }
+      out.stuck++;
+      log(`[hoppaz] notify: SENT BUT NOT RECORDED: row ${row.id} (${row.dedupe_key}) went out and stays claimed; it may be sent again after 10 minutes`);
     };
     // Put a row back untouched (no time left, or the work on it blew up). If even that fails the database reclaims it after 10 minutes.
     const putBack = async (row: ClaimedRow, minutes: number, freeRetry: boolean) => {
@@ -80,11 +105,25 @@ export async function runNotify(deps: RunDeps): Promise<RunSummary> {
       }
       await Promise.all(
         rows.slice(i, i + concurrency).map(async (row) => {
+          let outcome: RowOutcome;
           try {
-            await settle(row, await routeRow(row, providers, caps, state, now));
+            outcome = await routeRow(row, providers, caps, state, now);
           } catch (e) {
+            // Routing blew up (the database, usually). A provider that had accepted the message would have returned an outcome, so nothing went out.
             log(`[hoppaz] notify: row ${row.id} failed: ${(e as Error).message}`);
             await putBack(row, 5, false);
+            return;
+          }
+          if (outcome.attempts.some((a) => a.status === "sent")) {
+            await settleSent(row, outcome);
+            return;
+          }
+          try {
+            await settle(row, outcome);
+          } catch (e) {
+            // Nothing went out, so the row can wait: the database hands it out again after 10 minutes.
+            out.stuck++;
+            log(`[hoppaz] notify: row ${row.id} could not be settled: ${(e as Error).message}`);
           }
         }),
       );

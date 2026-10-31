@@ -377,6 +377,30 @@ await test("run: a database error on one row puts that row back untouched and ca
   const back = s.settled.find((x) => x.outcome.final === "queued")!;
   ok(back.outcome.final === "queued" && back.outcome.attempts.length === 0 && !back.outcome.freeRetry, "put back untouched, a try counted");
 });
+await test("run: once an email has gone, a failing settle is retried and the row is never put back (no second email)", async () => {
+  const sends: string[] = [];
+  const counting: EmailProvider = { name: "log", kinds: ["guest", "code"], async send(msg) { sends.push(msg.queueId); return good(`m-${msg.queueId}`); } };
+  // Case 1: complete fails twice for row "a", then works. Case 2: it never works for row "b".
+  const s = stubDb([row({ id: "a" }), row({ id: "b" })]);
+  const failures: Record<string, number> = { a: 2, b: 99 };
+  const calls: Record<string, string[]> = { a: [], b: [] };
+  const db: NotifyDb = {
+    ...s.db,
+    complete: async (id, outcome) => {
+      calls[id].push(outcome.final);
+      if ((failures[id] -= 1) >= 0) throw new Error("db blip");
+      return s.db.complete(id, outcome);
+    },
+  };
+  const lines: string[] = [];
+  const out = await runNotify({ db, providers: [counting], concurrency: 1, log: (l) => lines.push(l), now, sleep: async () => {} });
+  eq(sends.sort(), ["a", "b"], "each email went exactly once");
+  ok(Object.values(calls).every((c) => c.every((f) => f === "sent")), `no put back to queued after a send (saw ${JSON.stringify(calls)})`);
+  ok(calls.a.length === 3, "row a: two failures then success, so three tries");
+  eq(s.settled.map((x) => [x.id, x.outcome.final]), [["a", "sent"]], "row a settled as sent");
+  eq([out.sent, out.requeued, out.stuck], [1, 0, 1], "row b is counted stuck, not requeued");
+  ok(lines.some((l) => l.includes("SENT BUT NOT RECORDED") && l.includes("b")), "and it is logged loudly");
+});
 await test("run: out of time puts the unstarted rows back without costing a try", async () => {
   const rows = Array.from({ length: 5 }, (_, i) => row({ id: `r${i}` }));
   const { db, settled } = stubDb(rows);

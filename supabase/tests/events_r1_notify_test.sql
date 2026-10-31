@@ -1,5 +1,5 @@
 -- DRAFT FOR OLA, NOT RUN ON PRODUCTION. Notifications step 1 (supabase/events_r1_notify.sql). LOCAL ONLY: everything rolls back.
--- Needs schema.sql, chat_accounts.sql, events_r1_events.sql, events_r1_registrations.sql, events_r1_pops.sql, events_r1_pay.sql and
+-- Needs schema.sql, chat_accounts.sql, events_r1_events.sql, events_r1_registrations.sql, events_r1_tickets.sql, events_r1_pops.sql, events_r1_pay.sql and
 -- events_r1_notify.sql loaded (the notify file loaded twice is a good habit: it must be safe to run again). Ends with ALL NOTIFY TESTS PASSED.
 --   docker exec -i supabase_db_hoppaz-local psql -U postgres -d <a throwaway hoppaz_ev_ database> -q -v ON_ERROR_STOP=1 < supabase/tests/events_r1_notify_test.sql
 --
@@ -71,6 +71,11 @@ begin
   update public.ev_pops set sent_at = sent_at - interval '2 days'
    where auto in ('day_before', 'hour_before') and sent_at is not null and not (event_id = any (keep));
 end $$;
+create function pg_temp.tkt(ev uuid, u uuid, seatno integer, st text) returns void language sql as $$
+  insert into public.ev_tickets (event_id, registration_id, owner_id, seat, code, status, used_at)
+  select ev, r.id, u, seatno, translate(upper(substr(md5(gen_random_uuid()::text), 1, 8)), '01', 'XY'), st, case when st = 'used' then now() end
+    from public.ev_registrations r where r.event_id = ev and r.user_id = u;
+$$;
 create function pg_temp.dispatch() returns integer language sql as $$ select public.ev_dispatch_due_pops(); $$;
 create function pg_temp.note(qid uuid) returns text language sql as $$ select string_agg(error, ' | ' order by created_at) from public.notify_sends where queue_id = qid; $$;
 
@@ -82,7 +87,8 @@ declare
   gG uuid := pg_temp.newuser('Ntf G cancelled'); gH uuid := pg_temp.newuser('Ntf H checked in'); gI uuid := pg_temp.newuser('Ntf I requested');
   gJ uuid := pg_temp.newuser('Ntf J suppressed'); gK uuid := pg_temp.newuser('Ntf K email off'); gL uuid := pg_temp.newuser('Ntf L no email', true);
   gM uuid := pg_temp.newuser('Ntf M paid new reg'); gN uuid := pg_temp.newuser('Ntf N paid wa email off');
-  e0 uuid; e1 uuid; e2 uuid; e3 uuid; e4 uuid;
+  gP uuid := pg_temp.newuser('Ntf P three seats'); gQ uuid := pg_temp.newuser('Ntf Q scanned later'); gR uuid := pg_temp.newuser('Ntf R refunded later'); gS uuid := pg_temp.newuser('Ntf S paid ok');
+  e0 uuid; e1 uuid; e2 uuid; e3 uuid; e4 uuid; e5 uuid;
   r jsonb; rows1 jsonb; rows2 jsonb; n int; id1 uuid; id2 uuid; pid uuid; f record;
   starts timestamptz; nextday timestamptz; qa uuid; qb uuid; qc uuid; t1 boolean; t2 boolean; t3 boolean;
 begin
@@ -199,6 +205,7 @@ begin
   delete from public.notify_queue; delete from public.notify_sends;
 
   -- ------------------------------------------------------------ the day-before Pop: who gets what ---
+  delete from public.notify_prefs;
   e1 := pg_temp.ev(h, 'Reminder night', now() + interval '24 hours' - interval '1 minute');
   starts := (select starts_at from public.events where id = e1);
   perform pg_temp.reg(e1, gA, 'going');
@@ -317,12 +324,14 @@ begin
   perform pg_temp.ok(not public.notify_complete(qa, 'sent', '[{"channel":"email","provider":"log","status":"sent"}]'::jsonb) and (select count(*) from public.notify_sends where queue_id = qa) = 2,
                      'settle: settling a row twice changes nothing');
   perform pg_temp.ok(not public.notify_complete(qb, 'bogus') and not public.notify_complete(qb, 'sent', '{"a":1}'::jsonb), 'settle: a bad final status or a bad attempts list is refused');
-  perform pg_temp.ok(public.notify_complete(qb, 'queued', '[{"channel":"email","provider":"router","status":"skipped","error":"every provider is at its daily cap"}]'::jsonb, now() + interval '15 minutes', true)
+  t1 := public.notify_complete(qb, 'queued', '[{"channel":"email","provider":"router","status":"skipped","error":"every provider is at its daily cap"}]'::jsonb, now() + interval '15 minutes', true);
+  perform pg_temp.ok(t1
                      and (select status from public.notify_queue where id = qb) = 'queued' and (select tries from public.notify_queue where id = qb) = 1
                      and (select due_at from public.notify_queue where id = qb) = now() + interval '15 minutes', 'settle: a row put back for later gets its try back when it only waited for room');
   perform pg_temp.ok(not exists (select 1 from jsonb_array_elements(public.notify_claim_due(500, array['log'], now() + interval '5 minutes')) x where x ->> 'id' = qb::text), 'a row put back is not due until its time');
   perform pg_temp.ok(exists (select 1 from jsonb_array_elements(public.notify_claim_due(500, array['log'], now() + interval '16 minutes')) x where x ->> 'id' = qb::text), 'and is handed out when it is');
-  perform pg_temp.ok(public.notify_complete(qc, 'skipped', '[{"channel":"whatsapp","provider":"none","status":"skipped","error":"not built yet"}]'::jsonb)
+  t1 := public.notify_complete(qc, 'skipped', '[{"channel":"whatsapp","provider":"none","status":"skipped","error":"not built yet"}]'::jsonb);
+  perform pg_temp.ok(t1
                      and (select status from public.notify_queue where id = qc) = 'skipped', 'settle: a WhatsApp row can be skipped with a reason');
 
   -- ------------------------------------------------------------ the daily cap ---
@@ -391,6 +400,40 @@ begin
   r := public.notify_claim_due(500, array['no-such-provider']);
   perform pg_temp.ok(jsonb_array_length(r) = 1 and r -> 0 ->> 'dedupe_key' = 'n-1', 'priority: with no allowance to count, only priority 1 is handed out');
   delete from public.notify_caps where provider = 'tst'; delete from public.notify_cap_use where provider = 'tst';
+
+  -- ------------------------------------------------------------ a buyer already at the door, and a refund after the row was queued ---
+  delete from public.notify_queue; delete from public.notify_sends;
+  e5 := pg_temp.ev(h, 'Door night', now() + interval '24 hours' - interval '1 minute');
+  -- gP bought 3 seats and one has been scanned: the registration stays 'going' (ev_scan checks it in only when the last seat is used).
+  insert into public.ev_registrations (event_id, user_id, status, name, quantity, created_at) values (e5, gP, 'going', 'x', 3, now() - interval '3 days');
+  perform pg_temp.tkt(e5, gP, 1, 'used'); perform pg_temp.tkt(e5, gP, 2, 'valid'); perform pg_temp.tkt(e5, gP, 3, 'valid');
+  perform pg_temp.prefs(gP, true, '+2348066666666'); perform pg_temp.paid(e5, gP);
+  perform pg_temp.reg(e5, gQ, 'going'); perform pg_temp.tkt(e5, gQ, 1, 'valid'); perform pg_temp.paid(e5, gQ); perform pg_temp.prefs(gQ, true, '+2348077777777');
+  perform pg_temp.reg(e5, gR, 'going'); perform pg_temp.paid(e5, gR); perform pg_temp.prefs(gR, true, '+2348088888888');
+  perform pg_temp.reg(e5, gS, 'going'); perform pg_temp.paid(e5, gS); perform pg_temp.prefs(gS, true, '+2348099999999');
+  perform pg_temp.dispatch();
+  perform pg_temp.others(array[e5]);
+  perform pg_temp.ok((select r.status from public.ev_registrations r where r.event_id = e5 and r.user_id = gP) = 'going',
+                     'a buyer with one of three seats scanned is still going');
+  perform pg_temp.ok(not exists (select 1 from public.notify_queue where event_id = e5 and user_id = gP), 'enqueue: nothing, email or WhatsApp, for someone with a used ticket');
+  perform pg_temp.ok(pg_temp.q(e5, gQ, 'reminder_day', 'email') = 1 and pg_temp.q(e5, gQ, 'reminder_day', 'whatsapp') = 1
+                     and pg_temp.q(e5, gR, 'reminder_day', 'email') = 1 and pg_temp.q(e5, gR, 'reminder_day', 'whatsapp') = 1
+                     and pg_temp.q(e5, gS, 'reminder_day', 'email') = 1 and pg_temp.q(e5, gS, 'reminder_day', 'whatsapp') = 1,
+                     'the others (valid ticket, paid) get an email and a WhatsApp row');
+  -- Between queueing and sending: gQ's ticket is scanned, gR's order is refunded.
+  update public.ev_tickets set status = 'used', used_at = now() where event_id = e5 and owner_id = gQ;
+  update public.ev_orders set status = 'refunded' where event_id = e5 and buyer_id = gR;
+  r := public.notify_claim_due(500, array['log']);
+  perform pg_temp.ok(jsonb_array_length(r) = 3 and (select array_agg(x ->> 'user_id' || ':' || (x ->> 'channel') order by x ->> 'user_id', x ->> 'channel') from jsonb_array_elements(r) x)
+                     = (select array_agg(u || ':' || ch order by u, ch) from (values (gR::text, 'email'), (gS::text, 'email'), (gS::text, 'whatsapp')) v(u, ch)),
+                     'claim: only gR email, gS email and gS WhatsApp are handed out');
+  perform pg_temp.ok(pg_temp.note((select id from public.notify_queue where user_id = gQ and channel = 'email')) = 'skipped: already checked in'
+                     and pg_temp.note((select id from public.notify_queue where user_id = gQ and channel = 'whatsapp')) = 'skipped: already checked in',
+                     'claim: someone whose ticket was scanned since is skipped, on both channels');
+  perform pg_temp.ok(pg_temp.note((select id from public.notify_queue where user_id = gR and channel = 'whatsapp')) = 'skipped: no paid order'
+                     and (select status from public.notify_queue where user_id = gR and channel = 'whatsapp') = 'skipped',
+                     'claim: a guest refunded since costs no WhatsApp message');
+  perform pg_temp.ok((select status from public.notify_queue where user_id = gR and channel = 'email') = 'claimed', 'claim: but the refunded guest still gets the email');
 
   -- ------------------------------------------------------------ the skip rules, asked again at claim time ---
   delete from public.notify_queue; delete from public.notify_sends;

@@ -3,7 +3,8 @@
 -- Hoppaz Release 1: notifications, step 1 (the queue, the send log, the daily caps and the reminder hook).
 -- Plans: docs/reminders-email-plan.md (section 3, and "Update, 31 Oct") and docs/reminders-whatsapp-plan.md ("Update, 31 Oct").
 --
--- RUN ORDER: the Release 1 files first (events_r1_events.sql, events_r1_registrations.sql, events_r1_pops.sql, events_r1_pay.sql), then THIS
+-- RUN ORDER: the Release 1 files first (events_r1_events.sql, events_r1_registrations.sql, events_r1_tickets.sql, events_r1_pops.sql,
+-- events_r1_pay.sql), then THIS
 -- FILE. Safe to run again: tables and seeds are written only when missing, so a re-run never changes a cap Ola edited and never flips a flag.
 -- It edits no older file and no older function. It adds one trigger on ev_pops (see HOW IT ATTACHES) and nothing else on an old table.
 --
@@ -50,14 +51,18 @@
 --   events_r1_pops.sql, drop the trigger and call notify_enqueue_pop(pop) where his code marks an automatic Pop sent.
 --
 -- WHO GETS A REMINDER (notify_enqueue_pop)
---   Everyone ev_pop_recipient_ids gives, and then only people whose registration is 'going' (so not cancelled, not checked in, not waiting).
+--   Everyone ev_pop_recipient_ids gives, and then only people whose registration is 'going' (so not cancelled, not waiting) and who have no
+--   USED ticket for the event. The second part matters: a purchase of several seats is checked in ticket by ticket (ev_scan and
+--   ev_checkin_manual in events_r1_tickets.sql), and the registration only becomes 'checked_in' when its last ticket is used, so a buyer
+--   who is already at the door with one seat of three is still 'going'. A used ticket is what says "here".
 --   Email: the person has an address, it is not in notify_suppressed, and email reminders are not switched off in notify_prefs.
 --   The 12 hour rule: no day_before to anyone who registered less than 12 hours before it goes (email or WhatsApp).
 --   WhatsApp, a separate row: only a person with a paid order for that event (ev_orders.status = 'paid') who has WhatsApp on with a number
 --   in notify_prefs. A free ticket never gets one. WhatsApp rows are priority 2 for both reminders (they cost money and nothing else
 --   covers a paid guest). Email: day_before is priority 2 (Luma G10), hour_before is priority 4 (G11, dropped first on a busy day).
---   When a row is claimed the same questions are asked again, because a queued row can wait: a person who cancelled since, a bounce
---   since, a switch turned off since: the row is skipped and a note goes in notify_sends.
+--   When a row is claimed the same questions are asked again, because a queued row can wait: a person who cancelled or checked in since,
+--   a bounce since, a switch turned off since, and for WhatsApp whether the order is still paid (a refunded guest must not cost money):
+--   the row is skipped and a note goes in notify_sends.
 --
 -- PRIORITY DROPPING (notify_claim_due, email rows only)
 --   The day's allowance is the sum of the caps of the providers the route can use, for the row's cap_kind. A row of priority p may only be
@@ -362,6 +367,7 @@ begin
     ) g
    cross join (values ('email'), ('whatsapp')) as ch(channel)
    where (p.auto <> 'day_before' or g.reg_at <= p_now - interval '12 hours')
+     and not exists (select 1 from public.ev_tickets t where t.event_id = e.id and t.owner_id = g.user_id and t.status = 'used')
      and (
        (ch.channel = 'email' and v_email and coalesce(g.email_reminders, true) and nullif(btrim(g.email), '') is not null
           and not exists (select 1 from public.notify_suppressed s where s.address = lower(btrim(g.email))))
@@ -471,6 +477,12 @@ begin
       perform public._notify_close(r.id, r.channel, 'skipped', 'skipped: no longer going');
       continue;
     end if;
+    -- ... or already at the door: a used ticket (a multi-seat buyer stays 'going' until the last seat is scanned).
+    if r.kind in ('reminder_day', 'reminder_hour') and exists (
+         select 1 from public.ev_tickets t where t.event_id = r.event_id and t.owner_id = r.user_id and t.status = 'used') then
+      perform public._notify_close(r.id, r.channel, 'skipped', 'skipped: already checked in');
+      continue;
+    end if;
     if r.channel = 'email' then
       select lower(btrim(u.email)) into v_addr from auth.users u where u.id = r.user_id;
       if v_addr is null or v_addr = '' then
@@ -489,6 +501,12 @@ begin
       select np.whatsapp_number into v_num from public.notify_prefs np where np.user_id = r.user_id and np.whatsapp_on;
       if v_num is null then
         perform public._notify_close(r.id, r.channel, 'skipped', 'skipped: WhatsApp is off');
+        continue;
+      end if;
+      -- WhatsApp costs money and goes only to a guest with a paid order for the event (a refund since ends it).
+      if r.event_id is not null and not exists (
+           select 1 from public.ev_orders o where o.buyer_id = r.user_id and o.event_id = r.event_id and o.status = 'paid') then
+        perform public._notify_close(r.id, r.channel, 'skipped', 'skipped: no paid order');
         continue;
       end if;
     end if;
