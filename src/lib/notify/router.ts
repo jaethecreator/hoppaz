@@ -1,4 +1,5 @@
 import type { EmailProvider } from "./provider";
+import { renderEmail, type RenderedEmail } from "./templates";
 import { MAX_TRIES, type Attempt, type CapKind, type ClaimedRow, type RowOutcome } from "./types";
 
 /**
@@ -9,6 +10,9 @@ import { MAX_TRIES, type Attempt, type CapKind, type ClaimedRow, type RowOutcome
  * hands the unit back. A provider that says its own limit is reached is left alone for the rest of the run. If every provider was
  * full, the row waits (and the wait is not counted as a try); if they failed, it is retried later, and after MAX_TRIES it is failed.
  * WhatsApp has no sender yet: those rows are skipped with a clear reason.
+ *
+ * Before any provider is asked (and before an allowance unit is taken) the row is rendered from its kind and payload (templates/). A kind with
+ * no template, or a render that throws, fails the row with the reason and sends nothing: an email is never sent blank.
  */
 
 export interface CapStore {
@@ -49,14 +53,27 @@ export function skipWhatsApp(row: ClaimedRow): RowOutcome {
   return { final: "skipped", attempts: [note(row, "none", "skipped", WHATSAPP_NOT_BUILT)] };
 }
 
+/** Turns a claimed row into the email to send. Throws when it cannot (no template for the kind). */
+export type Renderer = (row: ClaimedRow) => RenderedEmail;
+
+export const renderRow: Renderer = (row) => renderEmail(row.kind, row.payload, { userId: row.user_id, queueId: row.id, to: row.email });
+
 export async function routeEmail(
   row: ClaimedRow,
   providers: readonly EmailProvider[],
   caps: CapStore,
   state: RouterState = newRouterState(),
   now: () => Date = () => new Date(),
+  render: Renderer = renderRow,
 ): Promise<RowOutcome> {
   if (!row.email) return { final: "skipped", attempts: [note(row, "router", "skipped", "no email address")] };
+  let mail: RenderedEmail;
+  try {
+    mail = render(row);
+    if (!mail.subject?.trim() || !mail.html?.trim() || !mail.text?.trim()) throw new Error("the template gave an empty email");
+  } catch (e) {
+    return { final: "failed", attempts: [note(row, "router", "failed", `not sent: ${messageOf(e)}`)] };
+  }
   const candidates = providers.filter((p) => p.kinds.includes(row.cap_kind));
   if (!candidates.length) return { final: "failed", attempts: [note(row, "router", "failed", `no provider for ${row.cap_kind} mail`)] };
 
@@ -67,7 +84,19 @@ export async function routeEmail(
     if (!(await caps.take(p.name, row.cap_kind))) continue;
     let res;
     try {
-      res = await p.send({ to: row.email, kind: row.kind, payload: row.payload, queueId: row.id, dedupeKey: row.dedupe_key, priority: row.priority });
+      res = await p.send({
+        to: row.email,
+        kind: row.kind,
+        payload: row.payload,
+        queueId: row.id,
+        dedupeKey: row.dedupe_key,
+        priority: row.priority,
+        capKind: row.cap_kind,
+        subject: mail.subject,
+        html: mail.html,
+        text: mail.text,
+        headers: mail.headers,
+      });
     } catch (e) {
       res = { ok: false as const, error: messageOf(e) };
     }
@@ -91,6 +120,6 @@ export async function routeEmail(
   return { final: "queued", attempts, retryAt: plusMinutes(now(), retryDelayMinutes(row.tries)), freeRetry: false };
 }
 
-export function routeRow(row: ClaimedRow, providers: readonly EmailProvider[], caps: CapStore, state?: RouterState, now?: () => Date): Promise<RowOutcome> {
-  return row.channel === "whatsapp" ? Promise.resolve(skipWhatsApp(row)) : routeEmail(row, providers, caps, state, now);
+export function routeRow(row: ClaimedRow, providers: readonly EmailProvider[], caps: CapStore, state?: RouterState, now?: () => Date, render?: Renderer): Promise<RowOutcome> {
+  return row.channel === "whatsapp" ? Promise.resolve(skipWhatsApp(row)) : routeEmail(row, providers, caps, state, now, render);
 }

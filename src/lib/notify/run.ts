@@ -1,6 +1,6 @@
 import type { NotifyDb } from "./db";
 import type { EmailProvider } from "./provider";
-import { newRouterState, routeRow, type CapStore } from "./router";
+import { newRouterState, routeRow, type CapStore, type Renderer } from "./router";
 import type { CapStatus, ClaimedRow, RowOutcome } from "./types";
 
 const SETTLE_TRIES = 3;
@@ -24,6 +24,8 @@ export type RunDeps = {
   /** Waits between tries to record a send. Tests pass a no-op. */
   sleep?: (ms: number) => Promise<void>;
   log?: (line: string) => void;
+  /** Turns a row into the email. Default: the templates. Tests pass a stub. */
+  render?: Renderer;
 };
 
 export type RunSummary = {
@@ -107,7 +109,7 @@ export async function runNotify(deps: RunDeps): Promise<RunSummary> {
         rows.slice(i, i + concurrency).map(async (row) => {
           let outcome: RowOutcome;
           try {
-            outcome = await routeRow(row, providers, caps, state, now);
+            outcome = await routeRow(row, providers, caps, state, now, deps.render);
           } catch (e) {
             // Routing blew up (the database, usually). A provider that had accepted the message would have returned an outcome, so nothing went out.
             log(`[hoppaz] notify: row ${row.id} failed: ${(e as Error).message}`);

@@ -1,6 +1,9 @@
 import type { CapKind, Priority } from "./types";
 
-/** What a provider is asked to send. Rendering (templates) is a later step: the provider gets the facts and builds its own message. */
+/**
+ * What a provider is asked to send. The router renders the row (templates/) before the provider is called, so subject, html and text
+ * are set on every real send; the log provider ignores them. `headers` carry List-Unsubscribe where the template has it.
+ */
 export type OutgoingEmail = {
   to: string;
   kind: string;
@@ -8,6 +11,12 @@ export type OutgoingEmail = {
   queueId: string;
   dedupeKey: string;
   priority: Priority;
+  /** Which allowance this spends. Providers that serve both use it to pick the sender name. Default: guest. */
+  capKind?: CapKind;
+  subject?: string;
+  html?: string;
+  text?: string;
+  headers?: Record<string, string>;
 };
 
 /**

@@ -72,6 +72,12 @@
 --   08:00 Lagos the next day. Either way a 'skipped' row with the reason is written to notify_sends (provider 'policy').
 --   Priority 1 that finds every provider full is not dropped: the run route puts it back for 15 minutes without counting a try.
 --
+-- STEP 2 (events_r1_notify_emails.sql, run after this file) adds the triggers that queue the guest and host emails. It needs three small
+--   hooks here, all marked below: notify_claim_due also (1) re-asks "still going?" for the ticket mails (registered, approved, spot_opened),
+--   (2) honours email_pops for host_pop and email_reminders for thanks, and (3) adds the tickets with fresh signed tokens to a ticket mail's
+--   payload as it is handed out (_notify_claim_extra; the token is never stored in the queue); and notify_tick also calls
+--   notify_enqueue_thanks when that file is loaded.
+--
 -- THE TIMER. notify_tick() is NOT scheduled by this file. Ola, once, after notify_config is set and a flag is on:
 --   select public.set_notify_config('run_url', 'https://YOUR-APP/api/notify/run');
 --   select public.set_notify_config('run_secret', '<the same value as the NOTIFY_RUN_SECRET env var>');
@@ -420,6 +426,17 @@ begin
   return v_n;
 end $$;
 
+-- What a row needs at the moment it is sent that must not sit in the queue: for the ticket mails, the tickets with their signed tokens
+-- (events_r1_notify_emails.sql writes the real one). The stub, written only when missing, adds nothing, so this file works alone.
+do $stub$
+begin
+  if to_regprocedure('public._notify_claim_extra(text, uuid, uuid)') is null then
+    create function public._notify_claim_extra(p_kind text, p_event uuid, p_user uuid) returns jsonb
+    language sql stable security definer set search_path = public, pg_temp as 'select ''{}''::jsonb';
+    revoke all on function public._notify_claim_extra(text, uuid, uuid) from public, anon, authenticated;
+  end if;
+end $stub$;
+
 -- ------------------------------------------------------------------ claim ---
 -- Hands out due rows, each to one caller only. A row left 'claimed' for more than 10 minutes (a run that died) is handed out again.
 -- Returns a json array of { id, user_id, kind, event_id, channel, cap_kind, payload, priority, tries, dedupe_key, email, whatsapp_number }.
@@ -471,7 +488,7 @@ begin
       continue;
     end if;
     -- Asked again, because the row may have waited: is the person still going?
-    if r.kind in ('reminder_day', 'reminder_hour') and not exists (
+    if r.kind in ('reminder_day', 'reminder_hour', 'registered', 'approved', 'spot_opened') and not exists (
          select 1 from public.ev_registrations g join public.events ev on ev.id = g.event_id
           where g.event_id = r.event_id and g.user_id = r.user_id and g.status = 'going' and ev.status in ('live', 'unlisted')) then
       perform public._notify_close(r.id, r.channel, 'skipped', 'skipped: no longer going');
@@ -493,8 +510,12 @@ begin
         perform public._notify_close(r.id, r.channel, 'skipped', 'skipped: address suppressed');
         continue;
       end if;
-      if r.kind in ('reminder_day', 'reminder_hour') and exists (select 1 from public.notify_prefs np where np.user_id = r.user_id and not np.email_reminders) then
+      if r.kind in ('reminder_day', 'reminder_hour', 'thanks') and exists (select 1 from public.notify_prefs np where np.user_id = r.user_id and not np.email_reminders) then
         perform public._notify_close(r.id, r.channel, 'skipped', 'skipped: email reminders are off');
+        continue;
+      end if;
+      if r.kind = 'host_pop' and exists (select 1 from public.notify_prefs np where np.user_id = r.user_id and not np.email_pops) then
+        perform public._notify_close(r.id, r.channel, 'skipped', 'skipped: email Pops are off');
         continue;
       end if;
     else
@@ -528,7 +549,7 @@ begin
     if r.channel = 'email' then v_given[v_ix] := v_given[v_ix] + 1; end if;
     v_out := array_append(v_out, jsonb_build_object(
       'id', r.id, 'user_id', r.user_id, 'kind', r.kind, 'event_id', r.event_id, 'channel', r.channel, 'cap_kind', r.cap_kind,
-      'payload', r.payload, 'priority', r.priority, 'tries', r.tries + 1, 'dedupe_key', r.dedupe_key,
+      'payload', r.payload || public._notify_claim_extra(r.kind, r.event_id, r.user_id), 'priority', r.priority, 'tries', r.tries + 1, 'dedupe_key', r.dedupe_key,
       'email', v_addr, 'whatsapp_number', v_num));
   end loop;
   return to_jsonb(v_out);
@@ -593,6 +614,14 @@ begin
   exception when others then
     raise warning 'notify_tick: enqueue failed: %', sqlerrm;
   end;
+  -- The thank you mails of events that ended (events_r1_notify_emails.sql). Nothing happens when that file is not loaded.
+  if to_regprocedure('public.notify_enqueue_thanks(timestamptz)') is not null then
+    begin
+      execute 'select public.notify_enqueue_thanks($1)' using p_now;
+    exception when others then
+      raise warning 'notify_tick: thank you mails failed: %', sqlerrm;
+    end;
+  end if;
   if not public.notify_has_due(p_now) then return false; end if;
   if to_regprocedure('net.http_post(text,jsonb,jsonb,jsonb,integer)') is null then
     raise notice 'notify_tick: pg_net is not installed. TODO: enable pg_net (events_r1_notify.sql).';

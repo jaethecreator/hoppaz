@@ -12,6 +12,21 @@
 begin;
 -- Release 1 is on (the dispatcher needs it). The notify flags are set per section.
 select public.ev_set_setting('events_r1', 'on');
+-- This file tests step 1 alone. If events_r1_notify_emails.sql (step 2) is loaded too, its triggers would queue their own mails for the
+-- registrations, orders and events made below, so they are switched off for this transaction (rolled back with everything else).
+-- events_r1_notify_emails_test.sql tests them.
+do $off$
+declare t record;
+begin
+  for t in
+    select c.relname, g.tgname from pg_trigger g join pg_class c on c.oid = g.tgrelid join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and not g.tgisinternal
+       and g.tgname in ('notify_reg_insert', 'notify_reg_update', 'notify_order_status', 'notify_event_change', 'notify_event_insert', 'notify_event_status',
+                        'notify_link_insert', 'notify_link_update', 'notify_host_pop_insert', 'notify_host_pop_update')
+  loop
+    execute format('alter table public.%I disable trigger %I', t.relname, t.tgname);
+  end loop;
+end $off$;
 create function pg_temp.ok(v boolean, label text) returns void language plpgsql as $$
 begin
   if v is not true then raise exception 'FAILED: %', label; end if;

@@ -274,7 +274,9 @@ await test("router: a provider only serves the allowances it is for (codes never
   const mailtrap = fakeProvider("mailtrap", ["code"], good("t1"));
   const mailjet = fakeProvider("mailjet", ["code", "guest"], good("m1"));
   const caps = memCaps({ "brevo:guest": 5, "mailtrap:code": 1, "mailjet:code": 5, "mailjet:guest": 5 });
-  const code = await routeEmail(row({ cap_kind: "code", priority: 1, kind: "sign_in_code" }), [brevo, mailtrap, mailjet], caps, newRouterState(), now);
+  // Sign-in codes have no template yet (a later step), so this row is rendered by a stub.
+  const stub = () => ({ subject: "Your code", html: "<p>123456</p>", text: "123456", headers: {} });
+  const code = await routeEmail(row({ cap_kind: "code", priority: 1, kind: "sign_in_code" }), [brevo, mailtrap, mailjet], caps, newRouterState(), now, stub);
   eq(code.attempts[0].provider, "mailtrap", "mailtrap first for a code");
   const code2 = await routeEmail(row({ cap_kind: "code", priority: 1 }), [brevo, mailtrap, mailjet], caps, newRouterState(), now);
   eq(code2.attempts[0].provider, "mailjet", "then mailjet once mailtrap is full");
