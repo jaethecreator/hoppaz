@@ -193,7 +193,7 @@ await test("mailjet: no Headers key when there are none, and a code mail comes f
   await p.send(mail());
   ok(!("Headers" in (f.calls[0].body as { Messages: object[] }).Messages[0]), "no empty Headers");
   await p.send(mail({ capKind: "code" }));
-  eq(((f.calls[1].body as { Messages: Array<{ From: unknown }> }).Messages[0]).From, { Email: "login@auth.hoppaz.fun", Name: "Hoppaz" }, "code sender");
+  eq(((f.calls[1].body as { Messages: Array<{ From: unknown }> }).Messages[0]).From, { Email: "codes@auth.hoppaz.fun", Name: "Hoppaz" }, "code sender");
 });
 await test("mailjet: needs both keys", () => {
   for (const env of [{ MAILJET_API_KEY: "a" }, { MAILJET_SECRET_KEY: "b" }, {}]) {

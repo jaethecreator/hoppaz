@@ -151,6 +151,35 @@ sign-in code:  Supabase Auth -> Send Email Hook -> /api/auth/send-email
 
 WhatsApp plugs into the same queue and send log (see the WhatsApp draft).
 
+## Sign-in hook (for Ola)
+
+The route is `/api/auth/send-email` (code in `src/lib/notify/authhook.ts`). Supabase calls it for every auth email, and it sends the code at once through Mailtrap, then Mailjet. It never uses the queue. It is the one route where a failure stops people signing in, so do the steps in this order and do not skip the checks.
+
+**Set up, in order**
+
+1. **Mail accounts.** In Mailtrap, add and verify the sending domain `auth.hoppaz.fun` (its DNS records go in Hostinger). In Mailjet, validate the sender `codes@auth.hoppaz.fun` the same way. Both need to be sending before the hook is on.
+2. **Vercel env vars** (Production). Keys only in Vercel, never in chat:
+   - `MAILTRAP_API_KEY`
+   - `MAILJET_API_KEY` and `MAILJET_SECRET_KEY` (already there if guest mail is set up)
+   - `NOTIFY_PROVIDERS` = `brevo,mailtrap,mailjet`. Codes always try Mailtrap first and Mailjet second, whatever the order. Brevo is only for guest mail.
+   - `NOTIFY_FROM_CODE` only if you want a sender other than `Hoppaz <codes@auth.hoppaz.fun>`.
+   - `SEND_EMAIL_HOOK_SECRET` comes from step 4.
+3. **Deploy** this branch, so `https://hoppaz.fun/api/auth/send-email` exists. Check it from a terminal: a plain POST must answer 500 (secret not set yet) or 401 (secret set, no signature), never 200. Then do step 4.
+4. **Supabase, Authentication, Auth Hooks, Send Email.** Choose HTTPS, set the URL to `https://hoppaz.fun/api/auth/send-email`, and generate the secret. It looks like `v1,whsec_...`. Copy the whole thing into Vercel as `SEND_EMAIL_HOOK_SECRET` and redeploy **before** the hook is on. With the hook on and the secret missing in Vercel, the route refuses every call and nobody can sign in. (I could not see the dashboard screen. If it switches the hook on when you save, get the Vercel page ready first and be quick.)
+5. **Switch the hook on, then try it yourself** with your own email: ask for a code on the live site, and check that it arrives and works. Then look at the log:
+   `select created_at, provider, status, error from notify_sends where error like 'auth:%' order by created_at desc limit 10;`
+   The `error` column starts with `auth:` and the Supabase email type (`auth:magiclink`, `auth:signup`, `auth:email_change`). A good send reads `auth:magiclink`. A failed one adds the reason.
+6. **Settings that must be right**, because the emails and the app depend on them:
+   - Authentication, Providers, Email: enabled, **Email OTP Length 6**, **Email OTP Expiration 3600** (the emails say "one hour").
+   - Keep the Supabase auth notifications (password changed, email changed, identity linked and so on) **off**. The route can send them, but each one spends a code from the day's 250.
+   - Secure email change: either way works. With it on, a signed-in person with an email gets two codes and the app only takes one, so leave it off unless you change the app.
+
+**If it breaks, turn it off at once.** Supabase, Authentication, Auth Hooks, Send Email: switch it off (disable the hook). Supabase goes straight back to its own mailer with the templates in `supabase/email-templates/`, with no deploy. That only helps if the project has a working SMTP setting: the built-in mailer sends to team members only. So before go-live, put Mailjet's SMTP into Supabase as the spare, and keep the dashboard templates matching the files. To find out why it broke, search the Vercel logs for `SIGN-IN EMAIL NOT SENT`.
+
+**Check afterwards: `rate_limit_email_sent`.** In Authentication, Rate Limits, the number of emails Supabase will send per hour is for the whole project, and the default is low (30 an hour as far as I know). I could not tell whether it also counts mail sent through a hook. If it does, a busy hour stops codes before our own allowance of 250 a day does. Raise it above the busiest hour you expect, and watch that people are not seeing "wait a minute" when the allowance is not used up.
+
+**What it does not do yet:** Turnstile on the sign-in sheet (still required before real sends, because a bot could use up the day's codes); Mailtrap bounce reports (the bounce route only knows Brevo and Mailjet); Mailtrap's free plan also stops at 4,000 a month, so at 150 a day it fills up near the end of the month and Mailjet's 100 a day covers the rest.
+
 ## What Jae does (today, for email)
 
 1. Create Brevo, Mailtrap and Mailjet accounts. Brevo and Mailjet approve new senders by hand, usually within a day.

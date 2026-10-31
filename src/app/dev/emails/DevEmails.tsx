@@ -44,7 +44,7 @@ export default function DevEmails({ samples }: { samples: Sample[] }) {
       <div className="mx-auto flex max-w-[760px] flex-col gap-4">
         <h1 className="font-display text-[22px] font-black">Emails</h1>
         <p className="hint">
-          Every guest and host email with sample data. Nothing is sent. The unsubscribe link on G10, G11, G12 and G15 uses a placeholder address here: the real
+          Every guest, host and sign-in email with sample data. Nothing is sent. The unsubscribe link on G10, G11, G12 and G15 uses a placeholder address here: the real
           helper returns none until the unsubscribe page exists.
         </p>
         <div className="flex flex-wrap gap-2" data-testid="controls">

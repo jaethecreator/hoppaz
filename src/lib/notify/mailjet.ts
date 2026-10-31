@@ -40,11 +40,12 @@ export function createMailjetProvider(env: Env = process.env, fetcher: FetchLike
             TextPart: msg.text,
             HTMLPart: msg.html,
             ...(msg.headers && Object.keys(msg.headers).length ? { Headers: msg.headers } : {}),
-            CustomID: msg.queueId,
+            // A sign-in code sent from the hook has no queue row, so no CustomID.
+            ...(msg.queueId ? { CustomID: msg.queueId } : {}),
           },
         ],
       };
-      const res = await postJson(fetcher, MAILJET_URL, { Authorization: auth }, body);
+      const res = await postJson(fetcher, MAILJET_URL, { Authorization: auth }, body, msg.timeoutMs);
       if ("error" in res) return { ok: false, error: `mailjet: ${res.error}` };
       const j = obj(res.json);
       const first = obj(Array.isArray(j.Messages) ? j.Messages[0] : null);

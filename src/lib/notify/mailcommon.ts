@@ -7,8 +7,8 @@ type Env = Record<string, string | undefined>;
 export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal }) => Promise<Response>;
 
 export const DEFAULT_FROM_GUEST = "Hoppaz <tickets@mail.hoppaz.fun>";
-/** Sign-in codes come from auth.hoppaz.fun (docs/reminders-email-plan.md, 31 Oct). No code mail is queued yet; this is for the step that does. */
-export const DEFAULT_FROM_CODE = "Hoppaz <login@auth.hoppaz.fun>";
+/** Sign-in codes come from auth.hoppaz.fun (docs/reminders-email-plan.md, 31 Oct), sent by the Send Email Hook (src/lib/notify/authhook.ts). */
+export const DEFAULT_FROM_CODE = "Hoppaz <codes@auth.hoppaz.fun>";
 export const DEFAULT_REPLY_TO = "hello@hoppaz.fun";
 
 export type Address = { email: string; name?: string };
@@ -42,15 +42,16 @@ export function missingContent(msg: OutgoingEmail): SendResult | null {
 
 const TIMEOUT_MS = 15_000;
 
-/** One POST with a timeout. A network failure or a timeout is an ordinary retryable error. */
+/** One POST with a timeout (`timeoutMs`, else 15 seconds; the sign-in hook passes a short one). A network failure or a timeout is an ordinary retryable error. */
 export async function postJson(
   fetcher: FetchLike,
   url: string,
   headers: Record<string, string>,
   body: unknown,
+  timeoutMs?: number,
 ): Promise<{ status: number; json: unknown } | { error: string }> {
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(), timeoutMs && timeoutMs > 0 ? timeoutMs : TIMEOUT_MS);
   try {
     const res = await fetcher(url, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json", ...headers }, body: JSON.stringify(body), signal: ctl.signal });
     let json: unknown = null;

@@ -41,7 +41,7 @@ export function createBrevoProvider(env: Env = process.env, fetcher: FetchLike =
         headers: { ...(msg.headers ?? {}), "X-Hoppaz-Queue": msg.queueId, "X-Mailin-custom": msg.queueId },
         tags: [msg.kind],
       };
-      const res = await postJson(fetcher, BREVO_URL, { "api-key": key }, body);
+      const res = await postJson(fetcher, BREVO_URL, { "api-key": key }, body, msg.timeoutMs);
       if ("error" in res) return { ok: false, error: `brevo: ${res.error}` };
       const j = obj(res.json);
       if (res.status === 201 || res.status === 200 || res.status === 202) {

@@ -7,5 +7,6 @@ export { routeEmail, routeRow, renderRow, skipWhatsApp, retryDelayMinutes, newRo
 export { renderEmail, hasTemplate, NoTemplateError, TEMPLATE_KINDS, type RenderedEmail } from "./templates";
 export { createBrevoProvider } from "./brevo";
 export { createMailjetProvider } from "./mailjet";
+export { createMailtrapProvider } from "./mailtrap";
 export { runNotify, capWarnings, type RunDeps, type RunSummary } from "./run";
 export * from "./types";

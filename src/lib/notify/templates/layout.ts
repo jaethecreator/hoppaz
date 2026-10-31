@@ -16,6 +16,8 @@ export type Doc = {
   headline: string;
   /** Plain text. Escaped here. */
   paragraphs: string[];
+  /** A sign-in code, drawn big in the orange block of supabase/email-templates/confirm-signup.html. `note` is the small grey line under it. */
+  code?: { value: string; note?: string };
   /** The one plain line of event facts, with the event name above it. */
   event?: { title: string; facts: string };
   /** Label and value lines (a receipt, what changed). */
@@ -59,6 +61,13 @@ export function renderHtml(doc: Doc, ctx: ShellContext): string {
   const { site } = ctx;
   const tickets = (doc.tickets ?? []).slice(0, MAX_QR);
   const more = (doc.tickets?.length ?? 0) - tickets.length;
+  // Orange with the ember lip, like the app's buttons: big, spaced, easy to copy. The padding-left evens out the spacing after the last digit.
+  const code = doc.code
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 ${doc.code.note ? "0" : "20px"};"><tr>
+<td align="center" style="border-radius:12px;background:${C.orange};box-shadow:0 3px 0 ${C.ember};padding:18px 12px;">
+<span style="display:block;font-family:${MONO};font-weight:500;font-size:38px;line-height:1;letter-spacing:0.3em;padding-left:0.3em;color:${C.page};">${esc(doc.code.value)}</span>
+</td></tr></table>${doc.code.note ? `\n<p style="margin:20px 0 0;font-family:${BODY};font-size:13px;line-height:1.5;color:${C.muted};">${esc(doc.code.note)}</p>` : ""}`
+    : "";
   const rows = doc.rows?.length
     ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;border-top:1px solid ${C.line};">${doc.rows
         .map(
@@ -112,7 +121,7 @@ a { color: ${C.orange}; }
 <p style="margin:0 0 14px;font-family:${MONO};font-size:11px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;color:${C.muted};">${esc(doc.eyebrow)}</p>
 <h1 class="title" style="margin:0 0 14px;font-family:${DISPLAY};font-weight:900;font-size:32px;line-height:1.1;letter-spacing:-0.01em;color:${C.cream};">${esc(doc.headline)}</h1>
 ${doc.paragraphs.map((t) => p(t)).join("\n")}
-${event}${rows}${tickets.map((t, i) => ticketBlock(site, t, i, doc.tickets?.length ?? 1)).join("\n")}${more > 0 ? p(`And ${more} more in the app.`, `font-size:14px;color:${C.muted};`) : ""}
+${code}${event}${rows}${tickets.map((t, i) => ticketBlock(site, t, i, doc.tickets?.length ?? 1)).join("\n")}${more > 0 ? p(`And ${more} more in the app.`, `font-size:14px;color:${C.muted};`) : ""}
 ${button}
 ${(doc.after ?? []).map((t) => `<div style="height:16px;line-height:16px;">&nbsp;</div>${p(t, "margin-bottom:0;")}`).join("\n")}
 </td></tr>
@@ -129,6 +138,7 @@ ${esc(doc.reason)}${ctx.to ? `<br>Sent to ${esc(ctx.to)}.` : ""}<br>Questions? J
 
 export function renderText(doc: Doc, ctx: ShellContext): string {
   const out: string[] = [doc.headline, "", ...doc.paragraphs.flatMap((t) => [t, ""])];
+  if (doc.code) out.push(doc.code.value, "", ...(doc.code.note ? [doc.code.note, ""] : []));
   if (doc.event) out.push(doc.event.title, ...(doc.event.facts ? [doc.event.facts] : []), "");
   if (doc.rows?.length) out.push(...doc.rows.map(([k, v]) => `${k}: ${v}`), "");
   const tickets = doc.tickets ?? [];

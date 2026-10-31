@@ -17,6 +17,8 @@ export type OutgoingEmail = {
   html?: string;
   text?: string;
   headers?: Record<string, string>;
+  /** Give up on the request after this many milliseconds. Unset: the provider's own default (15 seconds). The sign-in hook sets it, because Supabase waits 5 seconds in all. */
+  timeoutMs?: number;
 };
 
 /**
