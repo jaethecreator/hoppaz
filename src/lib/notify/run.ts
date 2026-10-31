@@ -1,7 +1,8 @@
 import type { NotifyDb } from "./db";
 import type { EmailProvider } from "./provider";
-import { newRouterState, routeRow, type CapStore, type Renderer } from "./router";
-import type { CapStatus, ClaimedRow, RowOutcome } from "./types";
+import { newRouterState, routeRow, type CapStore, type Renderer, type WaRoute } from "./router";
+import type { CapStatus, Channel, ClaimedRow, RowOutcome, WaBudget } from "./types";
+import type { WhatsAppSender } from "./whatsapp";
 
 const SETTLE_TRIES = 3;
 
@@ -13,6 +14,8 @@ const SETTLE_TRIES = 3;
 export type RunDeps = {
   db: NotifyDb;
   providers: readonly EmailProvider[];
+  /** The WhatsApp sender, or none. Without one, WhatsApp rows are not claimed at all and stay queued; without email providers, email rows are not. */
+  whatsapp?: WhatsAppSender | null;
   /** At most 500, the most the database hands out in one claim. */
   limit?: number;
   /** Rows worked on at once. */
@@ -47,6 +50,14 @@ export function capWarnings(status: readonly CapStatus[], threshold = 80): strin
     .map((s) => `${s.provider} ${s.kind} mail has used ${s.used} of ${s.daily_cap} today (${s.percent}%)`);
 }
 
+/** A line when the month's WhatsApp spend (counting what is not priced yet) has reached `threshold` percent of the budget, matching capWarnings. */
+export function waBudgetWarning(b: WaBudget | null, threshold = 80): string | null {
+  if (!b || b.percent < threshold) return null;
+  const money = (n: number) => `$${n.toFixed(2)}`;
+  const base = `WhatsApp has used ${money(b.projected_usd)} of the ${money(b.budget_usd)} monthly budget (${b.percent}%)`;
+  return b.room <= 0 ? `${base}; the budget is reached, WhatsApp rows are being skipped until next month or a higher whatsapp_monthly_budget_usd` : base;
+}
+
 export async function runNotify(deps: RunDeps): Promise<RunSummary> {
   const { db, providers } = deps;
   const limit = Math.min(Math.max(deps.limit ?? 500, 1), 500);
@@ -58,7 +69,9 @@ export async function runNotify(deps: RunDeps): Promise<RunSummary> {
   const stopAt = clock() + (deps.budgetMs ?? 40_000);
 
   const out: RunSummary = { claimed: 0, sent: 0, failed: 0, skipped: 0, requeued: 0, stuck: 0, warnings: [] };
-  const rows = await db.claim(limit, providers.map((p) => p.name));
+  const channels: Channel[] = [...(providers.length ? (["email"] as const) : []), ...(deps.whatsapp ? (["whatsapp"] as const) : [])];
+  const wa: WaRoute | null = deps.whatsapp ? { sender: deps.whatsapp, recheck: (row) => db.waRecheck(row.id) } : null;
+  const rows = channels.length ? await db.claim(limit, providers.map((p) => p.name), channels) : [];
   out.claimed = rows.length;
   if (rows.length) {
     const caps: CapStore = { take: (p, k) => db.takeCap(p, k), give: (p, k) => db.giveCap(p, k) };
@@ -109,7 +122,7 @@ export async function runNotify(deps: RunDeps): Promise<RunSummary> {
         rows.slice(i, i + concurrency).map(async (row) => {
           let outcome: RowOutcome;
           try {
-            outcome = await routeRow(row, providers, caps, state, now, deps.render);
+            outcome = await routeRow(row, providers, caps, state, now, deps.render, wa);
           } catch (e) {
             // Routing blew up (the database, usually). A provider that had accepted the message would have returned an outcome, so nothing went out.
             log(`[hoppaz] notify: row ${row.id} failed: ${(e as Error).message}`);
@@ -136,6 +149,17 @@ export async function runNotify(deps: RunDeps): Promise<RunSummary> {
     for (const w of out.warnings) log(`[hoppaz] notify: ${w}`);
   } catch (e) {
     log(`[hoppaz] notify: could not read the caps: ${(e as Error).message}`);
+  }
+  if (deps.whatsapp) {
+    try {
+      const w = waBudgetWarning(await db.waBudget());
+      if (w) {
+        out.warnings.push(w);
+        log(`[hoppaz] notify: ${w}`);
+      }
+    } catch (e) {
+      log(`[hoppaz] notify: could not read the WhatsApp budget: ${(e as Error).message}`);
+    }
   }
   return out;
 }

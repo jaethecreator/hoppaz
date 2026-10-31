@@ -1,6 +1,6 @@
 # Reminders on WhatsApp: draft plan and setup guide
 
-Written 30 Oct 2026 for Jae. Prices and rules were checked on Meta's official pages that day (details and sources in `docs/reminders-research.md`). The email side is in `docs/reminders-email-plan.md`. Nothing here is built yet.
+Written 30 Oct 2026 for Jae. Prices and rules were checked on Meta's official pages that day (details and sources in `docs/reminders-research.md`). The email side is in `docs/reminders-email-plan.md`. The WhatsApp sender, templates, webhook, bot and budget are built (see "Connecting WhatsApp"); none of it has run against Meta.
 
 ## Update, 31 Oct (replaces anything below that disagrees)
 
@@ -9,6 +9,41 @@ Written 30 Oct 2026 for Jae. Prices and rules were checked on Meta's official pa
 - **Templates:** `hoppaz_day_before`, `hoppaz_hour_before`, `hoppaz_event_changed`, `hoppaz_event_cancelled`. `hoppaz_ticket` is dropped.
 - **Bot:** `STOP`, `START`, `TICKET` and `HELP` only. The "I'm coming" and "Can't make it" buttons and the free hour-before reply are dropped.
 - **App:** a checkout switch and "WhatsApp reminders" labels on paid tickets. Use a new Hoppaz app and portfolio, not the side project's.
+
+## Connecting WhatsApp (code built 31 Oct, nothing sent yet)
+
+Plain steps for Jae. The code is written and tested against fakes only: it has never talked to Meta. Do these once the Meta accounts in Stage A are ready, and start with the test number.
+
+**1. Run the SQL (Ola).** `supabase/events_r1_notify_whatsapp.sql`, after the other three notify files. It is safe to run again.
+
+**2. Environment names in Vercel** (values never in git, never in chat):
+
+| Name | What it is |
+|---|---|
+| `WHATSAPP_TOKEN` | the system user token from Business settings |
+| `WHATSAPP_PHONE_NUMBER_ID` | the id of the sending number, from WhatsApp Manager (digits) |
+| `WHATSAPP_APP_SECRET` | App settings, Basic, App secret. Without it the webhook refuses every call. |
+| `WHATSAPP_VERIFY_TOKEN` | a long random string you make up. You type the same one into Meta in step 3. |
+| `WHATSAPP_WABA_ID` | the WhatsApp Business Account id. Only the setup script (step 4) uses it, on your machine; Vercel does not need it. |
+
+`WHATSAPP_NUMBER` (for the `wa.me` link) is not used yet. The email names (`NOTIFY_RUN_SECRET` and the rest) are unchanged. With `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` missing, WhatsApp rows are simply not picked up: they wait in the queue (a reminder expires on its own) and no try is used up.
+
+**3. The callback URL.** In the app dashboard, WhatsApp, Configuration, set the callback URL to `https://hoppaz.fun/api/whatsapp/hook` and the verify token to your `WHATSAPP_VERIFY_TOKEN`, then subscribe to the `messages` field. Meta checks it straight away; it only passes if the token matches.
+
+**4. Submit the templates.** On your own machine, from the repo root:
+
+- `node --no-warnings scripts/whatsapp-setup.mts` is a dry run. It prints the four templates and what it would send, and sends nothing.
+- With `WHATSAPP_TOKEN` and `WHATSAPP_WABA_ID` set in that terminal, `node --no-warnings scripts/whatsapp-setup.mts --send` submits them. It checks first whether each one already exists, so it is safe to run again, and it prints no key.
+- **Heads-up before you send:** Meta's documentation (error 2388299) says a template body cannot start with a variable, and all four bodies start with `{{1}}`. Meta may refuse them. If it does, the fix is one lead word in the text in `src/lib/notify/watemplates.ts`, for example "Hoppaz: ". Nothing else changes. The dry run prints this warning.
+- Review takes up to 24 hours per template. Watch the status in WhatsApp Manager.
+
+**5. Switch it on for one small event.** `select public.notify_set_flag('notify_whatsapp', 'on');` Only paid guests who agreed (the checkout switch comes later) get a message. Check `notify_sends` and the cost after the first send.
+
+**6. The monthly budget.** `whatsapp_monthly_budget_usd` in `notify_config`, **$50 as a placeholder: choose your own.** Change it with one line: `select public.set_notify_config('whatsapp_monthly_budget_usd', '100');`. What has been sent but not priced yet counts at $0.0067 until Meta's delivery status arrives. When the month's total would pass the budget, WhatsApp rows are skipped with the reason "WhatsApp monthly budget reached" and email carries on. The run logs a warning from 80 percent. The bot then answers only STOP.
+
+**7. Turn it off instantly.** `select public.notify_set_flag('notify_whatsapp', 'off');` No new WhatsApp rows are queued and none are picked up; a row already being sent in that minute may still go. Rows already waiting stay waiting until you switch it on again or they expire. STOP replies still work with the flag off. To stop sending completely, remove `WHATSAPP_TOKEN` in Vercel.
+
+**What a guest can send us:** `STOP` (off for that number, confirmed once an hour), `START` (back on only if they agreed before, otherwise it tells them to turn it on at checkout), `TICKET` (their next ticket link; a number we do not know gets the help text), `HELP` or anything else (the help text). Each number gets at most one help reply an hour and six replies a day (`whatsapp_reply_daily_max`). Replies are free up to 1,000 a month per number and $0.0067 after that, from 1 Oct 2026.
 
 ## 1. What "the Meta API" and "a bot" mean
 

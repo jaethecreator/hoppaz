@@ -321,7 +321,7 @@ begin
                                       or (x ->> 'channel' = 'whatsapp' and x ->> 'whatsapp_number' ~ '^\+' and x ->> 'email' is null))
                         from (select jsonb_array_elements(rows1 || rows2) x) q),
                      'claim: an email row carries the address, a WhatsApp row the number');
-  perform pg_temp.ok(position('skip locked' in pg_get_functiondef('public.notify_claim_due(integer,text[],timestamptz)'::regprocedure)) > 0,
+  perform pg_temp.ok(position('skip locked' in pg_get_functiondef('public.notify_claim_due(integer,text[],timestamptz,text[])'::regprocedure)) > 0,
                      'claim: two runs at once cannot take the same row (for update skip locked is in the function)');
   -- A run that died: its rows come back after 10 minutes, as try 2.
   r := public.notify_claim_due(500, array['log'], now() + interval '11 minutes');

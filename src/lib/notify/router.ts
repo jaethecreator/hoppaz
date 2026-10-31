@@ -1,6 +1,8 @@
 import type { EmailProvider } from "./provider";
 import { renderEmail, type RenderedEmail } from "./templates";
 import { MAX_TRIES, type Attempt, type CapKind, type ClaimedRow, type RowOutcome } from "./types";
+import { WaTemplateError, messageFor } from "./watemplates";
+import { maskNumber, type WhatsAppSender } from "./whatsapp";
 
 /**
  * Picks the provider for a claimed row. Pure apart from the calls it is given, so scripts/notify-check.mts runs it with fakes.
@@ -9,7 +11,11 @@ import { MAX_TRIES, type Attempt, type CapKind, type ClaimedRow, type RowOutcome
  * allowance is taken first (atomic in the database); a full cap moves on to the next provider. A provider error moves on too and
  * hands the unit back. A provider that says its own limit is reached is left alone for the rest of the run. If every provider was
  * full, the row waits (and the wait is not counted as a try); if they failed, it is retried later, and after MAX_TRIES it is failed.
- * WhatsApp has no sender yet: those rows are skipped with a clear reason.
+ * WhatsApp rows go to routeWhatsApp: the kind picks one of the four templates (anything else is failed, never sent), the values are made from the
+ * payload in the event's timezone, the database is asked once more whether the guest is still on and paid, and then the sender is called. A
+ * permanent Meta error fails the row with no retry, a rate limit puts it back without counting a try, anything else retries by the tries rule.
+ * With no sender configured the row is put back without counting a try (the claim does not hand WhatsApp rows to a run that has no sender, so
+ * this is only a second line of defence): skipping would lose a reminder for a setup mistake that can be fixed, and a reminder expires on its own.
  *
  * Before any provider is asked (and before an allowance unit is taken) the row is rendered from its kind and payload (templates/). A kind with
  * no template, or a render that throws, fails the row with the reason and sends nothing: an email is never sent blank.
@@ -34,8 +40,6 @@ export function retryDelayMinutes(tries: number): number {
 /** How long a row waits when every provider's cap is full. */
 export const FULL_CAP_WAIT_MINUTES = 15;
 
-export const WHATSAPP_NOT_BUILT = "WhatsApp sender is not built yet";
-
 const plusMinutes = (from: Date, minutes: number) => new Date(from.getTime() + minutes * 60_000).toISOString();
 
 const note = (row: ClaimedRow, provider: string, status: Attempt["status"], error: string): Attempt => ({
@@ -49,8 +53,47 @@ const note = (row: ClaimedRow, provider: string, status: Attempt["status"], erro
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 300);
 
-export function skipWhatsApp(row: ClaimedRow): RowOutcome {
-  return { final: "skipped", attempts: [note(row, "none", "skipped", WHATSAPP_NOT_BUILT)] };
+/** How long a WhatsApp row waits when the sender is missing, paused for the run, or told us to slow down. */
+export const WA_WAIT_MINUTES = 15;
+
+/** What the router needs to send on WhatsApp. `recheck` answers the number to use, or null if the guest is no longer on and paid. */
+export type WaRoute = { sender: WhatsAppSender; recheck: (row: ClaimedRow) => Promise<string | null> };
+
+export async function routeWhatsApp(row: ClaimedRow, wa: WaRoute | null, state: RouterState = newRouterState(), now: () => Date = () => new Date()): Promise<RowOutcome> {
+  if (!wa) {
+    return { final: "queued", attempts: [note(row, "router", "skipped", "WhatsApp is not set up here, waiting")], retryAt: plusMinutes(now(), WA_WAIT_MINUTES), freeRetry: true };
+  }
+  let msg;
+  try {
+    msg = messageFor(row.kind, row.payload, now());
+  } catch (e) {
+    if (e instanceof WaTemplateError) return { final: "failed", attempts: [note(row, "router", "failed", `not sent: ${e.message}`)] };
+    throw e;
+  }
+  const name = wa.sender.name;
+  if (!row.whatsapp_number) return { final: "skipped", attempts: [note(row, "router", "skipped", "no WhatsApp number")] };
+  if (state.exhausted.has(name)) {
+    return { final: "queued", attempts: [note(row, name, "skipped", "WhatsApp is paused for this run, waiting")], retryAt: plusMinutes(now(), WA_WAIT_MINUTES), freeRetry: true };
+  }
+  // A STOP or a refund can land between the claim and now.
+  const number = await wa.recheck(row);
+  if (!number) return { final: "skipped", attempts: [note(row, "router", "skipped", "skipped: switched off or no longer paid before it went")] };
+
+  let res;
+  try {
+    res = await wa.sender.sendTemplate({ to: number, template: msg.template, bodyParams: msg.bodyParams, buttonSuffix: msg.buttonSuffix });
+  } catch (e) {
+    res = { ok: false as const, error: messageOf(e) };
+  }
+  if (res.ok) {
+    return { final: "sent", attempts: [{ channel: row.channel, provider: name, status: "sent", message_id: res.messageId, cost_usd: res.costUsd, error: null }] };
+  }
+  const attempts = [note(row, name, "failed", `${res.error.slice(0, 260)} (${maskNumber(number)})`)];
+  if (res.pause) state.exhausted.add(name);
+  if (res.retryable === false) return { final: "failed", attempts };
+  if (res.rateLimited) return { final: "queued", attempts, retryAt: plusMinutes(now(), WA_WAIT_MINUTES), freeRetry: true };
+  if (row.tries >= MAX_TRIES) return { final: "failed", attempts };
+  return { final: "queued", attempts, retryAt: plusMinutes(now(), retryDelayMinutes(row.tries)), freeRetry: false };
 }
 
 /** Turns a claimed row into the email to send. Throws when it cannot (no template for the kind). */
@@ -120,6 +163,14 @@ export async function routeEmail(
   return { final: "queued", attempts, retryAt: plusMinutes(now(), retryDelayMinutes(row.tries)), freeRetry: false };
 }
 
-export function routeRow(row: ClaimedRow, providers: readonly EmailProvider[], caps: CapStore, state?: RouterState, now?: () => Date, render?: Renderer): Promise<RowOutcome> {
-  return row.channel === "whatsapp" ? Promise.resolve(skipWhatsApp(row)) : routeEmail(row, providers, caps, state, now, render);
+export function routeRow(
+  row: ClaimedRow,
+  providers: readonly EmailProvider[],
+  caps: CapStore,
+  state?: RouterState,
+  now?: () => Date,
+  render?: Renderer,
+  wa: WaRoute | null = null,
+): Promise<RowOutcome> {
+  return row.channel === "whatsapp" ? routeWhatsApp(row, wa, state, now) : routeEmail(row, providers, caps, state, now, render);
 }

@@ -48,6 +48,18 @@ export type RowOutcome =
 /** How full a cap is today (notify_cap_status). */
 export type CapStatus = { provider: string; kind: CapKind; daily_cap: number; used: number; percent: number | null };
 
+/** The month's WhatsApp budget (notify_wa_budget in supabase/events_r1_notify_whatsapp.sql). `room` is how many more messages it pays for. */
+export type WaBudget = {
+  budget_usd: number;
+  spent_usd: number;
+  unpriced: number;
+  in_flight: number;
+  estimate_usd: number;
+  projected_usd: number;
+  percent: number;
+  room: number;
+};
+
 /** The arguments of notify_enqueue, in the database's own names. */
 export type EnqueueArgs = {
   p_user: string;

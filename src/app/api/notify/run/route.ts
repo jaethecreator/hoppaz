@@ -3,6 +3,7 @@ import { supabaseNotifyDb } from "@/lib/notify/db";
 import { noStore, runAllowed, serviceClient } from "@/lib/notify/http";
 import { buildProviders } from "@/lib/notify/providers";
 import { runNotify } from "@/lib/notify/run";
+import { buildWhatsApp } from "@/lib/notify/whatsapp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,8 @@ export const maxDuration = 60;
  *
  * Claims up to 500 rows, routes each one through the providers (src/lib/notify/router.ts) and writes every attempt to notify_sends.
  * The database has already decided who gets what and when (flags, skip rules, daily caps, priority); this route only delivers.
- * WhatsApp rows are marked skipped with a reason until the WhatsApp sender is built.
+ * WhatsApp rows go through the WhatsApp sender (src/lib/notify/whatsapp.ts) when WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID are set; without it they
+ * are not claimed and wait in the queue (a reminder expires by itself), and without an email provider email rows wait the same way.
  */
 export async function POST(req: Request) {
   if (!runAllowed(req)) return NextResponse.json({ error: "Not allowed" }, { status: 401, headers: noStore });
@@ -22,10 +24,11 @@ export async function POST(req: Request) {
   if (!sb) return NextResponse.json({ error: "Not configured" }, { status: 503, headers: noStore });
   // Nothing is claimed unless there is a provider to hand it to, so rows are never marked as tried for nothing.
   const providers = buildProviders();
-  if (!providers.length) return NextResponse.json({ error: "No email provider is configured" }, { status: 503, headers: noStore });
+  const whatsapp = buildWhatsApp();
+  if (!providers.length && !whatsapp) return NextResponse.json({ error: "No email provider is configured" }, { status: 503, headers: noStore });
 
   try {
-    const summary = await runNotify({ db: supabaseNotifyDb(sb), providers });
+    const summary = await runNotify({ db: supabaseNotifyDb(sb), providers, whatsapp });
     return NextResponse.json({ ok: true, ...summary }, { headers: noStore });
   } catch (e) {
     console.warn("[hoppaz] notify: run failed:", (e as Error).message);

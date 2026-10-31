@@ -29,7 +29,7 @@ registerHooks({
 
 const { buildEnqueueArgs, notify } = await import("../src/lib/notify/enqueue.ts");
 const { createLogProvider, maskAddress } = await import("../src/lib/notify/log.ts");
-const { routeEmail, routeRow, retryDelayMinutes, newRouterState, skipWhatsApp, WHATSAPP_NOT_BUILT, FULL_CAP_WAIT_MINUTES } = await import("../src/lib/notify/router.ts");
+const { routeEmail, routeRow, retryDelayMinutes, newRouterState, FULL_CAP_WAIT_MINUTES, WA_WAIT_MINUTES } = await import("../src/lib/notify/router.ts");
 const { runNotify, capWarnings } = await import("../src/lib/notify/run.ts");
 const { buildProviders } = await import("../src/lib/notify/providers.ts");
 const { runAllowed } = await import("../src/lib/notify/http.ts");
@@ -284,15 +284,16 @@ await test("router: a provider only serves the allowances it is for (codes never
   const none = await routeEmail(row({ cap_kind: "code" }), [brevo], caps, newRouterState(), now);
   eq(none.final, "failed", "no provider for codes");
 });
-await test("router: no address is skipped, and WhatsApp is skipped with a clear reason", async () => {
+await test("router: no address is skipped, and a WhatsApp row with no sender is put back without costing a try", async () => {
   const brevo = fakeProvider("brevo", ["guest"], good("b1"));
   const noAddr = await routeEmail(row({ email: null }), [brevo], memCaps({ "brevo:guest": 1 }), newRouterState(), now);
   eq([noAddr.final, noAddr.attempts[0].error], ["skipped", "no email address"], "no address");
   const wa = await routeRow(row({ channel: "whatsapp", email: null, whatsapp_number: "+2348012345678" }), [brevo], memCaps({}), newRouterState(), now);
-  eq(wa.final, "skipped", "skipped");
-  eq(wa.attempts.map((a) => [a.channel, a.provider, a.status, a.error]), [["whatsapp", "none", "skipped", WHATSAPP_NOT_BUILT]], "with the reason");
+  eq(wa.final, "queued", "put back");
+  eq(wa.final === "queued" && wa.freeRetry, true, "without counting a try");
+  eq(wa.final === "queued" && wa.retryAt, new Date(NOW.getTime() + WA_WAIT_MINUTES * 60_000).toISOString(), "for later");
+  eq(wa.attempts.map((a) => [a.channel, a.provider, a.status, a.error]), [["whatsapp", "router", "skipped", "WhatsApp is not set up here, waiting"]], "with the reason");
   eq(brevo.calls.length, 0, "no email provider was asked");
-  eq(skipWhatsApp(row({ channel: "whatsapp" })).final, "skipped", "skipWhatsApp");
 });
 
 // ------------------------------------------------------------------ the run loop ---
@@ -314,20 +315,22 @@ function stubDb(rows: ClaimedRow[], status: CapStatus[] = [], limits: Record<str
     giveCap: (p, k) => caps.give(p, k),
     async complete(id, outcome) { settled.push({ id, outcome }); return true; },
     async capStatus() { return status; },
+    async waRecheck() { return "+2348012345678"; },
+    async waBudget() { return null; },
   };
   return { db, settled, claims, caps };
 }
 
-await test("run: claims with the provider names, routes each row, settles each once, and a WhatsApp row is skipped", async () => {
+await test("run: claims with the provider names, routes each row, settles each once, and a WhatsApp row with no sender is put back", async () => {
   const rows = [row({ id: "e1" }), row({ id: "w1", channel: "whatsapp", email: null, whatsapp_number: "+2348012345678" }), row({ id: "e2", email: null })];
   const { db, settled, claims } = stubDb(rows);
   const lines: string[] = [];
   const out = await runNotify({ db, providers: [createLogProvider(quiet)], log: (l) => lines.push(l), now });
   eq(claims, [{ limit: 500, providers: ["log"] }], "one claim of up to 500, naming the providers it can use");
-  eq(out, { claimed: 3, sent: 1, failed: 0, skipped: 2, requeued: 0, stuck: 0, warnings: [] }, "summary");
-  eq(settled.map((s) => [s.id, s.outcome.final]).sort(), [["e1", "sent"], ["e2", "skipped"], ["w1", "skipped"]], "each row settled once");
+  eq(out, { claimed: 3, sent: 1, failed: 0, skipped: 1, requeued: 1, stuck: 0, warnings: [] }, "summary");
+  eq(settled.map((s) => [s.id, s.outcome.final]).sort(), [["e1", "sent"], ["e2", "skipped"], ["w1", "queued"]], "each row settled once");
   const wa = settled.find((s) => s.id === "w1")!.outcome;
-  eq(wa.attempts[0].error, WHATSAPP_NOT_BUILT, "with the clear reason");
+  eq(wa.attempts[0].error, "WhatsApp is not set up here, waiting", "with the clear reason");
   ok(settled.find((s) => s.id === "e1")!.outcome.attempts[0].message_id?.startsWith("log_"), "the log provider's fake id is recorded");
 });
 await test("run: nothing due does nothing but read the caps", async () => {

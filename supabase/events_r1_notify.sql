@@ -72,6 +72,12 @@
 --   08:00 Lagos the next day. Either way a 'skipped' row with the reason is written to notify_sends (provider 'policy').
 --   Priority 1 that finds every provider full is not dropped: the run route puts it back for 15 minutes without counting a try.
 --
+-- WHATSAPP (events_r1_notify_whatsapp.sql, run after the other notify files) fills in a hook marked below. The claim takes a fourth argument,
+--   p_channels, the channels the caller can really send on (null: both). The run route lists 'whatsapp' only when the sender is configured and
+--   'email' only when an email provider is, so a half set up deployment never uses up tries or fails rows it could not send: they stay
+--   queued (and a reminder expires on its own). The claim asks _notify_wa_check whether the guest is still a paid guest with WhatsApp on,
+--   and _notify_wa_room how many more messages the month's budget allows. Without the WhatsApp file the stub below allows everything.
+--
 -- STEP 2 (events_r1_notify_emails.sql, run after this file) adds the triggers that queue the guest and host emails. It needs three small
 --   hooks here, all marked below: notify_claim_due also (1) re-asks "still going?" for the ticket mails (registered, approved, spot_opened),
 --   (2) honours email_pops for host_pop and email_reminders for thanks, and (3) adds the tickets with fresh signed tokens to a ticket mail's
@@ -437,12 +443,46 @@ begin
   end if;
 end $stub$;
 
+-- WhatsApp hooks of the claim. _notify_wa_check says whether a guest may still be sent a WhatsApp message of this kind: the number to use, or
+-- the reason to skip. It is defined here (not in the WhatsApp file) because the paid guest rule is part of the claim and must hold even
+-- if the WhatsApp file is not loaded. A paid order is one with status 'paid'; for event_cancelled a refund that has started or finished
+-- counts too (the guest did pay, and the message is the one that tells them about the refund).
+create or replace function public._notify_wa_check(p_user uuid, p_event uuid, p_kind text, out v_number text, out v_why text) returns record
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  select np.whatsapp_number into v_number from public.notify_prefs np where np.user_id = p_user and np.whatsapp_on;
+  if v_number is null then
+    v_why := 'skipped: WhatsApp is off';
+  elsif p_event is not null and not exists (
+          select 1 from public.ev_orders o
+           where o.buyer_id = p_user and o.event_id = p_event
+             and (o.status = 'paid' or (p_kind = 'event_cancelled' and o.status in ('refund_pending', 'refunded')))) then
+    v_number := null;
+    v_why := 'skipped: no paid order';
+  end if;
+end $$;
+
+-- How many more WhatsApp messages the month's budget pays for (events_r1_notify_whatsapp.sql replaces this stub). The stub is written only
+-- when missing, so a re-run of this file keeps the real one.
+do $stub2$
+begin
+  if to_regprocedure('public._notify_wa_room(timestamptz)') is null then
+    create function public._notify_wa_room(p_now timestamptz) returns integer
+    language sql stable security definer set search_path = public, pg_temp as 'select 2147483647';
+    revoke all on function public._notify_wa_room(timestamptz) from public, anon, authenticated;
+  end if;
+end $stub2$;
+
 -- ------------------------------------------------------------------ claim ---
 -- Hands out due rows, each to one caller only. A row left 'claimed' for more than 10 minutes (a run that died) is handed out again.
 -- Returns a json array of { id, user_id, kind, event_id, channel, cap_kind, payload, priority, tries, dedupe_key, email, whatsapp_number }.
--- p_providers: the providers the caller can really use, so the allowance counts only those (null: all). The caller must settle every row
+-- p_providers: the providers the caller can really use, so the allowance counts only those (null: all). p_channels: see the WHATSAPP note
+-- in the header. The caller must settle every row
 -- it gets with notify_complete.
-create or replace function public.notify_claim_due(p_limit integer default 500, p_providers text[] default null, p_now timestamptz default now()) returns jsonb
+-- Earlier drafts had three arguments; the fourth was added with the WhatsApp sender. Calls with one to three arguments mean the same.
+drop function if exists public.notify_claim_due(integer, text[], timestamptz);
+create or replace function public.notify_claim_due(p_limit integer default 500, p_providers text[] default null, p_now timestamptz default now(),
+                                                   p_channels text[] default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_lim   integer := least(greatest(coalesce(p_limit, 500), 1), 500);
@@ -460,8 +500,14 @@ declare
   v_addr  text;
   v_num   text;
   v_why   text;
+  v_room  integer;
 begin
+  -- A caller with no email provider must not be handed email rows (they would all fail), and one with no WhatsApp sender must not be
+  -- handed WhatsApp rows (they would use up tries): those rows just stay queued.
+  v_email := v_email and (p_channels is null or 'email' = any (p_channels));
+  v_wa := v_wa and (p_channels is null or 'whatsapp' = any (p_channels));
   if not v_email and not v_wa then return '[]'::jsonb; end if;
+  v_room := case when v_wa then public._notify_wa_room(p_now) else 0 end;
   v_a := public._notify_allowance('guest', p_providers, p_now);
   v_b := public._notify_allowance('code', p_providers, p_now);
   v_cap := array[v_a[1], v_b[1]];
@@ -519,15 +565,15 @@ begin
         continue;
       end if;
     else
-      select np.whatsapp_number into v_num from public.notify_prefs np where np.user_id = r.user_id and np.whatsapp_on;
+      -- WhatsApp costs money: it goes only to a guest with a paid order for the event and WhatsApp on (a refund or a STOP since ends it).
+      select c.v_number, c.v_why into v_num, v_why from public._notify_wa_check(r.user_id, r.event_id, r.kind) c;
       if v_num is null then
-        perform public._notify_close(r.id, r.channel, 'skipped', 'skipped: WhatsApp is off');
+        perform public._notify_close(r.id, r.channel, 'skipped', coalesce(v_why, 'skipped: WhatsApp is off'));
         continue;
       end if;
-      -- WhatsApp costs money and goes only to a guest with a paid order for the event (a refund since ends it).
-      if r.event_id is not null and not exists (
-           select 1 from public.ev_orders o where o.buyer_id = r.user_id and o.event_id = r.event_id and o.status = 'paid') then
-        perform public._notify_close(r.id, r.channel, 'skipped', 'skipped: no paid order');
+      -- The month's budget (notify_config whatsapp_monthly_budget_usd). Email still goes.
+      if v_room <= 0 then
+        perform public._notify_close(r.id, r.channel, 'skipped', 'skipped: WhatsApp monthly budget reached');
         continue;
       end if;
     end if;
@@ -546,7 +592,7 @@ begin
     end if;
 
     update public.notify_queue set status = 'claimed', claimed_at = p_now, tries = tries + 1, updated_at = clock_timestamp() where id = r.id;
-    if r.channel = 'email' then v_given[v_ix] := v_given[v_ix] + 1; end if;
+    if r.channel = 'email' then v_given[v_ix] := v_given[v_ix] + 1; else v_room := v_room - 1; end if;
     v_out := array_append(v_out, jsonb_build_object(
       'id', r.id, 'user_id', r.user_id, 'kind', r.kind, 'event_id', r.event_id, 'channel', r.channel, 'cap_kind', r.cap_kind,
       'payload', r.payload || public._notify_claim_extra(r.kind, r.event_id, r.user_id), 'priority', r.priority, 'tries', r.tries + 1, 'dedupe_key', r.dedupe_key,
@@ -648,12 +694,12 @@ end $$;
 -- Everything here is for the server: nobody signed in can call any of it. (notify_prefs is the one table a person can read, their own row.)
 revoke all on function
   public.set_notify_config(text, text), public._notify_cfg(text, text), public._notify_flag(text), public.notify_set_flag(text, text),
-  public._notify_day(timestamptz), public._notify_priority_limit(integer), public._notify_allowance(text, text[], timestamptz),
+  public._notify_day(timestamptz), public._notify_priority_limit(integer), public._notify_wa_check(uuid, uuid, text), public._notify_wa_room(timestamptz), public._notify_allowance(text, text[], timestamptz),
   public._notify_note(uuid, text, text, text), public._notify_close(uuid, text, text, text),
   public.notify_take_cap(text, text, integer, timestamptz), public.notify_give_cap(text, text, integer, timestamptz), public.notify_cap_status(timestamptz),
   public.notify_enqueue(uuid, text, uuid, jsonb, integer, timestamptz, text, text, text, timestamptz),
   public.notify_enqueue_pop(uuid, timestamptz), public._notify_pop_trigger(), public.notify_enqueue_due(timestamptz),
-  public.notify_claim_due(integer, text[], timestamptz), public.notify_complete(uuid, text, jsonb, timestamptz, boolean),
+  public.notify_claim_due(integer, text[], timestamptz, text[]), public.notify_complete(uuid, text, jsonb, timestamptz, boolean),
   public.notify_has_due(timestamptz), public.notify_tick(timestamptz)
   from public, anon, authenticated;
 grant execute on function
@@ -661,7 +707,7 @@ grant execute on function
   public.notify_take_cap(text, text, integer, timestamptz), public.notify_give_cap(text, text, integer, timestamptz), public.notify_cap_status(timestamptz),
   public.notify_enqueue(uuid, text, uuid, jsonb, integer, timestamptz, text, text, text, timestamptz),
   public.notify_enqueue_pop(uuid, timestamptz), public.notify_enqueue_due(timestamptz),
-  public.notify_claim_due(integer, text[], timestamptz), public.notify_complete(uuid, text, jsonb, timestamptz, boolean),
+  public.notify_claim_due(integer, text[], timestamptz, text[]), public.notify_complete(uuid, text, jsonb, timestamptz, boolean),
   public.notify_has_due(timestamptz), public.notify_tick(timestamptz)
   to service_role;
 
