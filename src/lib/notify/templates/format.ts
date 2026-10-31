@@ -8,6 +8,12 @@ export const esc = (v: unknown): string => String(v ?? "").replace(/[&<>"']/g, (
 /** Same text with line breaks kept, for a Pop. */
 export const escLines = (v: unknown): string => esc(v).replace(/\r\n|\r|\n/g, "<br>");
 
+/** The public address of the site, no trailing slash. NEXT_PUBLIC_SITE_URL when it is an http(s) address, else https://hoppaz.fun. */
+export function siteBase(site?: string): string {
+  const raw = (site ?? process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
+  return /^https?:\/\//i.test(raw) ? raw : "https://hoppaz.fun";
+}
+
 /** A header or subject must be one line: control characters (a newline in a title, say) become spaces. */
 export const oneLine = (v: unknown, max = 120): string => {
   const s = String(v ?? "").replace(/[\x00-\x1f\x7f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim();

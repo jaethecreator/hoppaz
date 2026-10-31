@@ -64,7 +64,10 @@ export const SAMPLES: Sample[] = [
 
 export type RenderedSample = Sample & { email: RenderedEmail };
 
-/** `unsubscribeUrl`: the preview passes a clearly fake address so the link can be seen; the real helper answers null until step 3. */
-export function renderSamples(opts: { site?: string; now?: Date; unsubscribeUrl?: string | null } = {}): RenderedSample[] {
-  return SAMPLES.map((s) => ({ ...s, email: renderEmail(s.kind, s.payload, { to: s.to, site: opts.site, now: opts.now, unsubscribeUrl: opts.unsubscribeUrl }) }));
+/** A made-up person for the preview: the signed unsubscribe links are real, but they point at nobody (the fake store takes any id; a database finds no such person). */
+export const SAMPLE_USER = "00000000-0000-4000-8000-000000000001";
+
+/** `userId`: signs the real unsubscribe links (needs NOTIFY_UNSUB_SECRET). `unsubscribeUrl`: or the preview passes a clearly fake address so the link can be seen without a secret. */
+export function renderSamples(opts: { site?: string; now?: Date; unsubscribeUrl?: string | null; userId?: string } = {}): RenderedSample[] {
+  return SAMPLES.map((s) => ({ ...s, email: renderEmail(s.kind, s.payload, { to: s.to, site: opts.site, now: opts.now, unsubscribeUrl: opts.unsubscribeUrl, userId: opts.userId }) }));
 }

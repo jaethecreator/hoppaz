@@ -14,7 +14,7 @@ import type { EmailProvider, OutgoingEmail, SendResult } from "./provider";
  *
  * Idempotency: the docs have no idempotency key for this endpoint (an "IdempotencyKey" in one example is just a sample custom header),
  * so dedupeKey is NOT sent. Our own queue (unique dedupe_key, and one claim per row) is what prevents a double send. The queue id goes in
- * the X-Hoppaz-Queue header and the kind in tags, so a later webhook step can find the row again.
+ * the X-Hoppaz-Queue header and in X-Mailin-custom (the header Brevo's webhooks hand back, src/lib/notify/hooks.ts), and the kind in tags.
  */
 export const BREVO_URL = "https://api.brevo.com/v3/smtp/email";
 
@@ -37,7 +37,8 @@ export function createBrevoProvider(env: Env = process.env, fetcher: FetchLike =
         subject: msg.subject,
         htmlContent: msg.html,
         textContent: msg.text,
-        headers: { ...(msg.headers ?? {}), "X-Hoppaz-Queue": msg.queueId },
+        // X-Mailin-custom is the one custom header Brevo hands back in its webhooks (X-Hoppaz-Queue is not); both carry the queue id.
+        headers: { ...(msg.headers ?? {}), "X-Hoppaz-Queue": msg.queueId, "X-Mailin-custom": msg.queueId },
         tags: [msg.kind],
       };
       const res = await postJson(fetcher, BREVO_URL, { "api-key": key }, body);

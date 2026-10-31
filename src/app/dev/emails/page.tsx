@@ -10,12 +10,19 @@ export default async function DevEmailsPage() {
   if (process.env.NODE_ENV === "production") {
     notFound();
   } else {
-    const [{ default: DevEmails }, { renderSamples }] = await Promise.all([import("./DevEmails"), import("@/lib/notify/templates/samples")]);
+    const [{ default: DevEmails }, { renderSamples, SAMPLE_USER }, { unsubSecret }] = await Promise.all([
+      import("./DevEmails"),
+      import("@/lib/notify/templates/samples"),
+      import("@/lib/notify/unsubToken"),
+    ]);
     // Images in the emails (the wordmark, the QR) are loaded from this very server, so what you see here is what the routes really draw.
     const host = (await headers()).get("host");
     const site = host ? `http://${host}` : undefined;
-    // A clearly fake address so the unsubscribe link of G10, G11, G12 and G15 can be seen. The live helper answers null until step 3.
-    const samples = renderSamples({ site, unsubscribeUrl: `${site ?? "http://localhost"}/unsubscribe/preview-only` });
+    // With NOTIFY_UNSUB_SECRET set the unsubscribe links of G10, G11, G12 and G15 are the real signed ones (for a made-up person); without it,
+    // a clearly fake address so the link can still be seen.
+    const samples = unsubSecret()
+      ? renderSamples({ site, userId: SAMPLE_USER })
+      : renderSamples({ site, unsubscribeUrl: `${site ?? "http://localhost"}/unsubscribe/preview-only` });
     return <DevEmails samples={samples.map((s) => ({ label: s.label, kind: s.kind, to: s.to, ...s.email }))} />;
   }
 }

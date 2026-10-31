@@ -106,7 +106,7 @@ await test("brevo: the request is the documented one (url, api-key header, body 
     subject: "You're going to Afro Night",
     htmlContent: "<p>hi</p>",
     textContent: "hi",
-    headers: { "List-Unsubscribe": "<https://x.test/u>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click", "X-Hoppaz-Queue": "11111111-1111-4111-8111-111111111111" },
+    headers: { "List-Unsubscribe": "<https://x.test/u>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click", "X-Hoppaz-Queue": "11111111-1111-4111-8111-111111111111", "X-Mailin-custom": "11111111-1111-4111-8111-111111111111" },
     tags: ["registered"],
   }, "body");
 });
@@ -320,7 +320,7 @@ await test("templates: host and guest written text is escaped everywhere it appe
   ok(!/[\r\n]/.test(hdr.subject) && Object.keys(hdr.headers).length === 0, "no header injection through a title");
 });
 await test("templates: unsubscribe link and headers only on G10, G11, G12 and G15, and only when there is a URL", () => {
-  eq(unsubscribeUrlFor({ kind: "reminder_day", userId: "u", queueId: "q" }), null, "the helper answers null for now");
+  eq(unsubscribeUrlFor({ kind: "reminder_day", userId: "u", queueId: "q" }), null, "the helper answers null for a person with no id or with the secret unset (step 3 tests the signed links in notify-unsub-check.mts)");
   eq([...UNSUBSCRIBE_KINDS].sort(), ["host_pop", "reminder_day", "reminder_hour", "thanks"], "the four kinds");
   for (const s of SAMPLES) {
     const without = render(s.kind, s.payload);
