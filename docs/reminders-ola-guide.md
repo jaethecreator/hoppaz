@@ -41,7 +41,12 @@ Not proved: any real provider or Meta call, Gmail rendering, the `pg_net` call f
 
 The follow-up PR adds Turnstile, Google-first sign-in, the Account link and the WhatsApp checkout switch. Turnstile must be live before the sign-in hook, because a bot could otherwise use up the day's codes.
 
-1. **Vercel env (Production).** The full list is in the "Vercel" section of Jae's setup guide. Values never go in git or chat.
+1. **Vercel env (Production).** Values never go in git or chat. Jae gives you the provider keys privately.
+   - Provider keys: `BREVO_API_KEY`, `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`, `MAILTRAP_API_KEY`
+   - Set: `NOTIFY_PROVIDERS` = `brevo,mailtrap,mailjet`, `NEXT_PUBLIC_SITE_URL` = `https://hoppaz.fun`, `NOTIFY_REPLY_TO` = `heyhoppaz@gmail.com`
+   - Generate with `openssl rand -hex 32`: `NOTIFY_RUN_SECRET`, `NOTIFY_UNSUB_SECRET` (never change it after launch), `NOTIFY_HOOK_SECRET`, `WHATSAPP_VERIFY_TOKEN`
+   - WhatsApp, from Jae: `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`
+   - From Supabase in step 4: `SEND_EMAIL_HOOK_SECRET`
 2. **Run the SQL, in this order,** after the Release 1 files: `events_r1_notify.sql`, `events_r1_notify_emails.sql`, `events_r1_notify_prefs.sql`, `events_r1_notify_whatsapp.sql`. All are safe to re-run. Tests are in `supabase/tests/events_r1_notify*`, and both flags start `off`.
 3. **Connect the timer.** Run these, with `NOTIFY_RUN_SECRET`'s value in place of the placeholder:
 
