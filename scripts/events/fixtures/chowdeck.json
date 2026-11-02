@@ -1,0 +1,76 @@
+{
+  "source": "chowdeck",
+  "site": "chowdeck",
+  "fetched_at": "2026-11-02T09:00:00.000Z",
+  "complete": true,
+  "rows": [
+    {
+      "id": 9001,
+      "slug": "fake-rooftop-9001",
+      "name": "Fake Rooftop Sessions",
+      "description": "Sunset sets.\nBring friends.",
+      "event_type": "physical",
+      "landmark": "Fake Rooftop",
+      "starts_at": "2026-11-07T19:00:00.000Z",
+      "ends_at": "2026-11-08T00:30:00.000Z",
+      "cover_image_url": "https://files.chowdeck.com/images/2026/fake/rooftop.jpg",
+      "review_status": "published",
+      "is_active": true,
+      "visibility": "public",
+      "address": { "city": "Lekki", "state": "Lagos", "street": "7 Test Ave, Lekki Phase 1", "latitude": 6.441, "longitude": 3.47 },
+      "category": { "name": "Nightlife" },
+      "vendor": { "name": "Rooftop Co" },
+      "has_free_tickets": false,
+      "min_ticket_price": 500000,
+      "ticket_types": [
+        { "type": "single", "tickets": [
+          { "name": "Regular", "price": 500000, "is_active": true, "quantity": 300, "quantity_type": "limited" },
+          { "name": "VIP", "price": 2000000, "is_active": true, "quantity": 50, "quantity_type": "limited" },
+          { "name": "Hidden", "price": 100, "is_active": false }
+        ] },
+        { "type": "group", "tickets": [{ "name": "Squad", "price": 4000000, "group_size": 5, "is_active": true }] }
+      ]
+    },
+    {
+      "id": 9002,
+      "slug": "fake-oyo-fest-9002",
+      "name": "Fake Oyo Fest",
+      "event_type": "physical",
+      "starts_at": "2026-11-20T10:00:00.000Z",
+      "review_status": "published",
+      "is_active": true,
+      "visibility": "public",
+      "address": { "city": "Ibadan", "state": "Oyo", "street": "Test road", "latitude": 7.38, "longitude": 3.9 },
+      "ticket_types": []
+    },
+    {
+      "id": 9003,
+      "slug": "fake-free-day-9003",
+      "name": "Fake Free Day",
+      "event_type": "physical",
+      "landmark": "Test Park, Yaba",
+      "starts_at": "2026-11-14T09:00:00.000Z",
+      "review_status": "published",
+      "is_active": true,
+      "visibility": "public",
+      "address": { "city": "Yaba", "state": "Lagos", "street": "Test Park", "latitude": null, "longitude": null },
+      "category": { "name": "Community Meetup" },
+      "vendor": { "name": "Park People" },
+      "has_free_tickets": true,
+      "min_ticket_price": null,
+      "ticket_types": [{ "type": "single", "tickets": [{ "name": "Free pass", "price": 0, "is_active": true, "quantity": 0, "quantity_type": "unlimited" }] }]
+    },
+    {
+      "id": 9004,
+      "slug": "fake-online-9004",
+      "name": "Fake Online Talk",
+      "event_type": "virtual",
+      "starts_at": "2026-11-15T09:00:00.000Z",
+      "review_status": "published",
+      "is_active": true,
+      "visibility": "public",
+      "address": { "city": "Lagos", "state": "Lagos" },
+      "ticket_types": []
+    }
+  ]
+}

@@ -37,6 +37,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 const packDir = process.argv[2];
 const apply = process.argv.includes("--apply");
+if (apply && !process.argv.includes("--skip-review")) {
+  console.error(
+    [
+      "Refusing --apply: this loader writes LIVE rows straight into the events table with no review and no organiser record.",
+      "New events should go through the scout instead (docs/skill/hoppaz-event-scout/SKILL.md, scripts/events/load-scout.mjs), which sends them to the review queue.",
+      "If you really mean to publish live now, run again with --apply --skip-review.",
+    ].join("\n")
+  );
+  process.exit(1);
+}
 if (!packDir) {
   console.error("Usage: node scripts/events/load-pack.mjs <pack folder> [--apply]");
   process.exit(1);

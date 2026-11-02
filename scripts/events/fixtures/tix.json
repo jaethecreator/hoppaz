@@ -1,0 +1,84 @@
+{
+  "source": "tix",
+  "site": "tix",
+  "fetched_at": "2026-11-02T09:00:00.000Z",
+  "complete": true,
+  "rows": [
+    {
+      "id": "RXZlbnQtMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1",
+      "slug": "fake-friday-night",
+      "title": "Fake Friday Night",
+      "description": "<div>Doors at 8pm.<br>Dress code: bright &amp; loud</div><div>Two floors</div>",
+      "address": "1 Test Street, Victoria Island, Lagos 106104, Lagos, Nigeria",
+      "locationName": "Test Lounge",
+      "city": "Victoria Island",
+      "state": "Lagos",
+      "country": "NG",
+      "lat": 6.4261,
+      "lng": 3.4132,
+      "startDate": 1793991600,
+      "endDate": 1794013200,
+      "timezone": "WAT",
+      "currency": "NGN",
+      "status": "active",
+      "discoveryImage": "https://res.cloudinary.com/tix-africa/image/upload/c_scale,f_webp,fl_lossy,w_640/v1700000000/fakeflyer1.webp",
+      "headerImage": "https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1700000000/fakeflyer1.webp",
+      "tickets": {
+        "edges": [
+          { "node": { "id": "t1", "name": "General", "price": 5000, "soldOut": false, "status": "active" } },
+          { "node": { "id": "t2", "name": "Table", "price": 50000, "soldOut": true, "status": "active" } },
+          { "node": { "id": "t3", "name": "Old release", "price": 2000, "soldOut": false, "status": "inactive" } }
+        ]
+      },
+      "organiser_name": "Friday Fakers",
+      "organiser_instagram": "https://www.instagram.com/fakefridaynight/",
+      "organiser_instagram_seen_on": "Tix event page, Contact Us block",
+      "organiser_email": "Bookings@Example.com",
+      "organiser_phone": "0803 000 0000",
+      "contact_seen_on": "Tix event page, Contact Us block",
+      "lineup": [{ "time": "22:00", "name": "DJ Fake" }, "Host Fake"]
+    },
+    {
+      "id": "RXZlbnQtMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1",
+      "slug": "fake-friday-night",
+      "title": "Fake Friday Night",
+      "address": "1 Test Street, Victoria Island, Lagos",
+      "city": "Victoria Island",
+      "state": "Lagos",
+      "lat": 6.4261,
+      "lng": 3.4132,
+      "startDate": 1793991600,
+      "tickets": { "edges": [] }
+    },
+    {
+      "id": "RXZlbnQtYWJ1amE=",
+      "slug": "fake-abuja-hike",
+      "title": "Fake Abuja Hike",
+      "address": "1 Hill Road, Kwaba, Abuja, Federal Capital Territory, Nigeria",
+      "locationName": "Magic Land",
+      "state": "Federal Capital Territory",
+      "lat": 9.07,
+      "lng": 7.4,
+      "startDate": 1794812400,
+      "tickets": { "edges": [{ "node": { "name": "Hike", "price": 2000, "soldOut": false, "status": "active" } }] }
+    },
+    {
+      "slug": "fake-no-place",
+      "title": "Fake No Place Party",
+      "address": "Plot 4, Somewhere",
+      "startDate": 1794000000,
+      "tickets": { "edges": [] }
+    },
+    {
+      "slug": "fake-guessed-handle",
+      "title": "Fake Guessed Handle Night",
+      "address": "2 Test Street, Ikoyi, Lagos",
+      "state": "Lagos",
+      "startDate": 1794078000,
+      "tickets": { "edges": [{ "node": { "name": "Entry", "price": 0, "soldOut": false, "status": "active" } }] },
+      "organiser_name": "Guess Co",
+      "organiser_instagram": "guessco",
+      "capacity": 500
+    }
+  ]
+}

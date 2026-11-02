@@ -1,0 +1,13 @@
+{
+  "source": "generic",
+  "site": "partyverse",
+  "fetched_at": "2026-11-02T09:00:00.000Z",
+  "complete": false,
+  "note": "leads from a monthly Instagram carousel",
+  "rows": [
+    { "name": "Fake Beach Weekender", "date": "2026-11-14", "venue": "Fake Beach, Lekki", "confidence": "lead" },
+    { "name": "Fake Concert", "date": "2026-11-21", "time": "18:00", "venue": "Fake Stadium, Surulere", "ticket_url": "https://example.com/tickets/fake-concert?utm_source=ig", "confidence": "confirmed", "price": 15000, "capacity": 20000, "capacity_quote": "Capacity: 20,000 guests (event page)" },
+    { "name": "Fake Concert Two", "date": "2026-11-22", "time": "18:00", "venue": "Fake Stadium, Surulere", "capacity": 8000 },
+    { "name": "Fake Abuja Show", "date": "2026-11-22", "venue": "Fake Hall, Abuja" }
+  ]
+}

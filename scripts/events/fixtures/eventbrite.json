@@ -1,0 +1,67 @@
+{
+  "source": "eventbrite",
+  "site": "eventbrite",
+  "fetched_at": "2026-11-02T09:00:00.000Z",
+  "complete": false,
+  "note": "search pages overlap and do not list every event: never complete",
+  "rows": [
+    {
+      "page_url": "https://www.eventbrite.com/e/fake-brunch-tickets-1000000000001?aff=ebdssbdestsearch",
+      "ld": {
+        "@context": "https://schema.org",
+        "@type": "MusicEvent",
+        "name": "Fake Brunch",
+        "description": "Brunch with a band.",
+        "url": "https://www.eventbrite.com/e/fake-brunch-tickets-9999999999999",
+        "image": "https://img.evbuc.com/fakebrunch.jpg?w=940",
+        "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+        "startDate": "2026-11-08T12:00:00+01:00",
+        "endDate": "2026-11-08T16:00:00+01:00",
+        "location": {
+          "@type": "Place",
+          "name": "Fake Garden",
+          "address": { "@type": "PostalAddress", "streetAddress": "5 Test Road, Ikoyi", "addressLocality": "Lagos", "addressRegion": "LA", "addressCountry": "NG" },
+          "geo": { "@type": "GeoCoordinates", "latitude": "6.4500", "longitude": "3.4300" }
+        },
+        "organizer": { "@type": "Organization", "name": "Fake Brunch Club", "url": "https://www.eventbrite.com/o/fake-brunch-club-1" },
+        "offers": [{ "@type": "AggregateOffer", "lowPrice": "10000.0", "highPrice": "25000.0", "priceCurrency": "NGN", "availability": "InStock" }]
+      }
+    },
+    {
+      "page_url": "https://www.eventbrite.com/e/fake-hand-class-tickets-1000000000002",
+      "ld": {
+        "@type": "EducationEvent",
+        "name": "Fake Hand Class",
+        "startDate": "2026-11-06T14:00:00+01:00",
+        "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+        "location": { "@type": "Place", "name": "32 Test St", "address": { "streetAddress": "32 Test Street", "addressLocality": "Lagos", "addressRegion": "LA", "addressCountry": "NG" } },
+        "offers": [{ "@type": "AggregateOffer", "lowPrice": "35.0", "highPrice": "120.0", "priceCurrency": "USD", "availability": "InStock" }]
+      }
+    },
+    {
+      "page_url": "https://www.eventbrite.com/e/fake-webinar-tickets-1000000000003",
+      "ld": { "@type": "BusinessEvent", "name": "Fake Webinar", "startDate": "2026-11-09T10:00:00+01:00", "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode", "location": { "@type": "VirtualLocation", "url": "https://example.com" } }
+    },
+    {
+      "page_url": "https://www.eventbrite.com/e/fake-date-only-tickets-1000000000004",
+      "listing_ld": {
+        "@type": "Event",
+        "name": "Fake Date Only",
+        "startDate": "2026-11-09",
+        "location": { "name": "Test Hall", "address": { "streetAddress": "9 Test Rd, Ikeja", "addressLocality": "Ikeja", "addressRegion": "LA", "addressCountry": "NG" }, "geo": { "latitude": "6.6", "longitude": "3.35" } },
+        "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode"
+      }
+    },
+    {
+      "page_url": "https://www.eventbrite.com/e/fake-sold-out-tickets-1000000000005",
+      "ld": {
+        "@type": "Event",
+        "name": "Fake Sold Out",
+        "startDate": "2026-11-12T18:00:00+01:00",
+        "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+        "location": { "name": "Test Arena", "address": { "streetAddress": "Test Arena, Surulere", "addressLocality": "Lagos", "addressRegion": "LA", "addressCountry": "NG" } },
+        "offers": { "@type": "Offer", "price": "3000", "priceCurrency": "NGN", "availability": "https://schema.org/SoldOut" }
+      }
+    }
+  ]
+}
