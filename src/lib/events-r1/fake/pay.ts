@@ -16,7 +16,7 @@ import type { Registration } from "../types";
 import { canSell, payoutFor, setPayoutStatus } from "./payouts";
 import { cleanAnswers } from "./registrations";
 import {
-  assertManage, canOpen, eventEnd, fillFromWaitlist, findEvent, isGoing, regOf, requireViewer, seatsOf, ticketIdFor,
+  assertHoppazTickets, assertManage, canOpen, eventEnd, fillFromWaitlist, findEvent, isGoing, regOf, requireViewer, seatsOf, ticketIdFor,
   ticketsOfReg, typeSpotsLeft, typesOf, userById, voidTicket,
 } from "./rules";
 import type { EventRec, OrderRec, TicketRec, TicketTypeRec, WithdrawalRec } from "./store";
@@ -346,6 +346,7 @@ export const pay: PayApi = {
   async quote(eventId, ticketTypeId, quantity) {
     const e = findEvent(eventId);
     if (!e || !canOpen(e)) throw new Error("Event not found");
+    assertHoppazTickets(e);
     if (!paidTicketsOn()) throw new Error(PAID_UNAVAILABLE);
     const type = paidType(e, ticketTypeId);
     checkQuantity(quantity);
@@ -358,6 +359,7 @@ export const pay: PayApi = {
     const v = requireViewer();
     const e = findEvent(eventId);
     if (!e || !canOpen(e)) throw new Error("Event not found");
+    assertHoppazTickets(e);
     if (!paidTicketsOn()) throw new Error(PAID_UNAVAILABLE);
     const type = paidType(e, ticketTypeId);
     if (!canSell(e.host_id)) throw new Error("payouts_not_ready");

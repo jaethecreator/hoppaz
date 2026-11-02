@@ -5,7 +5,9 @@
  */
 import { haversineKm, LAGOS_CENTER } from "../../geo";
 import type {
-  EventChat, HostRef, Pop, R1Event, RegQuestion, Registration, Report, RoomAnnouncement, RoomLinks, RoomMessage, RoomRole, RoomSummary, Ticket, TicketType,
+  AcceptOutcome, ClaimRequest, ContactChannel, EventChat, HostRef, ImportReport, ListingInfo, Organiser, OrganiserDetail, OrganiserHandles, OrganiserLogEntry,
+  OrganiserLogKind, OrganiserStage, Pop, PulledEvent, PulledFlag, PulledStatus, R1Event, RegQuestion, Registration, Report, RoomAnnouncement, RoomLinks, RoomMessage,
+  RoomRole, RoomSummary, ScoutEvent, Ticket, TicketType, Transfer, TransferPreview, WeekSummary,
 } from "../types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -259,4 +261,241 @@ export function cleanQuestionId(id: string): string {
 
 export function cleanQuestions(qs: RegQuestion[]): RegQuestion[] {
   return qs.map((q) => ({ ...q, id: q.builtin ? q.id : cleanQuestionId(q.id) }));
+}
+
+/* ------------------------------------------------- outreach: listings, organisers, transfers -- */
+
+const str = (v: unknown): string => (v === null || v === undefined ? "" : String(v));
+const strOrNull = (v: unknown): string | null => (v === null || v === undefined || v === "" ? null : String(v));
+const list = (v: unknown): J[] => (Array.isArray(v) ? v : []);
+const STAGES: OrganiserStage[] = ["pulled", "listed", "offered", "claimed", "declined"];
+const stageOf = (v: unknown): OrganiserStage => (STAGES.includes(v as OrganiserStage) ? (v as OrganiserStage) : "pulled");
+
+/** One entry of ev_listings(): where tickets are sold and what the source says they cost. null price = not known. */
+export function mapListing(j: J): ListingInfo {
+  return {
+    ticket_url: strOrNull(j?.ticket_url),
+    instagram_url: strOrNull(j?.instagram_url),
+    price_from: numOrNull(j?.price_from),
+    price_to: numOrNull(j?.price_to),
+    sold_out: !!j?.sold_out,
+    source_site: strOrNull(j?.source_site),
+    claimed: !!j?.claimed,
+    organiser_name: strOrNull(j?.organiser_name),
+  };
+}
+
+function mapHandles(v: unknown): OrganiserHandles {
+  const out: OrganiserHandles = {};
+  if (!v || typeof v !== "object") return out;
+  for (const k of ["instagram", "x", "tiktok", "website", "whatsapp"] as const) {
+    const s = (v as Record<string, unknown>)[k];
+    if (typeof s === "string" && s) out[k] = s;
+  }
+  return out;
+}
+
+export function mapTransfer(j: J): Transfer {
+  const status = j.status === "accepted" || j.status === "revoked" || j.status === "expired" ? j.status : "pending";
+  return {
+    id: String(j.id),
+    kind: j.kind === "handover" ? "handover" : "claim",
+    room_id: String(j.room_id ?? ""),
+    room_name: str(j.room_name),
+    organiser_id: strOrNull(j.organiser_id),
+    to_email: str(j.to_email),
+    // An open link past its date reads as expired even if the database has not flipped the row yet.
+    status: status === "pending" && (iso(j.expires_at) ?? "9999") < new Date().toISOString() ? "expired" : status,
+    created_at: isoOr(j.created_at),
+    created_by: strOrNull(j.created_by),
+    expires_at: isoOr(j.expires_at),
+    accepted_at: iso(j.accepted_at),
+  };
+}
+
+export function mapOrganiser(j: J): Organiser {
+  return {
+    id: String(j.id),
+    name: str(j.name),
+    ig_handle: strOrNull(j.ig_handle),
+    handles: mapHandles(j.handles),
+    email: strOrNull(j.email),
+    phone: strOrNull(j.phone),
+    room_id: strOrNull(j.room_id),
+    room_slug: strOrNull(j.room_slug),
+    room_name: strOrNull(j.room_name),
+    stage: stageOf(j.stage),
+    do_not_contact: !!j.do_not_contact,
+    last_contacted_at: iso(j.last_contacted_at),
+    last_contacted_by: strOrNull(j.last_contacted_by),
+    notes: str(j.notes),
+    claimed_at: iso(j.claimed_at),
+    declined_at: iso(j.declined_at),
+    created_at: isoOr(j.created_at),
+    events_total: num(j.events_total),
+    events_upcoming: num(j.events_upcoming),
+    pulled_waiting: num(j.pulled_waiting),
+    transfer_pending: !!j.transfer_pending,
+    claim_requests: num(j.claim_requests),
+  };
+}
+
+const LOG_KINDS: OrganiserLogKind[] = ["contact", "reply", "offer", "note", "stage", "transfer", "claim_request", "scrape", "delete"];
+const CHANNELS: ContactChannel[] = ["instagram", "whatsapp", "email", "phone", "other"];
+
+function mapLog(j: J): OrganiserLogEntry {
+  return {
+    id: String(j.id),
+    organiser_id: String(j.organiser_id ?? ""),
+    at: isoOr(j.at),
+    by: strOrNull(j.by),
+    kind: LOG_KINDS.includes(j.kind) ? j.kind : "note",
+    channel: CHANNELS.includes(j.channel) ? j.channel : null,
+    body: str(j.body),
+  };
+}
+
+export function mapOrganiserDetail(j: J): OrganiserDetail {
+  return {
+    organiser: mapOrganiser(j.organiser ?? j),
+    log: list(j.log).map(mapLog),
+    events: list(j.events).map((e) => ({
+      id: String(e.id),
+      title: str(e.title),
+      starts_at: isoOr(e.starts_at),
+      status: e.status === "live" || e.status === "ended" ? e.status : "cancelled",
+      ticket_url: strOrNull(e.ticket_url),
+      upcoming: !!e.upcoming,
+    })),
+    transfers: list(j.transfers).map(mapTransfer),
+  };
+}
+
+const PULLED_STATUS: PulledStatus[] = ["new", "approved", "rejected", "merged", "blocked"];
+const PULLED_FLAGS: PulledFlag[] = ["duplicate", "changed", "no_price", "no_time", "no_pin", "blocked", "moved", "gone"];
+
+/** What the scout wrote, tidied: unknown stays null or empty, nothing is invented. */
+function mapScoutEvent(f: J): ScoutEvent {
+  return {
+    source_site: str(f?.source_site),
+    source_id: str(f?.source_id),
+    name: str(f?.name),
+    starts_at: iso(f?.starts_at),
+    ends_at: iso(f?.ends_at),
+    venue: strOrNull(f?.venue),
+    area: strOrNull(f?.area),
+    lat: numOrNull(f?.lat),
+    lng: numOrNull(f?.lng),
+    pin_by: f?.pin_by === "venues" || f?.pin_by === "source" || f?.pin_by === "osm" ? f.pin_by : null,
+    description: str(f?.description),
+    tickets: list(f?.tickets).map((t) => ({ name: str(t.name), price_naira: numOrNull(t.price_naira), sold_out: !!t.sold_out })),
+    sold_out: !!f?.sold_out,
+    ticket_url: strOrNull(f?.ticket_url),
+    flyer_url: strOrNull(f?.flyer_url),
+    category: strOrNull(f?.category),
+    organiser_name: strOrNull(f?.organiser_name),
+    organiser_handle: strOrNull(f?.organiser_handle),
+    event_handle: strOrNull(f?.event_handle),
+    organiser_email: strOrNull(f?.organiser_email),
+    organiser_phone: strOrNull(f?.organiser_phone),
+    lineup: list(f?.lineup).map((l) => (l.time ? { time: str(l.time), name: str(l.name) } : { name: str(l.name) })),
+    capacity: numOrNull(f?.capacity),
+    last_seen: isoOr(f?.last_seen),
+    confidence: f?.confidence === "lead" ? "lead" : "confirmed",
+  };
+}
+
+/** One row of the review queue. */
+export function mapPulled(j: J): PulledEvent {
+  return {
+    id: String(j.id),
+    source_site: str(j.source_site),
+    source_id: str(j.source_id),
+    status: PULLED_STATUS.includes(j.status) ? j.status : "new",
+    flags: list(j.flags).filter((f): f is PulledFlag => PULLED_FLAGS.includes(f)),
+    edited: list(j.edited).map(String),
+    confidence: j.confidence === "lead" ? "lead" : "confirmed",
+    fields: mapScoutEvent({ ...(j.fields ?? {}), source_site: j.fields?.source_site ?? j.source_site, source_id: j.fields?.source_id ?? j.source_id }),
+    organiser_id: strOrNull(j.organiser_id),
+    organiser_name: strOrNull(j.organiser_name),
+    organiser_stage: j.organiser_stage ? stageOf(j.organiser_stage) : null,
+    event_id: strOrNull(j.event_id),
+    duplicate_of: strOrNull(j.duplicate_of),
+    also_at: list(j.also_at).map((a) => ({ source_site: str(a.source_site), source_id: str(a.source_id), ticket_url: strOrNull(a.ticket_url) })),
+    first_seen_at: isoOr(j.first_seen_at),
+    last_seen_at: isoOr(j.last_seen_at),
+    missing_since: iso(j.missing_since),
+  };
+}
+
+export function mapImportReport(j: J): ImportReport {
+  const action = (a: unknown) => (a === "new" || a === "updated" || a === "blocked" || a === "skipped" ? a : "unchanged");
+  return {
+    dry_run: !!j.dry_run,
+    total: num(j.total),
+    new: num(j.new),
+    updated: num(j.updated),
+    unchanged: num(j.unchanged),
+    blocked: num(j.blocked),
+    skipped: num(j.skipped),
+    flagged_gone: num(j.flagged_gone),
+    organisers_matched: num(j.organisers_matched),
+    organisers_new: num(j.organisers_new),
+    lines: list(j.lines).map((l) => ({ source_site: str(l.source_site), source_id: str(l.source_id), name: str(l.name), action: action(l.action), note: str(l.note) })),
+  };
+}
+
+/** The claim page's preview. A bad link is { ok: false, reason } in the words of the types: not_found, expired, used, revoked. */
+export function mapPreview(j: J): TransferPreview {
+  if (!j || j.ok !== true) {
+    const r = String(j?.reason ?? "");
+    const reason = r === "link_expired" || r === "expired" ? "expired" : r === "link_used" || r === "used" ? "used" : r === "link_revoked" || r === "revoked" ? "revoked" : "not_found";
+    return { ok: false, reason };
+  }
+  return {
+    ok: true,
+    kind: j.kind === "handover" ? "handover" : "claim",
+    room: { name: str(j.room?.name), slug: str(j.room?.slug), logo_url: strOrNull(j.room?.logo_url), about: str(j.room?.about) },
+    events: list(j.events).map((e) => ({ id: String(e.id), title: str(e.title), starts_at: isoOr(e.starts_at) })),
+    email_hint: str(j.email_hint),
+    organiser_name: strOrNull(j.organiser_name),
+    expires_at: isoOr(j.expires_at),
+  };
+}
+
+export function mapAccept(j: J): AcceptOutcome {
+  return { room_id: String(j.room_id), slug: str(j.slug), moved_events: num(j.moved_events), already_owned_other: !!j.already_owned_other };
+}
+
+export function mapClaimRequest(j: J): ClaimRequest {
+  return {
+    id: String(j.id),
+    event_id: String(j.event_id ?? ""),
+    event_title: str(j.event_title),
+    organiser_id: strOrNull(j.organiser_id),
+    organiser_name: strOrNull(j.organiser_name),
+    name: str(j.name),
+    email: str(j.email),
+    phone: strOrNull(j.phone),
+    note: str(j.note),
+    status: j.status === "handled" ? "handled" : "new",
+    created_at: isoOr(j.created_at),
+  };
+}
+
+export function mapWeek(j: J): WeekSummary {
+  const counts = (c: J) => ({ contacted: num(c?.contacted), replies: num(c?.replies), offers: num(c?.offers), claimed: num(c?.claimed), declined: num(c?.declined), listed: num(c?.listed) });
+  const stages = { pulled: 0, listed: 0, offered: 0, claimed: 0, declined: 0 } as Record<OrganiserStage, number>;
+  for (const k of STAGES) stages[k] = num(j.stages?.[k]);
+  return {
+    from: isoOr(j.from),
+    to: isoOr(j.to),
+    ...counts(j),
+    pulled_new: num(j.pulled_new),
+    rejected: num(j.rejected),
+    claim_requests: num(j.claim_requests),
+    stages,
+    waiting: list(j.waiting).map((w) => ({ id: String(w.id), name: str(w.name), days: num(w.days) })),
+    previous: counts(j.previous),
+  };
 }

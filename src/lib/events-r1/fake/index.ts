@@ -14,7 +14,7 @@ import { events } from "./events";
 import { fakeLooks } from "./looks";
 import { completeCheckout, expireCheckout, failCheckout, hostBalance, pay, peekOrder, settleRefund } from "./pay";
 import { payoutFor, setPayoutStatus, statusOfHost } from "./payouts";
-import { claims, outreach } from "./outreach";
+import { claims, faults, outreach } from "./outreach";
 import { pops } from "./pops";
 import { registrationCode, registrations, ticketFrom } from "./registrations";
 import { reports } from "./reports";
@@ -68,14 +68,14 @@ export const fakeDev = {
   /** Everyone who can be signed in as: the guest, the hosts and staff. */
   users(): Array<UserRec & { role: "guest" | "host" | "staff" }> {
     const hosts = new Set(Object.values(S().events).map((e) => e.host_id));
-    return Object.values(S().users).map((u) => ({
+    return Object.values(S().users).filter((u) => !u.hidden).map((u) => ({
       ...u,
       role: u.staff ? "staff" : hosts.has(u.id) ? "host" : "guest",
     }));
   },
   signInAs(userId: string) {
     const u = S().users[userId];
-    if (!u) throw new Error("No such user");
+    if (!u || u.hidden) throw new Error("No such user");
     return signInUser(u);
   },
 
@@ -140,6 +140,11 @@ export const fakeDev = {
   failCheckout,
   expireCheckout,
   settleRefund,
+
+  /** Test seam: make one step of accepting a transfer fail ("owner", "events", "organiser", "transfer", "others"), or null to stop. */
+  failAcceptAt(step: string | null) {
+    faults.acceptStep = step;
+  },
 
   /** Start over: a fresh seed, signed out, real time. */
   resetAll,

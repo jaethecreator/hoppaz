@@ -11,6 +11,7 @@ const slowDown = limiter(8);
 
 /** What the database's "no" means for the buyer. */
 const REASONS: Record<string, [number, string]> = {
+  external_tickets: [409, "Tickets for this event are sold by the organiser"],
   not_open: [409, "Not open yet."],
   no_host: [409, "Tickets for this event are not sold here."],
   no_session: [401, "Sign in to buy a ticket."],
@@ -67,7 +68,12 @@ export async function POST(req: Request) {
     return fail(503, "Payments are not set up yet.", { reason: "no_fee" });
   }
 
-  const held = await db.orderReserve({ userId: session.userId, eventId, typeId, qty, feeKobo: fee, answers, referrer });
+  // The database refuses an order for a listing with the message external_tickets (a trigger on ev_orders).
+  const held = await db.orderReserve({ userId: session.userId, eventId, typeId, qty, feeKobo: fee, answers, referrer }).catch((e: unknown) => {
+    if (e instanceof Error && e.message.includes("external_tickets")) return null;
+    throw e;
+  });
+  if (!held) return fail(409, REASONS.external_tickets[1], { reason: "external_tickets" });
   if (!held.ok) {
     const [status, message] = REASONS[String(held.reason)] ?? [409, "You can't buy this ticket right now."];
     return fail(status, message, { reason: held.reason, ...(held.order_id ? { order_id: held.order_id } : {}), ...(held.spots_left !== undefined ? { spots_left: held.spots_left } : {}) });

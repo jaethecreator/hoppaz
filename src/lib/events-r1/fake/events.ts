@@ -6,12 +6,13 @@ import { CREATE_LIMIT, PAID_UNAVAILABLE } from "../constants";
 import { paidTicketsOn } from "../flags";
 import { cleanLineup } from "../lineup";
 import { areaByName, insideLagos, LAGOS_CENTER, nearestArea } from "../../geo";
+import { OUTREACH_REASONS } from "../types";
 import { autoPopsFor, defaultMessages, defaultQuestions } from "./defaults";
 import { canSell } from "./payouts";
 import { retimeAutoPops } from "./pops";
 import {
   assertManage, canList, canManage, canManageRoom, canRunRoomEvents, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, freeTypes, roomToPostIn,
-  isGoing, isHostOf, regOf, regsOf, requireViewer, statusOf, typeFull, typesOf, typeOfReg,
+  isExternal, isGoing, isHostOf, isUnclaimed, regOf, regsOf, requireViewer, statusOf, typeFull, typesOf, typeOfReg,
 } from "./rules";
 import { emit, now, S, subscribe, viewer } from "./store";
 import type { EventRec, RegSettings, TicketTypeRec, UserRec } from "./store";
@@ -252,6 +253,7 @@ export function viewerStateFor(e: EventRec): ViewerState {
 
   let button: ViewerState["button"];
   if (status !== "live") button = "closed";
+  else if (isExternal(e)) button = "external";
   else if (active) {
     button = isGoing(active.status) ? "going" : active.status === "requested" ? "pending" : active.status === "waitlisted" ? "waitlisted" : "declined";
   } else if (freeTypes(e).length === 0) button = paidTicketsOn() && typesOf(e).every((t) => typeFull(e, t)) ? "closed" : "get_ticket";
@@ -333,6 +335,7 @@ export const events: EventsApi = {
 
   async clone(id) {
     const src = assertManage(findEvent(id));
+    if (isUnclaimed(src)) throw new Error(OUTREACH_REASONS.not_claimed);
     const host = requireViewer();
     const draft = asDraft(src);
     draft.starts_at = iso(Date.parse(src.starts_at) + 7 * DAY);
@@ -399,8 +402,20 @@ export const events: EventsApi = {
     emit();
   },
 
-  async sellOnHoppaz() {
-    throw new Error("Not built yet");
+  async sellOnHoppaz(id, tickets) {
+    const e = assertManage(findEvent(id));
+    if (!isExternal(e)) throw new Error("This event already sells tickets on Hoppaz");
+    // Not while Hoppaz Listings still hosts it: the organiser has to claim it first (so nobody sells the same seats on two sites by accident).
+    if (isUnclaimed(e)) throw new Error(OUTREACH_REASONS.not_claimed);
+    if (!tickets || tickets.length === 0) throw new Error(OUTREACH_REASONS.set_tickets_first);
+    // Check and save the ticket types like any edit (a paid one needs paid tickets on and payouts set up), then flip the event.
+    const types = normalizeTypes(tickets, null, e.id, e.host_id);
+    e.ticket_types = types;
+    e.price_naira = Math.min(...types.map((t) => t.price_naira));
+    e.ticket_mode = "hoppaz";
+    e.listing_sold_out = false;
+    emit();
+    return eventView(e);
   },
 
   subscribe,

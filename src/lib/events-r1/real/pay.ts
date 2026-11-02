@@ -3,6 +3,7 @@
  * the signed-in session's access token. Reads go straight to the database (ev_pay_* functions, supabase/events_r1_pay.sql).
  */
 import type { Checkout, HostPayout, Order, PayApi, PayoutSummary, Quote, RefundResult, Sales, Withdrawal } from "../pay";
+import { OUTREACH_REASONS } from "../types";
 import { accessToken, emit, rpc, UUID } from "./core";
 import { iso } from "./map";
 
@@ -27,7 +28,11 @@ async function post<T>(path: string, body: Record<string, unknown>, signedIn = t
     throw new Error("No connection. Try again");
   }
   const out = (await res.json().catch(() => ({}))) as Row;
-  if (!res.ok) throw new Error(typeof out.error === "string" && out.error ? out.error : "That did not work. Try again");
+  if (!res.ok) {
+    // Tickets for a listing are sold by the organiser: the database says external_tickets (the route answers 409 with that reason).
+    if (out.reason === "external_tickets") throw new Error(OUTREACH_REASONS.external_tickets);
+    throw new Error(typeof out.error === "string" && out.error ? out.error : "That did not work. Try again");
+  }
   return out as T;
 }
 

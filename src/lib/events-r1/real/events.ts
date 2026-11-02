@@ -1,44 +1,55 @@
 /** Real events: ev_list_events, ev_get_event, ev_create_event and friends (supabase/events_r1_events.sql, events_r1_registrations.sql). */
 import type { EventsApi } from "../api";
-import type { R1Event, ViewerState } from "../types";
+import { OUTREACH_REASONS, type R1Event, type ViewerState } from "../types";
 import { client, emit, ready, rpc, rpcOk, rpcText, subscribe, userId, who } from "./core";
 import { cleanQuestions, mapEvent, mapRegistration } from "./map";
 import { eventIdOf, roomIdOf } from "./ids";
 import { CREATE_LIMIT } from "../constants";
 import { cleanLineup } from "../lineup";
 import { soft } from "./roomProfile";
+import { listingsMap, withListing } from "./listings";
 
 /** An id, or a slug the database also finds. */
 const key = (idOrSlug: string) => String(idOrSlug).trim();
 
+type Row = Record<string, unknown>;
+
+/** A list the database answered, as events with the listings merged in. One ev_listings call for the whole list, asked at the same time. */
+async function mapAll(load: Promise<Row[] | null>): Promise<R1Event[]> {
+  const [rows, listings] = await Promise.all([load, listingsMap()]);
+  return (rows ?? []).map((r) => withListing(mapEvent(r), listings));
+}
+
+/** One event with its listing merged in (asked together). */
+async function mapOne(load: Promise<Row | null>): Promise<R1Event | null> {
+  const [j, listings] = await Promise.all([load, listingsMap()]);
+  return j ? withListing(mapEvent(j), listings) : null;
+}
+
 /** The event as a screen gets it, or the reason it cannot be had. */
 async function visible(idOrSlug: string): Promise<R1Event> {
-  const j = await rpc<Record<string, unknown> | null>("ev_get_event", { p_id_or_slug: key(idOrSlug) });
-  if (!j) throw new Error("Event not found");
-  return mapEvent(j);
+  const ev = await mapOne(rpc<Row | null>("ev_get_event", { p_id_or_slug: key(idOrSlug) }));
+  if (!ev) throw new Error("Event not found");
+  return ev;
 }
 
 export const events: EventsApi = {
   async list() {
-    const rows = await rpc<Record<string, unknown>[] | null>("ev_list_events");
-    return (rows ?? []).map(mapEvent);
+    return mapAll(rpc<Row[] | null>("ev_list_events"));
   },
 
   async get(idOrSlug) {
-    const j = await rpc<Record<string, unknown> | null>("ev_get_event", { p_id_or_slug: key(idOrSlug) });
-    return j ? mapEvent(j) : null;
+    return mapOne(rpc<Row | null>("ev_get_event", { p_id_or_slug: key(idOrSlug) }));
   },
 
   async listMine() {
-    const rows = await rpc<Record<string, unknown>[] | null>("ev_my_events");
-    return (rows ?? []).map(mapEvent);
+    return mapAll(rpc<Row[] | null>("ev_my_events"));
   },
 
   async listForRoom(roomId) {
     const id = await roomIdOf(roomId);
     if (!id) return [];
-    const rows = await rpc<Record<string, unknown>[] | null>("ev_room_events", { p_room: id });
-    return (rows ?? []).map(mapEvent);
+    return mapAll(rpc<Row[] | null>("ev_room_events", { p_room: id }));
   },
 
   async create(draft) {
@@ -93,11 +104,14 @@ export const events: EventsApi = {
   },
 
   async viewerState(id) {
-    const j = await rpc<Record<string, unknown> | null>("ev_viewer_state", { p_event: await eventIdOf(id) });
+    const eventId = await eventIdOf(id);
+    const [j, listings] = await Promise.all([rpc<Record<string, unknown> | null>("ev_viewer_state", { p_event: eventId }), listingsMap()]);
     if (!j) throw new Error("Event not found");
     // A guest (the app's anonymous session) has an auth.uid() but no account: the database says signedIn false for them, and so do we.
     await ready();
-    return { ...(j as unknown as ViewerState), signedIn: j.signedIn === true && who() !== null, registration: j.registration ? mapRegistration(j.registration) : null };
+    const state: ViewerState = { ...(j as unknown as ViewerState), signedIn: j.signedIn === true && who() !== null, registration: j.registration ? mapRegistration(j.registration) : null };
+    // A listing: tickets are sold by the organiser, whatever the database's button says (it is the one rule for every screen).
+    return listings[eventId] ? { ...state, button: "external" } : state;
   },
 
   /** supabase/events_r1_lineup.sql. Until it is run this answers empty, quietly. */
@@ -129,8 +143,13 @@ export const events: EventsApi = {
     emit();
   },
 
-  async sellOnHoppaz() {
-    throw new Error("Not built yet");
+  /** Save the real ticket types, then switch the claimed listing from the organiser's page to Hoppaz tickets (supabase/events_r1_transfer.sql). */
+  async sellOnHoppaz(id, tickets) {
+    const event = await eventIdOf(id);
+    await rpcOk("ev_update_event", { p_event: event, p_patch: { tickets } });
+    await rpcOk("ev_listing_use_hoppaz", { p_event: event }, { ...OUTREACH_REASONS, not_found: "Event not found" });
+    emit();
+    return visible(event);
   },
 
   subscribe,

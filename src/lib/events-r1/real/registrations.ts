@@ -4,6 +4,7 @@ import { emit, reasonText, rpc, rpcOk, who } from "./core";
 import { eventIdOf } from "./ids";
 import { iso, mapEvent, mapRegistration, mapTicket } from "./map";
 import { soft } from "./roomProfile";
+import { withListings } from "./listings";
 
 type Row = Record<string, unknown>;
 
@@ -94,6 +95,9 @@ export const registrations: RegistrationsApi = {
     // Until supabase/events_r1_my_registrations.sql is run (or on a failed read), Me simply shows no event tickets.
     const r = await soft<Array<{ registration: Row; event: Row }> | null>("ev_my_registrations");
     if (r.missing || r.error || !Array.isArray(r.data)) return [];
-    return r.data.filter((x) => x && x.registration && x.event).map((x) => ({ registration: mapRegistration(x.registration), event: mapEvent(x.event) }));
+    const rows = r.data.filter((x) => x && x.registration && x.event);
+    // An old registration for what is now a listing still shows, with the listing merged in (one ev_listings call for the list).
+    const evs = await withListings(rows.map((x) => mapEvent(x.event)));
+    return rows.map((x, i) => ({ registration: mapRegistration(x.registration), event: evs[i] }));
   },
 };
