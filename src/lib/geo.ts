@@ -1,3 +1,4 @@
+import { isListing, priceLine, priceShortCaps } from "./events-r1/listing";
 import type { EventRow } from "./types";
 
 export type Area = { name: string; side: "mainland" | "island"; lat: number; lng: number };
@@ -95,11 +96,14 @@ export function eventTitle(event: Pick<EventRow, "title">) {
   return isEventLead(event) ? event.title.slice("LEAD · ".length) : event.title;
 }
 
-export function eventPrice(event: Pick<EventRow, "title" | "price_naira">) {
+/** Capitals, as the map and the old cards print it. A listing says its own price: FROM ₦5,000, FREE or CHECK LISTING. */
+export function eventPrice(event: Pick<EventRow, "title" | "price_naira" | "listing">) {
+  if (isListing(event)) return priceLine(event).toUpperCase();
   return isEventLead(event) ? "CHECK LISTING" : naira(event.price_naira);
 }
 
-export function eventPriceShort(event: Pick<EventRow, "title" | "price_naira">) {
+export function eventPriceShort(event: Pick<EventRow, "title" | "price_naira" | "listing">) {
+  if (isListing(event)) return priceShortCaps(event, nairaShort);
   return isEventLead(event) ? "LEAD" : nairaShort(event.price_naira);
 }
 

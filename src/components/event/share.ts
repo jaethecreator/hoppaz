@@ -1,5 +1,6 @@
 import { nightOf } from "@/lib/filters";
 import { clockShort, eventPrice, eventTitle, isEventLead } from "@/lib/geo";
+import { isListing, priceLine } from "@/lib/events-r1/listing";
 import type { EventRow } from "@/lib/types";
 
 /** "Fri 10 Oct": the night the event belongs to (a 1am start is the night before). */
@@ -24,7 +25,8 @@ export function shareText(event: EventRow, going: number) {
     lead ? null : clockShort(event.starts_at),
     event.area?.toUpperCase() ?? null,
     lead ? null : eventPrice(event),
-    going > 0 ? `${going} Hopper${going === 1 ? "" : "s"} going` : null,
+    // A listing has no going count: tickets are sold on the organiser's page.
+    going > 0 && !isListing(event) ? `${going} Hopper${going === 1 ? "" : "s"} going` : null,
   ];
   return parts.filter(Boolean).join(" · ");
 }
@@ -34,16 +36,17 @@ export function shareText(event: EventRow, going: number) {
  * "Fri 10 Oct, 11PM · Victoria Island · Free. See who is going on Hoppaz."
  * The event page's metadata uses this, so the preview and the shared text agree.
  */
-export function sharePreview(event: Pick<EventRow, "title" | "starts_at" | "area" | "price_naira">) {
+export function sharePreview(event: Pick<EventRow, "title" | "starts_at" | "area" | "price_naira" | "listing">) {
   const lead = isEventLead(event);
+  const listing = isListing(event);
   const facts = [
     lead ? `${nightLabel(event.starts_at)}, time to be confirmed` : `${nightLabel(event.starts_at)}, ${clockShort(event.starts_at)}`,
     event.area,
-    lead ? null : event.price_naira > 0 ? eventPrice(event) : "Free",
+    lead ? null : listing ? priceLine(event) : event.price_naira > 0 ? eventPrice(event) : "Free",
   ];
   return {
     title: `${eventTitle(event)} | Hoppaz`,
-    description: `${facts.filter(Boolean).join(" · ")}. See who is going on Hoppaz.`,
+    description: `${facts.filter(Boolean).join(" · ")}. ${listing ? "Listed on Hoppaz." : "See who is going on Hoppaz."}`,
   };
 }
 

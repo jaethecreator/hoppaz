@@ -143,7 +143,8 @@ export function conductorLine(opts: {
   if (!events.length) return "Quiet one.";
   const today = nightOf(now) === dayKey;
   const out = events.reduce((n, e) => n + (e.here_now ?? 0), 0);
-  const going = events.reduce((n, e) => n + (e.swipes_in ?? 0), 0);
+  // A listing is ticketed on the organiser's page: nobody is "going" to it on Hoppaz.
+  const going = events.reduce((n, e) => n + (e.listing ? 0 : (e.swipes_in ?? 0)), 0);
   const drops = events.filter((e) => dropEventIds.has(e.id)).length;
   const s = (n: number) => (n === 1 ? "" : "s");
 

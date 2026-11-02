@@ -9,6 +9,7 @@ import { useLookStyle, usePictureTint } from "@/components/host/TintShell";
 import { initialsOf } from "@/components/events-r1/workspace/desk";
 import type { Desk, Workspace } from "@/components/events-r1/workspace/desk";
 import { useR1Query } from "@/lib/events-r1/hooks";
+import { isListing, priceLine } from "@/lib/events-r1/listing";
 import { DEFAULT_LOOK } from "@/lib/events-r1/looks";
 import type { Look } from "@/lib/events-r1/looks";
 import type { R1Event } from "@/lib/events-r1/types";
@@ -55,11 +56,12 @@ export function TonightStrip({ event }: { event: R1Event }) {
       <span className="min-w-0">
         <span className="block truncate font-mono text-[10.5px] font-medium uppercase tracking-[0.12em] text-t-accent">Tonight, you&apos;re hosting</span>
         <b className="block truncate font-body text-[14.5px] font-bold">
-          {event.title} · {event.going.toLocaleString("en-NG")} going
+          {event.title} · {isListing(event) ? priceLine(event) : `${event.going.toLocaleString("en-NG")} going`}
         </b>
       </span>
-      <Link href={`/host/${encodeURIComponent(event.id)}/door`} className="lip min-h-[44px] whitespace-nowrap px-3 py-2 text-[13.5px]">
-        Door scanner
+      {/* A listing has no door: the organiser sells the tickets on their own page. */}
+      <Link href={`/host/${encodeURIComponent(event.id)}${isListing(event) ? "" : "/door"}`} className="lip min-h-[44px] whitespace-nowrap px-3 py-2 text-[13.5px]">
+        {isListing(event) ? "Manage" : "Door scanner"}
       </Link>
     </section>
   );

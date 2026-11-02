@@ -11,6 +11,7 @@ import type { EventRow } from "@/lib/types";
 import { shareEvent } from "./share";
 import { useMyLook } from "./useMyLook";
 import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import { isListing, ticketButtonLabel, ticketHref } from "@/lib/events-r1/listing";
 import { asR1, realGoing } from "@/components/events-r1/words";
 import { eventChatHref } from "@/components/events-r1/rooms/words";
 
@@ -18,6 +19,8 @@ const HOUR = 3.6e6;
 
 /** TICKETS for a ticketing link, LISTING when all we have is an Instagram post. */
 function linkLabel(event: EventRow) {
+  // A listing says it in the app's own words: Get tickets, or See the listing when sold out or there is only a post.
+  if (isListing(event)) return ticketButtonLabel(event).toUpperCase();
   if (!event.ig_url || event.source === "instagram") return "LISTING";
   try {
     return /(^|\.)(instagram\.com|instagr\.am)$/i.test(new URL(event.ig_url).hostname) ? "LISTING" : "TICKETS";
@@ -54,8 +57,11 @@ export default function GoingFoot({
   // Release 1: an event with the new fields is joined with Register (in the block above), so no I'M GOING here, and a
   // right swipe is only interest. Its count is the real going count, never the swipe count.
   const r1 = EVENTS_R1 ? asR1(event) : null;
+  // A listing is ticketed by the organiser: no going count, no I'M GOING, no event chat (registering is the only way in), and the link goes to the ticket page.
+  const listing = isListing(event);
+  const link = listing ? ticketHref(event) : event.ig_url;
   // Release 1 events chat in their room (registering is the only way in); old-app events keep the old chat.
-  const chatHref = r1 ? eventChatHref(r1) : `/chat?c=${event.id}`;
+  const chatHref = listing ? null : r1 ? eventChatHref(r1) : `/chat?c=${event.id}`;
 
   // The count comes from the last load (events_near.swipes_in). Your own tap shows at once:
   // adjust it by one until a fresh load brings the real number.
@@ -83,7 +89,7 @@ export default function GoingFoot({
   };
 
   const onShare = async () => {
-    const res = await shareEvent(event, count);
+    const res = await shareEvent(event, listing ? 0 : count);
     if (res === "copied") say("Link copied", "ok");
     else if (res === "failed") say("Couldn't share that. Try again.", "error");
   };
@@ -92,8 +98,8 @@ export default function GoingFoot({
     <>
       {/* ---------------------------------------------------- the guest list -- */}
       {/* Release 1: the going count is in the block above (and it is the real one), so only who is here now stays. */}
-      {r1 && live && here > 0 && <p className="mb-3 font-mono text-[11.5px] font-medium uppercase tracking-[0.08em] text-cream">{here} HERE NOW</p>}
-      {!r1 && (
+      {r1 && !listing && live && here > 0 && <p className="mb-3 font-mono text-[11.5px] font-medium uppercase tracking-[0.08em] text-cream">{here} HERE NOW</p>}
+      {!r1 && !listing && (
       <div className="flex items-end justify-between gap-4">
         <div className="min-w-0">
           <p className={clsx("num text-[36px] text-cream", compact && "short:text-[28px]")} aria-live="polite">
@@ -130,7 +136,7 @@ export default function GoingFoot({
       )}
 
       {/* --------------------------------------------------- the one button -- */}
-      {!r1 && (
+      {!r1 && !listing && (
       <div className={clsx("mt-3", compact && "short:mt-2")}>
         {ended ? (
           <button className="btn w-full disabled:border disabled:border-line" disabled>
@@ -161,7 +167,7 @@ export default function GoingFoot({
       {/* -------------------------------------------------- the secondary row -- */}
       <div
         className={clsx(
-          r1 ? "" : "mt-2",
+          r1 || listing ? "" : "mt-2",
           "overflow-hidden rounded-hz border border-line",
           // Narrow: a two-column grid whose 1px gaps show the hairline; the chat link takes a row of its own when it is the odd one out.
           // On a short phone it is one row of three (the arrows and the word "event" go), to give the card's body its room.
@@ -171,13 +177,13 @@ export default function GoingFoot({
         <button type="button" onClick={onShare} className={clsx(CELL, compact && SHORT_CELL)}>
           <Share2 size={14} className="text-orange" aria-hidden /> SHARE
         </button>
-        {event.ig_url && (
-          <a href={event.ig_url} target="_blank" rel="noreferrer noopener" className={clsx(CELL, compact && SHORT_CELL)}>
+        {link && (
+          <a href={link} target="_blank" rel="noreferrer noopener" className={clsx(CELL, compact && SHORT_CELL)}>
             {linkLabel(event)} <ArrowUpRight size={14} className={clsx("text-orange", compact && "short:hidden")} aria-hidden />
           </a>
         )}
         {chatHref && (
-          <Link href={chatHref} className={clsx(CELL, compact && SHORT_CELL, compact && event.ig_url && "col-span-2")}>
+          <Link href={chatHref} className={clsx(CELL, compact && SHORT_CELL, compact && link && "col-span-2")}>
             <span>
               <span className={clsx(compact && "short:hidden")}>EVENT </span>CHAT
             </span>

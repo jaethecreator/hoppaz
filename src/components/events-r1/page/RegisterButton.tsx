@@ -5,10 +5,12 @@ import Link from "next/link";
 import clsx from "clsx";
 import { Settings2 } from "lucide-react";
 import { PAID_UNAVAILABLE } from "@/lib/events-r1/constants";
+import { isListing } from "@/lib/events-r1/listing";
 import type { R1Event } from "@/lib/events-r1/types";
 import SignInSheet from "../SignInSheet";
 import PayQuantity from "../pay/PayQuantity";
 import HostStrip from "./HostStrip";
+import { SoldAt, TicketLink } from "./ListingParts";
 import QuestionsForm from "./QuestionsForm";
 import TicketPicker from "./TicketPicker";
 import StatusCard from "./StatusCard";
@@ -49,15 +51,16 @@ export default function RegisterButton({
   const { ready, start } = flow;
   const registered = !!viewer?.registration;
   const host = !!viewer?.isHost;
+  const listing = isListing(event);
   useEffect(() => {
-    if (!page || auto.current || !ready) return;
+    if (!page || auto.current || !ready || listing) return;
     const url = new URL(window.location.href);
     if (url.searchParams.get("register") !== "1") return;
     auto.current = true;
     url.searchParams.delete("register");
     window.history.replaceState(window.history.state, "", url);
     if (!host && !registered) start();
-  }, [page, ready, host, registered, start]);
+  }, [page, ready, host, registered, start, listing]);
 
   const busy = phase === "busy";
   const btn = lip ? "lip w-full" : "btn normal-case";
@@ -66,6 +69,17 @@ export default function RegisterButton({
 
   if (host && page && viewer) {
     body = <HostStrip event={event} viewer={viewer} />;
+  } else if (listing && !host) {
+    // A listing: tickets are sold on the organiser's page. A link out, the note under it, and the screen's own trailing button. No flow, no count.
+    body = (
+      <>
+        <div className={clsx("gap-2", side || lip ? "grid" : "flex")}>
+          <TicketLink event={event} className={lip ? "lip w-full" : clsx("btn normal-case", !side && "flex-1")} />
+          {trailing}
+        </div>
+        <SoldAt event={event} tone={lip ? "tint" : "dark"} className="mt-2 block" />
+      </>
+    );
   } else if (page && viewer?.registration) {
     body = <StatusCard event={event} viewer={viewer} />;
   } else if (phase === "form") {

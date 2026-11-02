@@ -4,6 +4,7 @@
 
 import Link from "next/link";
 import { Plus } from "lucide-react";
+import { isListing, priceLine } from "@/lib/events-r1/listing";
 import type { R1Event } from "@/lib/events-r1/types";
 import { isPast, tileOf, whenLine } from "./words";
 
@@ -23,12 +24,19 @@ function Row({ e, now, href, label }: { e: R1Event; now: number; href: string; l
         <b className={`block truncate font-body text-[16px] ${past ? "text-t-muted" : ""}`}>{e.title}</b>
         <span className="block truncate font-body text-[13px] text-t-muted">{whenLine(e)}</span>
       </span>
-      {e.status !== "cancelled" && (
-        <span className="flex-none text-right leading-tight">
-          <b className="num block text-[17px]">{e.going.toLocaleString("en-NG")}</b>
-          <span className="font-body text-[12px] text-t-muted">going</span>
-        </span>
-      )}
+      {e.status !== "cancelled" &&
+        (isListing(e) ? (
+          // A listing is ticketed on the organiser's page: there is no going count to show.
+          <span className="flex-none text-right leading-tight">
+            <b className="block font-body text-[14px]">{priceLine(e)}</b>
+            <span className="font-body text-[12px] text-t-muted">Listed</span>
+          </span>
+        ) : (
+          <span className="flex-none text-right leading-tight">
+            <b className="num block text-[17px]">{e.going.toLocaleString("en-NG")}</b>
+            <span className="font-body text-[12px] text-t-muted">going</span>
+          </span>
+        ))}
       <Link href={href} className="lip-ghost flex-none !min-h-[40px] !px-4" aria-label={`${label} ${e.title}`}>
         {label}
       </Link>

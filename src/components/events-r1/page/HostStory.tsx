@@ -10,6 +10,7 @@ import TintShell, { useLookStyle, usePictureTint } from "@/components/host/TintS
 import { QUESTS_ON } from "@/lib/events-r1/flags";
 import { useR1Api, useR1Auth, useR1Now, useR1Query, useViewerState } from "@/lib/events-r1/hooks";
 import { LINEUP_TITLE } from "@/lib/events-r1/lineup";
+import { isListing } from "@/lib/events-r1/listing";
 import { DEFAULT_LOOK } from "@/lib/events-r1/looks";
 import type { Look } from "@/lib/events-r1/looks";
 import type { R1Event, ReportReason } from "@/lib/events-r1/types";
@@ -23,6 +24,7 @@ import { buttonFromEvent } from "../labels";
 import { isOnline } from "../words";
 import { downloadIcs, googleCalendarUrl } from "./calendar";
 import ManageBar, { HostExtras } from "./ManageBar";
+import { ListedBy, ListingBar, ListingCard } from "./ListingParts";
 import { eventUrl, shareOrCopy } from "./share";
 import StatusCard from "./StatusCard";
 import { CheckoutSheet, TicketBar, TicketCard, useStoryTickets } from "./StoryTickets";
@@ -307,8 +309,9 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   const about = (event.description || "").trim();
   const room = event.host.roomId;
   const kick = startsIn(event, now);
-  const initial = (event.host.roomName ?? event.host.name).trim()[0]?.toUpperCase() ?? "H";
-  const hostName = event.host.roomName ?? event.host.name;
+  // A listing is by its organiser: their name is on it, whatever room the listing account happens to hold.
+  const hostName = event.listing?.organiser_name || (event.host.roomName ?? event.host.name);
+  const initial = hostName.trim()[0]?.toUpperCase() ?? "H";
   const placeName = online ? (event.link_type ? `Online · ${LINK_LABEL[event.link_type]}` : "Online") : event.venue_name || event.area || "Place to be announced";
   const placeSub = online ? "The link shows once you're in" : [event.venue_name && event.area && !event.venue_name.includes(event.area) ? event.area : "", "Lagos"].filter(Boolean).join(", ");
 
@@ -323,8 +326,12 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
     </div>
   );
 
+  // A listing: the organiser sells the tickets on their own page. The page shows the price and a link, never a count or a ticket list.
+  const listing = isListing(event);
+  const unclaimed = listing && !event.listing?.claimed;
   let action: React.ReactNode;
-  if (viewer?.isHost) action = <><TicketCard t={t} anchor={anchor} /><div className="t-adopt mt-3"><HostExtras event={event} viewer={viewer} /></div></>;
+  if (listing) action = <><ListingCard event={event} anchor={anchor} />{viewer?.isHost && <div className="t-adopt mt-3"><HostExtras event={event} viewer={viewer} /></div>}</>;
+  else if (viewer?.isHost) action = <><TicketCard t={t} anchor={anchor} /><div className="t-adopt mt-3"><HostExtras event={event} viewer={viewer} /></div></>;
   else if (viewer?.registration) action = <div className="t-adopt"><StatusCard event={event} viewer={viewer} fresh={t.flow.justDone} /></div>;
   else action = <TicketCard t={t} anchor={anchor} />;
 
@@ -351,7 +358,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
             <button type="button" onClick={() => void share()} aria-label="Share" className="grid h-9 w-9 place-items-center rounded-hz border border-t-line bg-t-bg shadow-[0_3px_0_var(--t-line)]">
               <Share2 size={16} />
             </button>
-            {room && (
+            {room && !unclaimed && (
               <Link href={`/rooms/${encodeURIComponent(room)}`} className="whitespace-nowrap rounded-hz border border-t-line bg-t-bg px-[15px] py-[7px] font-body text-[13px] font-bold shadow-[0_3px_0_var(--t-line)]">
                 Join room
               </Link>
@@ -425,16 +432,22 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
             {!wide && coverEl}
             <div className="order-6 lg:order-none mt-2.5 lg:mt-0">{action}</div>
             <div className="order-7 lg:order-none mt-2.5 lg:mt-0">
-              <div className="font-body text-[12px] font-semibold text-t-muted">Hosted by</div>
-              <div className="mt-2 grid gap-3.5 lg:gap-2.5">
-                <div className="flex items-center gap-2.5 font-body text-[14.5px] font-semibold leading-tight">
-                  <i className="grid h-[30px] w-[30px] flex-none place-items-center rounded-full bg-t-soft font-body text-[12px] font-bold not-italic text-t-accent">{event.host.name.trim()[0]?.toUpperCase() ?? "H"}</i>
-                  {event.host.name}
-                  <span className="ml-auto font-body text-[12px] font-medium text-t-muted">{event.host.verified ? "Verified host" : "Host"}</span>
-                </div>
-              </div>
+              {unclaimed ? (
+                <ListedBy event={event} tone="tint" />
+              ) : (
+                <>
+                  <div className="font-body text-[12px] font-semibold text-t-muted">Hosted by</div>
+                  <div className="mt-2 grid gap-3.5 lg:gap-2.5">
+                    <div className="flex items-center gap-2.5 font-body text-[14.5px] font-semibold leading-tight">
+                      <i className="grid h-[30px] w-[30px] flex-none place-items-center rounded-full bg-t-soft font-body text-[12px] font-bold not-italic text-t-accent">{event.host.name.trim()[0]?.toUpperCase() ?? "H"}</i>
+                      {event.host.name}
+                      <span className="ml-auto font-body text-[12px] font-medium text-t-muted">{event.host.verified ? "Verified host" : "Host"}</span>
+                    </div>
+                  </div>
+                </>
+              )}
               <div className="mt-2.5 grid gap-[5px] font-body text-[13px] text-t-muted">
-                {room && (
+                {room && !unclaimed && (
                   <Link href={`/rooms/${encodeURIComponent(room)}`} className="underline-offset-4 hover:underline">
                     Message the host in their room
                   </Link>
@@ -483,8 +496,14 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
           </div>
         </div>
 
-        <TicketBar t={t} anchor={anchor} line={`${w.short} · ${online ? "Online" : event.venue_name || event.area || "Lagos"}`} />
-        <CheckoutSheet t={t} tint={sheetTint} cover={cover} when={`${w.short} · ${w.a.time}${online ? "" : ` · ${event.venue_name || event.area}`}`} />
+        {listing ? (
+          !viewer?.isHost && <ListingBar event={event} line={`${w.short} · ${online ? "Online" : event.venue_name || event.area || "Lagos"}`} />
+        ) : (
+          <>
+            <TicketBar t={t} anchor={anchor} line={`${w.short} · ${online ? "Online" : event.venue_name || event.area || "Lagos"}`} />
+            <CheckoutSheet t={t} tint={sheetTint} cover={cover} when={`${w.short} · ${w.a.time}${online ? "" : ` · ${event.venue_name || event.area}`}`} />
+          </>
+        )}
       </TintShell>
     </div>
   );
