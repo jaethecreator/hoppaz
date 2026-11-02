@@ -101,3 +101,73 @@ Skill runs on Jae's computer in the Claude desktop app (built-in browser), 2 to 
 Sending email from Hoppaz (the notify system is on `claude/reminders-2f2458`; the `TransferMailer` interface is ready), a
 WhatsApp Business send, auto-checking whether a ticket link still works, organiser self-serve claim without staff, per-source
 success dashboards.
+
+---
+
+# Build contract (read by every builder)
+
+## Files and owners
+
+| Area | Files |
+|---|---|
+| Foundation SQL (done) | `supabase/events_r1_listings.sql` |
+| Outreach SQL | `supabase/events_r1_outreach.sql`, `supabase/tests/events_r1_outreach_test.sql` |
+| Transfer SQL | `supabase/events_r1_transfer.sql`, `supabase/tests/events_r1_transfer_test.sql` |
+| Fake layer | `src/lib/events-r1/fake/**`, `src/lib/events-r1/outreach/**` (pure modules), `src/lib/events-r1/listing.ts`, `scripts/events-r1-check.mts` |
+| Real layer + routes | `src/lib/events-r1/real/**`, `src/app/api/admin/outreach/**`, `src/app/api/events-r1/pay/checkout/route.ts` |
+| Scout | `docs/skill/hoppaz-event-scout/**`, `scripts/events/scout-lib.mjs`, `scripts/events/load-scout.mjs`, `scripts/events/venues.json`, `scripts/events-scout-check.mts` |
+| Event page | components that show an event (see the plan) |
+| Desk | `src/components/admin/desk/outreach/**`, the section wiring in `src/app/admin/page.tsx`, `sections/nav.ts` |
+| Claim page and owner settings | `src/app/claim/**`, `SettingsTab.tsx`, `TicketsTab.tsx` |
+
+## SQL function contract
+
+All names live in `public`, `security definer`, `set search_path = public, pg_temp`. "service" = `grant execute ... to service_role` only,
+`revoke all ... from public, anon, authenticated`. Every function returns jsonb unless noted. Failures are `{ "ok": false, "reason": "<code>" }`
+(reasons: see `OUTREACH_REASONS` in `src/lib/events-r1/types.ts`). `p_by` is the staff label (a name typed in the desk).
+
+### events_r1_outreach.sql (service)
+- `_ev_name_key(text) returns text` = `lower(regexp_replace(normalize(coalesce($1,''), NFKD), '[^a-zA-Z0-9]', '', 'g'))`
+- `ev_o_import(p_batch jsonb, p_apply boolean)` -> ImportReport. Batch = ScoutBatch. Upserts `ev_pulled` by (source_site, source_id).
+  Matches the organiser (ig handle, else `name_key`, else email) or makes one at stage `pulled`; an organiser who is `declined` or `do_not_contact` makes
+  the pulled row `blocked` (flag `blocked`) and it is never listed. Duplicate hint: same Lagos date + same `name_key` of the event, flag `duplicate`.
+  A row already `approved` whose event is an unclaimed listing: update price/time/sold out/ticket link/flyer on the event for fields not in `edited`
+  (flag `moved` if the start changed). A claimed listing is never touched (flag `changed` only). Rows of `sources_covered` for upcoming events
+  not in this batch get `missing_since` (flag `gone`); seen again clears it. p_apply false writes nothing. Never throws on one bad event: that line is `skipped` with a note.
+- `ev_o_queue()` -> PulledEvent[] (status new or blocked, plus approved rows with a flag `changed`, `moved` or `gone`), newest first.
+- `ev_o_approve(p_pulled, p_by, p_patch jsonb)` -> `{ok, event_id, organiser_id}`. Applies the patch to `fields` (and `edited`), refuses blocked. Needs `_ev_listings_uid()`
+  (`no_listings_account`). Ensures the organiser (stage `listed` if it was `pulled`) and its dormant room (`ev_o_ensure_room`), then creates the listing event
+  (`ticket_mode external`, `host_id` = Listings account, `room_id`, `organiser_id`, `source` 'partner', status live, `ig_url` = ticket_url or instagram_url,
+  `listed_price` = lowest known ticket price, `listed_price_max`, `listing_sold_out`, flyer, vibe from category, pin from lat/lng else parked and no venue pin
+  semantics as `events_r1_events.sql`) or, if the pulled row already has an event, updates it. Writes a log line. Lead rows (no start time) are refused `no_time`.
+- `ev_o_ensure_room(p_org uuid) returns uuid` : the organiser's one room, made on first use: a `crews` row (`created_by` Listings account), owner member row, `ev_room_profiles`
+  (slug from the name, `join_mode 'invite'` = dormant, hidden from Discover), `organisers.room_id`. Reused after that.
+- `ev_o_edit(p_pulled, p_patch)`, `ev_o_reject(p_pulled, p_by, p_reason)`, `ev_o_merge(p_pulled, p_into, p_by)` (the loser becomes `merged`, its source goes to the winner's `also_at`).
+- `ev_o_organisers()` -> Organiser[]; `ev_o_organiser(p_id)` -> OrganiserDetail; `ev_o_save_organiser(p_id, p_patch)` -> Organiser (handle uniqueness -> `handle_taken`);
+  `ev_o_log(p_id, p_by, p_kind, p_channel, p_body)` ("contact" also sets `last_contacted_*`); `ev_o_set_stage(p_id, p_stage, p_by)` (offered | declined | listed; declined sets
+  `do_not_contact`, `declined_at`, and blocks that organiser's `new` pulled rows; `listed` clears both = reopen; refuses to move a `claimed` organiser);
+  `ev_o_delete(p_id, p_confirm, p_by)` (see below); `ev_o_claim_requests()`; `ev_o_handle_claim_request(p_id, p_by)`; `ev_o_week()` -> WeekSummary.
+- `ev_o_delete`: `p_confirm` must equal the organiser name (`confirm_name`). Refuse `has_registrations` (with `events: [{title, count}]`) if any `ev_registrations` with status
+  not in (cancelled, declined) or any `ev_orders` with status in (open, paid, refund_pending) exist on the organiser's events. Refuse `claimed` organisers (`is_claimed`: they own it now).
+  Otherwise delete the events, the room (`crews`), keep the organiser row (`stage declined`, `do_not_contact true`, `room_id null`), set their pulled rows to `blocked`/`rejected`, write a log line.
+
+### events_r1_transfer.sql
+- service: `ev_o_transfer_create(p_org, p_email, p_hash, p_days, p_by)` -> `{ok, transfer}` (email lower-cased and checked; `organiser_declined` if declined or do_not_contact;
+  `already_pending` if an open link exists for that room + email; needs the organiser's room, else made with `ev_o_ensure_room`; sets stage `offered` if it was `listed`/`pulled`; log line),
+  `ev_o_transfer_revoke(p_id, p_by)`.
+- anon + authenticated: `ev_claim_request(p_event, p_name, p_email, p_phone, p_note)` (external events only; rate limit: 3 per email per day, 300 per day overall -> `try_again_later`;
+  logs a `claim_request` line on the organiser), `ev_transfer_preview(p_hash)` -> TransferPreview (never says the full email).
+- authenticated: `ev_transfer_accept(p_hash)` -> `{ok, room_id, slug, moved_events, already_owned_other}` or a reason (`invalid_link`, `link_expired`, `link_used`, `link_revoked`, `need_account`,
+  `wrong_email`, `paid_sales`, `not_open`). A wrong email does not use the link up; `attempts` counts them and 10 locks the link (`link_revoked`).
+  `ev_transfer_create_owner(p_room, p_email, p_hash)` (room owner only), `ev_transfers_for_room(p_room)` (owner or staff), `ev_transfer_revoke_owner(p_id)`, `ev_listing_use_hoppaz(p_event)`.
+
+## Import batch (what the scout sends)
+
+`ScoutBatch` in `src/lib/events-r1/types.ts`. Times are ISO with offset. `tickets: []` and `sold_out: false` when the page shows none. Money is whole naira. Nothing is guessed:
+unknown is `null` or `""`. `lat/lng` come from the venue pin file or the source, never from a guess.
+
+## Staff desk route
+
+`GET/POST /api/admin/outreach`, `Authorization: Bearer $HOPPAZ_ADMIN_TOKEN` (timing-safe compare, like `/api/admin/event-rooms`). POST body `{ action, ...args }`; one action per
+`OutreachApi` method plus `flyer` (uploads a base64 JPEG to the `event-flyers` bucket under `scout/` and returns the public url). `createTransfer` makes the token here
+(32 random bytes, base64url), stores `sha256` hex only, and returns `{ transfer, link }` with `link = ${SITE}/claim/${token}` (`NEXT_PUBLIC_SITE_URL`, else the request origin).
