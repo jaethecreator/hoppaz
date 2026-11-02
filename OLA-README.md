@@ -1,4 +1,21 @@
-# Email and WhatsApp reminders: guide for Ola
+# Reminders and sign-in: start here, Ola
+
+Ola: to work through this with Claude, open this repo and say "read OLA-README.md and walk me through it, one step at a time".
+
+## For Claude, helping Ola
+
+- Work in order and do one step at a time. Stop for Ola's yes before anything that changes production.
+- Ola does these personally, in the dashboards: Supabase settings, Vercel values and running SQL on production. Tell Ola exactly what to click or paste.
+- Never ask for keys in chat, and never print them. The main checkout's `.env.local` may point at production, so don't run the app or scripts against it.
+- If something here doesn't match what you see on production, stop and tell Ola. Don't guess.
+
+## What's in this PR
+
+| Change | What guests see | Needs setup? |
+|---|---|---|
+| Waitlist card and pill removed | No more early access popup on the map | No, works once deployed |
+| Sign-in sheet: Google on top, Send code under it | Google is the main button | Check the Google screen in Part 1 |
+| Email, WhatsApp and sign-in sending system | Nothing until it's switched on | Yes, Part 3 |
 
 Jae has no Supabase access, so these steps are yours. Part 1 doesn't depend on this PR and fixes a live sign-in problem. Part 2 is safe to merge, because nothing sends until Part 3.
 
@@ -27,21 +44,26 @@ Jae has no Supabase access, so these steps are yours. Part 1 doesn't depend on t
 
 Saving SMTP changes live sign-in at once, so pick a quiet time. To undo it, restore what you noted in step 4.
 
-**Two questions for Jae:** is the `hoppaz-ev-pops` timer scheduled on production, and does the Google sign-in screen say In production with the Hoppaz name?
+7. **Check the Google sign-in screen.** Google Cloud Console, OAuth consent screen: it should say In production and show the Hoppaz name. Google is now the main sign-in button, and while that screen is in testing only listed test users can use it.
+8. **Tell Jae** whether the `hoppaz-ev-pops` timer is scheduled on production.
 
 ## Part 2: merge this PR
 
-The PR adds the sending code and routes, and SQL drafts that aren't run by merging. The "Vercel" check fails with "Git author jaethecreator must have access to the project". That's the known access rule, not a build error.
+The PR makes the two sign-in and popup changes above, and adds the sending code and routes, and SQL drafts that aren't run by merging. The "Vercel" check fails with "Git author jaethecreator must have access to the project". That's the known access rule, not a build error.
 
-Checked on the merge result with `origin/main` at the time of writing: clean merge, typecheck clean, `next build --webpack` passes, and the five `scripts/notify-*-check.mts` scripts pass (26, 26, 30, 62, 37). The SQL tests passed before the merge, on PGlite with stubs for auth, storage and roles.
+Checked on the merge result with `origin/main` at the time of writing: clean merge, typecheck clean, and `next build --webpack` passes. On the branch, the six `scripts/notify-*-check.mts` scripts pass (26, 26, 30, 62, 37, 15). The SQL tests passed before the merge, on PGlite with stubs for auth, storage and roles.
 
-Not proved: any real provider or Meta call, Gmail rendering, the `pg_net` call from the timer, concurrent claims, and real Supabase grants.
+Sent for real on 2 Nov, to Gmail only, from a laptop script: Brevo and Mailjet emails reached the inbox, with SPF, DKIM and DMARC passing on the two we opened (a Brevo reminder and a Mailjet sign-in code). Sign-in sheet order and fake sign-in were checked in fake mode.
+
+Not proved: real Google sign-in from the new sheet, Yahoo and Outlook, Mailtrap, Meta, the `pg_net` call from the timer, concurrent claims, and real Supabase grants.
+
+**After merging:** delete `src/components/app/WaitlistPrompt.tsx`. Nothing uses it now. It was left in place only because `main` had edited it, so deleting it in this PR would have caused a merge conflict.
 
 `/account/notifications` and `/unsubscribe` exist after the merge but need Part 3's SQL. Nothing links to the settings page yet, and no email carries an unsubscribe link until mail is sending.
 
 ## Part 3: database and switches (hold until Jae's follow-up PR)
 
-The follow-up PR adds Turnstile, Google-first sign-in, the Account link and the WhatsApp checkout switch. Turnstile must be live before the sign-in hook, because a bot could otherwise use up the day's codes.
+The follow-up PR adds Turnstile, the Account link and the WhatsApp checkout switch. Turnstile must be live before the sign-in hook, because a bot could otherwise use up the day's codes.
 
 1. **Vercel env (Production).** Values never go in git or chat. Jae gives you the provider keys privately.
    - Provider keys: `BREVO_API_KEY`, `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`, `MAILTRAP_API_KEY`
