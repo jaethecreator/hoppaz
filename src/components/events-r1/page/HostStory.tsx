@@ -20,6 +20,7 @@ import { peekTint, readTint } from "@/lib/tint";
 import { LINK_LABEL } from "../create/helpers";
 import SignInSheet from "../SignInSheet";
 import { buttonFromEvent } from "../labels";
+import { isOver } from "../pay/money";
 import { isOnline } from "../words";
 import { downloadIcs, googleCalendarUrl } from "./calendar";
 import ManageBar, { HostExtras } from "./ManageBar";
@@ -206,7 +207,8 @@ function Quests({ event }: { event: R1Event }) {
 function MoreFromHost({ event }: { event: R1Event }) {
   const room = event.host.roomId;
   const { data } = useR1Query((a) => (room ? a.events.listForRoom(room) : a.events.list()), [room]);
-  const more = (data ?? []).filter((e) => e.id !== event.id && e.host.id === event.host.id && e.status !== "cancelled").slice(0, 4);
+  const now = useR1Now();
+  const more = (data ?? []).filter((e) => e.id !== event.id && e.host.id === event.host.id && e.status !== "cancelled" && !isOver(e, now)).slice(0, 4);
   if (!more.length) return null;
   return (
     <Sec title={`More from ${event.host.roomName ?? event.host.name}`}>
@@ -316,6 +318,13 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
         src={cover}
         alt={`${event.title} cover`}
         className="block h-auto w-full"
+        onError={(e) => {
+          // A flyer that will not load gets the generated cover once; the flag stops a loop if that fails too.
+          const img = e.currentTarget;
+          if (img.dataset.fell) return;
+          img.dataset.fell = "1";
+          img.src = fallbackCover(event.id, event.title);
+        }}
         onLoad={(e) => setWide(e.currentTarget.naturalWidth / Math.max(1, e.currentTarget.naturalHeight) > 1.3)}
       />
     </div>
