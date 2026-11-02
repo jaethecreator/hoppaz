@@ -248,7 +248,7 @@ export default function PayoutsScreen({ events, name, newEventHref, locked }: { 
           const chip = !over ? "Selling" : rel > now ? `Held until ${dayWord(rel).split(" ").slice(1).join(" ")}` : paidOut.has(e.id) ? "Paid out" : "Released";
           return (
             <li key={e.id} className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 border-t border-t-line py-2.5 first:border-t-0">
-              <img src={e.flyer_url || fallbackCover(e.id)} alt="" className={clsx("h-11 w-11 rounded-hz object-cover", over && rel <= now && "opacity-70 grayscale")} />
+              <img src={e.flyer_url || fallbackCover(e.id, e.title)} alt="" className={clsx("h-11 w-11 rounded-hz object-cover", over && rel <= now && "opacity-70 grayscale")} />
               <div className="min-w-0">
                 <Link href={`/host/${encodeURIComponent(e.id)}?tab=sales`} className="block truncate font-body text-[14.5px] font-bold hover:underline">
                   {e.title}

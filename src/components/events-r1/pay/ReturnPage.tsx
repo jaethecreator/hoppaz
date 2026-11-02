@@ -126,7 +126,7 @@ function PaidGoing({ order }: { order: Order }) {
 }
 
 function GoingInLook({ event, order }: { event: R1Event; order: Order }) {
-  const cover = event.flyer_url || fallbackCover(event.id);
+  const cover = event.flyer_url || fallbackCover(event.id, event.title);
   const { data: saved } = useR1Query((a) => a.looks.get("event", event.id), [event.id]);
   const look: Look = saved ?? { ...DEFAULT_LOOK, mood: themeForEvent(event.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);

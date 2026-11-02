@@ -12,6 +12,7 @@ import FilterCard from "@/components/FilterCard";
 import DayPick from "@/components/pick/DayPick";
 import TopChrome from "@/components/map-chrome/TopChrome";
 import TimeScrubber from "@/components/map-chrome/TimeScrubber";
+import EventSearch from "@/components/map-chrome/EventSearch";
 import { EmptyDay, ErrorLine } from "@/components/map-chrome/MapNotice";
 import {
   conductorLine,
@@ -30,7 +31,7 @@ import { useCheckin } from "@/lib/useCheckin";
 import { useGameDashboard } from "@/lib/game";
 import { markMapShown, useMapShown } from "@/lib/idle";
 import { haversineKm, hasVenue } from "@/lib/geo";
-import type { HopStop } from "@/lib/types";
+import type { EventRow, HopStop } from "@/lib/types";
 import { nearFirst, topThisWeek, useTopNear } from "@/lib/nearEvents";
 import { busPosition } from "@/lib/busPosition";
 import { useCollectibleEventIds } from "@/lib/useCollectibles";
@@ -91,6 +92,7 @@ export default function MapPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [hopOpen, setHopOpen] = useState(false);
   const [filtering, setFiltering] = useState(false);
+  const [searching, setSearching] = useState(false);
 
   // The store rehydrates from localStorage on the client only, so anything that
   // reads it waits a tick, or the server HTML would disagree with the first paint.
@@ -255,6 +257,7 @@ export default function MapPage() {
   const hopActive = !!hop && hop.hop_date === (mode === "next" ? todayStr : dayKey);
 
   const closeCard = useCallback(() => setSelected(null), []);
+  const closeSearch = useCallback(() => setSearching(false), []);
   const event = useMemo(() => allEvents.find((e) => e.id === selected) ?? null, [allEvents, selected]);
   // Below lg an R1 event opens as the full-width stub low on the map (MapStub); from lg up it docks on the right.
   const [desk, setDesk] = useState(true);
@@ -296,11 +299,26 @@ export default function MapPage() {
     setHopOpen(false);
     setFiltering(false);
     setPicking(false);
+    setSearching(false);
   }, [hotspotUi]);
   const pickEvent = useCallback((id: string) => {
     closeHotspots();
     setSelected(id);
   }, []);
+  // A search result opens like a pin. One the map is not showing (another day, a vibe filtered out) moves the map to its
+  // night first, as a shared link does, so its pin is there when the card opens.
+  const pickFound = useCallback(
+    (e: EventRow) => {
+      setSearching(false);
+      if (!events.some((x) => x.id === e.id)) {
+        setDateFilter({ kind: "night", date: nightOf(Date.parse(e.starts_at)) });
+        setMode("day");
+        if (types.length && !types.includes(e.vibe)) setTypes([]);
+      }
+      pickEvent(e.id);
+    },
+    [events, types, setDateFilter, setTypes, pickEvent]
+  );
   // A flyer on the first run's events layer opens that event.
   useEffect(() => {
     const on = (e: Event) => pickEvent((e as CustomEvent<{ id: string }>).detail.id);
@@ -393,7 +411,7 @@ export default function MapPage() {
 
       {/* Hotspots: a pin on each open one, the Hotspots button and list, the sheet and the room. Placed under the chrome's measured height. */}
       {/* Release 1: sealed behind NEXT_PUBLIC_ROOMS_SEAL, nothing deleted. */}
-      {mounted && !ROOMS_SEAL && <MainHotspots map={map} fix={fix} top={hud.top} hidden={!!event || filtering || picking || hopOpen} />}
+      {mounted && !ROOMS_SEAL && <MainHotspots map={map} fix={fix} top={hud.top} hidden={!!event || filtering || picking || hopOpen || searching} />}
 
       {/* The chrome is all "now" (today's rail, the clock), so it draws on the client only: a page
           prerendered yesterday must not hydrate against today's rail. */}
@@ -422,6 +440,11 @@ export default function MapPage() {
           onRemoveType={(t) => setTypes(types.filter((x) => x !== t))}
           onClearTypes={() => setTypes([])}
           streak={streak}
+          onSearch={() => {
+            closeHotspots();
+            setSelected(null);
+            setSearching(true);
+          }}
           onFilter={() => {
             closeHotspots();
             setSelected(null);
@@ -508,6 +531,7 @@ export default function MapPage() {
           onClose={() => setFiltering(false)}
         />
       )}
+      {searching && <EventSearch events={allEvents} onPick={pickFound} onClose={closeSearch} />}
       {hopOpen && <HopSheet hop={hop} fix={fix} onClose={() => setHopOpen(false)} />}
       {titles && <TitleSequence signs={signNames} onDone={() => setTitles(false)} />}
     </div>

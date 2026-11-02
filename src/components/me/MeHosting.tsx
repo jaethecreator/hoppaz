@@ -39,7 +39,7 @@ export function SwipeLabel({ label, swipe }: { label: string; swipe: boolean }) 
 
 /** One slim strip in the event's own colours, above the Hosting line. Gone once the event ends (useHostDesk stops naming it). */
 export function TonightStrip({ event }: { event: R1Event }) {
-  const cover = event.flyer_url || fallbackCover(event.id);
+  const cover = event.flyer_url || fallbackCover(event.id, event.title);
   const { data: saved } = useR1Query((a) => a.looks.get("event", event.id), [event.id]);
   const look: Look = saved ?? { ...DEFAULT_LOOK, mood: themeForEvent(event.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);

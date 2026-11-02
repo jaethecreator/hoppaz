@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import clsx from "clsx";
-import { Bus, Crosshair, Flame, SlidersHorizontal, X } from "lucide-react";
+import { Bus, Crosshair, Flame, Search, SlidersHorizontal, X } from "lucide-react";
 import Wordmark from "@/components/Wordmark";
 
 /**
  * Everything across the top of the map: one compact row (wordmark, the NEXT 20 chip that names what you are
- * looking at and the orange calendar beside it, streak, "what kind", "where am I"), and a slim row of removable
+ * looking at and the orange calendar beside it, streak, search, "what kind", "where am I"), and a slim row of removable
  * pills when a vibe filter is on. The chip and calendar come in as `pick` (DayPick), so the page owns what they
  * do. Anything the page needs to say (a failed load) is passed as children and sits under the bar.
  *
- * The visible chips are 36px tall; each button is 44px tall and 40px wide to tap. The row has to hold seven
+ * The visible chips are 36px tall; each button is 44px tall and 40px wide to tap. The row has to hold eight
  * things on a 360px phone (the bus button shows on Hop days), so every button keeps its size and the wordmark
  * is the one thing that gives: it scales down with its proportions kept, never squeezed.
  */
@@ -26,6 +26,7 @@ export default function TopChrome({
   onRemoveType,
   onClearTypes,
   streak,
+  onSearch,
   onFilter,
   onLocate,
   showBus,
@@ -40,6 +41,8 @@ export default function TopChrome({
   onClearTypes: () => void;
   /** Daily streak, from the game dashboard. 0 when there is none yet. */
   streak: number;
+  /** Opens the event search (EventSearch). */
+  onSearch: () => void;
   onFilter: () => void;
   onLocate: () => void;
   /** Hop day only: a button that flies to the bus. */
@@ -71,6 +74,16 @@ export default function TopChrome({
               <span className="num text-[15px]">{streak}</span>
             </span>
           </Link>
+
+          <button
+            onClick={onSearch}
+            aria-label="Search events"
+            className="pointer-events-auto -my-1 grid h-11 w-10 flex-none place-items-center"
+          >
+            <span className={clsx(CHIP, "w-9 border-line bg-ink-2/95 text-cream")}>
+              <Search size={16} aria-hidden />
+            </span>
+          </button>
 
           <button
             onClick={onFilter}

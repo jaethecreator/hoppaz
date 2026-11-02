@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { Info, X } from "lucide-react";
 import { factLine, stubPill } from "@/components/today/helpers";
 import { demoFlyer } from "@/components/event/demo";
+import { goingCount } from "@/lib/goingCount";
 import { eventTitle } from "@/lib/geo";
 import { isListing, listedByLine } from "@/lib/events-r1/listing";
 import { themeForEvent } from "@/lib/theme";
@@ -131,7 +132,7 @@ export default function SwipeDeck({
     );
   }
 
-  const countOf = (e: EventRow) => (goingOf ? goingOf(e) : (e.swipes_in ?? 0));
+  const countOf = (e: EventRow) => (goingOf ? goingOf(e) : goingCount(e));
   const intent: Decision | null = leaving ?? (drag.dx > 56 ? "in" : drag.dx < -56 ? "pass" : null);
   const offX = leaving ? (leaving === "in" ? 640 : -640) : drag.dx;
   const spin = leaving ? (leaving === "in" ? 14 : -14) : drag.dx / 18;

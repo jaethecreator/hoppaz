@@ -1,3 +1,4 @@
+import { goingCount } from "@/lib/goingCount";
 import { crowdAt, timeSlots } from "@/lib/crowd";
 import { nightOf } from "@/lib/filters";
 import type { EventRow } from "@/lib/types";
@@ -144,7 +145,7 @@ export function conductorLine(opts: {
   const today = nightOf(now) === dayKey;
   const out = events.reduce((n, e) => n + (e.here_now ?? 0), 0);
   // A listing is ticketed on the organiser's page: nobody is "going" to it on Hoppaz.
-  const going = events.reduce((n, e) => n + (e.listing ? 0 : (e.swipes_in ?? 0)), 0);
+  const going = events.reduce((n, e) => n + (e.listing ? 0 : goingCount(e)), 0);
   const drops = events.filter((e) => dropEventIds.has(e.id)).length;
   const s = (n: number) => (n === 1 ? "" : "s");
 

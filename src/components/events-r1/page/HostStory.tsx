@@ -15,7 +15,7 @@ import { DEFAULT_LOOK } from "@/lib/events-r1/looks";
 import type { Look } from "@/lib/events-r1/looks";
 import type { R1Event, ReportReason } from "@/lib/events-r1/types";
 import { useQuests } from "@/lib/game";
-import { COVERS } from "@/lib/host/covers";
+import { generatedCover } from "@/lib/host/coverArt";
 import { themeForEvent } from "@/lib/theme";
 import { peekTint, readTint } from "@/lib/tint";
 import { LINK_LABEL } from "../create/helpers";
@@ -65,11 +65,9 @@ export function whenWords(e: R1Event) {
   };
 }
 
-/** A cover for an event that has none: one of the Hoppaz templates, the same one every time for that event. */
-export function fallbackCover(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return COVERS[h % COVERS.length].src;
+/** A cover for an event that has none: a generated picture with the event's own name on it, the same one every time for that event. */
+export function fallbackCover(id: string, title?: string): string {
+  return generatedCover(id, title);
 }
 
 const REASONS: Array<{ id: ReportReason; text: string }> = [
@@ -260,7 +258,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   );
   const { data: saved, loading: lookLoading } = useR1Query((a) => a.looks.get("event", event.id), [event.id]);
   const { data: lineup } = useR1Query((a) => a.events.getLineup(event.id), [event.id]);
-  const cover = event.flyer_url || fallbackCover(event.id);
+  const cover = event.flyer_url || fallbackCover(event.id, event.title);
   const look: Look = saved ?? { ...DEFAULT_LOOK, mood: themeForEvent(event.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);
   const sheetTint = useLookStyle(look, tint);

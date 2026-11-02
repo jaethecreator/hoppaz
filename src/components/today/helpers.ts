@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { goingCount } from "@/lib/goingCount";
 import { dayLabel, nightOf } from "@/lib/filters";
 import { eventPrice, isEventLead } from "@/lib/geo";
 import { isListing } from "@/lib/events-r1/listing";
@@ -35,7 +36,7 @@ export function dateTag(dayKey: string) {
 
 /** Most Hoppers going first, then the earliest start. */
 export function byGoingThenStart(a: EventRow, b: EventRow) {
-  return (b.swipes_in ?? 0) - (a.swipes_in ?? 0) || Date.parse(a.starts_at) - Date.parse(b.starts_at);
+  return goingCount(b) - goingCount(a) || Date.parse(a.starts_at) - Date.parse(b.starts_at);
 }
 
 /** The next day after dayKey that has something on, with how many. */

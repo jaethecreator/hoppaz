@@ -100,7 +100,7 @@ export default function MapStub({
 
   // The event's look (saved with the event), else its own colour from the cover; Day or Night from the start time.
   const { data: saved } = useR1Query((a) => a.looks.get("event", event.id), [event.id]);
-  const cover = event.flyer_url || fallbackCover(event.id);
+  const cover = event.flyer_url || fallbackCover(event.id, event.title);
   const look: Look = saved ?? { ...DEFAULT_LOOK, mood: themeForEvent(event.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);
   const style = useLookStyle(look, tint);

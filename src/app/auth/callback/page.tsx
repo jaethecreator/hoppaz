@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getSupabase } from "@/lib/supabase/client";
+import { googleCallback, IDENTITY_TAKEN } from "@/lib/account";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
@@ -21,8 +22,17 @@ export default function AuthCallbackPage() {
     setReturnTo(next);
 
     const finish = async () => {
-      if (providerError) throw new Error(providerError);
       const sb = getSupabase();
+      // Sign-up tried to link this Google account to the guest, but it already has a Hoppaz account: they have been here
+      // before, so sign them in to it. Once only (`again`), so a refusal can never loop.
+      const taken = IDENTITY_TAKEN.test(`${providerError ?? ""} ${params.get("error_code") ?? hashParams.get("error_code") ?? ""}`);
+      if (sb && taken && !params.has("again")) {
+        const redirectTo = new URL(googleCallback(next));
+        redirectTo.searchParams.set("again", "1");
+        const { error: again } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: redirectTo.toString() } });
+        if (!again) return; // on its way to Google
+      }
+      if (providerError) throw new Error(providerError);
       if (!sb) throw new Error("Not connected");
       // createBrowserClient has detectSessionInUrl enabled. It handles the PKCE
       // code or implicit tokens during initialization, so manually exchanging
@@ -31,18 +41,17 @@ export default function AuthCallbackPage() {
       if (sessionError) throw sessionError;
       if (!session) throw new Error("Google sign-in did not finish. Please try again.");
       if (cancelled) return;
-      const { data: userData } = await sb.auth.getUser();
-      const googleName = userData.user?.user_metadata?.full_name ?? userData.user?.user_metadata?.name;
-      if (userData.user && typeof googleName === "string" && googleName.trim()) {
-        const { data: profile } = await sb.from("profiles").select("display_name").eq("id", userData.user.id).maybeSingle();
-        if (!profile?.display_name) {
-          await sb.from("profiles").update({ display_name: googleName.trim().slice(0, 24) }).eq("id", userData.user.id);
-        }
+      // In first, tidy after: the Google name fills an empty display name behind the redirect, not in front of it.
+      const user = session.user;
+      const googleName = user.user_metadata?.full_name ?? user.user_metadata?.name;
+      if (typeof googleName === "string" && googleName.trim()) {
+        void (async () => {
+          const { data: profile } = await sb.from("profiles").select("display_name").eq("id", user.id).maybeSingle();
+          if (!profile?.display_name) await sb.from("profiles").update({ display_name: googleName.trim().slice(0, 24) }).eq("id", user.id);
+        })();
       }
-      if (cancelled) return;
       window.dispatchEvent(new Event("hoppaz:signed-in"));
       router.replace(next);
-      router.refresh();
     };
 
     void finish().catch((reason: unknown) => {
@@ -53,7 +62,7 @@ export default function AuthCallbackPage() {
     };
   }, [router]);
 
-  const identityConflict = !!error && /identity_already_exists|identity already exists|already linked to another user/i.test(error);
+  const identityConflict = !!error && IDENTITY_TAKEN.test(error);
 
   return (
     <main className="grid h-full place-items-center px-6 text-center">

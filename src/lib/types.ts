@@ -17,6 +17,8 @@ export type EventRow = {
   heat: number;
   checkins?: number;
   swipes_in?: number;
+  /** Release 1: people registered and going (approved and checked in). The old list has none; see goingCount. */
+  going?: number;
   /** Check-ins in the last three hours: the live crowd. */
   here_now?: number;
   /** Set when tickets are sold on the organiser's own page (a listing). Missing or null: a normal Hoppaz event. See events-r1/listing.ts. */
