@@ -480,6 +480,8 @@ export type ScoutEvent = {
   area: string | null;
   lat: number | null;
   lng: number | null;
+  /** Where the pin came from: the venue file, the source page, OpenStreetMap search, or nowhere (then lat and lng are null). Staff check anything but "venues". */
+  pin_by?: "venues" | "source" | "osm" | null;
   description: string;
   tickets: ScoutTicket[];
   sold_out: boolean;
