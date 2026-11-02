@@ -14,6 +14,7 @@ import { events } from "./events";
 import { fakeLooks } from "./looks";
 import { completeCheckout, expireCheckout, failCheckout, hostBalance, pay, peekOrder, settleRefund } from "./pay";
 import { payoutFor, setPayoutStatus, statusOfHost } from "./payouts";
+import { claims, outreach } from "./outreach";
 import { pops } from "./pops";
 import { registrationCode, registrations, ticketFrom } from "./registrations";
 import { reports } from "./reports";
@@ -35,6 +36,8 @@ export const fakeApi: EventsR1Api = {
   pay,
   looks: fakeLooks,
   account,
+  claims,
+  outreach,
 };
 
 export type SampleTicket = { registrationId: string; name: string; code: string; token: string };

@@ -129,5 +129,9 @@ export const events: EventsApi = {
     emit();
   },
 
+  async sellOnHoppaz() {
+    throw new Error("Not built yet");
+  },
+
   subscribe,
 };

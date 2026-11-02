@@ -20,6 +20,7 @@ const TEXT: Record<ButtonKind, string> = {
   register: "Register",
   request: "Request to join",
   waitlist: "Join waitlist",
+  external: "Get tickets",
   get_ticket: "Get ticket",
   going: "You're in",
   pending: "Pending",

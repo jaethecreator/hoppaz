@@ -5,6 +5,7 @@ import { door } from "./door";
 import { events } from "./events";
 import { looks } from "./looks";
 import { pay } from "./pay";
+import { claims, outreach } from "./outreach";
 import { pops } from "./pops";
 import { registrations } from "./registrations";
 import { reports } from "./reports";
@@ -28,5 +29,7 @@ export const realApi: EventsR1Api = {
   pay,
   looks,
   account,
+  claims,
+  outreach,
 };
 

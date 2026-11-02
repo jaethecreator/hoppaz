@@ -63,6 +63,27 @@ export type R1Event = EventRow & {
   created_at: string;
   /** Short link slug for <site>/event/<slug>. */
   slug: string;
+  /**
+   * Set when tickets are sold somewhere else (a pulled event, "Listed by Hoppaz"): the screens show the listed price and a Get tickets
+   * link and nothing else. Then ticket_types is [], going is 0 and spots_left is null. Missing or null: a normal Hoppaz event.
+   */
+  listing?: ListingInfo | null;
+};
+
+/** Where tickets for a listing are sold, and what the source says they cost. */
+export type ListingInfo = {
+  ticket_url: string | null;
+  instagram_url: string | null;
+  /** Lowest listed price, whole naira. 0 = free. null = not known: say "Check listing". */
+  price_from: number | null;
+  price_to: number | null;
+  /** The source says it is sold out. */
+  sold_out: boolean;
+  /** "Tix", "Eventbrite", "Luma"... */
+  source_site: string | null;
+  /** The organiser has taken the room over. The page then says Hosted by them; tickets stay on the organiser's page until the host switches on Hoppaz tickets. */
+  claimed: boolean;
+  organiser_name: string | null;
 };
 
 export type RegStatus =
@@ -117,6 +138,7 @@ export type ViewerState = {
     | "register"
     | "request"
     | "waitlist"
+    | "external" // a listing: tickets are sold by the organiser
     | "get_ticket"
     | "going"
     | "pending"
@@ -378,3 +400,228 @@ export type RoomPatch = { name?: string; about?: string; slug?: string; logo_url
  * Answers to a host's own checkout questions are never saved.
  */
 export type SavedDetails = { first_name: string; last_name: string; email: string; phone: string };
+
+/* ------------------------------------------------- outreach: listings, organisers, transfers -- */
+
+export type OrganiserStage = "pulled" | "listed" | "offered" | "claimed" | "declined";
+export type ContactChannel = "instagram" | "whatsapp" | "email" | "phone" | "other";
+export type OrganiserLogKind = "contact" | "reply" | "offer" | "note" | "stage" | "transfer" | "claim_request" | "scrape" | "delete";
+
+export type OrganiserHandles = { instagram?: string; x?: string; tiktok?: string; website?: string; whatsapp?: string };
+
+/** One organiser (staff only). One room per organiser, not per event. */
+export type Organiser = {
+  id: string;
+  name: string;
+  ig_handle: string | null;
+  handles: OrganiserHandles;
+  email: string | null;
+  phone: string | null;
+  room_id: string | null;
+  room_slug: string | null;
+  room_name: string | null;
+  stage: OrganiserStage;
+  do_not_contact: boolean;
+  last_contacted_at: string | null;
+  last_contacted_by: string | null;
+  notes: string;
+  claimed_at: string | null;
+  declined_at: string | null;
+  created_at: string;
+  /** Live events of theirs (any date) and those still to come. */
+  events_total: number;
+  events_upcoming: number;
+  /** Pulled rows waiting for review. */
+  pulled_waiting: number;
+  /** A pending transfer link exists. */
+  transfer_pending: boolean;
+  /** Open "Is this your event?" requests from them. */
+  claim_requests: number;
+};
+
+export type OrganiserLogEntry = {
+  id: string;
+  organiser_id: string;
+  at: string;
+  by: string | null;
+  kind: OrganiserLogKind;
+  channel: ContactChannel | null;
+  body: string;
+};
+
+export type OrganiserEvent = { id: string; title: string; starts_at: string; status: EventStatus; ticket_url: string | null; upcoming: boolean };
+
+export type OrganiserDetail = {
+  organiser: Organiser;
+  log: OrganiserLogEntry[];
+  events: OrganiserEvent[];
+  transfers: Transfer[];
+};
+
+export type OrganiserPatch = {
+  name?: string;
+  ig_handle?: string | null;
+  handles?: OrganiserHandles;
+  email?: string | null;
+  phone?: string | null;
+  notes?: string;
+  do_not_contact?: boolean;
+};
+
+/** What the scout writes for one event. Unknown stays null or empty: nothing is invented, capacity stays null unless published. */
+export type ScoutTicket = { name: string; price_naira: number | null; sold_out: boolean };
+export type ScoutEvent = {
+  source_site: string;
+  source_id: string;
+  name: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  venue: string | null;
+  area: string | null;
+  lat: number | null;
+  lng: number | null;
+  description: string;
+  tickets: ScoutTicket[];
+  sold_out: boolean;
+  ticket_url: string | null;
+  flyer_url: string | null;
+  category: string | null;
+  organiser_name: string | null;
+  organiser_handle: string | null;
+  event_handle: string | null;
+  organiser_email: string | null;
+  organiser_phone: string | null;
+  lineup: { time?: string; name: string }[];
+  /** Seats, only if the page says so. */
+  capacity: number | null;
+  last_seen: string;
+  confidence: "confirmed" | "lead";
+};
+export type ScoutBatch = { run_id: string; scouted_at: string; sources_covered: string[]; events: ScoutEvent[] };
+
+export type PulledStatus = "new" | "approved" | "rejected" | "merged" | "blocked";
+export type PulledFlag = "duplicate" | "changed" | "no_price" | "no_time" | "no_pin" | "blocked" | "moved" | "gone";
+export type PulledEvent = {
+  id: string;
+  source_site: string;
+  source_id: string;
+  status: PulledStatus;
+  flags: PulledFlag[];
+  edited: string[];
+  confidence: "confirmed" | "lead";
+  fields: ScoutEvent;
+  organiser_id: string | null;
+  organiser_name: string | null;
+  organiser_stage: OrganiserStage | null;
+  /** The live listing it became. */
+  event_id: string | null;
+  duplicate_of: string | null;
+  also_at: { source_site: string; source_id: string; ticket_url: string | null }[];
+  first_seen_at: string;
+  last_seen_at: string;
+  /** Set when the last run covering this source did not see it. */
+  missing_since: string | null;
+};
+export type PulledPatch = Partial<Pick<ScoutEvent, "name" | "starts_at" | "ends_at" | "venue" | "area" | "lat" | "lng" | "description" | "tickets" | "sold_out" | "ticket_url" | "flyer_url" | "category" | "organiser_name" | "organiser_handle">>;
+
+export type ImportLine = { source_site: string; source_id: string; name: string; action: "new" | "updated" | "unchanged" | "blocked" | "skipped"; note: string };
+export type ImportReport = {
+  dry_run: boolean;
+  total: number;
+  new: number;
+  updated: number;
+  unchanged: number;
+  blocked: number;
+  skipped: number;
+  flagged_gone: number;
+  organisers_matched: number;
+  organisers_new: number;
+  lines: ImportLine[];
+};
+
+export type TransferKind = "claim" | "handover";
+export type TransferStatus = "pending" | "accepted" | "revoked" | "expired";
+export type Transfer = {
+  id: string;
+  kind: TransferKind;
+  room_id: string;
+  room_name: string;
+  organiser_id: string | null;
+  to_email: string;
+  status: TransferStatus;
+  created_at: string;
+  created_by: string | null;
+  expires_at: string;
+  accepted_at: string | null;
+};
+/** Returned once, when the link is made. The token is never stored; only its hash is. */
+export type TransferLink = { transfer: Transfer; link: string };
+
+export type TransferPreview =
+  | {
+      ok: true;
+      kind: TransferKind;
+      room: { name: string; slug: string; logo_url: string | null; about: string };
+      events: { id: string; title: string; starts_at: string }[];
+      /** "j***@gmail.com" */
+      email_hint: string;
+      organiser_name: string | null;
+      expires_at: string;
+    }
+  | { ok: false; reason: "not_found" | "expired" | "used" | "revoked" };
+
+export type AcceptOutcome = { room_id: string; slug: string; moved_events: number; already_owned_other: boolean };
+
+export type ClaimRequest = {
+  id: string;
+  event_id: string;
+  event_title: string;
+  organiser_id: string | null;
+  organiser_name: string | null;
+  name: string;
+  email: string;
+  phone: string | null;
+  note: string;
+  status: "new" | "handled";
+  created_at: string;
+};
+
+export type WeekSummary = {
+  from: string;
+  to: string;
+  contacted: number;
+  replies: number;
+  offers: number;
+  claimed: number;
+  declined: number;
+  listed: number;
+  pulled_new: number;
+  rejected: number;
+  claim_requests: number;
+  /** Organisers by stage now. */
+  stages: Record<OrganiserStage, number>;
+  /** Listed or offered with no contact in 7 days or more, oldest first (ids). */
+  waiting: { id: string; name: string; days: number }[];
+  /** The same counts one week earlier, for the arrow. */
+  previous: { contacted: number; replies: number; offers: number; claimed: number; declined: number; listed: number };
+};
+
+/** The reason text staff and organisers see for each refusal. */
+export const OUTREACH_REASONS: Record<string, string> = {
+  not_found: "Not found",
+  no_listings_account: "The Hoppaz Listings account is not set up yet",
+  blocked: "This organiser said no or asked not to be contacted",
+  has_registrations: "People already registered, so it cannot be deleted",
+  paid_sales: "This room has events with paid sales. Ask Hoppaz to move it by hand",
+  wrong_email: "This link is for a different email",
+  invalid_link: "This link is not valid",
+  link_expired: "This link has expired",
+  link_used: "This link was already used",
+  link_revoked: "This link was cancelled",
+  bad_email: "Check the email address",
+  already_pending: "A link for that email is already open. Cancel it first",
+  organiser_declined: "They said no. Reopen them first",
+  external_tickets: "Tickets for this event are sold by the organiser",
+  set_tickets_first: "Save your ticket types first",
+  not_claimed: "This event is still listed by Hoppaz",
+};

@@ -7,7 +7,8 @@ import type { Lineup } from "./lineup";
 import type { LooksApi } from "./looks";
 import type { PayApi } from "./pay";
 import type {
-  AuthUser, DoorPerson, EventChat, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
+  AcceptOutcome, AuthUser, ClaimRequest, ContactChannel, DoorPerson, EventChat, ImportReport, Organiser, OrganiserDetail, OrganiserPatch, OrganiserStage,
+  PulledEvent, PulledPatch, ScoutBatch, Transfer, TransferLink, TransferPreview, WeekSummary, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
   JoinOutcome, JoinRequest, Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomGuests, RoomMember, RoomMessage, RoomNotice,
   RoomPatch, RoomPreview, RoomRole, RoomSummary, SavedDetails, MyRegistration, ScanResult, Ticket, ViewerState,
 } from "./types";
@@ -53,6 +54,12 @@ export interface EventsApi {
   getLineup(id: string): Promise<Lineup>;
   /** Host or staff: replace it. Rows with no name are dropped, at most 30 rows ("Not allowed" for anyone else). Real: needs the SQL file. */
   setLineup(id: string, l: Lineup): Promise<void>;
+  /**
+   * Host of a claimed listing: save the real ticket types and switch the event from the organiser's page to Hoppaz tickets.
+   * Refused (reason text from OUTREACH_REASONS) while the event is still listed by Hoppaz ("This event is still listed by Hoppaz") or
+   * the list is empty. Real: ev_update_event with the tickets, then ev_listing_use_hoppaz.
+   */
+  sellOnHoppaz(id: string, tickets: NonNullable<EventDraft["tickets"]>): Promise<R1Event>;
   subscribe(fn: () => void): Unsub;
 }
 
@@ -237,6 +244,67 @@ export interface AccountApi {
   deleteSavedDetails(): Promise<void>;
 }
 
+/**
+ * Organiser side of the flow: the claim page, "Is this your event?", and an owner handing their own room to someone.
+ * Fake: in memory. Real: ev_claim_request, ev_transfer_preview, ev_transfer_accept, ev_transfer_create_owner (supabase/events_r1_transfer.sql).
+ */
+export interface ClaimsApi {
+  /** Anyone, signed in or not: "Is this your event?". Lands in the staff tracker. Asking twice with the same email is one request. */
+  requestClaim(eventId: string, who: { name: string; email: string; phone?: string; note?: string }): Promise<void>;
+  /** What the claim page shows for a link. Never throws for a bad link: ok false with the reason. */
+  preview(token: string): Promise<TransferPreview>;
+  /**
+   * Accept. Needs a signed-in viewer whose verified email is the link's ("Sign in first", "This link is for a different email"). One transaction:
+   * owner set, previous owner removed, created_by updated, upcoming events moved. Works once.
+   */
+  accept(token: string): Promise<AcceptOutcome>;
+  /** Owner of a room: start handing it to an email. The link is returned once. */
+  startHandover(roomId: string, email: string): Promise<TransferLink>;
+  /** Owner of a room (or staff): open and past transfers of that room, newest first. */
+  transfersFor(roomId: string): Promise<Transfer[]>;
+  /** Owner (or staff): cancel an open link. */
+  revoke(transferId: string): Promise<void>;
+}
+
+/**
+ * The staff desk (/admin): the review queue, organisers, outreach, transfers, the weekly view and the scout import.
+ * The desk has the shared token and no account, so nothing here checks a viewer. Real: the token-guarded route /api/admin/outreach
+ * (service role). Staff name ("who contacted") is passed by the desk; it is only a label.
+ */
+export interface OutreachApi {
+  /* review queue */
+  queue(): Promise<PulledEvent[]>;
+  /** Approve a pulled row: makes (or updates) the listing, the organiser and the dormant room. A blocked row answers "blocked". */
+  approve(pulledId: string, by: string, patch?: PulledPatch): Promise<{ eventId: string; organiserId: string }>;
+  edit(pulledId: string, patch: PulledPatch): Promise<PulledEvent>;
+  reject(pulledId: string, by: string, reason?: string): Promise<void>;
+  /** Fold a duplicate into another pulled row (the other source is kept as also_at). */
+  merge(pulledId: string, intoPulledId: string, by: string): Promise<void>;
+  /** The scout's batch. dryRun true writes nothing and returns what would happen. */
+  importBatch(batch: ScoutBatch, opts: { dryRun: boolean }): Promise<ImportReport>;
+  /* organisers */
+  organisers(): Promise<Organiser[]>;
+  organiser(id: string): Promise<OrganiserDetail>;
+  saveOrganiser(id: string, patch: OrganiserPatch): Promise<Organiser>;
+  /** Log a contact or a reply. kind "contact" sets last contacted. Never changes the stage by itself. */
+  logContact(id: string, input: { by: string; kind: "contact" | "reply" | "note"; channel?: ContactChannel; body: string }): Promise<void>;
+  /** Move the stage by hand: offered | declined | listed (reopen). claimed is only set by accepting a transfer. declined also sets do_not_contact. */
+  setStage(id: string, stage: Exclude<OrganiserStage, "claimed" | "pulled">, by: string): Promise<Organiser>;
+  /**
+   * Delete the organiser's events and room (they said no). confirmName must equal the organiser's name. Refused while any registration
+   * (going, requested, waitlisted, checked in) or paid order exists: throws the has_registrations text naming the events. Keeps the
+   * organiser row, declined and do not contact, so the next scrape does not list them again.
+   */
+  deleteListingAndRoom(id: string, confirmName: string, by: string): Promise<{ events: number }>;
+  /* transfer */
+  createTransfer(organiserId: string, email: string, by: string, days?: number): Promise<TransferLink>;
+  revokeTransfer(transferId: string, by: string): Promise<void>;
+  /* requests and the week */
+  claimRequests(): Promise<ClaimRequest[]>;
+  handleClaimRequest(id: string, by: string): Promise<void>;
+  week(): Promise<WeekSummary>;
+}
+
 export interface ClockApi {
   /** Epoch ms. Real time plus an offset the fake lets a tester move (to test "Join call 15 minutes before"). */
   now(): number;
@@ -258,4 +326,8 @@ export interface EventsR1Api {
   looks: LooksApi;
   /** Saved checkout details. */
   account: AccountApi;
+  /** Claim page, "Is this your event?" and handing a room over. */
+  claims: ClaimsApi;
+  /** The staff desk's outreach tools. */
+  outreach: OutreachApi;
 }
