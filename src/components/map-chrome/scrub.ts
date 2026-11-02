@@ -1,3 +1,4 @@
+import { goingCount } from "@/lib/goingCount";
 import { crowdAt, timeSlots } from "@/lib/crowd";
 import { nightOf } from "@/lib/filters";
 import type { EventRow } from "@/lib/types";
@@ -143,7 +144,7 @@ export function conductorLine(opts: {
   if (!events.length) return "Quiet one.";
   const today = nightOf(now) === dayKey;
   const out = events.reduce((n, e) => n + (e.here_now ?? 0), 0);
-  const going = events.reduce((n, e) => n + (e.swipes_in ?? 0), 0);
+  const going = events.reduce((n, e) => n + goingCount(e), 0);
   const drops = events.filter((e) => dropEventIds.has(e.id)).length;
   const s = (n: number) => (n === 1 ? "" : "s");
 

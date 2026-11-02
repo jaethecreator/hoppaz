@@ -51,6 +51,7 @@ import { useSession } from "@/lib/useSession";
 import type { EventRow } from "@/lib/types";
 import { EVENTS_R1 } from "@/lib/events-r1/flags";
 import CreateButton from "@/components/events-r1/CreateButton";
+import { goingCount } from "@/lib/goingCount";
 
 // One stable empty list, so memo deps do not change on every render.
 const NO_TYPES: string[] = [];
@@ -170,7 +171,7 @@ export default function TodayPage() {
   );
   const nextBusy = useMemo(() => nextBusyDay(counts, dayKey), [counts, dayKey]);
 
-  const goingOf = useCallback((e: EventRow) => Math.max(0, (e.swipes_in ?? 0) + (delta[e.id] ?? 0)), [delta]);
+  const goingOf = useCallback((e: EventRow) => goingCount(e, delta[e.id] ?? 0), [delta]);
   const distanceLabel = useCallback((e: EventRow) => {
     if (!fix || !Number.isFinite(e.distance_m)) return null;
     return e.distance_m < 1000 ? `${Math.round(e.distance_m)} M` : `${(e.distance_m / 1000).toFixed(1)} KM`;

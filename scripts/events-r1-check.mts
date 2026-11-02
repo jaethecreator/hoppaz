@@ -1814,6 +1814,20 @@ await test("Me hosting desk: workspaces, request numbers, live dots, tonight, th
   eq(liveNow(t, Date.now()), false, "3 hours after the start with no end: over");
 });
 
+await test("going count: the larger of registered and swipes, never the sum", async () => {
+  const { goingCount } = await import("../src/lib/goingCount.ts");
+  const row = (going: number | undefined, swipes: number | undefined) => ({ going, swipes_in: swipes }) as Parameters<typeof goingCount>[0];
+  eq(goingCount(row(5, 2)), 5, "registered going is the larger");
+  eq(goingCount(row(2, 5)), 5, "swipes are the larger");
+  eq(goingCount(row(undefined, 4)), 4, "the old list has swipes only");
+  eq(goingCount(row(3, undefined)), 3, "going only");
+  eq(goingCount(row(undefined, undefined)), 0, "nothing at all");
+  eq(goingCount(row(3, 3)), 3, "the same people twice are counted once");
+  eq(goingCount(row(2, 4), 1), 5, "your own tap rides on the swipes");
+  eq(goingCount(row(9, 4), 1), 9, "a tap does not lift the swipes above the registered going");
+  eq(goingCount(row(undefined, 0), -1), 0, "never below zero");
+});
+
 await test("reset clears user-made changes", async () => {
   const before = fakeDev.allEvents().length;
   await kredeteEvent();
