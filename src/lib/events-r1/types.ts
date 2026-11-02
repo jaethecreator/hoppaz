@@ -424,6 +424,8 @@ export type Organiser = {
   do_not_contact: boolean;
   last_contacted_at: string | null;
   last_contacted_by: string | null;
+  /** The last time a reply was logged from them. A reply after the last contact takes them out of the waiting groups. */
+  last_replied_at: string | null;
   notes: string;
   claimed_at: string | null;
   declined_at: string | null;

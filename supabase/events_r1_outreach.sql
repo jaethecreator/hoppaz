@@ -399,7 +399,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
     'room_slug', (select p.slug from public.ev_room_profiles p where p.crew_id = o.room_id),
     'room_name', (select c.name from public.crews c where c.id = o.room_id),
     'stage', o.stage, 'do_not_contact', o.do_not_contact,
-    'last_contacted_at', o.last_contacted_at, 'last_contacted_by', o.last_contacted_by, 'notes', o.notes,
+    'last_contacted_at', o.last_contacted_at, 'last_contacted_by', o.last_contacted_by,
+    'last_replied_at', (select max(l.at) from public.ev_organiser_log l where l.organiser_id = o.id and l.kind = 'reply'), 'notes', o.notes,
     'claimed_at', o.claimed_at, 'declined_at', o.declined_at, 'created_at', o.created_at,
     'events_total', (select count(*) from public.events e where e.organiser_id = o.id and e.status in ('live', 'unlisted'))::int,
     'events_upcoming', (select count(*) from public.events e

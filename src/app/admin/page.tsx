@@ -14,6 +14,8 @@ import EventsSection from "@/components/admin/desk/sections/EventsSection";
 import MoreSection from "@/components/admin/desk/sections/MoreSection";
 import QuestsSection from "@/components/admin/desk/sections/QuestsSection";
 import EventReportsSection from "@/components/admin/desk/sections/EventReportsSection";
+import OutreachSection from "@/components/admin/desk/outreach/OutreachSection";
+import { useOutreachData } from "@/components/admin/desk/outreach/useOutreach";
 import RoomsThreeDSection from "@/components/admin/desk/sections/RoomsThreeDSection";
 import SafetySection from "@/components/admin/desk/sections/SafetySection";
 import { SECTIONS, isSection } from "@/components/admin/desk/sections/nav";
@@ -76,6 +78,8 @@ export default function AdminPage() {
     setToken("");
   }, []);
   const gt = useGameTimeDesk(token, lock);
+  // Loaded here, not in the section, so the rail shows the count before Outreach is opened.
+  const outreach = useOutreachData(EVENTS_R1 && !!token);
 
   const go = useCallback((s: SectionKey) => {
     setSection(s);
@@ -119,6 +123,7 @@ export default function AdminPage() {
   count("events", queue.events.length);
   count("safety", queue.reports.length + queue.photos.length);
   count("quests", queue.claims.length);
+  count("outreach", outreach.badge);
   const liveCrews = [...new Map(live.map((g) => [g.crew_id, g.crew_name])).entries()].map(([id, name]) => ({ id, name }));
 
   // The chip row scrolls sideways on a phone; the open section's chip stays in sight (also when a count arrives and widens a chip).
@@ -324,6 +329,11 @@ export default function AdminPage() {
           {EVENTS_R1 && (
             <Page on={section === "eventreports"} mounted={section === "eventreports" || visited.includes("eventreports")}>
               <EventReportsSection />
+            </Page>
+          )}
+          {EVENTS_R1 && (
+            <Page on={section === "outreach"} mounted={section === "outreach" || visited.includes("outreach")} wide>
+              <OutreachSection data={outreach} />
             </Page>
           )}
           {EVENTS_R1 && (

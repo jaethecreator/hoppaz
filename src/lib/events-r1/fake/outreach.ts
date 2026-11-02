@@ -112,6 +112,7 @@ function organiserView(o: OrganiserRec): Organiser {
     pulled_waiting: Object.values(S().pulled).filter((p) => p.organiser_id === o.id && p.status === "new").length,
     transfer_pending: hasPending(o.id),
     claim_requests: Object.values(S().claimRequests).filter((c) => c.organiser_id === o.id && c.status === "new").length,
+    last_replied_at: Object.values(S().organiserLog).filter((l) => l.organiser_id === o.id && l.kind === "reply").map((l) => l.at).sort().pop() ?? null,
   };
 }
 

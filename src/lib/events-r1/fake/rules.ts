@@ -264,9 +264,10 @@ export function canList(e: EventRec): boolean {
   return true;
 }
 
-export function hostRef(userId: string): HostRef {
+export function hostRef(userId: string, eventRoomId: string | null = null): HostRef {
   const u = userById(userId);
-  const room = hostRoom(userId);
+  // The event's own room first, like the database (coalesce(e.room_id, _ev_host_room(host))): the Hoppaz Listings account owns many rooms.
+  const room = (eventRoomId ? S().rooms[eventRoomId] : undefined) ?? hostRoom(userId);
   return {
     id: userId,
     name: u?.name ?? "Host",
@@ -296,7 +297,7 @@ export function eventView(e: EventRec, opts: { revealLink?: boolean } = {}): R1E
   const base = {
     ...rest,
     status: statusOf(e),
-    host: hostRef(host_id),
+    host: hostRef(host_id, e.room_id),
     online_link: opts.revealLink || canSeeLink(e) ? e.online_link : null,
     distance_m: haversineKm(LAGOS_CENTER.lat, LAGOS_CENTER.lng, e.lat, e.lng) * 1000,
     here_now: 0,

@@ -328,6 +328,7 @@ export function mapOrganiser(j: J): Organiser {
     do_not_contact: !!j.do_not_contact,
     last_contacted_at: iso(j.last_contacted_at),
     last_contacted_by: strOrNull(j.last_contacted_by),
+    last_replied_at: iso(j.last_replied_at),
     notes: str(j.notes),
     claimed_at: iso(j.claimed_at),
     declined_at: iso(j.declined_at),

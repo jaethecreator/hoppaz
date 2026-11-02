@@ -108,7 +108,7 @@ export type JoinRequestRec = JoinRequest & { status: "pending" | "approved" | "d
 export type NoticeRec = RoomNotice & { user_id: string; seen: boolean };
 
 /** An organiser as stored: what is worked out on read (room name, event counts, waiting items) is not kept. */
-export type OrganiserRec = Omit<Organiser, "room_slug" | "room_name" | "events_total" | "events_upcoming" | "pulled_waiting" | "transfer_pending" | "claim_requests"> & {
+export type OrganiserRec = Omit<Organiser, "room_slug" | "room_name" | "events_total" | "events_upcoming" | "pulled_waiting" | "transfer_pending" | "claim_requests" | "last_replied_at"> & {
   name_key: string;
   claimed_by: string | null;
 };
