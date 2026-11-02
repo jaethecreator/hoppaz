@@ -24,6 +24,7 @@ import OverviewTab from "./admin/OverviewTab";
 import ProfileTab from "./admin/ProfileTab";
 import SettingsTab from "./admin/SettingsTab";
 import TwoDTab from "./admin/TwoDTab";
+import WelcomeBanner from "./admin/WelcomeBanner";
 import { useFlashLine } from "./admin/ui";
 
 const ALL: Array<NavItem & { sub?: string }> = [
@@ -170,6 +171,9 @@ export default function RoomAdmin() {
           </Link>
         }
       >
+        {current.id === "overview" && search.get("welcome") === "1" && (
+          <WelcomeBanner room={r} moved={Number(search.get("moved")) || 0} also={search.get("also") === "1"} onTab={go} />
+        )}
         {current.id === "overview" && <OverviewTab room={r} look={lookToUse} onTab={go} />}
         {current.id === "profile" && <ProfileTab key={r.id} room={r} look={lookToUse} onLook={setEdited} />}
         {current.id === "events" && <EventsTab room={r} />}

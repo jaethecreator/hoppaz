@@ -9,6 +9,7 @@ import { useR1Api, useR1Query } from "@/lib/events-r1/hooks";
 import type { R1Event, RegMessages, RegQuestion } from "@/lib/events-r1/types";
 import GetPaidCard from "../pay/GetPaidCard";
 import { usePaidGate } from "../pay/usePay";
+import ListingSwitch from "./ListingSwitch";
 import { CARD, ErrorLine, Section } from "./ui";
 import { errWord } from "./words";
 
@@ -17,6 +18,11 @@ const newQuestionId = () => `q-${Date.now().toString(36)}${(++seq).toString(36)}
 
 /** Tickets (the old Registration): tiers with a sold bar, approval, capacity, waitlist, what we ask guests, what guests hear back. One Save. */
 export default function TicketsTab({ event }: { event: R1Event }) {
+  // A pulled event keeps its other-site tickets until the host switches (ListingSwitch); then event.listing is null and the full form shows.
+  return event.listing ? <ListingSwitch event={event} /> : <RealTickets event={event} />;
+}
+
+function RealTickets({ event }: { event: R1Event }) {
   const { data: settings, loading, error } = useR1Query((a) => a.events.getRegistrationSettings(event.id), [event.id]);
   if (error) return <p className="hint">Could not load this.</p>;
   if (loading || !settings) return <p className="hint">Loading</p>;
