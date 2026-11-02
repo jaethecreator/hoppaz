@@ -23,6 +23,8 @@ Jae has no Supabase access, so these steps are yours. Part 1 doesn't depend on t
 5. **Raise the limit.** Authentication, Rate Limits, emails sent per hour: `100`. Custom SMTP starts at 30.
 6. **Test.** In a private window on the live site, use a Gmail and a Yahoo address that aren't on the team. Each should get a 6-digit code in the inbox, and the code should sign in.
 
+**Known limit: Mailjet adds its own unsubscribe option to sign-in emails.** A real test on 2 Nov showed its `List-Unsubscribe` header on the code email, and it is still there with tracking off. The docs don't say what using it does, so it may stop that address getting later Mailjet mail. If someone stops getting codes, check their address in Mailjet's contacts and blocked lists. The sign-in hook in Part 3 sends codes through Mailtrap first, which reduces this.
+
 Saving SMTP changes live sign-in at once, so pick a quiet time. To undo it, restore what you noted in step 4.
 
 **Two questions for Jae:** is the `hoppaz-ev-pops` timer scheduled on production, and does the Google sign-in screen say In production with the Hoppaz name?
