@@ -262,6 +262,18 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   const look: Look = saved ?? { ...DEFAULT_LOOK, mood: themeForEvent(event.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);
   const sheetTint = useLookStyle(look, tint);
+  // What the room link should say for this viewer: in the room, can be opened, or a dead end (null). Nothing shows while it loads.
+  const roomId = event.host.roomId;
+  const access = useR1Query(
+    async (a) => {
+      if (!roomId) return null;
+      const r = await a.rooms.get(roomId);
+      if (r) return { inside: r.joined || !!r.my_role || r.is_owner };
+      // A private room answers a stranger with nothing; the preview (when the database has it) says it exists.
+      return (await a.rooms.preview(roomId)) ? { inside: false } : null;
+    },
+    [roomId]
+  );
   const [wide, setWide] = useState(false);
   const [said, setSaid] = useState("");
   const anchor = useRef<HTMLDivElement>(null);
@@ -358,9 +370,9 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
             <button type="button" onClick={() => void share()} aria-label="Share" className="grid h-9 w-9 place-items-center rounded-hz border border-t-line bg-t-bg shadow-[0_3px_0_var(--t-line)]">
               <Share2 size={16} />
             </button>
-            {room && (
+            {room && access.data && (
               <Link href={`/rooms/${encodeURIComponent(room)}`} className="whitespace-nowrap rounded-hz border border-t-line bg-t-bg px-[15px] py-[7px] font-body text-[13px] font-bold shadow-[0_3px_0_var(--t-line)]">
-                Join room
+                {viewer?.isHost || (!asVisitor && access.data.inside) ? "Open room" : "Join room"}
               </Link>
             )}
           </div>
