@@ -456,6 +456,7 @@ await test("mailjet: a sign-in code has no CustomID (there is no queue row), a g
   const first = (f.calls[0].body as { Messages: Array<Record<string, unknown>> }).Messages[0];
   const second = (f.calls[1].body as { Messages: Array<Record<string, unknown>> }).Messages[0];
   ok(!("CustomID" in first), "none for the code");
+  for (const m of [first, second]) eq([m.TrackOpens, m.TrackClicks], ["disabled", "disabled"], "tracking off");
   eq(second.CustomID, "11111111-1111-4111-8111-111111111111", "kept for a queued mail");
   eq(first.From, { Email: "codes@auth.hoppaz.fun", Name: "Hoppaz" }, "the code sender");
 });

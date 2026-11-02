@@ -182,6 +182,8 @@ await test("mailjet: the request is the documented one (url, Basic auth, Message
       Subject: "You're going to Afro Night",
       TextPart: "hi",
       HTMLPart: "<p>hi</p>",
+      TrackOpens: "disabled",
+      TrackClicks: "disabled",
       Headers: { "List-Unsubscribe": "<https://x.test/u>" },
       CustomID: "11111111-1111-4111-8111-111111111111",
     }],

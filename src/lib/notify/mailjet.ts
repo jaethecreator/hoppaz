@@ -4,7 +4,7 @@ import type { EmailProvider, OutgoingEmail, SendResult } from "./provider";
 /**
  * Mailjet Send API v3.1 (https://dev.mailjet.com/email/guides/send-api-v31/): POST https://api.mailjet.com/v3.1/send with HTTP Basic auth,
  * the public API key as user and the private (secret) key as password. Body: { Messages: [{ From {Email, Name}, To [{Email}], ReplyTo,
- * Subject, TextPart, HTMLPart, Headers {...}, CustomID }] }. Success: 200 with Messages[0].Status "success" and
+ * Subject, TextPart, HTMLPart, TrackOpens, TrackClicks, Headers {...}, CustomID }] }. Success: 200 with Messages[0].Status "success" and
  * Messages[0].To[0] { Email, MessageUUID, MessageID, MessageHref }. A failed message has Status "error" and Errors[] { ErrorIdentifier,
  * ErrorCode, StatusCode, ErrorMessage, ErrorRelatedTo }, usually with HTTP 400. Over the per-minute rate: 429. A wrong key: 401. 403: not allowed.
  *
@@ -39,6 +39,9 @@ export function createMailjetProvider(env: Env = process.env, fetcher: FetchLike
             Subject: msg.subject,
             TextPart: msg.text,
             HTMLPart: msg.html,
+            // Off per message: the account default rewrites links through mjt.lu and adds an open pixel, and ticket and sign-in mail must not be tracked.
+            TrackOpens: "disabled",
+            TrackClicks: "disabled",
             ...(msg.headers && Object.keys(msg.headers).length ? { Headers: msg.headers } : {}),
             // A sign-in code sent from the hook has no queue row, so no CustomID.
             ...(msg.queueId ? { CustomID: msg.queueId } : {}),

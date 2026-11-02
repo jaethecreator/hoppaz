@@ -175,6 +175,7 @@ test("--send mailjet: confirmation, reminder and the sign-in code email (from th
     eq(q.body.Messages.length, 1, "one message");
     eq(q.body.Messages[0].To, [{ Email: TO }], "one recipient");
     ok(q.body.Messages[0].Subject.startsWith("[TEST] "), "subject prefix");
+    eq([q.body.Messages[0].TrackOpens, q.body.Messages[0].TrackClicks], ["disabled", "disabled"], "tracking off");
     ok(q.keyInHeaders, "the key went in the request");
   }
   eq(r.reqs.map((q) => q.body.Messages[0].From.Email), ["tickets@mail.hoppaz.fun", "tickets@mail.hoppaz.fun", "codes@auth.hoppaz.fun"], "senders");
