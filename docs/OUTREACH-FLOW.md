@@ -36,7 +36,7 @@ they never reply, nothing changes: the listing stays.
 ## Event page rules for a listing (the fix)
 
 Real price ("From N5,000", "N5,000", "Free", or "Check listing" when unknown), a "Get tickets" button (opens `ticket_url`,
-else `instagram_url`, else no button but "Check the organiser's page" text is not shown), "Listed by Hoppaz", and an
+else `instagram_url`, labelled "See the listing"; no link at all means no button), "Listed by Hoppaz", and an
 "Is this your event?" way in. No going count, no spots left, no ticket list, no Register, no checkout, no QR. Sold out at
 the source shows "Sold out at the source" and the button becomes "See the listing". The old `ig_url` is split into
 `ticket_url` and `instagram_url`.
@@ -95,6 +95,18 @@ Fake layer is the spec; real layer calls the SQL.
 Skill runs on Jae's computer in the Claude desktop app (built-in browser), 2 to 3 times a week. It writes
 `~/hoppaz-scout/<YYYY-MM-DD>/events.json` plus flyers. `scripts/events/load-scout.mjs` validates, dry-runs by default, and with
 `--apply` posts the batch to `/api/admin/outreach` (`import`). Rerun = same `(source_site, source_id)` = same row. See the skill.
+
+## Rules added while building
+
+- A wrong email on a transfer link does not use it up. After 10 wrong tries the link is cancelled and staff issue a new one.
+- Accepting also clears an old "no" on the organiser: someone who accepts has come back.
+- A link for a handover is only good while the person who started it still owns the room.
+- Lagos HQ can never be transferred. An owner cannot hand a room to their own email. At most 5 open handover links per room.
+- Staff cannot create a link for an organiser who said no (reopen them first) or who already claimed.
+- Deleting refuses when any registration or order exists, and when the organiser is claimed (they own the room now).
+- "Is this your event?": 3 requests per email per day, 300 a day overall. It lands in the tracker as a claim request.
+- A claimed organiser's next scraped event is hosted by the room's owner, not Hoppaz Listings, and links to the same room.
+- Logged replies are kept in the database (`last_replied_at`), so every staff device sees them.
 
 ## What is deliberately not here (later)
 
