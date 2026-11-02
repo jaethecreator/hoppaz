@@ -56,7 +56,7 @@ export default function MeTickets({ tickets, codes }: { tickets: MyRegistration[
         {tickets.map(({ event: e }) => (
           <li key={e.id} className="flex-none snap-start">
             <Link href={`/event/${encodeURIComponent(e.slug || e.id)}`} className={STUB} aria-label={`Ticket: ${e.title}, ${stubWhen(e.starts_at)}. Open your ticket`} data-ticket-stub={e.id}>
-              <Stub cover={<img src={e.flyer_url || fallbackCover(e.id)} alt="" className="h-full w-full object-cover" />} kind="Ticket" title={e.title} when={stubWhen(e.starts_at)} />
+              <Stub cover={<img src={e.flyer_url || fallbackCover(e.id, e.title)} alt="" className="h-full w-full object-cover" />} kind="Ticket" title={e.title} when={stubWhen(e.starts_at)} />
             </Link>
           </li>
         ))}

@@ -133,7 +133,7 @@ export default function HostDashboard({ id }: { id: string }) {
   // The look: what was saved, or (an older event) the cover's colour. Edits show at once and are saved by the Details tab.
   const e = event.data;
   const [edited, setEdited] = useState<Look | null>(null);
-  const cover = e ? e.flyer_url || fallbackCover(e.id) : null;
+  const cover = e ? e.flyer_url || fallbackCover(e.id, e.title) : null;
   const look: Look = edited ?? savedLook.data ?? { ...DEFAULT_LOOK, mood: e && themeForEvent(e.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);
   // Where the dashboard sits: inside a room (its owner or admin sees "‹ Room name", back to the room admin) or in Personal.
