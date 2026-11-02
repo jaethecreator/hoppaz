@@ -81,7 +81,7 @@ export default function ReturnPage() {
   if (!orderId || missing) {
     return shell(
       <>
-        <p className="font-display text-[22px] font-black leading-tight">We can&apos;t find this order</p>
+        <p className="font-display text-[22px] font-black leading-tight">We can&apos;t find that order</p>
         <Link href="/" className="btn mt-4 px-5 normal-case">
           Back to events
         </Link>

@@ -6,6 +6,8 @@ export type EventRow = {
   lat: number;
   lng: number;
   starts_at: string;
+  /** When the night ends, if the host set it. */
+  ends_at?: string | null;
   price_naira: number;
   vibe: string;
   source: "hoppaz" | "hopper" | "instagram" | "partner";
