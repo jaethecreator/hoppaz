@@ -6,6 +6,8 @@ export type EventRow = {
   lat: number;
   lng: number;
   starts_at: string;
+  /** When the night ends, if the host set it. */
+  ends_at?: string | null;
   price_naira: number;
   vibe: string;
   source: "hoppaz" | "hopper" | "instagram" | "partner";
@@ -15,6 +17,8 @@ export type EventRow = {
   heat: number;
   checkins?: number;
   swipes_in?: number;
+  /** Release 1: people registered and going (approved and checked in). The old list has none; see goingCount. */
+  going?: number;
   /** Check-ins in the last three hours: the live crowd. */
   here_now?: number;
 };

@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { goingCount } from "@/lib/goingCount";
 import { dayLabel, nightOf } from "@/lib/filters";
 import { eventPrice, isEventLead } from "@/lib/geo";
 import { themeForEvent } from "@/lib/theme";
@@ -34,7 +35,7 @@ export function dateTag(dayKey: string) {
 
 /** Most Hoppers going first, then the earliest start. */
 export function byGoingThenStart(a: EventRow, b: EventRow) {
-  return (b.swipes_in ?? 0) - (a.swipes_in ?? 0) || Date.parse(a.starts_at) - Date.parse(b.starts_at);
+  return goingCount(b) - goingCount(a) || Date.parse(a.starts_at) - Date.parse(b.starts_at);
 }
 
 /** The next day after dayKey that has something on, with how many. */
@@ -75,7 +76,10 @@ export function factLine(event: EventRow, now: number) {
   return [when, event.area?.toUpperCase(), eventPrice(event)].filter(Boolean).join(" · ");
 }
 
-export const hasEnded = (event: EventRow, now: number) => Date.parse(event.starts_at) + 6 * HOUR < now;
+export const hasEnded = (event: EventRow, now: number) => {
+  const end = event.ends_at ? Date.parse(event.ends_at) : NaN;
+  return (Number.isFinite(end) ? end : Date.parse(event.starts_at) + 6 * HOUR) < now;
+};
 
 /**
  * The conductor line under the title. Today it counts Hoppers checked in

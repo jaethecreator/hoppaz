@@ -133,7 +133,7 @@ export default function HostDashboard({ id }: { id: string }) {
   // The look: what was saved, or (an older event) the cover's colour. Edits show at once and are saved by the Details tab.
   const e = event.data;
   const [edited, setEdited] = useState<Look | null>(null);
-  const cover = e ? e.flyer_url || fallbackCover(e.id) : null;
+  const cover = e ? e.flyer_url || fallbackCover(e.id, e.title) : null;
   const look: Look = edited ?? savedLook.data ?? { ...DEFAULT_LOOK, mood: e && themeForEvent(e.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);
   // Where the dashboard sits: inside a room (its owner or admin sees "‹ Room name", back to the room admin) or in Personal.
@@ -233,9 +233,9 @@ export default function HostDashboard({ id }: { id: string }) {
       <TintShell look={look} tint={tint} className="min-h-full">
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-t-line bg-t-bg px-4 py-2.5 lg:px-5 lg:py-3">
           {workspace ? (
-            <Link href={workspace.href} aria-label={`Back to ${workspace.label}`} className="lip-ghost flex-none !min-h-[40px] max-w-[42vw] !gap-1 !px-3" data-workspace-back>
+            <Link href={workspace.href} aria-label={`Back to ${workspace.label}`} className="lip-ghost flex-none !min-h-[40px] !gap-1 !px-2.5 sm:max-w-[42vw] sm:!px-3" data-workspace-back>
               <ChevronLeft size={16} strokeWidth={2.4} aria-hidden />
-              <span className="truncate">{workspace.label}</span>
+              <span className="hidden truncate sm:inline">{workspace.label}</span>
             </Link>
           ) : (
             <button type="button" onClick={back} aria-label="Back" className="-ml-2 grid h-10 w-8 flex-none place-items-center text-t-text">
@@ -244,7 +244,7 @@ export default function HostDashboard({ id }: { id: string }) {
           )}
           {cover && <img src={cover} alt="" className="h-10 w-10 flex-none rounded-hz border border-t-line object-cover lg:h-12 lg:w-12" />}
           <div className="min-w-0 flex-1">
-            <h1 className="t-title truncate text-[15px] font-extrabold leading-tight lg:text-[19px]">{e.title}</h1>
+            <h1 className="t-title line-clamp-2 text-[15px] font-extrabold leading-tight lg:text-[19px]">{e.title}</h1>
             <p className="flex items-center gap-1.5 truncate font-body text-[12.5px] text-t-muted lg:text-[13.5px]">
               <span className="truncate">{whenShort(e)}</span>
               <span className="flex flex-none items-center gap-1 font-bold">

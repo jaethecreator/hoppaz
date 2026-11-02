@@ -1814,6 +1814,46 @@ await test("Me hosting desk: workspaces, request numbers, live dots, tonight, th
   eq(liveNow(t, Date.now()), false, "3 hours after the start with no end: over");
 });
 
+await test("going count: the larger of registered and swipes, never the sum", async () => {
+  const { goingCount } = await import("../src/lib/goingCount.ts");
+  const row = (going: number | undefined, swipes: number | undefined) => ({ going, swipes_in: swipes }) as Parameters<typeof goingCount>[0];
+  eq(goingCount(row(5, 2)), 5, "registered going is the larger");
+  eq(goingCount(row(2, 5)), 5, "swipes are the larger");
+  eq(goingCount(row(undefined, 4)), 4, "the old list has swipes only");
+  eq(goingCount(row(3, undefined)), 3, "going only");
+  eq(goingCount(row(undefined, undefined)), 0, "nothing at all");
+  eq(goingCount(row(3, 3)), 3, "the same people twice are counted once");
+  eq(goingCount(row(2, 4), 1), 5, "your own tap rides on the swipes");
+  eq(goingCount(row(9, 4), 1), 9, "a tap does not lift the swipes above the registered going");
+  eq(goingCount(row(undefined, 0), -1), 0, "never below zero");
+});
+
+await test("generated cover: the event's own name, same every time, safe to embed", async () => {
+  const { generatedCover } = await import("../src/lib/host/coverArt.ts");
+  const PREFIX = "data:image/svg+xml,";
+  const svgOf = (u: string) => decodeURIComponent(u.slice(PREFIX.length));
+  const a = generatedCover("e1", "Afro Beach Day Party");
+  ok(a.startsWith(PREFIX), "a data URL");
+  eq(generatedCover("e1", "Afro Beach Day Party"), a, "same id and title, same cover");
+  ok(!a.includes("<") && !a.includes(" "), "URL-encoded");
+  const svg = svgOf(a);
+  ok(svg.includes('viewBox="0 0 1080 1350"') && svg.includes('width="1080"') && !svg.includes("foreignObject") && !svg.includes("/templates/"), "4:5, no outside picture");
+  ok(["AFRO", "BEACH", "DAY", "PARTY"].every((w) => svg.includes(`>${w}<`) || svg.includes(w)), "the title is on it");
+  const hexes = new Set(Array.from({ length: 40 }, (_, i) => svgOf(generatedCover(`id-${i}`, "X")).match(/<rect width="1080" height="1350" fill="(#[0-9A-F]{6})"/)?.[1]));
+  ok(hexes.size > 3 && [...hexes].every((h) => !!h), "ids spread over several palette colours");
+  const lead = svgOf(generatedCover("e1", "LEAD · Lagos Tech Mixer"));
+  ok(lead.includes(">LAGOS<") && lead.includes(">MIXER<") && !lead.includes("LEAD"), "the LEAD prefix is dropped");
+  const nasty = svgOf(generatedCover("e2", `Rock & Roll <b>"hi"</b> it's \u0007 \uD83D lone`));
+  ok(nasty.includes("&amp;") && nasty.includes("&lt;") && nasty.includes("&quot;") && nasty.includes("&apos;") && !/<b>/.test(nasty) && !/[\u0000-\u0008]/.test(nasty), "XML-escaped, controls and lone surrogates gone");
+  const none = svgOf(generatedCover("e3"));
+  ok(none.includes("HOPPAZ") && !none.includes("undefined"), "no title: the untitled cover");
+  eq(svgOf(generatedCover("e3", "   ")), none, "a blank title is untitled too");
+  const long = svgOf(generatedCover("e4", "Word ".repeat(300)));
+  ok(long.includes("…") && long.length < 20_000, "a very long title is cut with an ellipsis");
+  const lines = (u: string) => (svgOf(u).match(/<text /g) ?? []).length;
+  ok(lines(generatedCover("e5", "A Pretty Long Event Name That Wraps Over Several Lines")) > 3, "wraps over several lines");
+});
+
 await test("reset clears user-made changes", async () => {
   const before = fakeDev.allEvents().length;
   await kredeteEvent();

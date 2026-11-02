@@ -108,7 +108,7 @@ export default function TicketStub({
   actions?: boolean;
 }) {
   const online = isOnline(event);
-  const cover = event.flyer_url || fallbackCover(event.id);
+  const cover = event.flyer_url || fallbackCover(event.id, event.title);
   const { data: saved } = useR1Query(
     (a) => (own ? a.looks.get("event", event.id) : Promise.resolve(null)),
     [event.id, own],

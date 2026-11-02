@@ -34,7 +34,9 @@ export function useStoryTickets(event: R1Event, preview = false) {
   const [sheet, setSheet] = useState(false);
   // The sign-up wall comes first for a signed-out buyer: "sheet" means checkout opens once they are in.
   const [wall, setWall] = useState<"sheet" | null>(null);
-  const { selectType, setQty } = flow;
+  // The host's questions are on screen (set when they appear, kept while the answers are sent so the form stays put).
+  const [asked, setAsked] = useState(false);
+  const { selectType, setQty, phase } = flow;
 
   useEffect(() => {
     if (!pick) return;
@@ -44,6 +46,13 @@ export function useStoryTickets(event: R1Event, preview = false) {
 
   const types = event.ticket_types ?? [];
   const free = types.length === 1 && types[0].price_naira === 0;
+  // A free event with one ticket has no checkout to open, so the sheet opens when its questions are due.
+  useEffect(() => {
+    if (phase === "form") {
+      setAsked(true);
+      if (free) setSheet(true);
+    } else if (phase !== "busy") setAsked(false);
+  }, [phase, free]);
   const maxFor = (t: TicketType) => (t.price_naira === 0 ? 1 : Math.max(0, Math.min(MAX_QTY, t.spots_left ?? MAX_QTY)));
   const canPick = (t: TicketType) => pickable(t, event, flow.paidOn) && maxFor(t) > 0;
   const plus = (t: TicketType) => {
@@ -93,7 +102,7 @@ export function useStoryTickets(event: R1Event, preview = false) {
     if (registered) setSheet(false);
   }, [registered]);
 
-  return { event, flow, types, free, pick, n, chosen, total, from, moved, plus, minus, canPick, maxFor, host, done, shut, cta, go, word, sheet, setSheet, wall, setWall, preview };
+  return { event, flow, types, free, asked, pick, n, chosen, total, from, moved, plus, minus, canPick, maxFor, host, done, shut, cta, go, word, sheet, setSheet, wall, setWall, preview };
 }
 
 const qtyBtn = "grid h-8 w-8 place-items-center rounded-hz border border-t-line bg-t-bg font-body text-[18px] font-semibold leading-none shadow-[0_2px_0_var(--t-line)] active:translate-y-[2px] active:shadow-none disabled:opacity-35 disabled:shadow-none max-lg:h-[38px] max-lg:w-[38px]";
@@ -170,9 +179,11 @@ export function TicketCard({ t, anchor }: { t: StoryTickets; anchor: RefObject<H
             {busy ? "One moment" : t.shut ? flow.label.text : t.cta}
           </button>
         )}
-        <span className="text-center font-body text-[11.5px] text-t-muted">
-          {allPaidOff ? PAID_UNAVAILABLE : free || (t.chosen && t.chosen.price_naira === 0) ? "Your ticket comes with a QR code for the door" : "You'll pay on the next step"}
-        </span>
+        {!t.shut && (
+          <span className="text-center font-body text-[11.5px] text-t-muted">
+            {allPaidOff ? PAID_UNAVAILABLE : free || (t.chosen && t.chosen.price_naira === 0) ? "Your ticket comes with a QR code for the door" : "You'll pay on the next step"}
+          </span>
+        )}
         {t.preview && (
           <span className="text-center font-body text-[11.5px] text-t-muted" data-visitor-note>
             Preview only. This button works for guests, not for you.
@@ -212,7 +223,13 @@ export function TicketBar({ t, anchor, line }: { t: StoryTickets; anchor: RefObj
     <div className="sticky bottom-0 z-30 flex items-center gap-3.5 border-t border-t-line bg-t-bar px-[22px] pb-[calc(14px+env(safe-area-inset-bottom,0px))] pt-3.5 backdrop-blur-md lg:hidden">
       <div className="min-w-0">
         <b className="block font-display text-[17px] font-extrabold leading-tight tabular-nums">{headline}</b>
-        <span className="block truncate font-body text-[12.5px] text-t-muted">{t.n ? `${t.word(t.n)} picked` : line}</span>
+        {flow.error && !t.sheet ? (
+          <span role="alert" className="line-clamp-2 block font-body text-[12.5px] text-[#E5484D]">
+            {flow.error}
+          </span>
+        ) : (
+          <span className="block truncate font-body text-[12.5px] text-t-muted">{t.n ? `${t.word(t.n)} picked` : line}</span>
+        )}
       </div>
       <button
         type="button"
@@ -275,6 +292,9 @@ export function CheckoutSheet({ t, cover, when, tint }: { t: StoryTickets; cover
   }, [t.sheet]);
 
   const paid = !!t.chosen && t.chosen.price_naira > 0;
+  const ask = event.requires_approval && !paid;
+  // The questions, also while their answers are on the way, so the form keeps what was typed if the send fails.
+  const form = flow.phase === "form" || (t.asked && flow.phase === "busy");
   // Drawn into the page body (above the tab bar, which sits outside the page), carrying the page's tint with it.
   const portal = (node: React.ReactNode) =>
     tint && typeof document !== "undefined"
@@ -294,11 +314,11 @@ export function CheckoutSheet({ t, cover, when, tint }: { t: StoryTickets; cover
             tabIndex={-1}
             role="dialog"
             aria-modal="true"
-            aria-label={paid ? "Checkout" : "Register"}
+            aria-label={paid ? "Checkout" : ask ? "Request to join" : "Register"}
             className="max-h-[88dvh] w-full max-w-[440px] overflow-y-auto overscroll-contain rounded-t-[22px] bg-t-solid text-t-text shadow-2xl outline-none lg:rounded-hz"
           >
             <div className="flex items-center gap-2.5 border-b border-t-line px-4 py-3.5">
-              <b className="font-display text-[17px] font-extrabold">{paid ? "Checkout" : "Register"}</b>
+              <b className="font-display text-[17px] font-extrabold">{paid ? "Checkout" : ask ? "Request to join" : "Register"}</b>
               <button type="button" onClick={close} aria-label="Close" className="ml-auto grid h-8 w-8 place-items-center rounded-hz border border-t-line">
                 <X size={16} />
               </button>
@@ -323,22 +343,23 @@ export function CheckoutSheet({ t, cover, when, tint }: { t: StoryTickets; cover
                 <span className="font-body text-[14px]">Total</span>
                 <b className="font-display text-[20px] font-extrabold tabular-nums">{paid ? naira(t.total) : "Free"}</b>
               </div>
-              {flow.phase === "form" ? (
+              {form ? (
                 <div className="t-adopt">
                   <QuestionsForm
                     questions={flow.questions}
                     who={flow.user?.name ?? null}
-                    busy={false}
-                    submitText={paid ? `Pay ${naira(t.total)}` : "Confirm registration"}
+                    busy={flow.phase === "busy"}
+                    submitText={paid ? `Pay ${naira(t.total)}` : ask ? "Send request" : "Confirm registration"}
                     onSubmit={(answers) => void flow.submit(answers, true)}
-                    onCancel={flow.cancel}
+                    // A free event opened this sheet only for the questions, so cancelling closes it; a ticket goes back to the details.
+                    onCancel={t.free ? close : flow.cancel}
                   />
                 </div>
               ) : (
                 <>
                   <CheckoutContact c={cs} />
                   <button type="button" className="lip w-full" disabled={flow.phase === "busy" || !flow.ready || !cs.ready} onClick={() => void pay()}>
-                    {flow.phase === "busy" ? "One moment" : paid ? `Pay ${naira(t.total)}` : "Confirm registration"}
+                    {flow.phase === "busy" ? "One moment" : paid ? `Pay ${naira(t.total)}` : ask ? "Send request" : "Confirm registration"}
                   </button>
                 </>
               )}
@@ -348,7 +369,7 @@ export function CheckoutSheet({ t, cover, when, tint }: { t: StoryTickets; cover
                 </p>
               )}
               <span className="font-body text-[12px] text-t-muted">
-                {paid ? "Card, bank transfer or USSD on the next page. Your tickets and QR code land in the app." : "Your ticket and QR code land in the app."}
+                {paid ? "Card, bank transfer or USSD on the next page. Your tickets and QR code land in the app." : ask ? "You'll see the host's answer in the app." : "Your ticket and QR code land in the app."}
               </span>
             </div>
           </div>
@@ -356,7 +377,7 @@ export function CheckoutSheet({ t, cover, when, tint }: { t: StoryTickets; cover
       )}
       <SignInSheet
         open={flow.phase === "signin"}
-        reason={paid ? `Buy a ticket for ${event.title}` : `Register for ${event.title}`}
+        reason={paid ? `Buy a ticket for ${event.title}` : ask ? `Request to join ${event.title}` : `Register for ${event.title}`}
         onClose={() => {
           t.setWall(null);
           flow.cancel();

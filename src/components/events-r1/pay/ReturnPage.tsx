@@ -81,7 +81,7 @@ export default function ReturnPage() {
   if (!orderId || missing) {
     return shell(
       <>
-        <p className="font-display text-[22px] font-black leading-tight">We can&apos;t find this order</p>
+        <p className="font-display text-[22px] font-black leading-tight">We can&apos;t find that order</p>
         <Link href="/" className="btn mt-4 px-5 normal-case">
           Back to events
         </Link>
@@ -126,7 +126,7 @@ function PaidGoing({ order }: { order: Order }) {
 }
 
 function GoingInLook({ event, order }: { event: R1Event; order: Order }) {
-  const cover = event.flyer_url || fallbackCover(event.id);
+  const cover = event.flyer_url || fallbackCover(event.id, event.title);
   const { data: saved } = useR1Query((a) => a.looks.get("event", event.id), [event.id]);
   const look: Look = saved ?? { ...DEFAULT_LOOK, mood: themeForEvent(event.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);

@@ -14,12 +14,13 @@ import { DEFAULT_LOOK } from "@/lib/events-r1/looks";
 import type { Look } from "@/lib/events-r1/looks";
 import type { R1Event, ReportReason } from "@/lib/events-r1/types";
 import { useQuests } from "@/lib/game";
-import { COVERS } from "@/lib/host/covers";
+import { generatedCover } from "@/lib/host/coverArt";
 import { themeForEvent } from "@/lib/theme";
 import { peekTint, readTint } from "@/lib/tint";
 import { LINK_LABEL } from "../create/helpers";
 import SignInSheet from "../SignInSheet";
 import { buttonFromEvent } from "../labels";
+import { isOver } from "../pay/money";
 import { isOnline } from "../words";
 import { downloadIcs, googleCalendarUrl } from "./calendar";
 import ManageBar, { HostExtras } from "./ManageBar";
@@ -63,11 +64,9 @@ export function whenWords(e: R1Event) {
   };
 }
 
-/** A cover for an event that has none: one of the Hoppaz templates, the same one every time for that event. */
-export function fallbackCover(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return COVERS[h % COVERS.length].src;
+/** A cover for an event that has none: a generated picture with the event's own name on it, the same one every time for that event. */
+export function fallbackCover(id: string, title?: string): string {
+  return generatedCover(id, title);
 }
 
 const REASONS: Array<{ id: ReportReason; text: string }> = [
@@ -208,7 +207,8 @@ function Quests({ event }: { event: R1Event }) {
 function MoreFromHost({ event }: { event: R1Event }) {
   const room = event.host.roomId;
   const { data } = useR1Query((a) => (room ? a.events.listForRoom(room) : a.events.list()), [room]);
-  const more = (data ?? []).filter((e) => e.id !== event.id && e.host.id === event.host.id && e.status !== "cancelled").slice(0, 4);
+  const now = useR1Now();
+  const more = (data ?? []).filter((e) => e.id !== event.id && e.host.id === event.host.id && e.status !== "cancelled" && !isOver(e, now)).slice(0, 4);
   if (!more.length) return null;
   return (
     <Sec title={`More from ${event.host.roomName ?? event.host.name}`}>
@@ -258,7 +258,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   );
   const { data: saved, loading: lookLoading } = useR1Query((a) => a.looks.get("event", event.id), [event.id]);
   const { data: lineup } = useR1Query((a) => a.events.getLineup(event.id), [event.id]);
-  const cover = event.flyer_url || fallbackCover(event.id);
+  const cover = event.flyer_url || fallbackCover(event.id, event.title);
   const look: Look = saved ?? { ...DEFAULT_LOOK, mood: themeForEvent(event.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);
   const sheetTint = useLookStyle(look, tint);
@@ -318,6 +318,13 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
         src={cover}
         alt={`${event.title} cover`}
         className="block h-auto w-full"
+        onError={(e) => {
+          // A flyer that will not load gets the generated cover once; the flag stops a loop if that fails too.
+          const img = e.currentTarget;
+          if (img.dataset.fell) return;
+          img.dataset.fell = "1";
+          img.src = fallbackCover(event.id, event.title);
+        }}
         onLoad={(e) => setWide(e.currentTarget.naturalWidth / Math.max(1, e.currentTarget.naturalHeight) > 1.3)}
       />
     </div>

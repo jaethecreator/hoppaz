@@ -52,7 +52,7 @@ export default function DoorScan({ id }: { id: string }) {
   const team = useR1Query((a) => (eid ? a.door.staff(eid) : Promise.resolve(null)), [eid]);
   const manager = !team.error && !!team.data;
   const savedLook = useR1Query((a) => a.looks.get("event", id), [id]);
-  const cover = event.data ? event.data.flyer_url || fallbackCover(event.data.id) : null;
+  const cover = event.data ? event.data.flyer_url || fallbackCover(event.data.id, event.data.title) : null;
   const look: Look = savedLook.data ?? { ...DEFAULT_LOOK, mood: event.data && themeForEvent(event.data.starts_at) === "day" ? "day" : "night", auto: true };
   const tint = usePictureTint(cover, look);
 
