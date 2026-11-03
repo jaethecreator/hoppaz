@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import clsx from "clsx";
-import { ChevronDown, FileText, Lock, Settings, ShieldCheck, Trash2, UserRound } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChevronDown, FileText, Lock, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
 import { RowButton, RowGroup, RowLink, RowValue } from "./Rows";
 import { shortDate } from "./dropTime";
 import Sheet from "@/components/Sheet";
@@ -23,6 +24,7 @@ import {
   type PushState,
 } from "@/lib/push";
 import { myBlocks, unblock, type MyBlock } from "@/lib/chat";
+import { logOut } from "@/lib/account";
 import { useToast } from "@/lib/store";
 import { supabaseConfigured } from "@/lib/supabase/client";
 import { sfx } from "@/lib/sound/sfx";
@@ -380,7 +382,6 @@ export default function SettingsGroup({
   isAdmin,
   onSaveName,
   onChangeArea,
-  onDelete,
 }: {
   className?: string;
   name: string | null;
@@ -393,13 +394,12 @@ export default function SettingsGroup({
   isAdmin: boolean;
   onSaveName: (name: string | null) => Promise<void>;
   onChangeArea: () => void;
-  onDelete: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const [sure, setSure] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const router = useRouter();
 
   return (
     <section aria-label="Settings" className={className}>
@@ -464,32 +464,19 @@ export default function SettingsGroup({
             <RowLink href="/community" icon={FileText} title="Community rules" />
             {accountReady && hasAccount && <BlockedRow />}
             {isAdmin && <RowLink href="/admin" icon={ShieldCheck} title="Staff" />}
-            {sure ? (
-              <div className="px-4 py-4">
-                <p className="font-body text-[15px] font-semibold text-fireant">Delete your account?</p>
-                <p className="hint mt-1">
-                  Your nights, chats, crews and photos go with it. No coming back.
-                </p>
-                <div className="mt-3 flex gap-2">
-                  <button type="button" className="btn flex-1" onClick={() => setSure(false)}>
-                    KEEP IT
-                  </button>
-                  <button
-                    type="button"
-                    disabled={deleting}
-                    className="btn btn-ghost flex-1 border-fireant text-fireant"
-                    onClick={async () => {
-                      setDeleting(true);
-                      await onDelete();
-                      setDeleting(false);
-                    }}
-                  >
-                    {deleting ? "DELETING" : "DELETE FOREVER"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <RowButton icon={Trash2} title="Delete my account" tone="danger" chevron={false} onClick={() => setSure(true)} />
+            {/* Sign out sits here; deleting the account is on the Account page, behind its own question. */}
+            {accountReady && hasAccount && (
+              <RowButton
+                icon={LogOut}
+                title={leaving ? "Signing out" : "Sign out"}
+                chevron={false}
+                disabled={leaving}
+                onClick={async () => {
+                  setLeaving(true);
+                  await logOut();
+                  router.push("/");
+                }}
+              />
             )}
           </div>
         )}

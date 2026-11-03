@@ -1,12 +1,12 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/app/PageHeader";
 import LoadingStub from "@/components/app/LoadingStub";
 import SignupForm from "@/components/app/SignupForm";
 import { useSession } from "@/lib/useSession";
-import { logOut } from "@/lib/account";
+import { deleteMyAccount, logOut } from "@/lib/account";
 
 export default function AccountPage() {
   return (
@@ -31,6 +31,9 @@ function Account() {
   const accountCaption = params.get("detail")
     ?? (params.get("reason") ? `Create an account to ${params.get("reason")}.` : loginMode ? "Log in to your Hoppaz account." : "Create your Hoppaz account to keep your nights.");
   const { email: signedIn, profile, state } = useSession();
+  const [sure, setSure] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   return (
     <div className="h-full overflow-y-auto px-4 pb-8">
@@ -57,6 +60,38 @@ function Account() {
             LOG OUT
           </button>
           <p className="hint mt-2">Log back in any time with Google or your email.</p>
+          {sure ? (
+            <div className="mt-6 border-t border-line pt-4">
+              <p className="font-body text-[15px] font-semibold text-fireant">Delete your account?</p>
+              <p className="hint mt-1">Your nights, chats, crews and photos go with it. No coming back.</p>
+              <div className="mt-3 flex gap-2">
+                <button type="button" className="btn flex-1" onClick={() => setSure(false)}>
+                  KEEP IT
+                </button>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  className="btn btn-ghost flex-1 border-fireant text-fireant"
+                  onClick={async () => {
+                    setDeleting(true);
+                    setDeleteError("");
+                    const error = await deleteMyAccount();
+                    if (error) {
+                      setDeleteError(error);
+                      setDeleting(false);
+                    } else window.location.replace("/");
+                  }}
+                >
+                  {deleting ? "DELETING" : "DELETE FOREVER"}
+                </button>
+              </div>
+              {deleteError && <p className="mt-2 font-body text-[13px] text-fireant" role="alert">{deleteError}</p>}
+            </div>
+          ) : (
+            <button type="button" className="mt-6 font-body text-[13px] font-semibold text-fireant underline underline-offset-4" onClick={() => setSure(true)}>
+              Delete my account
+            </button>
+          )}
         </div>
       ) : (
         <div className="card">
