@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import RoomPage from "@/components/events-r1/roompage/RoomPage";
 import { EVENTS_R1 } from "@/lib/events-r1/flags";
+import { linkAddress } from "@/lib/linkAddress";
 
 /** Release 1 room page (CHANGE-001): the chat is the room. /rooms/hq is Lagos HQ. With the flag off there is no such page. */
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
@@ -9,7 +10,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   const { slug } = await params;
   return (
     <Suspense fallback={<div className="h-full" />}>
-      <RoomPage slug={slug} />
+      <RoomPage slug={linkAddress(slug)} />
     </Suspense>
   );
 }
