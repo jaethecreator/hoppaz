@@ -109,6 +109,19 @@ export async function logOut() {
   await sb?.auth.signOut();
 }
 
+/** Deletes the signed-in account for good, then signs out. Answers null when done, or what went wrong in the app's words. */
+export async function deleteMyAccount(): Promise<string | null> {
+  const sb = getSupabase();
+  const { data } = (await sb?.auth.getSession()) ?? { data: { session: null } };
+  const token = data.session?.access_token;
+  if (!token) return "Your session ran out. Reopen Hoppaz.";
+  const response = await fetch("/api/account/delete", { method: "POST", headers: { authorization: `Bearer ${token}` } });
+  if (!response.ok) return "Couldn't delete the account. Try again.";
+  await sb?.auth.signOut();
+  localStorage.removeItem("hoppaz.v1");
+  return null;
+}
+
 /* ------------------------------------------------- tell us more, slowly -- */
 
 type Details = { gender: Gender | null; birthday: string | null; account_at: string | null };

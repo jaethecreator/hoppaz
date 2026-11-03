@@ -217,7 +217,10 @@ export default function SignInSheet({ open, reason, onClose, onSignedIn }: SignI
               <h2 id={titleId} className="font-display text-[22px] font-black leading-[1.15]">{reason.trim() || "Sign in"}</h2>
             </div>
             <button type="button" onClick={withGoogle} className={btn} disabled={!ready || busy !== null}>
-              <GoogleMark />
+              {/* The colours of Google's mark vanish on the orange button: it sits on a white disc. */}
+              <span className="grid h-7 w-7 flex-none place-items-center rounded-full bg-white">
+                <GoogleMark />
+              </span>
               {busy === "google" ? "Connecting…" : "Continue with Google"}
             </button>
             <div className="flex items-center gap-3" aria-hidden="true">
