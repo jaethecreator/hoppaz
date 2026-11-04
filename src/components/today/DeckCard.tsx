@@ -6,6 +6,7 @@ import { Check, Package } from "lucide-react";
 import { demoFlyer } from "@/components/event/demo";
 import { dayLabel } from "@/lib/filters";
 import { clockShort, eventPrice, eventTitle, isEventLead } from "@/lib/geo";
+import { isListing, listedByLine } from "@/lib/events-r1/listing";
 import type { EventRow } from "@/lib/types";
 import { HOUR, hasEnded } from "./helpers";
 import m from "./today.module.css";
@@ -74,11 +75,15 @@ function DeckCard({
   const lead = isEventLead(event);
   const ended = hasEnded(event, now);
   /** The night can still be said yes to: WE OUTSIDE has a place on the card. */
-  const live = !ended && !lead;
+  // A listing has no going count and nothing to say yes to here: it shows the organiser's price and where it is listed from.
+  const listing = isListing(event);
+  const live = !ended && !lead && !listing;
   const title = eventTitle(event);
   const time = lead ? "TBC" : clockShort(event.starts_at);
   const day = lead ? "" : (dayLabel(event.starts_at, now).split(" · ")[0] ?? "");
   const price = eventPrice(event);
+  // A long price ("FROM ₦5,000", "CHECK LISTING") takes the small line, like a lead's.
+  const smallPrice = lead || (listing && price.length > 8);
   const where = event.area?.toUpperCase() || event.venue_name.toUpperCase();
 
   // Flyers load for the middle card and its neighbours; a card that has been near keeps its flyer.
@@ -111,7 +116,7 @@ function DeckCard({
               <span className={m.tm}>{time}</span>
               {day && <span className={m.dy}>{day}</span>}
             </span>
-            {lead ? <span className={m.prSmall}>{price}</span> : <span className={m.pr}>{price}</span>}
+            {smallPrice ? <span className={m.prSmall}>{price}</span> : <span className={m.pr}>{price}</span>}
           </div>
           <div className={m.rowB}>
             <span className={m.area}>
@@ -122,7 +127,7 @@ function DeckCard({
               {distance && <span className={m.distance}>{distance}</span>}
             </span>
             <span className={m.going}>
-              {ended ? "ENDED" : lead ? "UNCONFIRMED" : count > 0 ? <><b>{count}</b> GOING</> : "BE THE FIRST"}
+              {ended ? "ENDED" : lead ? "UNCONFIRMED" : listing ? listedByLine(event).toUpperCase() : count > 0 ? <><b>{count}</b> GOING</> : "BE THE FIRST"}
             </span>
           </div>
           <div className={m.tap}>

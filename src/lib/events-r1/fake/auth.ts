@@ -43,7 +43,7 @@ export const auth: AuthApi = {
     if (!/^\d{6}$/.test(code.replace(/\s/g, ""))) throw new Error("Enter the 6 digit code");
     const e = email.trim().toLowerCase();
     if (!EMAIL.test(e)) throw new Error("Enter a valid email");
-    let u = Object.values(S().users).find((x) => x.email.toLowerCase() === e);
+    let u = Object.values(S().users).find((x) => !x.hidden && x.email.toLowerCase() === e);
     if (!u) {
       u = { id: newId(), name: (name ?? "").trim() || nameFromEmail(e), email: e };
       S().users[u.id] = u;

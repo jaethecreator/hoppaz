@@ -4,7 +4,9 @@ import Link from "next/link";
 import clsx from "clsx";
 import { useQuests } from "@/lib/game";
 import { useR1Auth, useViewerState } from "@/lib/events-r1/hooks";
+import { isListing, listedByLine, priceLine, ticketHref } from "@/lib/events-r1/listing";
 import type { R1Event, RoomMember, RoomSummary } from "@/lib/events-r1/types";
+import { TicketLink } from "../page/ListingParts";
 import { Avatar, CARD, GHOST, LINK } from "./ui";
 import { chip, dayShort, isNewRoom, showCount, whenCard, youAnd } from "./words";
 
@@ -40,7 +42,9 @@ export function NextEvent({ event, room, now }: { event: R1Event | null; room: R
   const status = viewer?.registration?.status;
   const going = status === "going" || status === "checked_in";
   const place = event.kind === "online" ? "Online" : event.venue_name || event.area || "";
-  const crowd = !isNewRoom(room) && showCount(event.going) ? ` · ${event.going.toLocaleString("en-NG")} going` : "";
+  // A listing is ticketed on the organiser's page: its price and where it is listed from, never a going count.
+  const listing = isListing(event);
+  const crowd = listing ? ` · ${priceLine(event)}` : !isNewRoom(room) && showCount(event.going) ? ` · ${event.going.toLocaleString("en-NG")} going` : "";
   return (
     <div className={CARD} data-next-event>
       <span className="font-body text-[13px] font-bold">Next event</span>
@@ -50,9 +54,14 @@ export function NextEvent({ event, room, now }: { event: R1Event | null; room: R
           <span className="font-mono text-[11.5px] tracking-[0.04em] text-t-accent">{whenCard(event.starts_at, now)}</span>
           <b className="block font-body text-[15px] leading-snug">{event.title}</b>
           <small className="block font-body text-[13px] text-t-muted">{place}{crowd}</small>
+          {listing && <small className="block font-body text-[12px] text-t-muted">{listedByLine(event)}</small>}
         </div>
       </div>
-      <Link href={evHref(event)} className={clsx(GHOST, "w-full")}>{going ? "You’re going · See ticket" : "Get a ticket"}</Link>
+      {listing ? (
+        ticketHref(event) ? <TicketLink event={event} className={clsx(GHOST, "w-full")} /> : <Link href={evHref(event)} className={clsx(GHOST, "w-full")}>See the event</Link>
+      ) : (
+        <Link href={evHref(event)} className={clsx(GHOST, "w-full")}>{going ? "You’re going · See ticket" : "Get a ticket"}</Link>
+      )}
     </div>
   );
 }
@@ -159,7 +168,7 @@ export function LeaderboardCard({ next, onAll }: { next: R1Event | null; onAll: 
 function Row({ e, past, fresh }: { e: R1Event; past?: boolean; fresh: boolean }) {
   const c = chip(e.starts_at);
   const place = e.kind === "online" ? "Online" : e.venue_name || e.area || "";
-  const crowd = !fresh && !past && showCount(e.going) ? ` · ${e.going.toLocaleString("en-NG")} going` : "";
+  const crowd = isListing(e) ? (past ? "" : ` · ${priceLine(e)}`) : !fresh && !past && showCount(e.going) ? ` · ${e.going.toLocaleString("en-NG")} going` : "";
   return (
     <Link href={evHref(e)} className={clsx("grid min-h-[64px] grid-cols-[52px_minmax(0,1fr)_56px] items-center gap-3.5 border-b border-t-line py-3 lg:grid-cols-[52px_minmax(0,1fr)_64px]", past && "opacity-75")} data-event-row={e.id}>
       <span className="overflow-hidden rounded-hz border border-t-line bg-t-tile text-center">

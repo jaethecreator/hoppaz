@@ -1,3 +1,5 @@
+import type { ListingInfo } from "./events-r1/types";
+
 export type EventRow = {
   id: string;
   title: string;
@@ -21,6 +23,8 @@ export type EventRow = {
   going?: number;
   /** Check-ins in the last three hours: the live crowd. */
   here_now?: number;
+  /** Set when tickets are sold on the organiser's own page (a listing). Missing or null: a normal Hoppaz event. See events-r1/listing.ts. */
+  listing?: ListingInfo | null;
 };
 
 export type EventPhoto = {

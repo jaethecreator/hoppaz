@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { goingCount } from "@/lib/goingCount";
 import { dayLabel, nightOf } from "@/lib/filters";
 import { eventPrice, isEventLead } from "@/lib/geo";
+import { isListing } from "@/lib/events-r1/listing";
 import { themeForEvent } from "@/lib/theme";
 import type { EventRow } from "@/lib/types";
 
@@ -66,7 +67,8 @@ export function stubPill(
   if (opts.drop) return { cls: "pill-violet", text: "DROP" };
   if (isEventLead(event)) return { cls: "pill-danfo", text: "UNCONFIRMED" };
   if (themeForEvent(event.starts_at) === "day") return { cls: "pill-lagoon", text: "DAYTIME" };
-  if (opts.includeGoing !== false && opts.count > 0) return { cls: "pill-keke", text: `${opts.count} GOING` };
+  // A listing has no going count: tickets are sold on the organiser's page.
+  if (opts.includeGoing !== false && opts.count > 0 && !isListing(event)) return { cls: "pill-keke", text: `${opts.count} GOING` };
   return null;
 }
 
@@ -97,7 +99,7 @@ export function conductorLine(opts: {
   if (!events.length) return "";
   const today = nightOf(now) === dayKey;
   const out = events.reduce((n, e) => n + (e.here_now ?? 0), 0);
-  const going = events.reduce((n, e) => n + goingOf(e), 0);
+  const going = events.reduce((n, e) => n + (isListing(e) ? 0 : goingOf(e)), 0);
   const drops = events.filter((e) => dropIds.has(e.id)).length;
   const s = (n: number) => (n === 1 ? "" : "s");
 

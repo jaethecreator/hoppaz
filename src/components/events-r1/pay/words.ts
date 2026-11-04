@@ -1,4 +1,5 @@
 /** Words for paid tickets: money, plain errors, order states. Pure. */
+import { EXTERNAL_TICKETS_ERROR, externalError } from "@/lib/events-r1/listing";
 import type { Order, OrderStatus } from "@/lib/events-r1/pay";
 
 /** Whole naira as "₦3,000". */
@@ -18,6 +19,7 @@ const NOT_OPEN = /events?_r1_off|r1_off|not_open_yet/i;
 /** An error from the pay layer as one plain line for a buyer. Messages that are already plain pass through. */
 export function buyError(e: unknown): string {
   const m = e instanceof Error ? e.message : "";
+  if (externalError(e)) return EXTERNAL_TICKETS_ERROR;
   if (NOT_OPEN.test(m)) return "Not open yet";
   if (/payouts?_not_ready|not_ready|not finished setting up/i.test(m)) return "The host has not finished setting up payments yet.";
   if (/payment open|order_open/i.test(m)) return "You already have a payment open for this event.";

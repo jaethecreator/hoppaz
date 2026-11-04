@@ -5,8 +5,10 @@ import clsx from "clsx";
 import { CalendarDays, MapPin, Ticket, Users, Video } from "lucide-react";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import { useViewerState } from "@/lib/events-r1/hooks";
+import { isListing } from "@/lib/events-r1/listing";
 import type { R1Event } from "@/lib/events-r1/types";
 import { eventTitle } from "@/lib/geo";
+import { ListedBy } from "./page/ListingParts";
 import { linkLabel } from "./page/link";
 import PageSections from "./page/PageSections";
 import RegisterButton from "./page/RegisterButton";
@@ -36,7 +38,9 @@ export default function EventBlock({ event: given, placement }: { event: R1Event
   const onlineWord = event.link_type ? `Online · ${linkLabel(event)}` : "Online";
   // Someone who can have the link (registered, or the host) needs no reminder that it comes after registering.
   const linkNote = hasLink && !viewer?.canSeeOnlineLink ? "Online link after you register" : null;
-  const crowd = [
+  // A listing is ticketed on the organiser's page: no going count, no spots left.
+  const listing = isListing(event);
+  const crowd = listing ? [] : [
     event.going > 0 ? `${event.going} going` : "",
     event.capacity !== null ? (event.spots_left === 0 ? "Full" : `${event.spots_left} spot${event.spots_left === 1 ? "" : "s"} left`) : "",
   ].filter(Boolean);
@@ -48,12 +52,16 @@ export default function EventBlock({ event: given, placement }: { event: R1Event
     <div className="px-5 pt-4">
       <h2 className={clsx("font-display font-black leading-[1.05] tracking-[-0.01em]", side ? "pr-6 text-[22px]" : page ? "text-[34px]" : "text-[30px]")}>{eventTitle(event)}</h2>
 
-      <p className="mt-2 flex items-center gap-1.5 font-body text-[14px] text-dim">
-        <span className="min-w-0 truncate">
-          Hosted by <span className="text-cream">{event.host.name}</span>
-        </span>
-        {event.host.verified && <VerifiedBadge size={15} />}
-      </p>
+      {listing && !event.listing?.claimed ? (
+        <ListedBy event={event} tone="dark" className="mt-2" />
+      ) : (
+        <p className="mt-2 flex items-center gap-1.5 font-body text-[14px] text-dim">
+          <span className="min-w-0 truncate">
+            Hosted by <span className="text-cream">{event.host.name}</span>
+          </span>
+          {event.host.verified && <VerifiedBadge size={15} />}
+        </p>
+      )}
 
       <ul className="mt-3.5 space-y-2.5">
         <li className={row}>

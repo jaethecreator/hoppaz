@@ -1,0 +1,50 @@
+{
+  "source": "luma",
+  "site": "luma",
+  "fetched_at": "2026-11-02T09:00:00.000Z",
+  "complete": false,
+  "note": "the Lagos page lists a few featured events only",
+  "rows": [
+    {
+      "api_id": "evt-FAKE0000000001",
+      "event": {
+        "api_id": "evt-FAKE0000000001",
+        "name": "Fake Founders Mixer",
+        "start_at": "2026-11-10T17:00:00.000Z",
+        "end_at": "2026-11-10T19:30:00.000Z",
+        "timezone": "Africa/Lagos",
+        "url": "fakemixer",
+        "cover_url": "https://images.lumacdn.com/fake/mixer.png",
+        "location_type": "offline",
+        "visibility": "public",
+        "geo_address_info": { "address": "Fake Hub Yaba", "full_address": "12 Test St, Yaba, Lagos, Nigeria", "region": "Lagos", "city": "Lagos", "sublocality": "Yaba" },
+        "coordinate": { "latitude": 6.51, "longitude": 3.38 }
+      },
+      "hosts": [{ "name": "Fake Hub", "instagram_handle": "fakehub" }],
+      "calendar": { "name": "Fake Hub Events", "instagram_handle": "fakehubevents", "is_personal": false },
+      "ticket_info": { "price": { "cents": 500000, "currency": "NGN" }, "max_price": { "cents": 1000000, "currency": "NGN" }, "is_free": false, "is_sold_out": false, "spots_remaining": 12 },
+      "page_description": "A mixer for founders."
+    },
+    {
+      "api_id": "evt-FAKE0000000002",
+      "event": {
+        "api_id": "evt-FAKE0000000002",
+        "name": "Fake Book Club",
+        "start_at": "2026-11-11T16:00:00.000Z",
+        "url": "fakebooks",
+        "location_type": "offline",
+        "visibility": "public",
+        "geo_address_info": { "address": "Fake Cafe", "full_address": "3 Test Rd, Ikoyi, Lagos", "region": "Lagos" }
+      },
+      "hosts": [{ "name": "Book People", "instagram_handle": "Book People Lagos" }],
+      "calendar": { "name": "Personal", "instagram_handle": "someone", "is_personal": true },
+      "ticket_info": { "price": null, "is_free": true, "is_sold_out": true, "spots_remaining": 0 }
+    },
+    {
+      "api_id": "evt-FAKE0000000003",
+      "event": { "api_id": "evt-FAKE0000000003", "name": "Fake Zoom Call", "start_at": "2026-11-12T16:00:00.000Z", "url": "fakezoom", "location_type": "online", "visibility": "public" },
+      "hosts": [],
+      "ticket_info": { "price": null, "is_free": true }
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "../../supabase/client";
 import { PAID_UNAVAILABLE } from "../constants";
 import type { Unsub } from "../api";
-import type { AuthUser } from "../types";
+import { OUTREACH_REASONS, type AuthUser } from "../types";
 
 export function client(): SupabaseClient {
   const sb = getSupabase();
@@ -208,6 +208,7 @@ const REASONS: Record<string, string> = {
   full: "This event is full",
   type_full: "That ticket is full",
   use_checkout: "Buy this ticket with checkout",
+  external_tickets: OUTREACH_REASONS.external_tickets,
   too_many_answers: "Too many answers",
   answer_too_long: "Keep each answer under 500 characters",
   // The buyer's cancel. A host declining a paid registration gets its own words (registrations.decline).
@@ -256,6 +257,8 @@ export function reasonText(reason: unknown, over: Record<string, string> = {}, e
 /** A raw database or network error as a plain line. */
 export function failText(message: string): string {
   const m = message.toLowerCase();
+  // The database refuses a registration or an order for a listing with this word (supabase/events_r1_listings.sql).
+  if (m.includes("external_tickets")) return OUTREACH_REASONS.external_tickets;
   if (m.includes("permission denied") || m.includes("jwt") || m.includes("not authenticated") || m.includes("no_session")) return "Sign in first";
   if (m.includes("need_account")) return "Sign in first";
   if (m.includes("room_off")) return "The 3D room is off";

@@ -6,6 +6,8 @@ import Avatar from "@/components/Avatar";
 import Wordmark from "@/components/Wordmark";
 import { demoFlyer } from "@/components/event/demo";
 import { eventTitle } from "@/lib/geo";
+import { isListing, listedByLine } from "@/lib/events-r1/listing";
+import { TicketLink } from "@/components/events-r1/page/ListingParts";
 import { themeForEvent } from "@/lib/theme";
 import type { EventRow } from "@/lib/types";
 import { factLine, hasEnded, notchAbove, stubPill } from "./helpers";
@@ -56,6 +58,8 @@ export default function EventStub({
   const ended = hasEnded(event, now);
   const pill = ended ? null : stubPill(event, { drop, count });
   const goingPill = pill?.cls === "pill-keke";
+  // A listing: tickets are sold on the organiser's page. The tear-off says who listed it and links out; no going count, no I'M GOING.
+  const listing = isListing(event);
   const questXp = quests.reduce((n, q) => n + q.xp, 0);
 
   return (
@@ -101,14 +105,19 @@ export default function EventStub({
         <div className="flex min-w-0 items-center gap-2.5">
           {ended && <span className="pill">ENDED</span>}
           {pill && <span className={clsx("pill", pill.cls)}>{pill.text}</span>}
-          {pill && !goingPill && count > 0 && (
+          {listing && !ended && (
+            <span className="truncate font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-dim">{listedByLine(event)}</span>
+          )}
+          {pill && !goingPill && count > 0 && !listing && (
             <span className="truncate font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-dim">
               {count} GOING
             </span>
           )}
         </div>
 
+        {!ended && listing && <TicketLink event={event} className="btn flex-none px-4 text-[12px]" />}
         {!ended &&
+          !listing &&
           (going ? (
             <button
               type="button"

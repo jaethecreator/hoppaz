@@ -12,7 +12,8 @@ import type { HostPayoutStatus, Order } from "../pay";
 import { PAID_KEY } from "../flags";
 import type { Lineup } from "../lineup";
 import type {
-  AuthUser, JoinMode, JoinRequest, Pop, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement, RoomLinks, RoomMessage, RoomNotice, RoomRole, RoomSummary, SavedDetails, Ticket,
+  AuthUser, ClaimRequest, JoinMode, JoinRequest, Organiser, OrganiserLogEntry, Pop, PulledEvent, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement,
+  RoomLinks, RoomMessage, RoomNotice, RoomRole, RoomSummary, SavedDetails, Ticket, Transfer,
 } from "../types";
 import { applyPayoutsDemo } from "./payoutsDemo";
 import { buildSeed } from "./seed";
@@ -20,7 +21,14 @@ import { clone } from "./util";
 
 export const STORAGE_KEY = "hz.r1.fake.v1";
 
-export type UserRec = { id: string; name: string; email: string; staff?: boolean };
+export type UserRec = {
+  id: string;
+  name: string;
+  email: string;
+  staff?: boolean;
+  /** The Hoppaz Listings account: it owns unclaimed listings and dormant rooms, and nobody signs in as it (the dev sign-in list skips it). */
+  hidden?: boolean;
+};
 
 /** A ticket type as stored: what is worked out on read (sold, spots left) is not kept. */
 export type TicketTypeRec = { id: string; name: string; price_naira: number; capacity: number | null };
@@ -32,8 +40,21 @@ export type TicketTypeRec = { id: string; name: string; price_naira: number; cap
  */
 export type EventRec = Omit<
   R1Event,
-  "going" | "spots_left" | "host" | "distance_m" | "heat" | "checkins" | "swipes_in" | "here_now" | "ticket_types"
-> & { host_id: string; ticket_types?: TicketTypeRec[] };
+  "going" | "spots_left" | "host" | "distance_m" | "heat" | "checkins" | "swipes_in" | "here_now" | "ticket_types" | "listing"
+> & {
+  host_id: string;
+  ticket_types?: TicketTypeRec[];
+  /** Listing fields (the same columns as the SQL). Missing means a normal Hoppaz event. */
+  ticket_mode?: "hoppaz" | "external";
+  ticket_url?: string | null;
+  instagram_url?: string | null;
+  listed_price?: number | null;
+  listed_price_max?: number | null;
+  listing_sold_out?: boolean;
+  source_site?: string | null;
+  source_id?: string | null;
+  organiser_id?: string | null;
+};
 
 export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "latest_announcement" | "is_owner" | "can_post" | "has_3d" | "three_d_on" | "online" | "about" | "links" | "join_mode" | "my_role" | "request" | "pending_requests"> & {
   owner_id: string | null;
@@ -48,6 +69,8 @@ export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "lates
   links?: RoomLinks;
   /** Missing means open. */
   join_mode?: JoinMode;
+  /** Who made the room (crews.created_by). A dormant room is made by the Listings account; accepting a transfer moves it to the new owner. */
+  created_by?: string | null;
   /** Members before anyone joins in this browser. */
   base_members: number;
 };
@@ -83,6 +106,18 @@ export type WithdrawalRec = { id: string; amount_naira: number; execute_after_ms
 
 export type JoinRequestRec = JoinRequest & { status: "pending" | "approved" | "declined"; ticket_event_id?: string | null };
 export type NoticeRec = RoomNotice & { user_id: string; seen: boolean };
+
+/** An organiser as stored: what is worked out on read (room name, event counts, waiting items) is not kept. */
+export type OrganiserRec = Omit<Organiser, "room_slug" | "room_name" | "events_total" | "events_upcoming" | "pulled_waiting" | "transfer_pending" | "claim_requests" | "last_replied_at"> & {
+  name_key: string;
+  claimed_by: string | null;
+};
+
+/** A pulled row as stored. The organiser's name and stage are read from the organiser. */
+export type PulledRec = Omit<PulledEvent, "organiser_name" | "organiser_stage"> & { decided_at: string | null; reject_reason: string };
+
+/** A transfer as stored: only the hash of the link is kept, never the link. attempts counts wrong-email tries (10 locks it). */
+export type TransferRec = Transfer & { token_hash: string; attempts: number; accepted_by: string | null };
 
 export type RegSettings = { questions: RegQuestion[]; messages: RegMessages };
 
@@ -121,6 +156,14 @@ export type FakeState = {
   reads: Record<string, string>;
   /** By user id: checkout details the person chose to keep (name, email, phone; never a host's own questions). */
   savedDetails: Record<string, SavedDetails>;
+  /** Outreach: organisers, their contact log, the review queue, transfer links and "Is this your event?" requests. */
+  organisers: Record<string, OrganiserRec>;
+  organiserLog: Record<string, OrganiserLogEntry>;
+  pulled: Record<string, PulledRec>;
+  transfers: Record<string, TransferRec>;
+  claimRequests: Record<string, ClaimRequest>;
+  /** The Hoppaz Listings user (always the seeded one, so a restore finds it again). null if the account is not set up. */
+  listingsUserId: string | null;
   viewerId: string | null;
   pendingEmail: string | null;
   /** Fake clock: added to the real time. */
@@ -132,7 +175,7 @@ export type FakeState = {
 const COLLS = [
   "users", "events", "regs", "tickets", "pops", "announcements", "messages", "reports", "rooms",
   "orders", "payouts", "regSettings", "lineups", "memberships", "roles", "joinedAt", "doorStaff", "requests", "notices", "interest", "reads",
-  "savedDetails",
+  "savedDetails", "organisers", "organiserLog", "pulled", "transfers", "claimRequests",
 ] as const;
 type Coll = (typeof COLLS)[number];
 

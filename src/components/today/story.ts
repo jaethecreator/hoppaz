@@ -1,5 +1,6 @@
 import { dayLabel, nightOf } from "@/lib/filters";
 import { clockShort, eventPrice, eventTitle, isEventLead } from "@/lib/geo";
+import { isListing } from "@/lib/events-r1/listing";
 import type { EventRow } from "@/lib/types";
 import { hasEnded } from "./helpers";
 import { BRAND_PALETTE, withAlpha, type Palette } from "./palette";
@@ -176,7 +177,8 @@ async function draw(
   // The sticker: I'M GOING, ENDED once the night is over, COMING UP while its time is still to be confirmed
   // (neither can be said yes to, so neither says "going").
   const over = hasEnded(event, now);
-  const stamp = over ? "ENDED" : isEventLead(event) ? "COMING UP" : "I'M GOING";
+  // A listing is ticketed on the organiser's page, so nobody says "going" on it: it is simply on Hoppaz.
+  const stamp = over ? "ENDED" : isEventLead(event) ? "COMING UP" : isListing(event) ? "ON HOPPAZ" : "I'M GOING";
   x.save();
   x.translate(884, 356);
   x.rotate((9 * Math.PI) / 180);
@@ -293,7 +295,7 @@ function drawPoster(
   }
   x.fillStyle = "#0E0B0A";
   x.textAlign = "right";
-  if (lead) {
+  if (lead || (isListing(event) && eventPrice(event).length > 8)) {
     setFont(x, 500, MONO, 9 * s, 0.1 * 9 * s);
     x.fillText(eventPrice(event), cw - 14 * s, sy + 33 * s);
   } else {
@@ -310,7 +312,7 @@ function drawPoster(
   setFont(x, 500, MONO, 9 * s, 0.1 * 9 * s);
   x.fillText((event.area ?? event.venue_name).toUpperCase().slice(0, 26), 27 * s, sy + 58.5 * s);
   x.textAlign = "right";
-  x.fillText(ended ? "ENDED" : lead ? "UNCONFIRMED" : going > 0 ? `${going} GOING` : "BE THE FIRST", cw - 14 * s, sy + 58.5 * s);
+  x.fillText(ended ? "ENDED" : lead ? "UNCONFIRMED" : isListing(event) ? "LISTED BY HOPPAZ" : going > 0 ? `${going} GOING` : "BE THE FIRST", cw - 14 * s, sy + 58.5 * s);
   x.textAlign = "left";
   setSpacing(x, 0);
   x.fillStyle = "#FF4D00";

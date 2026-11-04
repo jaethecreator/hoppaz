@@ -2,7 +2,7 @@
  * The rules the fake layer shares between its modules: capacity, the waitlist, who may see what, and how a stored
  * event becomes the R1Event a screen gets. Nothing here is async or touches the network.
  */
-import type { EventChat, EventStatus, HostRef, JoinMode, R1Event, RegStatus, Registration, RoomRole, RoomSummary, TicketType } from "../types";
+import type { EventChat, EventStatus, HostRef, JoinMode, ListingInfo, R1Event, RegStatus, Registration, RoomRole, RoomSummary, TicketType } from "../types";
 import { haversineKm, LAGOS_CENTER } from "../../geo";
 import type { EventRec, RoomRec, TicketRec, TicketTypeRec, UserRec } from "./store";
 import { S, now, viewer } from "./store";
@@ -149,6 +149,34 @@ export function isFull(e: EventRec): boolean {
   return eventSpotsLeft(e) === 0;
 }
 
+/* ------------------------------------------------------------- listings -- */
+
+/** Tickets for this event are sold on the organiser's page, not on Hoppaz (a listing, claimed or not). */
+export const isExternal = (e: Pick<EventRec, "ticket_mode">): boolean => e.ticket_mode === "external";
+
+/** A listing nobody has claimed: Hoppaz Listings is the host. */
+export const isUnclaimed = (e: EventRec): boolean => isExternal(e) && !!S().listingsUserId && e.host_id === S().listingsUserId;
+
+export const EXTERNAL_TICKETS = "Tickets for this event are sold by the organiser";
+
+/** Throws the external_tickets line for a listing. Anything that registers, buys or checks out calls this first. */
+export function assertHoppazTickets(e: EventRec): void {
+  if (isExternal(e)) throw new Error(EXTERNAL_TICKETS);
+}
+
+export function listingOf(e: EventRec): ListingInfo {
+  return {
+    ticket_url: e.ticket_url ?? null,
+    instagram_url: e.instagram_url ?? null,
+    price_from: e.listed_price ?? null,
+    price_to: e.listed_price_max ?? null,
+    sold_out: !!e.listing_sold_out,
+    source_site: e.source_site ?? null,
+    claimed: !isUnclaimed(e),
+    organiser_name: (e.organiser_id ? S().organisers[e.organiser_id]?.name : null) ?? null,
+  };
+}
+
 /* --------------------------------------------------------- ticket types -- */
 
 /** The event's ticket types. Always at least one: a missing list is one General at the event's own price, no limit. */
@@ -236,9 +264,10 @@ export function canList(e: EventRec): boolean {
   return true;
 }
 
-export function hostRef(userId: string): HostRef {
+export function hostRef(userId: string, eventRoomId: string | null = null): HostRef {
   const u = userById(userId);
-  const room = hostRoom(userId);
+  // The event's own room first, like the database (coalesce(e.room_id, _ev_host_room(host))): the Hoppaz Listings account owns many rooms.
+  const room = (eventRoomId ? S().rooms[eventRoomId] : undefined) ?? hostRoom(userId);
   return {
     id: userId,
     name: u?.name ?? "Host",
@@ -259,26 +288,45 @@ export function canSeeLink(e: EventRec): boolean {
 
 /** The stored event as a screen gets it: counts worked out, the online link only for those who may have it. */
 export function eventView(e: EventRec, opts: { revealLink?: boolean } = {}): R1Event {
-  const { host_id, ticket_types: _stored, ...rest } = e;
-  void _stored;
-  const types = typesOf(e);
-  const going = goingCount(e.id);
+  const {
+    host_id, ticket_types: _stored, ticket_mode, ticket_url, instagram_url, listed_price, listed_price_max, listing_sold_out, source_site, source_id, organiser_id,
+    ...rest
+  } = e;
+  void _stored; void ticket_url; void instagram_url; void listed_price; void listed_price_max; void listing_sold_out; void source_site; void source_id; void organiser_id;
   const interested = Object.keys(S().interest).filter((k) => S().interest[k] && k.endsWith(`:${e.id}`)).length;
-  const checked = regsOf(e.id).reduce((n, r) => n + usedSeats(r), 0);
-  return clone({
+  const base = {
     ...rest,
-    price_naira: Math.min(...types.map((t) => t.price_naira)),
-    ticket_types: types.map((t) => typeView(e, t)),
     status: statusOf(e),
-    going,
-    spots_left: eventSpotsLeft(e),
-    host: hostRef(host_id),
+    host: hostRef(host_id, e.room_id),
     online_link: opts.revealLink || canSeeLink(e) ? e.online_link : null,
     distance_m: haversineKm(LAGOS_CENTER.lat, LAGOS_CENTER.lng, e.lat, e.lng) * 1000,
+    here_now: 0,
+    swipes_in: interested,
+  };
+  // A listing: tickets are sold elsewhere, so there is no ticket list, no going count and no spots. Heat follows swipes, not tickets.
+  if (ticket_mode === "external") {
+    return clone({
+      ...base,
+      price_naira: e.listed_price ?? 0,
+      ticket_types: [],
+      going: 0,
+      spots_left: null,
+      heat: Math.min(100, interested * 5),
+      checkins: 0,
+      listing: listingOf(e),
+    });
+  }
+  const types = typesOf(e);
+  const going = goingCount(e.id);
+  const checked = regsOf(e.id).reduce((n, r) => n + usedSeats(r), 0);
+  return clone({
+    ...base,
+    price_naira: Math.min(...types.map((t) => t.price_naira)),
+    ticket_types: types.map((t) => typeView(e, t)),
+    going,
+    spots_left: eventSpotsLeft(e),
     heat: Math.min(100, Math.round(going * 2.5)),
     checkins: checked,
-    swipes_in: interested,
-    here_now: 0,
   });
 }
 
@@ -353,7 +401,7 @@ export function admit(reg: Registration): void {
  */
 export function fillFromWaitlist(eventId: string): void {
   const e = S().events[eventId];
-  if (!e || e.status === "cancelled") return;
+  if (!e || e.status === "cancelled" || isExternal(e)) return;
   const waiting = regsOf(eventId)
     .filter((r) => r.status === "waitlisted")
     .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
@@ -382,7 +430,7 @@ export const CHAT_OPENS_BEFORE = HOUR;
 export const CHAT_CLOSES_AFTER = 3 * DAY;
 
 export function chatFor(e: EventRec): EventChat | null {
-  if (!e.room_id) return null;
+  if (!e.room_id || isExternal(e)) return null;
   const opens = Date.parse(e.starts_at) - CHAT_OPENS_BEFORE;
   const closes = eventEnd(e) + CHAT_CLOSES_AFTER;
   const t = now();

@@ -10,6 +10,7 @@ import type { EventKind, JoinMode, LinkType, Pop, RegStatus, Registration, Repor
 import type { Vibe } from "../../brand";
 import { AREAS, LAGOS_CENTER } from "../../geo";
 import type { EventRec, FakeState, RoomRec, TicketRec, UserRec } from "./store";
+import { seedOutreach } from "./seedOutreach";
 import { autoPopsFor, defaultMessages, defaultQuestions } from "./defaults";
 import { DAY, HOUR, lagosAt, rngFor, seedId, slugFor } from "./util";
 
@@ -299,6 +300,7 @@ export function buildSeed(now: number): FakeState {
   const st: FakeState = {
     users: {}, events: {}, regs: {}, tickets: {}, pops: {}, announcements: {}, messages: {}, reports: {}, rooms: {},
     orders: {}, payouts: {}, regSettings: {}, lineups: {}, memberships: {}, roles: {}, joinedAt: {}, doorStaff: {}, requests: {}, notices: {}, interest: {}, reads: {}, savedDetails: {},
+    organisers: {}, organiserLog: {}, pulled: {}, transfers: {}, claimRequests: {}, listingsUserId: null,
     viewerId: null, pendingEmail: null, offset: 0, key: null,
   };
   const iso = (ms: number) => new Date(ms).toISOString();
@@ -486,6 +488,7 @@ export function buildSeed(now: number): FakeState {
     };
   });
 
+  seedOutreach(st, now);
   return st;
 }
 

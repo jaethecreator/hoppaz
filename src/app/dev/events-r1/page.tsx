@@ -6,6 +6,7 @@ import { EVENTS_R1_FAKE } from "@/lib/events-r1/flags";
 import { useR1Api, useR1Auth, useR1Now } from "@/lib/events-r1/hooks";
 import type { HostPayoutStatus } from "@/lib/events-r1/pay";
 import type { R1Event } from "@/lib/events-r1/types";
+import OutreachLinks from "./OutreachLinks";
 
 type Dev = (typeof import("@/lib/events-r1/fake"))["fakeDev"];
 type Person = ReturnType<Dev["users"]>[number];
@@ -168,6 +169,8 @@ function Panel() {
           </button>
           {note && <p className="hint mt-2">{note}</p>}
         </section>
+
+        <OutreachLinks />
 
         <section className="mt-6">
           <h2 className="seclabel">Seeded events ({events.length})</h2>

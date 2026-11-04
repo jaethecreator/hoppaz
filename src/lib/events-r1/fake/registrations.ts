@@ -11,7 +11,7 @@ import { paidTicketsOn } from "../flags";
 import { signToken } from "./crypto";
 import { defaultQuestions } from "./defaults";
 import {
-  admit, assertManage, canOpen, ensureTickets, eventEnd, eventView, fillFromWaitlist, findEvent, isFull, isGoing, regOf, regsOf,
+  admit, assertHoppazTickets, assertManage, canOpen, ensureTickets, eventEnd, eventView, fillFromWaitlist, findEvent, isFull, isGoing, regOf, regsOf,
   renumberWaitlist, requireViewer, seatsOf, typeFull, typeOfReg, typesOf, userById, voidTicket,
 } from "./rules";
 import type { TicketRec } from "./store";
@@ -88,6 +88,7 @@ export const registrations: RegistrationsApi = {
     const v = requireViewer();
     const e = findEvent(eventId);
     if (!e || !canOpen(e)) throw new Error("Event not found");
+    assertHoppazTickets(e);
     if (e.status === "cancelled") throw new Error("This event was cancelled");
     if (now() > (e.ends_at ? Date.parse(e.ends_at) : Date.parse(e.starts_at) + 3 * 3.6e6)) throw new Error("This event is over");
 

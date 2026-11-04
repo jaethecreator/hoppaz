@@ -7,6 +7,7 @@ import { factLine, stubPill } from "@/components/today/helpers";
 import { demoFlyer } from "@/components/event/demo";
 import { goingCount } from "@/lib/goingCount";
 import { eventTitle } from "@/lib/geo";
+import { isListing, listedByLine } from "@/lib/events-r1/listing";
 import { themeForEvent } from "@/lib/theme";
 import type { EventRow } from "@/lib/types";
 
@@ -276,7 +277,9 @@ function CardFace({
           {factLine(event, Date.now())}
         </p>
         <p className="mt-3 font-body text-[14px] font-medium">
-          {count > 0 ? (
+          {isListing(event) ? (
+            listedByLine(event)
+          ) : count > 0 ? (
             <>
               <span className="font-display text-[18px] font-black text-orange">{count}</span> going
             </>

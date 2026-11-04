@@ -13,11 +13,39 @@ import type { EventRow } from "@/lib/types";
  */
 
 /** What a share card needs to know about an event. */
-export type ShareEvent = Pick<EventRow, "id" | "title" | "venue_name" | "area" | "starts_at" | "price_naira" | "vibe" | "flyer_url">;
+export type ShareEvent = Pick<EventRow, "id" | "title" | "venue_name" | "area" | "starts_at" | "price_naira" | "vibe" | "flyer_url" | "listing">;
+
+/** The row as the table has it. The listing columns (ticket_mode, listed_price...) are new: an older database does not have them yet. */
+type ShareRow = Omit<ShareEvent, "listing"> & {
+  ticket_mode?: string | null;
+  listed_price?: number | null;
+  listed_price_max?: number | null;
+  listing_sold_out?: boolean | null;
+};
+
+/** An external event is a listing: tickets are sold on the organiser's page, so the card says the listed price, not price_naira. */
+function toShareEvent(r: ShareRow): ShareEvent {
+  const { ticket_mode, listed_price, listed_price_max, listing_sold_out, ...rest } = r;
+  const listing: ShareEvent["listing"] =
+    ticket_mode === "external"
+      ? {
+          ticket_url: null,
+          instagram_url: null,
+          price_from: typeof listed_price === "number" ? listed_price : null,
+          price_to: typeof listed_price_max === "number" ? listed_price_max : null,
+          sold_out: !!listing_sold_out,
+          source_site: null,
+          claimed: false,
+          organiser_name: null,
+        }
+      : null;
+  return { ...rest, listing };
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEV = process.env.NODE_ENV !== "production";
 const COLUMNS = "id,title,venue_name,area,starts_at,price_naira,vibe,flyer_url";
+const LISTING_COLUMNS = `${COLUMNS},ticket_mode,listed_price,listed_price_max,listing_sold_out`;
 
 /**
  * One live event by id, or null (unknown id, ended and removed, not live).
@@ -33,15 +61,19 @@ export async function loadShareEvent(id: string): Promise<ShareEvent | null> {
       answered = true; // Not an event id: nothing to ask.
     } else {
       try {
-        const res = await fetch(`${base}/rest/v1/events?id=eq.${id}&status=eq.live&select=${COLUMNS}&limit=1`, {
-          headers: { apikey: key, Authorization: `Bearer ${key}` },
-          next: { revalidate: 60 },
-          signal: AbortSignal.timeout(4000),
-        });
+        const ask = (cols: string) =>
+          fetch(`${base}/rest/v1/events?id=eq.${id}&status=eq.live&select=${cols}&limit=1`, {
+            headers: { apikey: key, Authorization: `Bearer ${key}` },
+            next: { revalidate: 60 },
+            signal: AbortSignal.timeout(4000),
+          });
+        // With the listing columns; a database that does not have them yet answers 400, and the plain columns are asked instead.
+        let res = await ask(LISTING_COLUMNS);
+        if (!res.ok && res.status === 400) res = await ask(COLUMNS);
         if (res.ok) {
           answered = true;
-          const rows = (await res.json()) as ShareEvent[];
-          if (rows[0]) return rows[0];
+          const rows = (await res.json()) as ShareRow[];
+          if (rows[0]) return toShareEvent(rows[0]);
         }
       } catch {
         // Falls through: no card is better than a broken page.
@@ -82,7 +114,7 @@ export async function loadShareCrew(code: string): Promise<ShareCrew | null> {
 /** Changes whenever something the card shows changes, so a chat app that cached the old picture fetches the new one. */
 export function cardVersion(e: ShareEvent) {
   let h = 2166136261;
-  for (const ch of `${e.title}|${e.area}|${e.starts_at}|${e.price_naira}|${e.flyer_url}`) {
+  for (const ch of `${e.title}|${e.area}|${e.starts_at}|${e.price_naira}|${e.flyer_url}|${e.listing ? `${e.listing.price_from}|${e.listing.sold_out}` : ""}`) {
     h ^= ch.charCodeAt(0);
     h = Math.imul(h, 16777619) >>> 0;
   }

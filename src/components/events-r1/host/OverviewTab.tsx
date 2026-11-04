@@ -163,22 +163,38 @@ export default function OverviewTab({ event, regs, fresh, onTab }: { event: R1Ev
         </section>
       )}
 
+      {event.listing?.claimed && (
+        <section className="t-card flex items-center gap-4 border-2 !border-t-accent p-4 shadow-lip" aria-label="Switch to Hoppaz tickets" data-listing-banner>
+          <div className="min-w-0 flex-1">
+            <h3 className="t-title text-[17px] font-extrabold leading-tight text-t-accent">Tickets are still sold on {event.listing.source_site || "the organiser's page"}</h3>
+            <p className="mt-0.5 font-body text-[13.5px] text-t-muted">Set your ticket types, then switch to Hoppaz tickets.</p>
+          </div>
+          <button type="button" className="lip flex-none !px-5" onClick={() => onTab("tickets")}>
+            Set tickets
+          </button>
+        </section>
+      )}
+
       <GetPaidCard returnPath={`/host/${encodeURIComponent(event.id)}?tab=overview`} quietWhenReady={!isPaid} />
 
-      <section aria-label="Counts" className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <Tile n={sold.toLocaleString("en-NG")} label={isPaid && paidOn ? "tickets sold" : "registered"} extra={today > 0 ? `+${today} today` : undefined} />
-        {isPaid ? (
-          paidOn && sales.data ? <Tile n={naira(sales.data.totals.gross_naira)} label="in sales" /> : null
-        ) : (
-          <Tile n="Free" label="entry" />
-        )}
-        <Tile n={String(checkedIn)} label="checked in" />
-      </section>
-      <p className="-mt-2 font-body text-[13.5px] text-t-muted">
-        {spots}
-        {regs && c.pending > 0 ? ` · ${c.pending} pending` : ""}
-        {regs && c.waitlist > 0 ? ` · ${c.waitlist} on the waitlist` : ""}
-      </p>
+      {!event.listing && (
+        <>
+          <section aria-label="Counts" className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            <Tile n={sold.toLocaleString("en-NG")} label={isPaid && paidOn ? "tickets sold" : "registered"} extra={today > 0 ? `+${today} today` : undefined} />
+            {isPaid ? (
+              paidOn && sales.data ? <Tile n={naira(sales.data.totals.gross_naira)} label="in sales" /> : null
+            ) : (
+              <Tile n="Free" label="entry" />
+            )}
+            <Tile n={String(checkedIn)} label="checked in" />
+          </section>
+          <p className="-mt-2 font-body text-[13.5px] text-t-muted">
+            {spots}
+            {regs && c.pending > 0 ? ` · ${c.pending} pending` : ""}
+            {regs && c.waitlist > 0 ? ` · ${c.waitlist} on the waitlist` : ""}
+          </p>
+        </>
+      )}
 
       <section className="t-card p-4 lg:p-5" aria-label="Share your event">
         <h3 className="font-body text-[16px] font-extrabold">Share your event</h3>

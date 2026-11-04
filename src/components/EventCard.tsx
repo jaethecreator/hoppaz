@@ -22,6 +22,8 @@ import { EVENTS_R1, QUESTS_ON } from "@/lib/events-r1/flags";
 import EventBlock from "@/components/events-r1/EventBlock";
 import MapStub from "@/components/events-r1/MapStub";
 import EventTabs from "@/components/events-r1/page/EventTabs";
+import { ListedBy } from "@/components/events-r1/page/ListingParts";
+import { isListing } from "@/lib/events-r1/listing";
 import { asR1, isOnline } from "@/components/events-r1/words";
 import { dayLabel } from "@/lib/filters";
 import type { EventRow } from "@/lib/types";
@@ -274,6 +276,7 @@ function EventSheet({ event, fix, userId, checkedIn, busy, onCheckIn, onClose, i
             <Bus size={14} aria-hidden /> ON THE HOP ROUTE
           </p>
         )}
+        {!r1 && isListing(event) && <ListedBy event={event} tone="dark" className="mt-3" />}
         {lead && <p className="hint mt-3">Community lead. Times and prices can move, so check the listing before you go.</p>}
         {page ? (r1 && !hasVenue(event)) ? null : (
           <p className="mt-3">

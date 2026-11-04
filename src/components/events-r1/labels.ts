@@ -3,7 +3,8 @@
  * With a viewer state (useViewerState) the label follows what the person has done; without one (not loaded yet, or a
  * build with no data layer) it is worked out from the event alone, as if nobody had registered.
  */
-import type { R1Event, TicketType, ViewerState } from "@/lib/events-r1/types";
+import { isListing, ticketButtonLabel } from "@/lib/events-r1/listing";
+import type { ListingInfo, R1Event, TicketType, ViewerState } from "@/lib/events-r1/types";
 
 export type ButtonKind = ViewerState["button"];
 
@@ -20,6 +21,7 @@ const TEXT: Record<ButtonKind, string> = {
   register: "Register",
   request: "Request to join",
   waitlist: "Join waitlist",
+  external: "Get tickets",
   get_ticket: "Get ticket",
   going: "You're in",
   pending: "Pending",
@@ -30,9 +32,11 @@ const TEXT: Record<ButtonKind, string> = {
 
 /** What the button would be with no viewer state: the event's own rules. */
 export function buttonFromEvent(
-  e: Pick<R1Event, "status" | "price_naira" | "capacity" | "spots_left" | "waitlist_on" | "requires_approval"> & { ticket_types?: Pick<TicketType, "price_naira" | "spots_left">[] }
+  e: Pick<R1Event, "status" | "price_naira" | "capacity" | "spots_left" | "waitlist_on" | "requires_approval"> & { ticket_types?: Pick<TicketType, "price_naira" | "spots_left">[]; listing?: ListingInfo | null }
 ): ButtonKind {
   if (e.status !== "live") return "closed";
+  // A listing: tickets are sold on the organiser's page, so there is nothing to register for here.
+  if (isListing(e)) return "external";
   // With ticket types, only the free ones can be taken: every one paid is Get ticket, every free one full is the waitlist or closed.
   const free = e.ticket_types?.filter((t) => t.price_naira === 0);
   if (free ? free.length === 0 : e.price_naira > 0) return "get_ticket";
@@ -46,10 +50,11 @@ export function registerLabel(
   event?: Parameters<typeof buttonFromEvent>[0] | null,
   pay?: { on: boolean }
 ): RegisterLabel {
-  const kind: ButtonKind = state?.button ?? (event ? buttonFromEvent(event) : "register");
+  // An event that is a listing is external whatever the viewer state says (a stale "register" must not reach a screen).
+  const kind: ButtonKind = event && isListing(event) && event.status === "live" ? "external" : (state?.button ?? (event ? buttonFromEvent(event) : "register"));
   return {
     kind,
-    text: TEXT[kind],
+    text: kind === "external" && event ? ticketButtonLabel(event) : TEXT[kind],
     disabled: (kind === "get_ticket" && !pay?.on) || kind === "closed" || kind === "declined",
     status: kind === "going" || kind === "pending" || kind === "waitlisted",
   };

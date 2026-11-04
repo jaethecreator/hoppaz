@@ -8,6 +8,7 @@ import { EVENTS_R1, EVENTS_R1_FAKE } from "./events-r1/flags";
 import { fetchR1EventById, useR1ListEvents } from "./events-r1/listBridge";
 import { fetchEventsNearDirect, fetchLagosEvents, fetchNextHopRow } from "./publicApi";
 import { lagosDate, read, revalidate, subscribe } from "./phoneCache";
+import type { ListingInfo } from "./events-r1/types";
 import type { EventRow, Hop } from "./types";
 
 type Fix = { lat: number; lng: number } | null;
@@ -49,24 +50,37 @@ export async function fetchEventById(id: string, fix: Fix): Promise<EventRow | n
   // inside the list's window (heldLagos checks both); otherwise this falls through and reads the row.
   const held = heldLagos()?.find((e) => e.id === id);
   if (held) return withDistance([held], fix)[0];
-  const { data, error } = await sb
-    .from("events")
-    .select("id,title,venue_name,area,geog,starts_at,price_naira,vibe,source,ig_url,flyer_url")
-    .eq("id", id)
-    .eq("status", "live")
-    .maybeSingle();
+  const BASE = "id,title,venue_name,area,geog,starts_at,price_naira,vibe,source,ig_url,flyer_url";
+  const ask = (cols: string) => sb.from("events").select(cols).eq("id", id).eq("status", "live").maybeSingle();
+  // With the listing columns first; a database that does not have them yet answers with an error, and the plain columns are asked instead.
+  let { data, error } = await ask(`${BASE},ticket_mode,ticket_url,instagram_url,listed_price,listed_price_max,listing_sold_out,source_site`);
+  if (error) ({ data, error } = await ask(BASE));
   if (error) {
     console.warn("[hoppaz] event lookup failed:", error.message);
     return sample();
   }
   if (!data) return null;
-  const row = data as Record<string, unknown>;
+  const row = data as unknown as Record<string, unknown>;
   const at = pointFromGeog(row.geog);
   if (!at) return null;
   // The counts come from the heat view; if it cannot be read, the page just shows no crowd yet.
   const { data: heat } = await sb.from("event_heat").select("heat,checkins,swipes_in,here_now").eq("event_id", id).maybeSingle();
   const h = (heat ?? {}) as Record<string, number>;
   const from = fix ?? LAGOS_CENTER;
+  // An external event is a listing: tickets are sold on the organiser's own page, and the price is the one they listed.
+  const external = row.ticket_mode === "external";
+  const listing: ListingInfo | null = external
+    ? {
+        ticket_url: (row.ticket_url as string | null) ?? null,
+        instagram_url: (row.instagram_url as string | null) ?? null,
+        price_from: typeof row.listed_price === "number" ? row.listed_price : null,
+        price_to: typeof row.listed_price_max === "number" ? row.listed_price_max : null,
+        sold_out: !!row.listing_sold_out,
+        source_site: (row.source_site as string | null) ?? null,
+        claimed: false,
+        organiser_name: null,
+      }
+    : null;
   return {
     id: String(row.id),
     title: String(row.title),
@@ -80,6 +94,7 @@ export async function fetchEventById(id: string, fix: Fix): Promise<EventRow | n
     source: row.source as EventRow["source"],
     ig_url: (row.ig_url as string | null) ?? null,
     flyer_url: (row.flyer_url as string | null) ?? null,
+    ...(listing ? { listing } : {}),
     distance_m: haversineKm(from.lat, from.lng, at.lat, at.lng) * 1000,
     heat: h.heat ?? 0,
     checkins: h.checkins ?? 0,

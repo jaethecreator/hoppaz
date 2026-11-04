@@ -10,12 +10,14 @@ import { shareEvent } from "@/components/event/share";
 import { useLookStyle, usePictureTint } from "@/components/host/TintShell";
 import { QUESTS_ON } from "@/lib/events-r1/flags";
 import { useR1Auth, useR1Query } from "@/lib/events-r1/hooks";
+import { isListing, listedByLine, priceLine } from "@/lib/events-r1/listing";
 import { DEFAULT_LOOK } from "@/lib/events-r1/looks";
 import type { Look } from "@/lib/events-r1/looks";
 import type { R1Event } from "@/lib/events-r1/types";
 import { useQuests } from "@/lib/game";
 import { useToast } from "@/lib/store";
 import { themeForEvent } from "@/lib/theme";
+import { ClaimLink } from "./page/ClaimSheet";
 import { fallbackCover, whenWords } from "./page/HostStory";
 import RegisterButton from "./page/RegisterButton";
 import { useFreshEvent } from "./page/useFreshEvent";
@@ -107,7 +109,7 @@ export default function MapStub({
   // The host's room gives the logo and the handles.
   const roomId = event.host.roomId;
   const { data: room } = useR1Query((a) => (roomId ? a.rooms.get(roomId) : Promise.resolve(null)), [roomId]);
-  const hostName = event.host.roomName ?? event.host.name;
+  const hostName = event.listing?.organiser_name || (event.host.roomName ?? event.host.name);
   const logo = room?.logo_url ?? null;
   const handles = useMemo(() => {
     const l = room?.links ?? {};
@@ -126,14 +128,17 @@ export default function MapStub({
   const w = useMemo(() => whenWords(event), [event]);
   const online = isOnline(event);
   const venue = online ? "Online" : event.venue_name || event.area || "To be announced";
-  const ticket = event.price_naira > 0 ? `From ${naira(event.price_naira)}` : "Free";
+  // A listing says the organiser's real price (From, a price, Free or Check listing); a Hoppaz event, its lowest ticket.
+  const listing = isListing(event);
+  const ticket = listing ? priceLine(event) : event.price_naira > 0 ? `From ${naira(event.price_naira)}` : "Free";
   const kicker = event.status === "cancelled" ? "This event is cancelled" : [w.short, online ? "Online" : distanceWord(distanceM)].filter(Boolean).join(" · ");
-  const chat = eventChatHref(event);
+  // A listing has no guests on Hoppaz, so no event chat; its way in for the organiser sits there instead.
+  const chat = listing ? null : eventChatHref(event);
   // The short link's tail is the closest thing an event has to a code.
   const code = `HZ-${(event.slug.split("-").pop() || event.id.slice(0, 3)).toUpperCase()}`;
 
   const share = async () => {
-    const res = await shareEvent(event, event.going);
+    const res = await shareEvent(event, listing ? 0 : event.going);
     if (res === "copied") say("Link copied", "ok");
     else if (res === "failed") say("Couldn't share that. Try again.", "error");
   };
@@ -209,7 +214,7 @@ export default function MapStub({
             )}
             <div className="min-w-0">
               <b className="block break-words font-body text-[14px] leading-tight">{hostName}</b>
-              <small className="block font-body text-[12px] text-t-muted">{event.host.verified ? "Verified host" : "Host"}</small>
+              <small className="block font-body text-[12px] text-t-muted">{listing && !event.listing?.claimed ? listedByLine(event) : event.host.verified ? "Verified host" : "Host"}</small>
             </div>
           </div>
           {handles.length > 0 && (
@@ -269,6 +274,9 @@ export default function MapStub({
               <button type="button" onClick={() => void share()} aria-label="Share this event" className="grid h-11 w-11 place-items-center text-t-text">
                 <Share2 size={16} aria-hidden />
               </button>
+              {listing && !event.listing?.claimed && (
+                <ClaimLink eventId={event.id} eventTitle={event.title} className="inline-flex min-h-[44px] items-center pl-1 font-body text-[12px] text-t-text underline underline-offset-4" />
+              )}
               {chat && (
                 <Link href={chat} className="inline-flex min-h-[44px] items-center pl-1 text-t-text">
                   Event chat →

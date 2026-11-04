@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, X } from "lucide-react";
 import { useR1Api, useR1Auth, useR1Now, useR1Query } from "@/lib/events-r1/hooks";
+import { isListing, listedByLine } from "@/lib/events-r1/listing";
 import type { R1Event, ViewerState } from "@/lib/events-r1/types";
 import { naira } from "../pay/words";
 import { usePaidOn, useSales } from "../pay/usePay";
@@ -271,7 +272,30 @@ export default function ManageBar({ event, viewer }: { event: R1Event; viewer: V
     items = [vis, dupI];
   }
 
-  const by = user && event.host.id !== user.id ? `${event.host.name} posted this${event.host.roomName && event.host.roomName !== event.host.name ? ` for ${event.host.roomName}` : ""}` : "";
+  // A listing is ticketed on the organiser's page: no going, checked in or sales numbers, and no door.
+  if (isListing(event)) {
+    nums = null;
+    if (stage === "now") {
+      phoneMain = (
+        <Link href={dash} className={`${B1} lg:hidden`}>
+          Manage
+        </Link>
+      );
+    }
+  }
+
+  // An unclaimed listing is run by staff (the Hoppaz Listings account owns it): say so, and point at the Outreach tracker.
+  const staffListing = isListing(event) && !event.listing?.claimed;
+  const by = isListing(event)
+    ? listedByLine(event)
+    : user && event.host.id !== user.id
+      ? `${event.host.name} posted this${event.host.roomName && event.host.roomName !== event.host.name ? ` for ${event.host.roomName}` : ""}`
+      : "";
+  const tracker = staffListing ? (
+    <Link href="/admin?s=outreach" className="whitespace-nowrap font-bold underline underline-offset-[3px]">
+      Outreach tracker
+    </Link>
+  ) : null;
   const personal = !event.room_id && !event.host.roomId;
   const nudge = personal && !closed && (stage === "up" || stage === "now");
 
@@ -289,7 +313,12 @@ export default function ManageBar({ event, viewer }: { event: R1Event; viewer: V
           {status}
         </span>
         <div className="flex min-w-0 flex-1 flex-wrap gap-x-4 gap-y-1 text-[13px] lg:flex-none lg:text-[14px]">{nums}</div>
-        {by && <span className="hidden whitespace-nowrap text-[12.5px] text-[color-mix(in_srgb,var(--t-bg)_70%,transparent)] lg:inline">{by}</span>}
+        {by && (
+          <span className="hidden whitespace-nowrap text-[12.5px] text-[color-mix(in_srgb,var(--t-bg)_70%,transparent)] lg:inline">
+            {by}
+            {tracker && <> · {tracker}</>}
+          </span>
+        )}
         <div className="flex flex-none items-center gap-1.5 lg:ml-auto lg:gap-2">
           {acts}
           {phoneMain}
@@ -322,7 +351,10 @@ export default function ManageBar({ event, viewer }: { event: R1Event; viewer: V
         )}
       </div>
       {by && (
-        <p className="m-0 border-b border-t-line bg-t-tile px-3.5 py-2 font-body text-[13.5px] text-t-muted lg:hidden">{by}</p>
+        <p className="m-0 border-b border-t-line bg-t-tile px-3.5 py-2 font-body text-[13.5px] text-t-muted lg:hidden">
+          {by}
+          {tracker && <> · {tracker}</>}
+        </p>
       )}
       {nudge && (
         <div data-room-nudge className="flex items-center gap-x-3 border-b border-t-line bg-t-soft py-2 pl-3.5 pr-2 font-body text-[13.5px] lg:px-[30px] lg:text-[14px]">

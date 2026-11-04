@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useR1Api, useR1Auth, useViewerState } from "@/lib/events-r1/hooks";
+import { EXTERNAL_TICKETS_ERROR, externalError, isListing } from "@/lib/events-r1/listing";
 import type { Quote } from "@/lib/events-r1/pay";
 import type { R1Event, RegQuestion } from "@/lib/events-r1/types";
 import { buttonFromEvent, registerLabel } from "../labels";
@@ -123,6 +124,12 @@ export function useRegisterFlow(event: R1Event, preview = false) {
   const submit = useCallback(
     async (given: Record<string, string>, asked: boolean) => {
       if (!api) return;
+      // A listing is sold by the organiser: no screen should get here, but if one does it says so instead of failing.
+      if (isListing(event)) {
+        setError(EXTERNAL_TICKETS_ERROR);
+        setPhase("idle");
+        return;
+      }
       const answers = contact.current ? { ...given, ...contact.current } : given;
       setPhase("busy");
       setError("");
@@ -137,17 +144,22 @@ export function useRegisterFlow(event: R1Event, preview = false) {
         setJustDone(true);
         setPhase("idle");
       } catch (e) {
-        setError(paidId ? buyError(e) : e instanceof Error ? e.message : "That did not work. Try again.");
+        setError(externalError(e) ?? (paidId ? buyError(e) : e instanceof Error ? e.message : "That did not work. Try again."));
         if (paidId) setOpenUrl(await findOpen());
         setPhase(asked ? "form" : "idle");
       }
     },
-    [api, event.id, selectedId, paidId, count, findOpen]
+    [api, event, selectedId, paidId, count, findOpen]
   );
 
   /** Signed in: ask the questions the host switched on (Name and Email come from the account), or register at once. */
   const proceed = useCallback(async () => {
     if (!api) return;
+    if (isListing(event)) {
+      setError(EXTERNAL_TICKETS_ERROR);
+      setPhase("idle");
+      return;
+    }
     setPhase("busy");
     setError("");
     try {
@@ -163,13 +175,14 @@ export function useRegisterFlow(event: R1Event, preview = false) {
       // No settings to read: there are no questions.
     }
     await submit({}, false);
-  }, [api, event.id, submit]);
+  }, [api, event, submit]);
 
   const start = useCallback(() => {
     if (preview || !api || !viewer || label.disabled || label.status || phase === "busy") return;
+    if (isListing(event)) return setError(EXTERNAL_TICKETS_ERROR);
     if (!viewer.signedIn) setPhase("signin");
     else void proceed();
-  }, [preview, api, viewer, label.disabled, label.status, phase, proceed]);
+  }, [preview, api, viewer, event, label.disabled, label.status, phase, proceed]);
 
   return {
     ready: !!api && !!viewer,

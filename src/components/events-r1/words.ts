@@ -4,6 +4,7 @@
  */
 import { NEXT_COUNT, nightOf } from "@/lib/filters";
 import { isEventLead } from "@/lib/geo";
+import { isListing, priceLine } from "@/lib/events-r1/listing";
 import type { R1Event } from "@/lib/events-r1/types";
 import type { EventRow } from "@/lib/types";
 
@@ -77,8 +78,9 @@ export function whenRange(e: EventRow): string {
   return end - start > 20 * HOUR ? `${head} to ${shortDay(b)} · ${clock(b)}` : `${head} to ${clock(b)}`;
 }
 
-/** "Free" or the naira. The price in sentence case; a lead says to check the listing. */
-export function priceWord(e: Pick<EventRow, "title" | "price_naira">): string {
+/** "Free" or the naira. The price in sentence case; a lead says to check the listing. A listing says the organiser's price ("From ₦5,000"). */
+export function priceWord(e: Pick<EventRow, "title" | "price_naira" | "listing">): string {
+  if (isListing(e)) return priceLine(e);
   if (isEventLead(e)) return "Check listing";
   return e.price_naira > 0 ? `₦${e.price_naira.toLocaleString("en-NG")}` : "Free";
 }
