@@ -1,0 +1,40 @@
+import type { CapKind, Priority } from "./types";
+
+/**
+ * What a provider is asked to send. The router renders the row (templates/) before the provider is called, so subject, html and text
+ * are set on every real send; the log provider ignores them. `headers` carry List-Unsubscribe where the template has it.
+ */
+export type OutgoingEmail = {
+  to: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  queueId: string;
+  dedupeKey: string;
+  priority: Priority;
+  /** Which allowance this spends. Providers that serve both use it to pick the sender name. Default: guest. */
+  capKind?: CapKind;
+  subject?: string;
+  html?: string;
+  text?: string;
+  headers?: Record<string, string>;
+  /** Give up on the request after this many milliseconds. Unset: the provider's own default (15 seconds). The sign-in hook sets it, because Supabase waits 5 seconds in all. */
+  timeoutMs?: number;
+};
+
+/**
+ * ok: the provider took the message and gave it an id.
+ * Not ok: `limit` means the provider says its own allowance is used up (the router stops using it for this run and does not hand the unit back);
+ * `retryable: false` means this message can never go (a bad address), so the router stops and gives up on the row.
+ */
+export type SendResult =
+  | { ok: true; messageId: string; costUsd: number }
+  | { ok: false; error: string; limit?: boolean; retryable?: boolean };
+
+/** One way of sending email: Brevo, Mailjet, Mailtrap, SES and the log provider are all this. */
+export interface EmailProvider {
+  /** The name used in notify_caps and notify_sends. */
+  readonly name: string;
+  /** The allowances it may serve: Brevo guest, Mailtrap code, Mailjet both. */
+  readonly kinds: readonly CapKind[];
+  send(msg: OutgoingEmail): Promise<SendResult>;
+}

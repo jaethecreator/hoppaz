@@ -283,24 +283,6 @@ function MePagePage({ r1 = null }: { r1?: R1Sign }) {
     session.refresh();
   };
 
-  const deleteAccount = async () => {
-    if (!userId) return;
-    const sb = getSupabase();
-    const { data } = (await sb?.auth.getSession()) ?? { data: { session: null } };
-    const token = data.session?.access_token;
-    if (!token) {
-      say("Your session ran out. Reopen Hoppaz.", "error");
-      return;
-    }
-    const response = await fetch("/api/account/delete", { method: "POST", headers: { authorization: `Bearer ${token}` } });
-    if (!response.ok) {
-      say("Couldn't delete the account. Try again.", "error");
-      return;
-    }
-    await sb?.auth.signOut();
-    localStorage.removeItem("hoppaz.v1");
-    window.location.replace("/");
-  };
 
   return (
     <div className="h-full overflow-y-auto px-4 pb-8 lg:grid lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] lg:content-start lg:items-start lg:gap-x-10 lg:px-10 lg:pb-12">
@@ -449,7 +431,6 @@ function MePagePage({ r1 = null }: { r1?: R1Sign }) {
             say("Saved.", "ok");
           }}
           onChangeArea={() => setPicking(true)}
-          onDelete={deleteAccount}
         />
 
         {state === "offline" && (

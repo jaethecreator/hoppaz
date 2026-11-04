@@ -13,6 +13,7 @@ import type { EventRow } from "@/lib/types";
 import { useHoppaz } from "@/lib/store";
 import { CHECKIN_RADIUS_M, useCheckin, type CheckinOutcome } from "@/lib/useCheckin";
 import { fetchEventById, useEvents, useHop } from "@/lib/useEvents";
+import { linkAddress } from "@/lib/linkAddress";
 import { useSession } from "@/lib/useSession";
 
 /**
@@ -29,8 +30,13 @@ import { useSession } from "@/lib/useSession";
  * instead; "isn't on the map" is only said when that finds nothing too.
  */
 export default function EventPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id: raw } = useParams<{ id: string }>();
+  const id = linkAddress(raw);
   const router = useRouter();
+  // Put the clean address in the bar, so copying it again gives a link that works.
+  useEffect(() => {
+    if (id && /\s|%20/i.test(raw)) router.replace(`/event/${encodeURIComponent(id)}${window.location.search}`);
+  }, [id, raw, router]);
   const { fix, radiusKm } = useHoppaz();
   const { userId, refresh } = useSession();
   const { events, ready } = useEvents(fix, 45);

@@ -59,6 +59,8 @@ function Page({ on, mounted, wide, children }: { on: boolean; mounted: boolean; 
 export default function AdminPage() {
   const [token, setToken] = useState("");
   const [draft, setDraft] = useState("");
+  // True after the server turned the token down, so the lock screen can say so.
+  const [denied, setDenied] = useState(false);
   const [queue, setQueue] = useState<Queue>(empty);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -77,7 +79,11 @@ export default function AdminPage() {
     sessionStorage.removeItem(TOKEN_KEY);
     setToken("");
   }, []);
-  const gt = useGameTimeDesk(token, lock);
+  const deny = useCallback(() => {
+    setDenied(true);
+    lock();
+  }, [lock]);
+  const gt = useGameTimeDesk(token, deny);
   // Loaded here, not in the section, so the rail shows the count before Outreach is opened.
   const outreach = useOutreachData(EVENTS_R1 && !!token);
 
@@ -139,13 +145,13 @@ export default function AdminPage() {
     setBusy(false);
     if (!r.ok) {
       const err = (await r.json().catch(() => ({}))) as { error?: string };
-      if (r.status === 401) lock();
+      if (r.status === 401) deny();
       say(r.status === 401 ? "ADMIN ACCESS DENIED" : String(err.error ?? "ADMIN DATA FAILED TO LOAD").toUpperCase());
       return;
     }
     setQueue((await r.json()) as Queue);
     setLoaded(true);
-  }, [token, lock, say]);
+  }, [token, deny, say]);
   useEffect(() => {
     if (token) void load();
   }, [token, load]);
@@ -177,10 +183,16 @@ export default function AdminPage() {
               const t = draft.trim();
               if (!t) return;
               sessionStorage.setItem(TOKEN_KEY, t);
+              setDenied(false);
               setToken(t);
             }}
           >
             <input className="mt-4" type="password" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Staff token" autoComplete="off" />
+            {denied && (
+              <p role="alert" className="mt-2 font-body text-[14px] text-danfo">
+                That token didn&apos;t work
+              </p>
+            )}
             <button className="btn mt-3 w-full" disabled={!draft.trim()}>
               UNLOCK STAFF TOOLS
             </button>

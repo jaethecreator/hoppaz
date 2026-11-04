@@ -78,7 +78,10 @@ export function factLine(event: EventRow, now: number) {
   return [when, event.area?.toUpperCase(), eventPrice(event)].filter(Boolean).join(" · ");
 }
 
-export const hasEnded = (event: EventRow, now: number) => Date.parse(event.starts_at) + 6 * HOUR < now;
+export const hasEnded = (event: EventRow, now: number) => {
+  const end = event.ends_at ? Date.parse(event.ends_at) : NaN;
+  return (Number.isFinite(end) ? end : Date.parse(event.starts_at) + 6 * HOUR) < now;
+};
 
 /**
  * The conductor line under the title. Today it counts Hoppers checked in

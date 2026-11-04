@@ -161,7 +161,7 @@ export default function SalesTab({ event, payoutsHref, onTickets }: { event: R1E
       {!locked && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
           <Stat value={String(m.sold)} label="tickets sold" extra={m.today > 0 && !over ? `+${m.today} today` : undefined} />
-          <Stat value={naira(m.moneyIn)} label="money in" />
+          <Stat value={naira(m.moneyIn)} label={m.refunds > 0 ? "paid in, before refunds" : "money in"} />
           <Stat value={naira(m.youGet)} label={gets} className="col-span-2 lg:col-span-1" />
         </div>
       )}

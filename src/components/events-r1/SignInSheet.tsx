@@ -9,7 +9,7 @@ import { clock, looksLikeEmail, nameFromEmail, sixDigits } from "./signin/helper
 import { useDialogFocus } from "./signin/useDialogFocus";
 
 /**
- * Release 1 sign in: email, six digit code, or Google. Asked only on Register or Create.
+ * Release 1 sign in: Google first, or email and a six digit code. Asked only on Register or Create.
  * A bottom sheet on a phone, a centred card on a wide screen. Signing in and signing up are the same thing:
  * a new email makes the account.
  */
@@ -36,6 +36,8 @@ export default function SignInSheet({ open, reason, onClose, onSignedIn }: SignI
   const emailRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
   const busyRef = useRef(false);
+  // Set when the person chose "Change email": they want the email field, not the dialog.
+  const wantEmailRef = useRef(false);
 
   // The layer is drawn straight into the page body: it belongs above everything, wherever the screen that asks for it sits.
   const [mounted, setMounted] = useState(false);
@@ -67,12 +69,17 @@ export default function SignInSheet({ open, reason, onClose, onSignedIn }: SignI
     setSecs(RESEND_SECS);
     setResent(false);
     busyRef.current = false;
+    wantEmailRef.current = false;
   }, [open]);
 
-  // Focus follows the step.
+  // Focus follows the step. Opening on the email step lands on the dialog itself, so a phone keyboard does not
+  // pop up over the Google button; only "Change email" goes straight to the field.
   useEffect(() => {
     if (!show) return;
-    (step === "email" ? emailRef : codeRef).current?.focus({ preventScroll: true });
+    if (step === "code") codeRef.current?.focus({ preventScroll: true });
+    else if (wantEmailRef.current) emailRef.current?.focus({ preventScroll: true });
+    else box.current?.focus({ preventScroll: true });
+    wantEmailRef.current = false;
   }, [show, step]);
 
   // The resend countdown, one second at a time.
@@ -161,6 +168,7 @@ export default function SignInSheet({ open, reason, onClose, onSignedIn }: SignI
   };
 
   const changeEmail = () => {
+    wantEmailRef.current = true;
     setStep("email");
     setCode("");
     setError(null);
@@ -187,7 +195,8 @@ export default function SignInSheet({ open, reason, onClose, onSignedIn }: SignI
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative max-h-[94dvh] w-full max-w-[420px] animate-rise overflow-y-auto rounded-t-[12px] border border-b-0 border-line bg-ink-2 px-4 pt-3 text-cream shadow-sheet sm:animate-none sm:rounded-hz sm:border-b sm:px-6 sm:pb-6 sm:pt-6"
+        tabIndex={-1}
+        className="relative max-h-[94dvh] w-full max-w-[420px] animate-rise overflow-y-auto rounded-t-[12px] outline-none border border-b-0 border-line bg-ink-2 px-4 pt-3 text-cream shadow-sheet sm:animate-none sm:rounded-hz sm:border-b sm:px-6 sm:pb-6 sm:pt-6"
         style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
       >
         <div aria-hidden className="mx-auto mb-3 h-1 w-10 rounded-full bg-line sm:hidden" />
@@ -206,8 +215,20 @@ export default function SignInSheet({ open, reason, onClose, onSignedIn }: SignI
           <form onSubmit={submitEmail} className="flex flex-col gap-3" noValidate>
             <div className="pr-10">
               <h2 id={titleId} className="font-display text-[22px] font-black leading-[1.15]">{reason.trim() || "Sign in"}</h2>
-              <p className="hint mt-1.5">Enter your email. We send you a code.</p>
             </div>
+            <button type="button" onClick={withGoogle} className={btn} disabled={!ready || busy !== null}>
+              {/* The colours of Google's mark vanish on the orange button: it sits on a white disc. */}
+              <span className="grid h-7 w-7 flex-none place-items-center rounded-full bg-white">
+                <GoogleMark />
+              </span>
+              {busy === "google" ? "Connecting…" : "Continue with Google"}
+            </button>
+            <div className="flex items-center gap-3" aria-hidden="true">
+              <span className="h-px flex-1 bg-line" />
+              <span className="font-body text-[13px] text-dim">or</span>
+              <span className="h-px flex-1 bg-line" />
+            </div>
+            <p className="hint">Or use your email. We send you a code.</p>
             <div>
               <label className={field} htmlFor={`${titleId}-email`}>Email</label>
               <input
@@ -229,17 +250,8 @@ export default function SignInSheet({ open, reason, onClose, onSignedIn }: SignI
               />
             </div>
             {error && <ErrorLine text={error} />}
-            <button type="submit" className={btn} disabled={!emailOk || !ready || busy !== null}>
-              {busy === "email" ? "Sending…" : "Continue"}
-            </button>
-            <div className="flex items-center gap-3" aria-hidden="true">
-              <span className="h-px flex-1 bg-line" />
-              <span className="font-body text-[13px] text-dim">or</span>
-              <span className="h-px flex-1 bg-line" />
-            </div>
-            <button type="button" onClick={withGoogle} className="btn btn-ghost w-full text-[15px] font-bold normal-case tracking-normal" disabled={!ready || busy !== null}>
-              <GoogleMark />
-              {busy === "google" ? "Connecting…" : "Continue with Google"}
+            <button type="submit" className="btn btn-ghost w-full text-[15px] font-bold normal-case tracking-normal" disabled={!emailOk || !ready || busy !== null}>
+              {busy === "email" ? "Sending…" : "Send code"}
             </button>
           </form>
         ) : (

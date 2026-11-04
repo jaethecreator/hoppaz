@@ -16,11 +16,14 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** The phone's share sheet where there is one, else the link is copied. */
-export async function shareOrCopy(input: { title: string; text: string; url: string }): Promise<"shared" | "copied" | "cancelled" | "failed"> {
+/**
+ * The phone's share sheet where there is one, else the link is copied. Only the title and the link go to the sheet: its Copy
+ * joins any text onto the link ("<link> Jae's home welcoming"), which then opens no page. The link's preview carries the name.
+ */
+export async function shareOrCopy(input: { title: string; text?: string; url: string }): Promise<"shared" | "copied" | "cancelled" | "failed"> {
   if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
     try {
-      await navigator.share(input);
+      await navigator.share({ title: input.title, url: input.url });
       return "shared";
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return "cancelled";

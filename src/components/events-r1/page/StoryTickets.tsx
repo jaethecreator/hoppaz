@@ -179,9 +179,11 @@ export function TicketCard({ t, anchor }: { t: StoryTickets; anchor: RefObject<H
             {busy ? "One moment" : t.shut ? flow.label.text : t.cta}
           </button>
         )}
-        <span className="text-center font-body text-[11.5px] text-t-muted">
-          {allPaidOff ? PAID_UNAVAILABLE : free || (t.chosen && t.chosen.price_naira === 0) ? "Your ticket comes with a QR code for the door" : "You'll pay on the next step"}
-        </span>
+        {!t.shut && (
+          <span className="text-center font-body text-[11.5px] text-t-muted">
+            {allPaidOff ? PAID_UNAVAILABLE : free || (t.chosen && t.chosen.price_naira === 0) ? "Your ticket comes with a QR code for the door" : "You'll pay on the next step"}
+          </span>
+        )}
         {t.preview && (
           <span className="text-center font-body text-[11.5px] text-t-muted" data-visitor-note>
             Preview only. This button works for guests, not for you.

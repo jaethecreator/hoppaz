@@ -30,6 +30,7 @@ import { ANNOUNCEMENTS, GENERAL, chatSub, dayShort, dayTime, headSub, isNewRoom,
 
 type Tab = "chat" | "events" | "members" | "quests";
 const TAB_LABEL: Record<Tab, string> = { chat: "Chat", events: "Events", members: "Members", quests: "Quests" };
+const ID_ADDRESS = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STARTERS = ["Hi everyone", "Who’s going?", "First time here"];
 
 /**
@@ -60,11 +61,13 @@ export default function RoomPage({ slug }: { slug: string }) {
       );
     }
     if (preview.data && preview.data.join_mode === "invite") return <Frame logo={preview.data.logo_url} roomId={preview.data.id}><LockedPage room={preview.data} /></Frame>;
+    // A room id can belong to a private room the database hides from us, so for an id we cannot tell private from missing.
+    const hidden = ID_ADDRESS.test(slug);
     return (
       <div className="h-full overflow-y-auto px-4 pb-6">
         <div className="mx-auto w-full max-w-[560px] pad-top">
-          <h1 className="font-display text-[26px] font-black leading-tight">Room not found</h1>
-          <p className="hint mt-1">There is no room at this address.</p>
+          <h1 className="font-display text-[26px] font-black leading-tight">{hidden ? "We can’t open this room" : "Room not found"}</h1>
+          <p className="hint mt-1">{hidden ? "It may be private, or the address may be wrong. Ask the host for an invite." : "There is no room at this address."}</p>
           <Link href="/crew" className="btn btn-ghost mt-4 normal-case">Go to Roomz</Link>
         </div>
       </div>

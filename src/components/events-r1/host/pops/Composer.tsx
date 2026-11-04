@@ -48,6 +48,8 @@ export default function Composer({ event, counts, now }: { event: R1Event; count
   const roomName = event.host.roomName;
   const n = counts[to];
   const clean = text.trim();
+  // Nobody in this audience yet: a Pop sent now would reach no one (a scheduled one may find people by then).
+  const nobody = n === 0 && mode === "now";
 
   const whenMs = Date.parse(when);
   const whenError =
@@ -66,7 +68,7 @@ export default function Composer({ event, counts, now }: { event: R1Event; count
   };
 
   const send = async () => {
-    if (!api || busy || !clean || whenError) return;
+    if (!api || busy || !clean || whenError || nobody) return;
     setBusy(true);
     setError("");
     try {
@@ -109,7 +111,7 @@ export default function Composer({ event, counts, now }: { event: R1Event; count
         className="mt-1.5"
       />
       <p className="hint mt-2" aria-live="polite">
-        Sends to {peopleWord(n)}
+        {nobody ? "No one to send to yet. Pick another group or schedule it." : `Sends to ${peopleWord(n)}`}
       </p>
 
       <label className="sr-only" htmlFor="pop-body">
@@ -155,7 +157,7 @@ export default function Composer({ event, counts, now }: { event: R1Event; count
         <button type="button" className="btn btn-ghost min-h-[48px] normal-case" onClick={share} disabled={!clean}>
           Share to WhatsApp
         </button>
-        <button type="button" className="btn min-h-[48px] normal-case" onClick={send} disabled={busy || !api || !clean || !!whenError}>
+        <button type="button" className="btn min-h-[48px] normal-case" onClick={send} disabled={busy || !api || !clean || !!whenError || nobody}>
           <Send size={16} aria-hidden className="mr-2 inline" />
           Send Pop
         </button>
