@@ -10,10 +10,12 @@ import type { ClaimsApi, OutreachApi } from "../api";
 import { randomToken, sha256Hex } from "../outreach/token";
 import { siteOrigin } from "../siteUrl";
 import type { Organiser, TransferLink } from "../types";
+import { eventClaimsOn } from "../flags";
 import { emit, rpc } from "./core";
 import { eventIdOf, roomIdOf } from "./ids";
-import { mapAccept, mapClaimRequest, mapImportReport, mapOrganiser, mapOrganiserDetail, mapPreview, mapPulled, mapTransfer, mapWeek } from "./map";
+import { mapAccept, mapApproveMany, mapClaimable, mapClaimAsk, mapClaimLink, mapClaimRequest, mapImportReport, mapOrganiser, mapOrganiserDetail, mapPreview, mapPulled, mapTapCounts, mapTransfer, mapWeek } from "./map";
 import { outreachReason } from "./reasons";
+import { soft } from "./roomProfile";
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.isArray(v);
@@ -134,6 +136,42 @@ export const outreach: OutreachApi = {
     return { events: Number(out?.events) || 0 };
   },
 
+  async createClaimLink(target, by) {
+    const out = (await write({ action: "create_claim_link", ...("eventId" in target ? { event: target.eventId } : { id: target.organiserId }), by })) as { link?: Obj; url?: string };
+    if (!out?.link || !out.url) throw new Error("That did not work. Try again");
+    emit();
+    return { link: mapClaimLink(out.link), url: out.url };
+  },
+
+  async revokeClaimLink(linkId, by) {
+    await write({ action: "revoke_claim_link", id: linkId, by });
+    emit();
+  },
+
+  async claimable() {
+    return rows(await read("claimable")).map(mapClaimable);
+  },
+
+  async claimAsks() {
+    return rows(await read("claim_asks")).map(mapClaimAsk);
+  },
+
+  async decideClaimAsk(askId, approve, by) {
+    const out = (await write({ action: "decide_claim_ask", id: askId, approve, by })) as { moved_events?: number };
+    emit();
+    return { moved_events: Number(out?.moved_events) || 0 };
+  },
+
+  async tapCounts() {
+    return mapTapCounts((await read("taps")) as Obj);
+  },
+
+  async approveMany(pulledIds, by) {
+    const out = (await write({ action: "approve_many", pulled: pulledIds, by })) as Obj;
+    emit();
+    return mapApproveMany(out, outreachReason);
+  },
+
   async createTransfer(organiserId, email, by, days) {
     const out = (await write({ action: "create_transfer", id: organiserId, email, by, ...(days ? { days } : {}) })) as { transfer?: Obj; link?: string };
     if (!out?.transfer || !out.link) throw new Error("That did not work. Try again");
@@ -180,15 +218,38 @@ export const claims: ClaimsApi = {
     });
   },
 
+  /** Ask to claim a listing, signed in. Hoppaz keeps the name on the account and the note, nothing else (ev_claim_ask in events_r1_outreach_ready.sql). */
+  async askToClaim(eventId, who) {
+    await ask("ev_claim_ask", { p_event: await eventIdOf(eventId), p_note: who.note?.trim() ?? "" });
+  },
+
   /** Never throws for a bad link: the reason comes back as data. A network or database failure still throws. */
   async preview(token) {
     const t = token.trim();
     if (!t || t.length > 200) return { ok: false, reason: "not_found" };
-    return mapPreview(await rpc<unknown>("ev_transfer_preview", { p_hash: await sha256Hex(t) }));
+    const hash = await sha256Hex(t);
+    // A one-time claim link first (the event_claims flag); a hash that is not one of those is an email transfer. A database without the file reads as "not one".
+    if (eventClaimsOn()) {
+      const r = await soft<unknown>("ev_claim_link_preview", { p_hash: hash });
+      if (!r.missing && !r.error && isObj(r.data) && !(r.data.ok === false && r.data.reason === "not_found")) return mapPreview(r.data);
+    }
+    return mapPreview(await rpc<unknown>("ev_transfer_preview", { p_hash: hash }));
   },
 
   async accept(token) {
-    const out = await ask("ev_transfer_accept", { p_hash: await sha256Hex(token.trim()) });
+    const hash = await sha256Hex(token.trim());
+    if (eventClaimsOn()) {
+      const r = await soft<unknown>("ev_claim_link_accept", { p_hash: hash });
+      if (!r.missing && !r.error && isObj(r.data)) {
+        // "invalid_link" means this hash is not a claim link at all: try it as an email transfer.
+        if (r.data.ok === true) {
+          emit();
+          return mapAccept(r.data);
+        }
+        if (r.data.reason !== "invalid_link") throw new Error(outreachReason(r.data.reason, r.data));
+      }
+    }
+    const out = await ask("ev_transfer_accept", { p_hash: hash });
     emit();
     return mapAccept(out);
   },

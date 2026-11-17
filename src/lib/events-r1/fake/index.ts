@@ -4,7 +4,7 @@
  * as anyone, a valid ticket token for a registration, a full reset.
  */
 import type { EventsR1Api } from "../api";
-import { PAID_KEY, PAID_TICKETS, paidTicketsOn } from "../flags";
+import { CLAIMS_KEY, EVENT_CLAIMS, eventClaimsOn, PAID_KEY, PAID_TICKETS, paidTicketsOn } from "../flags";
 import type { HostPayoutStatus, PayMethod } from "../pay";
 import type { R1Event, Registration } from "../types";
 import { account } from "./account";
@@ -114,6 +114,18 @@ export const fakeDev = {
   /** The demo switch for paid tickets (the build flag, when it is on, wins and cannot be switched off here). */
   paidOn: paidTicketsOn,
   paidLockedByBuild: PAID_TICKETS,
+  /** The demo switch for "claim an event" (the build flag, when it is on, wins and cannot be switched off here). */
+  claimsOn: eventClaimsOn,
+  claimsLockedByBuild: EVENT_CLAIMS,
+  setClaims(on: boolean) {
+    try {
+      if (on) window.localStorage.setItem(CLAIMS_KEY, "1");
+      else window.localStorage.removeItem(CLAIMS_KEY);
+    } catch {
+      /* private mode: the switch cannot be kept */
+    }
+    emit();
+  },
   setPaid(on: boolean) {
     try {
       if (on) window.localStorage.setItem(PAID_KEY, "1");

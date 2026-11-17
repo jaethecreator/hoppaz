@@ -4,17 +4,18 @@ import clsx from "clsx";
 import { RefreshCw, X } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { SectionHead } from "../sections/parts";
+import ClaimableTab from "./ClaimableTab";
 import OrganisersTab from "./OrganisersTab";
 import ReviewTab from "./ReviewTab";
 import { Loading } from "./ui";
 import { OutreachContext, useStaffName, type FocusRequest, type OutreachCtx, type OutreachData, type Tone } from "./useOutreach";
 import WeekTab from "./WeekTab";
 
-type TabKey = "review" | "organisers" | "week";
+type TabKey = "review" | "organisers" | "claimable" | "week";
 
 /**
- * Outreach: the routine for pulled events and the organisers behind them. Three tabs: Review (the queue the scout fills), Organisers
- * (the tracker, the default) and Week. The desk shell loads the data (useOutreachData) so the rail can show a count before this opens.
+ * Outreach: the routine for pulled events and the organisers behind them. Tabs: Review (the queue the scout fills), Organisers
+ * (the tracker, the default), Claimable (only while the event_claims flag is on) and Week. The desk shell loads the data (useOutreachData) so the rail can show a count before this opens.
  */
 export default function OutreachSection({ data }: { data: OutreachData }) {
   const [by, setBy] = useStaffName();
@@ -39,9 +40,11 @@ export default function OutreachSection({ data }: { data: OutreachData }) {
   const ctx = useMemo<OutreachCtx | null>(() => (api ? { data, api, by: by.trim() || "Jae", say, openOrganiser } : null), [data, api, by, say, openOrganiser]);
 
   const waiting = (data.queue ?? []).filter((r) => r.status !== "blocked").length;
+  const openAsks = (data.asks ?? []).filter((a) => a.status === "new").length;
   const tabs: { key: TabKey; label: string; n?: number }[] = [
     { key: "organisers", label: "Organisers" },
     { key: "review", label: "Review", n: waiting },
+    ...(data.claimsOn ? [{ key: "claimable" as const, label: "Claimable", n: openAsks }] : []),
     { key: "week", label: "Week" },
   ];
 
@@ -95,6 +98,7 @@ export default function OutreachSection({ data }: { data: OutreachData }) {
           <OutreachContext.Provider value={ctx}>
             {tab === "review" && <ReviewTab />}
             {tab === "organisers" && <OrganisersTab focus={focus} />}
+            {tab === "claimable" && data.claimsOn && <ClaimableTab onOpen={(id) => openOrganiser(id)} />}
             {tab === "week" && <WeekTab onOpen={(id) => openOrganiser(id)} />}
           </OutreachContext.Provider>
         )}

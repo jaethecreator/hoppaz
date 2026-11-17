@@ -136,8 +136,10 @@ function Card({
   onAccept: () => void;
 }) {
   const { room, events } = p;
-  const claim = p.kind === "claim";
-  const wrong = !!email && !mayMatchHint(email, p.email_hint);
+  // A claim link (event_claims flag) has no email to match: whoever signs in with it takes the room.
+  const open = p.kind === "link";
+  const claim = p.kind === "claim" || open;
+  const wrong = !open && !!email && p.email_hint !== null && !mayMatchHint(email, p.email_hint);
   const more = events.length - SHOW_EVENTS;
   const first = events[0];
 
@@ -188,15 +190,23 @@ function Card({
             ? `the page says Hosted by ${room.name} instead of Listed by Hoppaz. Get tickets keeps going to the same page until you switch on Hoppaz tickets.`
             : `you become the owner of ${room.name}. The person handing it over stays as a member.`}
         </p>
-        <p className="font-body text-[14px] text-dim">
-          This link is for <b className="text-cream">{p.email_hint}</b>
-        </p>
+        {open ? (
+          <p className="font-body text-[14px] text-dim" data-claim-link-note>
+            This link works once. Whoever signs in with it takes over the room, so keep it to yourself.
+          </p>
+        ) : (
+          <p className="font-body text-[14px] text-dim">
+            This link is for <b className="text-cream">{p.email_hint}</b>
+          </p>
+        )}
 
         {!email && (
           <>
-            <p className="mt-1 font-body text-[14px] text-dim">Sign in with that email to accept. No account yet? Signing in makes one.</p>
+            <p className="mt-1 font-body text-[14px] text-dim">
+              {open ? "Sign in with any email to take over. No account yet? Signing in makes one." : "Sign in with that email to accept. No account yet? Signing in makes one."}
+            </p>
             <button type="button" className="btn mt-4 w-full normal-case" onClick={() => onAsk(true)}>
-              Sign in to accept
+              {open ? "Sign in to take over" : "Sign in to accept"}
             </button>
           </>
         )}

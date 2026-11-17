@@ -114,6 +114,23 @@ export const events: EventsApi = {
     return listings[eventId] ? { ...state, button: "external" } : state;
   },
 
+  /** ev_ticket_tap (events_r1_outreach_ready.sql). Fire and forget: until the file is run, or on any hiccup, the tap is simply not counted. */
+  async ticketTap(id, device) {
+    try {
+      await soft<unknown>("ev_ticket_tap", { p_event: await eventIdOf(id), p_device: device ?? null });
+    } catch {
+      /* a failed count never stops the link */
+    }
+  },
+
+  async ticketTaps(id) {
+    const r = await soft<{ ok?: boolean; count?: number; reason?: string } | null>("ev_ticket_tap_count", { p_event: await eventIdOf(id) });
+    if (r.missing || !r.data) return 0;
+    if (r.data.ok === true) return Number(r.data.count) || 0;
+    if (r.data.reason === "not_allowed") throw new Error("Not allowed");
+    return 0;
+  },
+
   /** supabase/events_r1_lineup.sql. Until it is run this answers empty, quietly. */
   async getLineup(id) {
     const r = await soft<unknown>("ev_get_lineup", { p_event: await eventIdOf(id) });

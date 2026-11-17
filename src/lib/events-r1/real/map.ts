@@ -5,9 +5,9 @@
  */
 import { haversineKm, LAGOS_CENTER } from "../../geo";
 import type {
-  AcceptOutcome, ClaimRequest, ContactChannel, EventChat, HostRef, ImportReport, ListingInfo, Organiser, OrganiserDetail, OrganiserHandles, OrganiserLogEntry,
+  AcceptOutcome, ApproveManyResult, Claimable, ClaimAsk, ClaimLink, ClaimRequest, ContactChannel, EventChat, HostRef, ImportReport, ListingInfo, Organiser, OrganiserDetail, OrganiserHandles, OrganiserLogEntry,
   OrganiserLogKind, OrganiserStage, Pop, PulledEvent, PulledFlag, PulledStatus, R1Event, RegQuestion, Registration, Report, RoomAnnouncement, RoomLinks, RoomMessage,
-  RoomRole, RoomSummary, ScoutEvent, Ticket, TicketType, Transfer, TransferPreview, WeekSummary,
+  RoomRole, RoomSummary, ScoutEvent, TapCounts, Ticket, TicketType, Transfer, TransferPreview, WeekSummary,
 } from "../types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -282,6 +282,11 @@ export function mapListing(j: J): ListingInfo {
     source_site: strOrNull(j?.source_site),
     claimed: !!j?.claimed,
     organiser_name: strOrNull(j?.organiser_name),
+    ticket_platform: strOrNull(j?.ticket_platform),
+    source_url: strOrNull(j?.source_url),
+    flyer_credit: strOrNull(j?.flyer_credit),
+    organiser_ig: strOrNull(j?.organiser_ig),
+    organiser_x: strOrNull(j?.organiser_x),
   };
 }
 
@@ -369,6 +374,71 @@ export function mapOrganiserDetail(j: J): OrganiserDetail {
       upcoming: !!e.upcoming,
     })),
     transfers: list(j.transfers).map(mapTransfer),
+    claim_links: list(j.claim_links).map(mapClaimLink),
+  };
+}
+
+/** One claim link (never the token or its hash). */
+export function mapClaimLink(j: J): ClaimLink {
+  const status = j.status === "used" || j.status === "revoked" || j.status === "expired" ? j.status : "pending";
+  return {
+    id: String(j.id),
+    room_id: String(j.room_id ?? ""),
+    room_name: str(j.room_name),
+    organiser_id: strOrNull(j.organiser_id),
+    event_id: strOrNull(j.event_id),
+    // An open link past its date reads as expired even if the database has not flipped the row yet.
+    status: status === "pending" && (iso(j.expires_at) ?? "9999") < new Date().toISOString() ? "expired" : status,
+    created_at: isoOr(j.created_at),
+    created_by: strOrNull(j.created_by),
+    expires_at: isoOr(j.expires_at),
+    used_at: iso(j.used_at),
+  };
+}
+
+export function mapClaimable(j: J): Claimable {
+  return {
+    event_id: String(j.event_id),
+    title: str(j.title),
+    starts_at: isoOr(j.starts_at),
+    organiser_id: strOrNull(j.organiser_id),
+    organiser_name: strOrNull(j.organiser_name),
+    room_name: strOrNull(j.room_name),
+    went_to_buy: num(j.went_to_buy),
+    link_open: !!j.link_open,
+    asks: num(j.asks),
+  };
+}
+
+export function mapClaimAsk(j: J): ClaimAsk {
+  return {
+    id: String(j.id),
+    event_id: String(j.event_id ?? ""),
+    event_title: str(j.event_title),
+    organiser_id: strOrNull(j.organiser_id),
+    organiser_name: strOrNull(j.organiser_name),
+    name: str(j.name),
+    note: str(j.note),
+    status: j.status === "approved" || j.status === "declined" ? j.status : "new",
+    created_at: isoOr(j.created_at),
+    decided_by: strOrNull(j.decided_by),
+  };
+}
+
+/** { events: { id: n }, organisers: { id: n } } with whole numbers only. */
+export function mapTapCounts(j: J): TapCounts {
+  const grab = (v: unknown): Record<string, number> => {
+    const out: Record<string, number> = {};
+    if (v && typeof v === "object" && !Array.isArray(v)) for (const [k, n] of Object.entries(v as Record<string, unknown>)) out[k] = num(n);
+    return out;
+  };
+  return { events: grab(j?.events), organisers: grab(j?.organisers) };
+}
+
+export function mapApproveMany(j: J, reasonText: (code: string) => string): ApproveManyResult {
+  return {
+    approved: list(j?.approved).map((a) => ({ id: String(a.id), event_id: String(a.event_id ?? "") })),
+    skipped: list(j?.skipped).map((a) => ({ id: String(a.id), name: str(a.name), reason: str(a.reason), text: reasonText(str(a.reason)) })),
   };
 }
 
@@ -397,8 +467,13 @@ function mapScoutEvent(f: J): ScoutEvent {
     organiser_name: strOrNull(f?.organiser_name),
     organiser_handle: strOrNull(f?.organiser_handle),
     event_handle: strOrNull(f?.event_handle),
-    organiser_email: strOrNull(f?.organiser_email),
-    organiser_phone: strOrNull(f?.organiser_phone),
+    // Hoppaz keeps no organiser phone or email: whatever an older row still holds is not read.
+    organiser_email: null,
+    organiser_phone: null,
+    ticket_platform: strOrNull(f?.ticket_platform),
+    source_url: strOrNull(f?.source_url),
+    flyer_credit: strOrNull(f?.flyer_credit),
+    organiser_x: strOrNull(f?.organiser_x),
     lineup: list(f?.lineup).map((l) => (l.time ? { time: str(l.time), name: str(l.name) } : { name: str(l.name) })),
     capacity: numOrNull(f?.capacity),
     last_seen: isoOr(f?.last_seen),
@@ -455,10 +530,10 @@ export function mapPreview(j: J): TransferPreview {
   }
   return {
     ok: true,
-    kind: j.kind === "handover" ? "handover" : "claim",
+    kind: j.kind === "handover" ? "handover" : j.kind === "link" ? "link" : "claim",
     room: { name: str(j.room?.name), slug: str(j.room?.slug), logo_url: strOrNull(j.room?.logo_url), about: str(j.room?.about) },
     events: list(j.events).map((e) => ({ id: String(e.id), title: str(e.title), starts_at: isoOr(e.starts_at) })),
-    email_hint: str(j.email_hint),
+    email_hint: j.kind === "link" ? null : str(j.email_hint),
     organiser_name: strOrNull(j.organiser_name),
     expires_at: isoOr(j.expires_at),
   };

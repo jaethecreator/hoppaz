@@ -3,7 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { EventsR1Api, OutreachApi } from "@/lib/events-r1/api";
 import { loadApi } from "@/lib/events-r1";
-import type { ClaimRequest, Organiser, PulledEvent } from "@/lib/events-r1/types";
+import { useClaimsOn } from "@/components/events-r1/claim/useClaimsOn";
+import type { Claimable, ClaimAsk, ClaimRequest, Organiser, PulledEvent, TapCounts } from "@/lib/events-r1/types";
 
 /**
  * The Outreach section's data. The desk shell calls useOutreachData once (so the rail can show the count before the section is
@@ -21,14 +22,24 @@ export type OutreachData = {
   setOrganisers: Dispatch<SetStateAction<Organiser[] | null>>;
   requests: ClaimRequest[] | null;
   setRequests: Dispatch<SetStateAction<ClaimRequest[] | null>>;
+  /** Is "claim an event" on (the event_claims flag)? The Claimable tab and the Copy claim link buttons show only then. */
+  claimsOn: boolean;
+  /** "[N] people went to buy": taps on the outside ticket button, by event and by organiser. null until loaded (or when it cannot be read). */
+  taps: TapCounts | null;
+  /** Unclaimed listings still to come, and asks to claim. null until loaded, or while the flag is off. */
+  claimable: Claimable[] | null;
+  setClaimable: Dispatch<SetStateAction<Claimable[] | null>>;
+  asks: ClaimAsk[] | null;
+  setAsks: Dispatch<SetStateAction<ClaimAsk[] | null>>;
   /** Plain text of the last failed load per list ("" when fine). */
-  errors: { queue: string; organisers: string; requests: string };
+  errors: { queue: string; organisers: string; requests: string; claims: string };
   loading: boolean;
   reloadQueue: () => Promise<void>;
   reloadOrganisers: () => Promise<void>;
   reloadRequests: () => Promise<void>;
+  reloadClaims: () => Promise<void>;
   reload: () => Promise<void>;
-  /** Review rows waiting plus new claim requests. 0 until loaded. */
+  /** Review rows waiting plus new claim requests and new asks to claim. 0 until loaded. */
   badge: number;
 };
 
@@ -40,7 +51,11 @@ export function useOutreachData(enabled: boolean): OutreachData {
   const [queue, setQueue] = useState<PulledEvent[] | null>(null);
   const [organisers, setOrganisers] = useState<Organiser[] | null>(null);
   const [requests, setRequests] = useState<ClaimRequest[] | null>(null);
-  const [errors, setErrors] = useState({ queue: "", organisers: "", requests: "" });
+  const claimsOn = useClaimsOn();
+  const [taps, setTaps] = useState<TapCounts | null>(null);
+  const [claimable, setClaimable] = useState<Claimable[] | null>(null);
+  const [asks, setAsks] = useState<ClaimAsk[] | null>(null);
+  const [errors, setErrors] = useState({ queue: "", organisers: "", requests: "", claims: "" });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -82,11 +97,34 @@ export function useOutreachData(enabled: boolean): OutreachData {
       setErrors((x) => ({ ...x, requests: message(e) }));
     }
   }, [api]);
+  const reloadClaims = useCallback(async () => {
+    if (!api) return;
+    // The tap numbers are a nicety: when they cannot be read the desk simply shows none.
+    try {
+      setTaps(await api.tapCounts());
+    } catch {
+      setTaps(null);
+    }
+    if (!claimsOn) {
+      setClaimable(null);
+      setAsks(null);
+      setErrors((e) => ({ ...e, claims: "" }));
+      return;
+    }
+    try {
+      const [c, a] = await Promise.all([api.claimable(), api.claimAsks()]);
+      setClaimable(c);
+      setAsks(a);
+      setErrors((e) => ({ ...e, claims: "" }));
+    } catch (e) {
+      setErrors((x) => ({ ...x, claims: message(e) }));
+    }
+  }, [api, claimsOn]);
   const reload = useCallback(async () => {
     setLoading(true);
-    await Promise.all([reloadQueue(), reloadOrganisers(), reloadRequests()]);
+    await Promise.all([reloadQueue(), reloadOrganisers(), reloadRequests(), reloadClaims()]);
     setLoading(false);
-  }, [reloadQueue, reloadOrganisers, reloadRequests]);
+  }, [reloadQueue, reloadOrganisers, reloadRequests, reloadClaims]);
 
   useEffect(() => {
     if (api) void reload();
@@ -116,11 +154,14 @@ export function useOutreachData(enabled: boolean): OutreachData {
     };
   }, [root, reload]);
 
-  const badge = (queue ?? []).filter((r) => r.status !== "blocked").length + (requests ?? []).filter((r) => r.status === "new").length;
+  const badge = (queue ?? []).filter((r) => r.status !== "blocked").length + (requests ?? []).filter((r) => r.status === "new").length + (asks ?? []).filter((r) => r.status === "new").length;
 
   return useMemo(
-    () => ({ api, queue, setQueue, organisers, setOrganisers, requests, setRequests, errors, loading, reloadQueue, reloadOrganisers, reloadRequests, reload, badge }),
-    [api, queue, organisers, requests, errors, loading, reloadQueue, reloadOrganisers, reloadRequests, reload, badge],
+    () => ({
+      api, queue, setQueue, organisers, setOrganisers, requests, setRequests, claimsOn, taps, claimable, setClaimable, asks, setAsks, errors, loading,
+      reloadQueue, reloadOrganisers, reloadRequests, reloadClaims, reload, badge,
+    }),
+    [api, queue, organisers, requests, claimsOn, taps, claimable, asks, errors, loading, reloadQueue, reloadOrganisers, reloadRequests, reloadClaims, reload, badge],
   );
 }
 

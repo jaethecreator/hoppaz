@@ -1,6 +1,8 @@
 "use client";
 
 import clsx from "clsx";
+import { deviceId } from "@/lib/events-r1/device";
+import { useR1Api } from "@/lib/events-r1/hooks";
 import type { R1Event } from "@/lib/events-r1/types";
 import { listedByLine, priceLine, soldAtLine, ticketButtonLabel, ticketHref } from "@/lib/events-r1/listing";
 import { ClaimLink } from "./ClaimSheet";
@@ -20,12 +22,30 @@ const LINK: Record<Tone, string> = {
   dark: "min-h-[44px] text-left font-body text-[13px] text-dim underline underline-offset-4",
 };
 
-/** The Get tickets link: the organiser's page in a new tab. Nothing when the listing has no page to send anyone to. */
+/**
+ * The Get tickets link: the organiser's page in a new tab. Nothing when the listing has no page to send anyone to. A tap is counted once
+ * per person or device per day ("[N] people went to buy"); the count never waits on, or blocks, the link.
+ */
 export function TicketLink({ event, className, onClick }: { event: Listed; className: string; onClick?: (e: React.MouseEvent) => void }) {
+  const api = useR1Api();
   const href = ticketHref(event);
   if (!href) return null;
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className={className} onClick={onClick} data-ticket-link>
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={className}
+      onClick={(e) => {
+        try {
+          void api?.events.ticketTap(event.id, deviceId()).catch(() => undefined);
+        } catch {
+          /* a failed count never stops the link */
+        }
+        onClick?.(e);
+      }}
+      data-ticket-link
+    >
       {ticketButtonLabel(event)}
     </a>
   );
@@ -39,19 +59,53 @@ export function SoldAt({ event, tone, className }: { event: Listed; tone: Tone; 
 }
 
 /** "Listed by Hoppaz" (or "Hosted by <name>" after a claim) and, while it is unclaimed, "Is this your event?". */
-export function ListedBy({ event, tone, className }: { event: Listed; tone: Tone; className?: string }) {
+export function ListedBy({ event, tone, className, claim = true }: { event: Listed; tone: Tone; className?: string; claim?: boolean }) {
   const l = event.listing;
   if (!l) return null;
   return (
     <div className={clsx("grid justify-items-start gap-0", className)}>
       <span className={clsx("font-body text-[13px] font-semibold", MUTED[tone])}>{listedByLine(event)}</span>
-      {!l.claimed && <ClaimLink eventId={event.id} eventTitle={event.title} className={LINK[tone]} />}
+      {!l.claimed && claim && <ClaimLink eventId={event.id} eventTitle={event.title} className={LINK[tone]} />}
+    </div>
+  );
+}
+
+/**
+ * Who made it, from the listing: the organiser's public Instagram and X (links, no @ in the address), and the flyer credit as the flyer says it.
+ * Nothing at all when the listing has none. Never a phone number or an email: Hoppaz keeps none.
+ */
+export function ListingCredits({ event, tone, className }: { event: Listed; tone: Tone; className?: string }) {
+  const l = event.listing;
+  if (!l) return null;
+  const ig = l.organiser_ig ?? null;
+  const x = l.organiser_x ?? null;
+  const credit = l.flyer_credit ?? null;
+  if (!ig && !x && !credit) return null;
+  const a = clsx("inline-flex min-h-[44px] items-center font-body text-[13px] underline underline-offset-4", tone === "tint" ? "text-t-text" : "text-cream");
+  return (
+    <div className={clsx("grid gap-0", className)} data-listing-credits>
+      {(ig || x) && (
+        <p className={clsx("m-0 flex flex-wrap items-center gap-x-3 font-body text-[13px]", MUTED[tone])}>
+          <span>Organiser</span>
+          {ig && (
+            <a href={`https://www.instagram.com/${ig}/`} target="_blank" rel="noopener noreferrer" className={a}>
+              Instagram @{ig}
+            </a>
+          )}
+          {x && (
+            <a href={`https://x.com/${x}`} target="_blank" rel="noopener noreferrer" className={a}>
+              X @{x}
+            </a>
+          )}
+        </p>
+      )}
+      {credit && <p className={clsx("m-0 font-body text-[12.5px]", MUTED[tone])}>{credit}</p>}
     </div>
   );
 }
 
 /** The event page's card under the cover: the price, the Get tickets link, where the tickets are sold. No count, no list, no stepper. */
-export function ListingCard({ event, anchor }: { event: R1Event; anchor?: React.RefObject<HTMLDivElement | null> }) {
+export function ListingCard({ event, anchor, bar = false }: { event: R1Event; anchor?: React.RefObject<HTMLDivElement | null>; bar?: boolean }) {
   const href = ticketHref(event);
   return (
     <div ref={anchor} className="scroll-mt-4 overflow-hidden rounded-hz border border-t-line bg-t-tile" data-listing-card>
@@ -61,7 +115,14 @@ export function ListingCard({ event, anchor }: { event: R1Event; anchor?: React.
       </div>
       <div className="grid gap-2.5 px-4 py-3">
         <b className="font-display text-[22px] font-extrabold leading-tight tabular-nums">{priceLine(event)}</b>
-        {href ? <TicketLink event={event} className="lip w-full" /> : <span className="font-body text-[13px] text-t-muted">{soldAtLine(event)}</span>}
+        {/* A listing has exactly one ticket button on screen. On a phone the bar that follows you (ListingBar) is it, so the card keeps the price and the note only. */}
+        {href ? (
+          <div className={bar ? "hidden lg:block" : undefined}>
+            <TicketLink event={event} className="lip w-full" />
+          </div>
+        ) : (
+          <span className="font-body text-[13px] text-t-muted">{soldAtLine(event)}</span>
+        )}
         {href && <SoldAt event={event} tone="tint" className="text-center text-[11.5px]" />}
       </div>
     </div>

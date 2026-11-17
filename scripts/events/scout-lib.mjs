@@ -329,6 +329,11 @@ export function blankEvent(source_site, source_id, name, lastSeen) {
     event_handle: null,
     organiser_email: null,
     organiser_phone: null,
+    // Readiness fields: the ticket site in a word, the page the event was found on, the flyer credit, the organiser's public X handle.
+    ticket_platform: null,
+    source_url: null,
+    flyer_credit: null,
+    organiser_x: null,
     lineup: [],
     capacity: null,
     last_seen: lastSeen,
@@ -336,9 +341,14 @@ export function blankEvent(source_site, source_id, name, lastSeen) {
   };
 }
 
+/** The word shown as "Tickets are sold on <word>" for each source, when the row does not say. */
+const PLATFORM = { tix: "Tix", eventbrite: "Eventbrite", chowdeck: "Chowdeck", luma: "Luma" };
+
 const nowIso = (ctx) => new Date(ctx.nowMs ?? Date.now()).toISOString();
 
 function finishEvent(ev) {
+  if (!ev.ticket_platform && ev.ticket_url) ev.ticket_platform = PLATFORM[ev.source_site] ?? null;
+  if (!ev.source_url && ev.ticket_url) ev.source_url = ev.ticket_url;
   ev.tickets = ev.tickets.map(cleanTicket);
   if (ev.tickets.length && ev.tickets.every((t) => t.sold_out)) ev.sold_out = true;
   if (ev.description) ev.description = ev.description.slice(0, 4000);
@@ -377,6 +387,8 @@ function applyExtras(raw, ev, prov, notes) {
     }
   }
   if (!ev.organiser_name && str(raw.organiser_name)) ev.organiser_name = str(raw.organiser_name);
+  if (str(raw.flyer_credit)) ev.flyer_credit = str(raw.flyer_credit).slice(0, 80);
+  if (str(raw.organiser_x)) ev.organiser_x = str(raw.organiser_x).replace(/^@/, "").slice(0, 15);
   const email = raw.organiser_email, phone = raw.organiser_phone;
   if ((email || phone) && !str(raw.contact_seen_on)) notes.push("organiser email or phone dropped: no contact_seen_on (where the page publishes it for contact)");
   else {
@@ -696,6 +708,10 @@ export function normaliseGeneric(raw, ctx = {}) {
   ev.flyer_url = cleanUrl(raw.image ?? raw.flyer_url);
   ev.category = str(raw.category) || null;
   ev.organiser_name = str(raw.organiser ?? raw.organiser_name) || null;
+  ev.ticket_platform = str(raw.ticket_platform).slice(0, 40) || null;
+  ev.source_url = cleanUrl(raw.source_url);
+  ev.flyer_credit = str(raw.flyer_credit).slice(0, 80) || null;
+  ev.organiser_x = str(raw.organiser_x).replace(/^@/, "").slice(0, 15) || null;
   ev.confidence = raw.confidence === "confirmed" && ev.ticket_url ? "confirmed" : "lead";
   if (raw.confidence === "confirmed" && !ev.ticket_url) notes.push("marked confirmed but no ticket page: kept as a lead");
   applyExtras(raw, ev, prov, notes);
@@ -722,6 +738,7 @@ export function normaliseRow(source, raw, ctx = {}) {
 export const EXTRA_KEYS = [
   "organiser_name", "organiser_instagram", "organiser_instagram_seen_on", "event_instagram", "event_instagram_seen_on",
   "organiser_email", "organiser_phone", "contact_seen_on", "lineup", "capacity", "capacity_quote", "page_description",
+  "flyer_credit", "organiser_x",
 ];
 
 /** The key a row has in an extras file: Tix and Chowdeck slug, the number at the end of an Eventbrite event url, the Luma url slug, else id or name. */

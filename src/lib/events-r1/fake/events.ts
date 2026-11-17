@@ -10,6 +10,7 @@ import { OUTREACH_REASONS } from "../types";
 import { autoPopsFor, defaultMessages, defaultQuestions } from "./defaults";
 import { canSell } from "./payouts";
 import { retimeAutoPops } from "./pops";
+import { recordTap, tapsOf } from "./taps";
 import {
   assertManage, canList, canManage, canManageRoom, canRunRoomEvents, canOpen, canSeeLink, eventEnd, eventView, fillFromWaitlist, findEvent, freeTypes, roomToPostIn,
   isExternal, isGoing, isHostOf, isUnclaimed, regOf, regsOf, requireViewer, statusOf, typeFull, typesOf, typeOfReg,
@@ -416,6 +417,18 @@ export const events: EventsApi = {
     e.listing_sold_out = false;
     emit();
     return eventView(e);
+  },
+
+  /** One tap on the outside ticket link, counted once per person or device per Lagos day. Never throws: a tap must not stop the link opening. */
+  async ticketTap(id, device) {
+    const e = findEvent(id);
+    if (!e || !isExternal(e) || !canOpen(e)) return;
+    recordTap(e, device);
+  },
+
+  async ticketTaps(id) {
+    const e = assertManage(findEvent(id));
+    return tapsOf(e.id);
   },
 
   subscribe,

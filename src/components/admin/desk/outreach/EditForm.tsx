@@ -40,6 +40,10 @@ export default function EditForm({
   const [flyer, setFlyer] = useState(f.flyer_url ?? "");
   const [orgName, setOrgName] = useState(f.organiser_name ?? "");
   const [orgHandle, setOrgHandle] = useState(f.organiser_handle ?? "");
+  const [orgX, setOrgX] = useState(f.organiser_x ?? "");
+  const [platform, setPlatform] = useState(f.ticket_platform ?? "");
+  const [credit, setCredit] = useState(f.flyer_credit ?? "");
+  const [sourceUrl, setSourceUrl] = useState(f.source_url ?? "");
   const [tickets, setTickets] = useState<{ name: string; price: string; sold_out: boolean }[]>(f.tickets.map((t) => ({ name: t.name, price: t.price_naira === null ? "" : String(t.price_naira), sold_out: t.sold_out })));
   const [err, setErr] = useState("");
 
@@ -72,6 +76,10 @@ export default function EditForm({
     put("flyer_url", flyer.trim() || null, f.flyer_url);
     put("organiser_name", orgName.trim() || null, f.organiser_name);
     put("organiser_handle", orgHandle.trim().replace(/^@/, "") || null, f.organiser_handle);
+    put("organiser_x", orgX.trim().replace(/^@/, "") || null, f.organiser_x ?? null);
+    put("ticket_platform", platform.trim() || null, f.ticket_platform ?? null);
+    put("flyer_credit", credit.trim() || null, f.flyer_credit ?? null);
+    put("source_url", sourceUrl.trim() || null, f.source_url ?? null);
     put("tickets", nextTickets, f.tickets);
     return patch;
   };
@@ -131,6 +139,18 @@ export default function EditForm({
         </Field>
         <Field label="Organiser Instagram handle">
           <input value={orgHandle} onChange={(e) => setOrgHandle(e.target.value)} placeholder="without the @" />
+        </Field>
+        <Field label="Organiser X handle">
+          <input value={orgX} onChange={(e) => setOrgX(e.target.value)} placeholder="without the @" />
+        </Field>
+        <Field label="Ticket site">
+          <input value={platform} maxLength={40} onChange={(e) => setPlatform(e.target.value)} placeholder="Tix, Eventbrite, Luma" />
+        </Field>
+        <Field label="Flyer credit">
+          <input value={credit} maxLength={80} onChange={(e) => setCredit(e.target.value)} placeholder="Flyer by @name. No phone or email" />
+        </Field>
+        <Field label="Page it was found on">
+          <input inputMode="url" value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://" />
         </Field>
       </div>
       <fieldset>

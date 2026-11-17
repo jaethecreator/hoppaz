@@ -5,7 +5,7 @@
  */
 import type { Vibe } from "../../brand";
 import { areaByName, insideLagos, LAGOS_CENTER, nearestArea } from "../../geo";
-import { normHandle } from "../outreach/match";
+import { normHandle, normX, plainText } from "../outreach/match";
 import type { ScoutEvent } from "../types";
 import type { EventRec } from "./store";
 
@@ -74,5 +74,11 @@ export function listingFields(f: ScoutEvent): Omit<EventRec, "id" | "slug" | "ho
     listing_sold_out: !!f.sold_out,
     source_site: f.source_site,
     source_id: f.source_id,
+    ticket_platform: plainText(f.ticket_platform, 40),
+    source_url: /^https?:\/\//i.test(f.source_url ?? "") ? (f.source_url as string).slice(0, 600) : null,
+    flyer_credit: plainText(f.flyer_credit, 80),
+    organiser_name: plainText(f.organiser_name, 120),
+    organiser_ig: normHandle(f.organiser_handle),
+    organiser_x: normX(f.organiser_x),
   };
 }

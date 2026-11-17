@@ -21,6 +21,31 @@ export function normHandle(raw: string | null | undefined): string | null {
   return /^[a-z0-9._]{1,30}$/.test(h) ? h : null;
 }
 
+/**
+ * An X (Twitter) handle as kept: no @, no link, lower case, 1 to 15 letters, digits and underscores. "@Lekki_Club", "x.com/lekki_club" and
+ * "twitter.com/lekki_club" all give "lekki_club". Anything else gives null. Same rule as _ev_o_xhandle in events_r1_outreach_ready.sql.
+ */
+export function normX(raw: string | null | undefined): string | null {
+  let h = (raw ?? "").trim();
+  if (!h) return null;
+  h = h.replace(/^https?:\/\/(www\.|mobile\.)?(x|twitter)\.com\//i, "").replace(/^(www\.)?(x|twitter)\.com\//i, "");
+  h = h.split(/[/?#]/)[0].replace(/^@/, "").toLowerCase();
+  return /^[a-z0-9_]{1,15}$/.test(h) ? h : null;
+}
+
+/** Does this text look like an email address, or a phone number (9 or more digits, spaces, dots, dashes and brackets allowed between them)? Same test as _ev_o_contactish. */
+export const looksLikeContact = (raw: string | null | undefined): boolean => /[^@\s]+@[^@\s]+\.[A-Za-z]{2,}/.test(raw ?? "") || /(\d[ ().-]*){9,}/.test(raw ?? "");
+
+/**
+ * Short plain text for a flyer credit or a ticket platform: control characters out, runs of spaces folded, cut at `max`, or null when empty or when
+ * it looks like an email or a phone number (Hoppaz keeps neither). Same as _ev_o_plain in events_r1_outreach_ready.sql.
+ */
+export function plainText(raw: string | null | undefined, max: number): string | null {
+  if (looksLikeContact(raw)) return null;
+  const t = (raw ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max).trim();
+  return t || null;
+}
+
 export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 /** A trimmed, lower case email, or null if it is not one. */

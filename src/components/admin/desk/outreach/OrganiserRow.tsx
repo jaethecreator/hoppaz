@@ -3,16 +3,19 @@
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import type { Organiser } from "@/lib/events-r1/types";
+import CopyClaimLink from "./CopyClaimLink";
 import { igUrl, lastContact } from "./format";
 import OrganiserPanel, { type Mode } from "./OrganiserPanel";
+import { wentToBuy } from "./taps";
 import { Btn, StageTag, Tag } from "./ui";
-import type { FocusRequest } from "./useOutreach";
+import { useOutreach, type FocusRequest } from "./useOutreach";
 
 /**
  * One line of the tracker. The buttons on the line are the routine: copy the message, open their Instagram, log that you contacted
  * them. Everything else is in the panel under the line (tap the name).
  */
 export default function OrganiserRow({ org, open, onToggle, focus }: { org: Organiser; open: boolean; onToggle: (open: boolean) => void; focus?: FocusRequest }) {
+  const { data } = useOutreach();
   const [mode, setMode] = useState<Mode>(null);
   const [copyKey, setCopyKey] = useState(0);
   const ref = useRef<HTMLElement>(null);
@@ -54,6 +57,7 @@ export default function OrganiserRow({ org, open, onToggle, focus }: { org: Orga
           <span className="hint mt-0.5 block">
             {org.events_upcoming} upcoming · {lastContact(org)}
             {org.pulled_waiting > 0 && ` · ${org.pulled_waiting} to review`}
+            {wentToBuy(data.taps?.organisers[org.id]) && ` · ${wentToBuy(data.taps?.organisers[org.id])}`}
           </span>
         </button>
         {!open && !declined && org.stage !== "claimed" && (
@@ -74,6 +78,7 @@ export default function OrganiserRow({ org, open, onToggle, focus }: { org: Orga
             >
               I contacted them
             </Btn>
+            <CopyClaimLink target={{ organiserId: org.id }} name={org.name} />
           </div>
         )}
         {(open || declined || org.stage === "claimed") && (

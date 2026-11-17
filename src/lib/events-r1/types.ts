@@ -84,6 +84,15 @@ export type ListingInfo = {
   /** The organiser has taken the room over. The page then says Hosted by them; tickets stay on the organiser's page until the host switches on Hoppaz tickets. */
   claimed: boolean;
   organiser_name: string | null;
+  /** Where the outside link goes, in a word: "Tix", "Eventbrite", "Luma", "Paystack". Shown as "Tickets are sold on <platform>". Falls back to source_site. */
+  ticket_platform?: string | null;
+  /** The page the scout found this event on (not always the ticket page). Staff only reads it. */
+  source_url?: string | null;
+  /** "Flyer by @someone". Plain text, no link. */
+  flyer_credit?: string | null;
+  /** The organiser's public handles, no @. Never a phone number or an email. */
+  organiser_ig?: string | null;
+  organiser_x?: string | null;
 };
 
 export type RegStatus =
@@ -458,6 +467,8 @@ export type OrganiserDetail = {
   log: OrganiserLogEntry[];
   events: OrganiserEvent[];
   transfers: Transfer[];
+  /** Open and past claim links (the event_claims flag). Empty when the flag is off. */
+  claim_links?: ClaimLink[];
 };
 
 export type OrganiserPatch = {
@@ -493,8 +504,17 @@ export type ScoutEvent = {
   organiser_name: string | null;
   organiser_handle: string | null;
   event_handle: string | null;
-  organiser_email: string | null;
-  organiser_phone: string | null;
+  /** Ignored on import: Hoppaz keeps no phone numbers or emails of organisers. Kept in the type so older scout files still load. */
+  organiser_email?: string | null;
+  organiser_phone?: string | null;
+  /** The outside ticket site, in a word ("Tix", "Eventbrite"). Else the source site is used. */
+  ticket_platform?: string | null;
+  /** The page the event was found on. */
+  source_url?: string | null;
+  /** "Flyer by @name" as the flyer shows it. Plain text up to 80 characters. */
+  flyer_credit?: string | null;
+  /** The organiser's public X handle, no @. (organiser_handle is their Instagram.) */
+  organiser_x?: string | null;
   lineup: { time?: string; name: string }[];
   /** Seats, only if the page says so. */
   capacity: number | null;
@@ -526,7 +546,7 @@ export type PulledEvent = {
   /** Set when the last run covering this source did not see it. */
   missing_since: string | null;
 };
-export type PulledPatch = Partial<Pick<ScoutEvent, "name" | "starts_at" | "ends_at" | "venue" | "area" | "lat" | "lng" | "description" | "tickets" | "sold_out" | "ticket_url" | "flyer_url" | "category" | "organiser_name" | "organiser_handle">>;
+export type PulledPatch = Partial<Pick<ScoutEvent, "name" | "starts_at" | "ends_at" | "venue" | "area" | "lat" | "lng" | "description" | "tickets" | "sold_out" | "ticket_url" | "flyer_url" | "category" | "organiser_name" | "organiser_handle" | "organiser_x" | "ticket_platform" | "source_url" | "flyer_credit">>;
 
 export type ImportLine = { source_site: string; source_id: string; name: string; action: "new" | "updated" | "unchanged" | "blocked" | "skipped"; note: string };
 export type ImportReport = {
@@ -564,15 +584,75 @@ export type TransferLink = { transfer: Transfer; link: string };
 export type TransferPreview =
   | {
       ok: true;
-      kind: TransferKind;
+      /** "link" is a one-time claim link with no email (the event_claims flag). */
+      kind: TransferKind | "link";
       room: { name: string; slug: string; logo_url: string | null; about: string };
       events: { id: string; title: string; starts_at: string }[];
-      /** "j***@gmail.com" */
-      email_hint: string;
+      /** "j***@gmail.com". null for a claim link: it needs no email match. */
+      email_hint: string | null;
       organiser_name: string | null;
       expires_at: string;
     }
   | { ok: false; reason: "not_found" | "expired" | "used" | "revoked" };
+
+/**
+ * A one-time claim link (the event_claims flag). It names a room and no email: whoever opens it and signs in gets the room and its
+ * upcoming events. Only a hash of the token is kept; the token is returned once, inside the link.
+ */
+export type ClaimLinkStatus = "pending" | "used" | "revoked" | "expired";
+export type ClaimLink = {
+  id: string;
+  room_id: string;
+  room_name: string;
+  organiser_id: string | null;
+  /** The listing it was made from, when it was made from a listing row. */
+  event_id: string | null;
+  status: ClaimLinkStatus;
+  created_at: string;
+  created_by: string | null;
+  expires_at: string;
+  used_at: string | null;
+};
+export type ClaimLinkMade = { link: ClaimLink; url: string };
+
+/** A person without a link asking to claim a listing. Signed in; Hoppaz keeps their name and a note, never an email or a phone number. */
+export type ClaimAsk = {
+  id: string;
+  event_id: string;
+  event_title: string;
+  organiser_id: string | null;
+  organiser_name: string | null;
+  /** The name on their Hoppaz account. */
+  name: string;
+  note: string;
+  status: "new" | "approved" | "declined";
+  created_at: string;
+  decided_by: string | null;
+};
+
+/** A listing nobody has claimed, for the staff list. */
+export type Claimable = {
+  event_id: string;
+  title: string;
+  starts_at: string;
+  organiser_id: string | null;
+  organiser_name: string | null;
+  room_name: string | null;
+  /** People who tapped the outside ticket link, once each per day. */
+  went_to_buy: number;
+  /** An unused, unexpired claim link exists. */
+  link_open: boolean;
+  asks: number;
+};
+
+/** Tap counts for the staff desk: by event and by organiser (distinct people and devices). */
+export type TapCounts = { events: Record<string, number>; organisers: Record<string, number> };
+
+/** Bulk approve: what went live and what was skipped, with the reason as words. */
+export type ApproveManyResult = {
+  approved: { id: string; event_id: string }[];
+  skipped: { id: string; name: string; reason: string; text: string }[];
+};
 
 export type AcceptOutcome = { room_id: string; slug: string; moved_events: number; already_owned_other: boolean };
 
@@ -644,4 +724,11 @@ export const OUTREACH_REASONS: Record<string, string> = {
   bad_name: "Check the name",
   bad_phone: "Check the phone number",
   bad_note: "Keep the note under 500 characters",
+  not_on: "Claiming is not switched on yet",
+  already_listed: "This one is already live. Accept its changes on the row",
+  link_not_found: "This link is not valid",
+  already_asked: "You already asked about this event",
+  too_many: "Pick up to 100 rows at a time",
+  merged: "This row was folded into another one",
+  bad_ids: "Pick at least one row",
 };

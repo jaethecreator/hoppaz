@@ -55,6 +55,7 @@ function Panel() {
   const [people, setPeople] = useState<Person[]>([]);
   const [offset, setOffset] = useState(0);
   const [paid, setPaid] = useState(false);
+  const [claims, setClaims] = useState(false);
   const [payout, setPayout] = useState<HostPayoutStatus>("not_started");
   const [ticket, setTicket] = useState<{ id: string; text: string } | null>(null);
   const [note, setNote] = useState("");
@@ -69,6 +70,7 @@ function Panel() {
     setPeople(dev.users());
     setOffset(dev.getOffset());
     setPaid(dev.paidOn());
+    setClaims(dev.claimsOn());
     const id = api?.auth.current()?.id;
     setPayout(id ? dev.payoutStatus(id) : "not_started");
   }, [dev, api]);
@@ -132,6 +134,16 @@ function Panel() {
             <button type="button" className="chip" onClick={() => dev.resetClock()}>Reset time</button>
           </div>
           {nextBefore20 && <p className="hint mt-2">Next event: {nextBefore20.title}, {lagosStamp(Date.parse(nextBefore20.starts_at))}</p>}
+        </section>
+
+        <section className="card mt-4">
+          <h2 className="seclabel">Event claims</h2>
+          <p className="mt-2 font-body text-[15px]">Event claims: {claims ? "On" : "Off"}{dev.claimsLockedByBuild ? " (set by the build)" : ""}</p>
+          <p className="hint mt-1">Off: a listing says Listed by Hoppaz and nothing more. On: the claim strip, /claim/&lt;token&gt; links with no email, the ask to claim, and the staff Claimable list.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" className="chip" aria-pressed={claims} disabled={dev.claimsLockedByBuild} onClick={() => dev.setClaims(true)}>On</button>
+            <button type="button" className="chip" aria-pressed={!claims} disabled={dev.claimsLockedByBuild} onClick={() => dev.setClaims(false)}>Off</button>
+          </div>
         </section>
 
         <section className="card mt-4">

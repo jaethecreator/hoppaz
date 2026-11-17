@@ -335,7 +335,8 @@ Totals
   sources covered (rows of these not seen are flagged gone): ${(batch.sources_covered ?? []).join(", ") || "none"}`);
 
   // 5. the normalized batch (always written).
-  const outBatch = { run_id: batch.run_id, scouted_at: batch.scouted_at, sources_covered: batch.sources_covered ?? [], events: ready.map((r) => r.ev) };
+  // Hoppaz keeps no organiser phone number or email in its database: the site drops them on import, and they are not sent at all.
+  const outBatch = { run_id: batch.run_id, scouted_at: batch.scouted_at, sources_covered: batch.sources_covered ?? [], events: ready.map((r) => ({ ...r.ev, organiser_email: null, organiser_phone: null })) };
   writeFileSync(join(dir, "batch.normalized.json"), `${JSON.stringify(outBatch, null, 2)}\n`);
   log(`\nwrote ${join(dir, "batch.normalized.json")}`);
 
@@ -409,7 +410,7 @@ Totals
   }
   for (const r of ready) if (r.ev.flyer_url && !findFlyer(dir, r.ev)) keptSource++;
   log(`\nflyers uploaded ${up}; ${keptSource} events keep the organiser's own picture link (no file on disk): staff decide at review`);
-  const finalBatch = { ...outBatch, events: ready.map((r) => r.ev) };
+  const finalBatch = { ...outBatch, events: ready.map((r) => ({ ...r.ev, organiser_email: null, organiser_phone: null })) };
   writeFileSync(join(dir, "batch.normalized.json"), `${JSON.stringify(finalBatch, null, 2)}\n`);
   try {
     log(`Sending ${finalBatch.events.length} events to ${site} for review...`);

@@ -174,6 +174,11 @@ export function listingOf(e: EventRec): ListingInfo {
     source_site: e.source_site ?? null,
     claimed: !isUnclaimed(e),
     organiser_name: (e.organiser_id ? S().organisers[e.organiser_id]?.name : null) ?? null,
+    ticket_platform: e.ticket_platform ?? null,
+    source_url: e.source_url ?? null,
+    flyer_credit: e.flyer_credit ?? null,
+    organiser_ig: e.organiser_ig ?? null,
+    organiser_x: e.organiser_x ?? null,
   };
 }
 
@@ -290,9 +295,11 @@ export function canSeeLink(e: EventRec): boolean {
 export function eventView(e: EventRec, opts: { revealLink?: boolean } = {}): R1Event {
   const {
     host_id, ticket_types: _stored, ticket_mode, ticket_url, instagram_url, listed_price, listed_price_max, listing_sold_out, source_site, source_id, organiser_id,
+    ticket_platform, source_url, flyer_credit, organiser_name, organiser_ig, organiser_x,
     ...rest
   } = e;
   void _stored; void ticket_url; void instagram_url; void listed_price; void listed_price_max; void listing_sold_out; void source_site; void source_id; void organiser_id;
+  void ticket_platform; void source_url; void flyer_credit; void organiser_name; void organiser_ig; void organiser_x;
   const interested = Object.keys(S().interest).filter((k) => S().interest[k] && k.endsWith(`:${e.id}`)).length;
   const base = {
     ...rest,

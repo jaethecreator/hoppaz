@@ -10,7 +10,7 @@ import { popWhen } from "@/components/events-r1/page/time";
 import GetPaidCard from "@/components/events-r1/pay/GetPaidCard";
 import { usePaidOn, useSales } from "@/components/events-r1/pay/usePay";
 import { naira } from "@/components/events-r1/pay/words";
-import { useR1Api, useR1Now, usePops } from "@/lib/events-r1/hooks";
+import { useR1Api, useR1Now, usePops, useR1Query } from "@/lib/events-r1/hooks";
 import type { R1Event, Registration } from "@/lib/events-r1/types";
 import type { TabId } from "./HostDashboard";
 import { autoLabel } from "./pops/words";
@@ -79,6 +79,9 @@ export default function OverviewTab({ event, regs, fresh, onTab }: { event: R1Ev
   const sales = useSales(event.id, paidOn);
   const pops = usePops(event.id, "host");
   const [said, say] = useFlash();
+  // A listing sells on another site: the one number that matters is how many people tapped through to buy (once per person or device per day).
+  const outside = !!event.listing;
+  const taps = useR1Query<number>(async (a) => (outside ? a.events.ticketTaps(event.id) : 0), [event.id, outside]);
   const [qr, setQr] = useState(false);
   // "Keep it free" is remembered in this browser: the data layer has no field for it.
   const [keptFree, setKeptFree] = useState(false);
@@ -176,6 +179,12 @@ export default function OverviewTab({ event, regs, fresh, onTab }: { event: R1Ev
       )}
 
       <GetPaidCard returnPath={`/host/${encodeURIComponent(event.id)}?tab=overview`} quietWhenReady={!isPaid} />
+
+      {outside && taps.data !== null && (
+        <section aria-label="Outside tickets" className="grid grid-cols-2 gap-3 lg:grid-cols-3" data-went-to-buy>
+          <Tile n={taps.data.toLocaleString("en-NG")} label={taps.data === 1 ? "person went to buy" : "people went to buy"} />
+        </section>
+      )}
 
       {!event.listing && (
         <>

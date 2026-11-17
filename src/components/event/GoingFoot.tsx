@@ -59,7 +59,9 @@ export default function GoingFoot({
   const r1 = EVENTS_R1 ? asR1(event) : null;
   // A listing is ticketed by the organiser: no going count, no I'M GOING, no event chat (registering is the only way in), and the link goes to the ticket page.
   const listing = isListing(event);
-  const link = listing ? ticketHref(event) : event.ig_url;
+  // A listing has exactly one ticket button. In the Release 1 card that is the one in the block above (Get tickets), so the row down here
+  // has only Share. (This row used to add a second one: Get tickets above and TICKETS below.)
+  const link = listing ? (r1 ? null : ticketHref(event)) : event.ig_url;
   // Release 1 events chat in their room (registering is the only way in); old-app events keep the old chat.
   const chatHref = listing ? null : r1 ? eventChatHref(r1) : `/chat?c=${event.id}`;
 

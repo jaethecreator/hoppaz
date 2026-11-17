@@ -99,6 +99,8 @@ One file per source per run: `raw/<name>.json`.
     "organiser_email": "bookings@example.com",
     "organiser_phone": "0803 000 0000",
     "contact_seen_on": "Tix event page, Contact Us block",
+    "flyer_credit": "Flyer by @designer, as the flyer says it",
+    "organiser_x": "@theirxhandle",
     "lineup": [ { "time": "22:00", "name": "DJ Name" }, "Host Name" ],
     "capacity": 300,
     "capacity_quote": "the exact words on the page that give the number"
@@ -181,8 +183,9 @@ as `gone` (a flag for staff, nothing is deleted). Seen again later clears it. So
 
 ## How organisers are matched (the server does it)
 
-The scout only reports `organiser_name`, `organiser_handle`, `organiser_email`, `organiser_phone`. `ev_o_import` matches an existing organiser by Instagram handle, then by
-name key, then by email, or makes a new one at stage `pulled`. An organiser who said no (`declined` or `do_not_contact`) makes the row `blocked`; it is never listed.
+The scout reports `organiser_name`, `organiser_handle` (Instagram) and `organiser_x`, plus `ticket_platform` (set from the source: Tix, Eventbrite, Chowdeck, Luma), `source_url` (the
+page the event was found on) and `flyer_credit`. Hoppaz keeps no organiser phone number or email: the loader does not send them and `ev_o_import` drops them if they arrive, and a
+flyer credit that looks like an email or a phone number is dropped. `ev_o_import` matches an existing organiser by Instagram handle, then by name key, or makes a new one at stage `pulled`. An organiser who said no (`declined` or `do_not_contact`) makes the row `blocked`; it is never listed.
 The name key is the same rule in `nameKey()` in `scout-lib.mjs`: lower case of NFKD text with everything except a-z and 0-9 removed. The scout never sets a stage and never contacts anyone.
 
 ## Sources

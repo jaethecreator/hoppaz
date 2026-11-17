@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ContactChannel, Organiser, OrganiserDetail, OrganiserLogEntry } from "@/lib/events-r1/types";
+import CopyClaimLink from "./CopyClaimLink";
 import { ago, igUrl, stamp, when } from "./format";
 import LinkTool from "./LinkTool";
 import MessageTool from "./MessageTool";
+import { wentToBuy } from "./taps";
 import { Btn, Fail, Field, FilterChip, Loading, Tag } from "./ui";
 import { useOutreach, type FocusRequest } from "./useOutreach";
 
@@ -120,7 +122,7 @@ export default function OrganiserPanel({ org, mode, setMode, copyKey, copyMessag
         <Loading />
       ) : (
         <>
-          <Events detail={detail} />
+          <Events detail={detail} org={org} />
           <Details org={org} />
           <Log detail={detail} onNote={() => void load()} org={org} />
         </>
@@ -158,6 +160,7 @@ function ActionBar({ org, mode, setMode, copyMessage, claimed, declined, onOffer
           Create transfer link
         </Btn>
       )}
+      {!claimed && !declined && <CopyClaimLink target={{ organiserId: org.id }} name={org.name} />}
       {!claimed && !declined && (
         <Btn danger className={on("no")} onClick={() => t("no")}>
           Mark no
@@ -341,17 +344,20 @@ function PendingLinks({ detail, onChanged }: { detail: OrganiserDetail; onChange
   );
 }
 
-function Events({ detail }: { detail: OrganiserDetail }) {
+function Events({ detail, org }: { detail: OrganiserDetail; org: Organiser }) {
+  const { data } = useOutreach();
+  const claimable = org.stage !== "claimed" && org.stage !== "declined" && !org.do_not_contact;
   return (
     <div>
       <p className="seclabel mb-1">Events</p>
       {detail.events.length === 0 && <p className="hint">No live events.</p>}
       {detail.events.map((e) => (
-        <div key={e.id} className="flex flex-wrap items-center gap-2 border-t border-line py-2 first:border-0">
+        <div key={e.id} className="flex flex-wrap items-center gap-2 border-t border-line py-2 first:border-0" data-listing-row>
           <div className="min-w-0 flex-1">
             <p className="font-body text-[14px] font-bold">{e.title}</p>
             <p className="hint">
               {when(e.starts_at)} · {e.upcoming ? "Upcoming" : "Past"}
+              {wentToBuy(data.taps?.events[e.id]) && ` · ${wentToBuy(data.taps?.events[e.id])}`}
             </p>
           </div>
           {e.ticket_url && (
@@ -362,6 +368,7 @@ function Events({ detail }: { detail: OrganiserDetail }) {
           <a href={`/event/${encodeURIComponent(e.id)}`} target="_blank" rel="noreferrer noopener" className="font-body text-[13px] text-orange underline underline-offset-4">
             Event page ↗
           </a>
+          {claimable && e.upcoming && <CopyClaimLink target={{ eventId: e.id }} name={e.title} />}
         </div>
       ))}
     </div>

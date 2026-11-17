@@ -24,7 +24,7 @@ export function approveBlock(row: PulledEvent, patch?: PulledPatch): string {
  * One row of the review queue. Approve and reject take the card out of the list at once and put it back, with the reason, if the
  * call fails. Keyboard: focus the card, then A approves, E edits, R rejects, J and K move between cards.
  */
-export default function ReviewCard({ row, others }: { row: PulledEvent; others: PulledEvent[] }) {
+export default function ReviewCard({ row, others, picked, onPick }: { row: PulledEvent; others: PulledEvent[]; picked?: boolean; onPick?: (on: boolean) => void }) {
   const { data, api, by, say } = useOutreach();
   const [mode, setMode] = useState<Mode>(null);
   const card = useRef<HTMLElement>(null);
@@ -138,7 +138,20 @@ export default function ReviewCard({ row, others }: { row: PulledEvent; others: 
   const sourceLine = [f.source_site, ...row.also_at.map((a) => a.source_site)].join(" + ");
 
   return (
-    <article ref={card} tabIndex={0} data-review-card onKeyDown={onKey} className={clsx("card mb-3 !p-3 outline-none focus-visible:ring-2 focus-visible:ring-orange", busy && "opacity-60")} aria-label={f.name}>
+    <article
+      ref={card}
+      tabIndex={0}
+      data-review-card
+      onKeyDown={onKey}
+      className={clsx("card mb-3 !p-3 outline-none focus-visible:ring-2 focus-visible:ring-orange", busy && "opacity-60", picked && "border-orange")}
+      aria-label={f.name}
+    >
+      {onPick && !live && (
+        <label className="-mt-1 mb-1 flex min-h-[44px] w-fit cursor-pointer items-center gap-2.5 pr-4 font-body text-[14px]">
+          <input type="checkbox" checked={!!picked} onChange={(e) => onPick(e.target.checked)} className="h-5 w-5 flex-none cursor-pointer !p-0 accent-orange" data-review-pick />
+          <span>Select</span>
+        </label>
+      )}
       <div className="flex gap-3">
         <div className="h-24 w-[72px] flex-none overflow-hidden rounded-hz border border-line bg-ink-3">
           {f.flyer_url ? (

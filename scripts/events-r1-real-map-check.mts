@@ -45,10 +45,11 @@ const ID2 = "22222222-2222-4222-8222-222222222222";
 test("mapListing: nulls stay null, price kept, flags are booleans", () => {
   eq(
     map.mapListing({ ticket_url: "https://tix.africa/e/1", instagram_url: null, price_from: 5000, price_to: "15000", sold_out: null, source_site: "Tix", claimed: true, organiser_name: "Lagos Nights" }),
-    { ticket_url: "https://tix.africa/e/1", instagram_url: null, price_from: 5000, price_to: 15000, sold_out: false, source_site: "Tix", claimed: true, organiser_name: "Lagos Nights" },
+    { ticket_url: "https://tix.africa/e/1", instagram_url: null, price_from: 5000, price_to: 15000, sold_out: false, source_site: "Tix", claimed: true, organiser_name: "Lagos Nights", ticket_platform: null, source_url: null, flyer_credit: null, organiser_ig: null, organiser_x: null },
     "listing"
   );
-  eq(map.mapListing({}), { ticket_url: null, instagram_url: null, price_from: null, price_to: null, sold_out: false, source_site: null, claimed: false, organiser_name: null }, "empty");
+  eq(map.mapListing({}), { ticket_url: null, instagram_url: null, price_from: null, price_to: null, sold_out: false, source_site: null, claimed: false, organiser_name: null, ticket_platform: null, source_url: null, flyer_credit: null, organiser_ig: null, organiser_x: null }, "empty");
+  eq(map.mapListing({ ticket_platform: "Tix", flyer_credit: "Flyer by @k", organiser_ig: "lekki", organiser_x: "lekki_x" }).organiser_x, "lekki_x", "the new fields are read");
   eq(map.mapListing({ price_from: 0 }).price_from, 0, "free is 0, not unknown");
 });
 
@@ -129,6 +130,23 @@ test("reasons: the shared words, has_registrations names the events, unknown is 
   eq(outreachReason("confirm_name"), "Type the organiser name exactly to confirm", "confirm_name");
   eq(outreachReason("what_is_this"), "That did not work. Try again", "unknown");
   eq(["not_found", "has_registrations", "already_pending", "paid_sales", "bad_email", "no_listings_account", "weird"].map(outreachStatus), [404, 409, 409, 409, 400, 503, 400], "statuses");
+});
+
+test("claims and bulk approve: a claim link preview has no email; links, asks, the claimable list, tap counts and bulk results map cleanly", () => {
+  const p = map.mapPreview({ ok: true, kind: "link", room: { name: "Lagos Nights", slug: "lagos-nights", logo_url: null, about: "" }, events: [], email_hint: null, organiser_name: "Lagos Nights", expires_at: "2026-11-15T00:00:00Z" });
+  eq(p.ok && [p.kind, p.email_hint], ["link", null], "a claim link has kind link and no email hint");
+  const l = map.mapClaimLink({ id: ID, room_id: ID2, room_name: "R", organiser_id: ID, event_id: null, status: "pending", created_at: "2026-11-01T10:00:00Z", created_by: "Jae", expires_at: "2020-01-01T00:00:00Z", used_at: null });
+  eq([l.status, l.event_id, l.created_by], ["expired", null, "Jae"], "an open link past its date reads expired; no token field");
+  eq(["token" in l, "token_hash" in l], [false, false], "no token, no hash");
+  const a = map.mapClaimAsk({ id: ID, event_id: ID2, event_title: "Rave", organiser_id: null, organiser_name: null, name: "Ada", note: null, status: "weird", created_at: "2026-11-01T10:00:00Z", decided_by: null });
+  eq([a.status, a.note, a.name], ["new", "", "Ada"], "a claim ask");
+  eq(Object.keys(a).some((k) => /mail|phone/i.test(k)), false, "an ask has no email or phone");
+  eq(map.mapClaimable({ event_id: ID, title: "Rave", starts_at: "2026-11-07T20:00:00Z", went_to_buy: "4", link_open: 1, asks: null }).went_to_buy, 4, "claimable: whole numbers");
+  eq(map.mapTapCounts({ events: { [ID]: "3" }, organisers: { [ID2]: 5, bad: "x" } }), { events: { [ID]: 3 }, organisers: { [ID2]: 5, bad: 0 } }, "tap counts");
+  eq(map.mapTapCounts(null), { events: {}, organisers: {} }, "no tap counts");
+  const r = map.mapApproveMany({ ok: true, approved: [{ id: ID, event_id: ID2 }], skipped: [{ id: ID2, name: "Lead", reason: "no_time" }] }, outreachReason);
+  eq([r.approved.length, r.skipped[0].reason, r.skipped[0].text], [1, "no_time", OUTREACH_REASONS.no_time], "bulk approve answers with the reason as words");
+  eq(outreachReason("not_on"), OUTREACH_REASONS.not_on, "not_on has words");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

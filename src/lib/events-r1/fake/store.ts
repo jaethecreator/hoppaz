@@ -12,7 +12,7 @@ import type { HostPayoutStatus, Order } from "../pay";
 import { PAID_KEY } from "../flags";
 import type { Lineup } from "../lineup";
 import type {
-  AuthUser, ClaimRequest, JoinMode, JoinRequest, Organiser, OrganiserLogEntry, Pop, PulledEvent, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement,
+  AuthUser, ClaimAsk, ClaimLink, ClaimRequest, JoinMode, JoinRequest, Organiser, OrganiserLogEntry, Pop, PulledEvent, R1Event, RegMessages, RegQuestion, Registration, Report, RoomAnnouncement,
   RoomLinks, RoomMessage, RoomNotice, RoomRole, RoomSummary, SavedDetails, Ticket, Transfer,
 } from "../types";
 import { applyPayoutsDemo } from "./payoutsDemo";
@@ -54,6 +54,13 @@ export type EventRec = Omit<
   source_site?: string | null;
   source_id?: string | null;
   organiser_id?: string | null;
+  /** The outside ticket site in a word, the page the scout found the event on, the flyer credit, and the organiser's public handles (no phone, no email). */
+  ticket_platform?: string | null;
+  source_url?: string | null;
+  flyer_credit?: string | null;
+  organiser_name?: string | null;
+  organiser_ig?: string | null;
+  organiser_x?: string | null;
 };
 
 export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "latest_announcement" | "is_owner" | "can_post" | "has_3d" | "three_d_on" | "online" | "about" | "links" | "join_mode" | "my_role" | "request" | "pending_requests"> & {
@@ -119,6 +126,11 @@ export type PulledRec = Omit<PulledEvent, "organiser_name" | "organiser_stage"> 
 /** A transfer as stored: only the hash of the link is kept, never the link. attempts counts wrong-email tries (10 locks it). */
 export type TransferRec = Transfer & { token_hash: string; attempts: number; accepted_by: string | null };
 
+/** A claim link as stored: only the hash of the token is kept, never the token. */
+export type ClaimLinkRec = ClaimLink & { token_hash: string };
+/** A claim ask as stored: the asker is a signed in user. */
+export type ClaimAskRec = ClaimAsk & { user_id: string };
+
 export type RegSettings = { questions: RegQuestion[]; messages: RegMessages };
 
 /** Every collection is a record by id, so the saved layer can be a plain difference. */
@@ -162,6 +174,11 @@ export type FakeState = {
   pulled: Record<string, PulledRec>;
   transfers: Record<string, TransferRec>;
   claimRequests: Record<string, ClaimRequest>;
+  /** Event claims (the event_claims flag): one-time links with no email, and asks from people without a link. */
+  claimLinks: Record<string, ClaimLinkRec>;
+  claimAsks: Record<string, ClaimAskRec>;
+  /** "<eventId>|<Lagos day>|<who>" to true: a person or device tapped the outside ticket link that day. One per key. */
+  ticketTaps: Record<string, boolean>;
   /** The Hoppaz Listings user (always the seeded one, so a restore finds it again). null if the account is not set up. */
   listingsUserId: string | null;
   viewerId: string | null;
@@ -175,7 +192,7 @@ export type FakeState = {
 const COLLS = [
   "users", "events", "regs", "tickets", "pops", "announcements", "messages", "reports", "rooms",
   "orders", "payouts", "regSettings", "lineups", "memberships", "roles", "joinedAt", "doorStaff", "requests", "notices", "interest", "reads",
-  "savedDetails", "organisers", "organiserLog", "pulled", "transfers", "claimRequests",
+  "savedDetails", "organisers", "organiserLog", "pulled", "transfers", "claimRequests", "claimLinks", "claimAsks", "ticketTaps",
 ] as const;
 type Coll = (typeof COLLS)[number];
 

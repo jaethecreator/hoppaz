@@ -6,18 +6,21 @@
  * and only when every step passed do the copies become the live state. A failed step, or a dry run, leaves the state untouched.
  */
 import type { ClaimsApi, OutreachApi } from "../api";
+import { eventClaimsOn } from "../flags";
 import { siteOrigin } from "../siteUrl";
-import { isBlocked, lagosDay, maskEmail, nameKey, normEmail, normHandle, stageRefusal } from "../outreach/match";
+import { isBlocked, lagosDay, maskEmail, nameKey, normEmail, normHandle, normX, plainText, stageRefusal } from "../outreach/match";
 import { fail, OutreachError } from "../outreach/reasons";
+import { OUTREACH_REASONS } from "../types";
 import { randomToken, sha256Hex } from "../outreach/token";
 import type {
-  AcceptOutcome, ClaimRequest, ContactChannel, ImportLine, ImportReport, Organiser, OrganiserDetail, OrganiserLogEntry, OrganiserLogKind, OrganiserPatch,
+  AcceptOutcome, ApproveManyResult, Claimable, ClaimAsk, ClaimLink, ClaimRequest, ContactChannel, ImportLine, ImportReport, Organiser, OrganiserDetail, OrganiserLogEntry, OrganiserLogKind, OrganiserPatch,
   OrganiserStage, PulledEvent, PulledFlag, PulledPatch, ScoutBatch, ScoutEvent, Transfer, TransferLink, TransferPreview, WeekSummary,
 } from "../types";
 import { listingFields, priceRange } from "./listingRec";
-import { eventEnd, isUnclaimed, requireViewer, roleOf, statusOf } from "./rules";
+import { eventEnd, isExternal, isUnclaimed, requireViewer, roleOf, statusOf } from "./rules";
 import { emit, now, persist, S, viewer } from "./store";
-import type { EventRec, OrganiserRec, PulledRec, RoomRec, TransferRec } from "./store";
+import type { ClaimAskRec, ClaimLinkRec, EventRec, OrganiserRec, PulledRec, RoomRec, TransferRec } from "./store";
+import { allTaps } from "./taps";
 import { clone, DAY, newId, slugFor } from "./util";
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -28,7 +31,7 @@ const staffLabel = (by: string) => (by ?? "").trim().slice(0, 60) || "Staff";
 /** Everything a staff action or an accept can touch (a deleted event takes its pops, chat lines and so on with it). */
 const TX = [
   "events", "rooms", "memberships", "roles", "joinedAt", "organisers", "organiserLog", "pulled", "transfers", "claimRequests", "regs", "tickets", "pops",
-  "announcements", "messages", "lineups", "regSettings", "interest", "reports", "requests", "notices",
+  "announcements", "messages", "lineups", "regSettings", "interest", "reports", "requests", "notices", "claimLinks", "claimAsks",
 ] as const;
 
 /** Test seam (fakeDev.failAcceptAt): make one step of accept fail, to prove nothing is left half done. */
@@ -152,6 +155,7 @@ function pulledRec(id: string): PulledRec {
 /** What a staff edit or a patch may carry, checked and cleaned. */
 const PATCH_KEYS = [
   "name", "starts_at", "ends_at", "venue", "area", "lat", "lng", "description", "tickets", "sold_out", "ticket_url", "flyer_url", "category", "organiser_name", "organiser_handle",
+  "organiser_x", "ticket_platform", "source_url", "flyer_credit",
 ] as const;
 
 function cleanPatch(patch: PulledPatch | undefined): Partial<ScoutEvent> {
@@ -182,13 +186,24 @@ function cleanPatch(patch: PulledPatch | undefined): Partial<ScoutEvent> {
       if (u && !/^https?:\/\//i.test(u)) throw new Error("Paste a full link that starts with https://");
       out[k] = u || null;
     } else if (k === "organiser_handle") out[k] = v === null ? null : (normHandle(String(v)) ?? String(v).trim());
-    else out[k] = v === null ? null : String(v).trim();
+    else if (k === "organiser_x") {
+      const x = v === null || String(v).trim() === "" ? null : normX(String(v));
+      if (v !== null && String(v).trim() !== "" && !x) throw new Error("Check the X handle");
+      out[k] = x;
+    } else if (k === "ticket_platform") out[k] = plainText(v === null ? null : String(v), 40);
+    else if (k === "flyer_credit") out[k] = plainText(v === null ? null : String(v), 80);
+    else if (k === "source_url") {
+      const u = v === null ? "" : String(v).trim();
+      if (u && !/^https?:\/\//i.test(u)) throw new Error("Paste a full link that starts with https://");
+      out[k] = u || null;
+    } else out[k] = v === null ? null : String(v).trim();
   }
   return out as Partial<ScoutEvent>;
 }
 
 const UPDATABLE: Array<keyof EventRec> = [
   "starts_at", "ends_at", "price_naira", "listed_price", "listed_price_max", "listing_sold_out", "ticket_url", "ig_url", "instagram_url", "flyer_url",
+  "ticket_platform", "source_url", "flyer_credit",
 ];
 
 /** Put a pulled row's values on its live listing: every field (staff edit, approve) or only what a rescrape may change. */
@@ -260,8 +275,6 @@ function matchOrganiser(e: ScoutEvent): OrganiserRec | null {
     const k = all.find((o) => o.name_key === key);
     if (k) return k;
   }
-  const email = normEmail(e.organiser_email);
-  if (email) return all.find((o) => (o.email ?? "").toLowerCase() === email) ?? null;
   return null;
 }
 
@@ -321,21 +334,27 @@ function importOne(e: ScoutEvent, batch: ScoutBatch, count: { matched: Set<strin
     return "skipped";
   }
   const seenAt = e.last_seen || batch.scouted_at || iso(now());
-  const fresh: ScoutEvent = { ...clone(e), source_site: site, source_id: sid, name, tickets: e.tickets ?? [], lineup: e.lineup ?? [], last_seen: seenAt };
+  // Hoppaz keeps no phone number or email of an organiser: a scout file that still carries them has them dropped here. The new fields are cleaned the
+  // way the SQL cleans them (_ev_o_clean_fields): plain short text, public handles with no @, a full link for the source page.
+  const fresh: ScoutEvent = {
+    ...clone(e), source_site: site, source_id: sid, name, tickets: e.tickets ?? [], lineup: e.lineup ?? [], last_seen: seenAt,
+    organiser_email: null, organiser_phone: null,
+    ticket_platform: plainText(e.ticket_platform, 40), flyer_credit: plainText(e.flyer_credit, 80),
+    source_url: /^https?:\/\//i.test(e.source_url ?? "") ? (e.source_url as string).slice(0, 600) : null,
+    organiser_x: normX(e.organiser_x),
+  };
 
-  // The organiser: instagram handle, else name, else email; else a new one at stage pulled.
+  // The organiser: instagram handle, else name; else a new one at stage pulled.
   let org = matchOrganiser(fresh);
   if (org) {
     if (!count.made.has(org.id)) count.matched.add(org.id);
     const handle = normHandle(fresh.organiser_handle);
     if (!org.ig_handle && handle && !Object.values(S().organisers).some((x) => x.ig_handle === handle)) org.ig_handle = handle;
-    if (!org.email && normEmail(fresh.organiser_email)) org.email = normEmail(fresh.organiser_email);
-    if (!org.phone && fresh.organiser_phone) org.phone = fresh.organiser_phone.trim().slice(0, 40);
   } else {
     const handle = normHandle(fresh.organiser_handle);
     const oname = (fresh.organiser_name ?? "").trim() || handle;
     if (oname) {
-      org = newOrganiser({ name: oname.slice(0, 120), ig_handle: handle, email: normEmail(fresh.organiser_email), phone: fresh.organiser_phone?.trim().slice(0, 40) || null });
+      org = newOrganiser({ name: oname.slice(0, 120), ig_handle: handle, email: null, phone: null });
       count.made.add(org.id);
     }
   }
@@ -405,12 +424,12 @@ function approveRow(pulledId: string, by: string, patch?: PulledPatch): { eventI
   let org = p.organiser_id ? S().organisers[p.organiser_id] : undefined;
   if (!org) {
     const f = p.fields;
-    org = newOrganiser({ name: (f.organiser_name ?? "").trim() || f.name, ig_handle: normHandle(f.organiser_handle), email: normEmail(f.organiser_email), phone: null });
+    org = newOrganiser({ name: (f.organiser_name ?? "").trim() || f.name, ig_handle: normHandle(f.organiser_handle), email: null, phone: null });
     p.organiser_id = org.id;
   }
   if (isBlocked(org)) return fail("blocked");
   if (!p.fields.starts_at || !Number.isFinite(Date.parse(p.fields.starts_at))) return fail("no_time");
-  if (!p.fields.name.trim()) return fail("bad_input");
+  if (p.fields.name.trim().length < 2) return fail("bad_name");
 
   const wasPulled = org.stage === "pulled";
   if (wasPulled) org.stage = "listed";
@@ -491,6 +510,113 @@ function weekCounts(from: number, to: number) {
     listed: Object.values(S().events).filter((e) => e.organiser_id && e.ticket_mode && inWin(e.created_at)).length,
   };
 }
+
+/* ---------------------------------------------------------- event claims -- */
+
+/** One-time claim links (the event_claims flag): 14 days, single use, no email, at most 5 open per room. Only the hash of the token is kept. */
+const LINK_DAYS = 14;
+const MAX_OPEN_LINKS = 5;
+/** Asks from people without a link: 3 per person per day, 300 a day overall. Wrong or used links: 10 a person an hour, then "Too many requests". */
+const MAX_FAILED_PER_HOUR = 10;
+const failedTries = new Map<string, number[]>();
+
+const needOn = (): void => {
+  if (!eventClaimsOn()) fail("not_on");
+};
+
+const linkView = (l: ClaimLinkRec): ClaimLink => {
+  const { token_hash, ...rest } = l;
+  void token_hash;
+  return clone(rest);
+};
+
+function settleLinks(): void {
+  let changed = false;
+  for (const l of Object.values(S().claimLinks)) {
+    if (l.status === "pending" && Date.parse(l.expires_at) <= now()) {
+      l.status = "expired";
+      changed = true;
+    }
+  }
+  if (changed) persist();
+}
+
+const openLinksOf = (roomId: string): ClaimLinkRec[] => Object.values(S().claimLinks).filter((l) => l.room_id === roomId && l.status === "pending" && Date.parse(l.expires_at) > now());
+
+async function findLink(token: string): Promise<ClaimLinkRec | null> {
+  settleLinks();
+  const hash = await sha256Hex(String(token ?? "").trim());
+  return Object.values(S().claimLinks).find((l) => l.token_hash === hash) ?? null;
+}
+
+const linkClosedReason = (l: ClaimLinkRec): string | null => (l.status === "used" ? "link_used" : l.status === "revoked" ? "link_revoked" : l.status === "expired" ? "link_expired" : null);
+
+/** Wrong-link tries per person. Pruned to the last hour. */
+function tooManyFailed(userId: string): boolean {
+  const cut = now() - 3.6e6;
+  const list = (failedTries.get(userId) ?? []).filter((t) => t > cut);
+  failedTries.set(userId, list);
+  return list.length >= MAX_FAILED_PER_HOUR;
+}
+const noteFailed = (userId: string): void => {
+  failedTries.set(userId, [...(failedTries.get(userId) ?? []), now()]);
+};
+
+/**
+ * The room and its upcoming events go to one person, with nobody's email checked: the owner is replaced (Hoppaz Listings leaves, a person stays a
+ * plain member), upcoming events get the new host, a dormant room opens, the organiser is claimed, every other open link of the room is cancelled
+ * and every other open ask about it is declined. Used by a claim link and by an approved ask. The same steps as accept() in `claims`.
+ */
+function handOver(room: RoomRec, to: { id: string; name: string }, orgId: string | null, how: string): AcceptOutcome {
+  const before = room.owner_id;
+  const alreadyOwnsOther = Object.values(S().rooms).some((r) => r.id !== room.id && r.kind !== "hq" && r.owner_id === to.id);
+  const moving = upcomingOfRoom(room.id);
+  if (before !== to.id && moving.some((e) => Object.values(S().orders).some((o) => o.event_id === e.id && (o.status === "paid" || o.status === "refund_pending")))) return fail("paid_sales");
+  stepOf("owner");
+  room.owner_id = to.id;
+  S().memberships[`${to.id}:${room.id}`] = true;
+  S().joinedAt[`${to.id}:${room.id}`] = S().joinedAt[`${to.id}:${room.id}`] ?? iso(now());
+  delete S().roles[`${to.id}:${room.id}`];
+  if (before && before !== to.id) {
+    delete S().roles[`${before}:${room.id}`];
+    if (before === S().listingsUserId) {
+      delete S().memberships[`${before}:${room.id}`];
+      delete S().joinedAt[`${before}:${room.id}`];
+    } else {
+      S().memberships[`${before}:${room.id}`] = true;
+    }
+  }
+  room.created_by = to.id;
+  if (before === S().listingsUserId) room.join_mode = "open";
+  stepOf("events");
+  for (const e of moving) e.host_id = to.id;
+  stepOf("organiser");
+  const o = orgId ? S().organisers[orgId] : undefined;
+  if (o) {
+    o.stage = "claimed";
+    o.claimed_at = iso(now());
+    o.claimed_by = to.id;
+    o.do_not_contact = false;
+    o.declined_at = null;
+    logLine(o.id, "stage", `Claimed by ${to.name} (${how}). ${moving.length} upcoming ${moving.length === 1 ? "event" : "events"} moved`, null);
+  }
+  for (const l of Object.values(S().claimLinks)) if (l.room_id === room.id && l.status === "pending") l.status = "revoked";
+  for (const t of Object.values(S().transfers)) if (t.room_id === room.id && t.status === "pending") t.status = "revoked";
+  for (const a of Object.values(S().claimAsks)) {
+    if (a.status === "new" && S().events[a.event_id]?.room_id === room.id && a.user_id !== to.id) {
+      a.status = "declined";
+      a.decided_by = "system";
+    }
+  }
+  return { room_id: room.id, slug: room.slug, moved_events: moving.length, already_owned_other: alreadyOwnsOther };
+}
+
+const askView = (a: ClaimAskRec): ClaimAsk => {
+  const { user_id, ...rest } = a;
+  void user_id;
+  return clone(rest);
+};
+
 
 /* -------------------------------------------------------------- the desk -- */
 
@@ -582,7 +708,11 @@ export const outreach: OutreachApi = {
       .filter((t) => t.organiser_id === id)
       .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
       .map(transferView);
-    return { organiser: organiserView(o), log: clone(log) as OrganiserLogEntry[], events, transfers } satisfies OrganiserDetail;
+    settleLinks();
+    const claim_links = eventClaimsOn()
+      ? Object.values(S().claimLinks).filter((l) => l.organiser_id === id).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).map(linkView)
+      : [];
+    return { organiser: organiserView(o), log: clone(log) as OrganiserLogEntry[], events, transfers, claim_links } satisfies OrganiserDetail;
   },
 
   async saveOrganiser(id, patch: OrganiserPatch) {
@@ -700,6 +830,139 @@ export const outreach: OutreachApi = {
       logLine(id, "delete", `Removed ${evs.length} ${evs.length === 1 ? "event" : "events"} and the room`, staffLabel(by));
       return { events: evs.length };
     });
+    emit();
+    return out;
+  },
+
+  async createClaimLink(target, by) {
+    needOn();
+    settleLinks();
+    const token = randomToken();
+    const hash = await sha256Hex(token);
+    const rec = transaction(() => {
+      const ev = "eventId" in target ? (S().events[target.eventId] ?? fail("not_found")) : null;
+      if (ev && !isExternal(ev)) return fail("not_found");
+      const orgId = "eventId" in target ? (ev?.organiser_id ?? null) : target.organiserId;
+      const o = organiserRec(orgId ?? "");
+      if (isBlocked(o)) return fail("organiser_declined");
+      if (o.stage === "claimed" || (ev && !isUnclaimed(ev))) return fail("is_claimed");
+      const room = ensureRoom(o);
+      if (openLinksOf(room.id).length >= MAX_OPEN_LINKS) return fail("try_again_later");
+      const id = newId();
+      const l: ClaimLinkRec = {
+        id, room_id: room.id, room_name: room.name, organiser_id: o.id, event_id: ev?.id ?? null, status: "pending", created_at: iso(now()), created_by: staffLabel(by),
+        expires_at: iso(now() + LINK_DAYS * DAY), used_at: null, token_hash: hash,
+      };
+      S().claimLinks[id] = l;
+      if (o.stage === "listed" || o.stage === "pulled") {
+        o.stage = "offered";
+        logLine(o.id, "offer", "Offer made", staffLabel(by));
+      }
+      logLine(o.id, "transfer", `Claim link made${ev ? ` for ${ev.title}` : ""}, open for ${LINK_DAYS} days`, staffLabel(by));
+      return l;
+    });
+    emit();
+    return { link: linkView(rec), url: `${siteOrigin()}/claim/${token}` };
+  },
+
+  async revokeClaimLink(linkId, by) {
+    needOn();
+    settleLinks();
+    transaction(() => {
+      const l = S().claimLinks[linkId] ?? fail("not_found");
+      const closed = linkClosedReason(l);
+      if (closed) return fail(closed);
+      l.status = "revoked";
+      if (l.organiser_id) logLine(l.organiser_id, "transfer", "Claim link cancelled", staffLabel(by));
+    });
+    emit();
+  },
+
+  async claimable() {
+    needOn();
+    settleLinks();
+    const taps = allTaps();
+    return Object.values(S().events)
+      .filter((e) => isUnclaimed(e) && statusOf(e) === "live" && eventEnd(e) > now())
+      .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at) || a.id.localeCompare(b.id))
+      .map((e): Claimable => {
+        const o = e.organiser_id ? S().organisers[e.organiser_id] : undefined;
+        return {
+          event_id: e.id, title: e.title, starts_at: e.starts_at, organiser_id: o?.id ?? null, organiser_name: o?.name ?? null,
+          room_name: e.room_id ? (S().rooms[e.room_id]?.name ?? null) : null, went_to_buy: taps.events[e.id] ?? 0,
+          link_open: !!e.room_id && openLinksOf(e.room_id).length > 0,
+          asks: Object.values(S().claimAsks).filter((a) => a.event_id === e.id && a.status === "new").length,
+        };
+      });
+  },
+
+  async claimAsks() {
+    needOn();
+    return Object.values(S().claimAsks)
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || a.id.localeCompare(b.id))
+      .map(askView);
+  },
+
+  async decideClaimAsk(askId, approve, by) {
+    needOn();
+    const out = transaction(() => {
+      const a = S().claimAsks[askId] ?? fail("not_found");
+      if (a.status !== "new") return fail("already_handled");
+      const ev = S().events[a.event_id] ?? fail("not_found");
+      if (!approve) {
+        a.status = "declined";
+        a.decided_by = staffLabel(by);
+        if (a.organiser_id) logLine(a.organiser_id, "claim_request", `Declined the ask from ${a.name} about ${ev.title}`, staffLabel(by));
+        return { moved_events: 0 };
+      }
+      const o = organiserRec(a.organiser_id ?? ev.organiser_id ?? "");
+      if (o.stage === "claimed" || !isUnclaimed(ev)) return fail("is_claimed");
+      if (isBlocked(o)) return fail("organiser_declined");
+      const asker = S().users[a.user_id] ?? fail("not_found");
+      const room = ensureRoom(o);
+      const done = handOver(room, { id: asker.id, name: asker.name }, o.id, `ask approved by ${staffLabel(by)}`);
+      a.status = "approved";
+      a.decided_by = staffLabel(by);
+      return { moved_events: done.moved_events };
+    });
+    emit();
+    return out;
+  },
+
+  async tapCounts() {
+    return allTaps();
+  },
+
+  async approveMany(pulledIds, by) {
+    const ids = [...new Set((pulledIds ?? []).map(String))];
+    if (ids.length === 0) return fail("bad_ids");
+    if (ids.length > 100) return fail("too_many");
+    const out: ApproveManyResult = { approved: [], skipped: [] };
+    for (const id of ids) {
+      const p = S().pulled[id];
+      const name = p?.fields.name ?? "Unknown row";
+      const skip = (reason: string, text?: string) => out.skipped.push({ id, name, reason, text: text ?? OUTREACH_REASONS[reason] ?? reason });
+      if (!p) {
+        skip("not_found");
+        continue;
+      }
+      // Only rows still waiting. A live row with changes is accepted one by one, where the changes can be read.
+      if (p.status === "approved") {
+        skip("already_listed");
+        continue;
+      }
+      if (p.status === "rejected") {
+        skip("already_handled");
+        continue;
+      }
+      try {
+        const r = transaction(() => approveRow(id, by));
+        out.approved.push({ id, event_id: r.eventId });
+      } catch (e) {
+        if (e instanceof OutreachError) skip(e.reason, e.message);
+        else skip("bad_input", e instanceof Error ? e.message : undefined);
+      }
+    }
     emit();
     return out;
   },
@@ -837,7 +1100,52 @@ export const claims: ClaimsApi = {
     emit();
   },
 
+  async askToClaim(eventId, who) {
+    needOn();
+    const v = requireViewer();
+    const ev = S().events[eventId] ?? Object.values(S().events).find((e) => e.slug === eventId);
+    if (!ev || ev.ticket_mode !== "external" || ev.visibility !== "public") return fail("not_found");
+    if (!isUnclaimed(ev)) return fail("is_claimed");
+    const note = (who?.note ?? "").trim().slice(0, 500);
+    const all = Object.values(S().claimAsks);
+    // Asking twice about the same event is one ask.
+    if (all.some((a) => a.event_id === ev.id && a.user_id === v.id && a.status === "new")) return;
+    const since = now() - DAY;
+    const recent = all.filter((a) => Date.parse(a.created_at) > since);
+    if (recent.filter((a) => a.user_id === v.id).length >= 3 || recent.length >= 300) return fail("try_again_later");
+    const org = ev.organiser_id ? S().organisers[ev.organiser_id] : undefined;
+    const id = newId();
+    S().claimAsks[id] = {
+      id, event_id: ev.id, event_title: ev.title, organiser_id: org?.id ?? null, organiser_name: org?.name ?? null, name: v.name, note, status: "new",
+      created_at: iso(now()), decided_by: null, user_id: v.id,
+    };
+    if (org) logLine(org.id, "claim_request", `${v.name} asked to claim ${ev.title}`, v.name);
+    emit();
+  },
+
   async preview(token): Promise<TransferPreview> {
+    if (eventClaimsOn()) {
+      const l = await findLink(token);
+      if (l) {
+        if (l.status === "used") return { ok: false, reason: "used" };
+        if (l.status === "revoked") return { ok: false, reason: "revoked" };
+        if (l.status === "expired") return { ok: false, reason: "expired" };
+        const room = S().rooms[l.room_id];
+        if (!room) return { ok: false, reason: "not_found" };
+        const org = l.organiser_id ? S().organisers[l.organiser_id] : undefined;
+        return {
+          ok: true,
+          kind: "link",
+          room: { name: room.name, slug: room.slug, logo_url: room.logo_url, about: room.description },
+          events: upcomingOfRoom(room.id)
+            .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))
+            .map((e) => ({ id: e.id, title: e.title, starts_at: e.starts_at })),
+          email_hint: null,
+          organiser_name: org?.name ?? null,
+          expires_at: l.expires_at,
+        };
+      }
+    }
     const t = await findTransfer(token);
     if (!t) return { ok: false, reason: "not_found" };
     if (t.status === "accepted") return { ok: false, reason: "used" };
@@ -861,6 +1169,34 @@ export const claims: ClaimsApi = {
 
   async accept(token): Promise<AcceptOutcome> {
     const v = requireViewer();
+    if (eventClaimsOn()) {
+      const l = await findLink(token);
+      if (l) {
+        // A claim link: no email to match. A closed one counts as a wrong try (10 an hour, then "Too many requests").
+        if (tooManyFailed(v.id)) return fail("try_again_later");
+        const closed = linkClosedReason(l);
+        if (closed) {
+          noteFailed(v.id);
+          return fail(closed);
+        }
+        const result = transaction(() => {
+          const lk = S().claimLinks[l.id];
+          const room = S().rooms[lk.room_id] ?? fail("not_found");
+          const done = handOver(room, { id: v.id, name: v.name }, lk.organiser_id, "claim link");
+          stepOf("transfer");
+          lk.status = "used";
+          lk.used_at = iso(now());
+          return done;
+        });
+        emit();
+        return result;
+      }
+      // Not a link of ours. It may still be an email transfer; a token that is neither counts as a wrong try.
+      if (!(await findTransfer(token))) {
+        if (tooManyFailed(v.id)) return fail("try_again_later");
+        noteFailed(v.id);
+      }
+    }
     const t = await findTransfer(token);
     if (!t) return fail("invalid_link");
     const closed = closedReason(t);

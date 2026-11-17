@@ -7,7 +7,7 @@ import type { Lineup } from "./lineup";
 import type { LooksApi } from "./looks";
 import type { PayApi } from "./pay";
 import type {
-  AcceptOutcome, AuthUser, ClaimRequest, ContactChannel, DoorPerson, EventChat, ImportReport, Organiser, OrganiserDetail, OrganiserPatch, OrganiserStage,
+  AcceptOutcome, ApproveManyResult, AuthUser, Claimable, ClaimAsk, ClaimLinkMade, ClaimRequest, TapCounts, ContactChannel, DoorPerson, EventChat, ImportReport, Organiser, OrganiserDetail, OrganiserPatch, OrganiserStage,
   PulledEvent, PulledPatch, ScoutBatch, Transfer, TransferLink, TransferPreview, WeekSummary, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
   JoinOutcome, JoinRequest, Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomGuests, RoomMember, RoomMessage, RoomNotice,
   RoomPatch, RoomPreview, RoomRole, RoomSummary, SavedDetails, MyRegistration, ScanResult, Ticket, ViewerState,
@@ -60,6 +60,13 @@ export interface EventsApi {
    * the list is empty. Real: ev_update_event with the tickets, then ev_listing_use_hoppaz.
    */
   sellOnHoppaz(id: string, tickets: NonNullable<EventDraft["tickets"]>): Promise<R1Event>;
+  /**
+   * Someone tapped the outside ticket button of a listing. Counted once per signed in person, or per device (a random id the browser keeps,
+   * `device`), per Lagos day. Never throws and never waits on anything the link needs: a failed count is dropped. Not a listing: nothing.
+   */
+  ticketTap(id: string, device?: string | null): Promise<void>;
+  /** How many different people and devices tapped the outside ticket button of this event, all days. Whoever manages the event ("Not allowed" for anyone else). */
+  ticketTaps(id: string): Promise<number>;
   subscribe(fn: () => void): Unsub;
 }
 
@@ -264,6 +271,13 @@ export interface ClaimsApi {
   transfersFor(roomId: string): Promise<Transfer[]>;
   /** Owner (or staff): cancel an open link. */
   revoke(transferId: string): Promise<void>;
+  /**
+   * Event claims (the event_claims flag; "Not on" refusal while it is off). A signed in person without a link asks to claim a listing Hoppaz
+   * listed. Lands in the staff desk; staff approve (the room and its upcoming events become theirs) or decline. Hoppaz keeps their name and
+   * the note, never an email or a phone number. Asking twice about the same event is one ask. "Sign in first" when signed out;
+   * 3 asks a day each and 300 a day overall ("Too many requests").
+   */
+  askToClaim(eventId: string, who: { note?: string }): Promise<void>;
 }
 
 /**
@@ -296,6 +310,27 @@ export interface OutreachApi {
    * organiser row, declined and do not contact, so the next scrape does not list them again.
    */
   deleteListingAndRoom(id: string, confirmName: string, by: string): Promise<{ events: number }>;
+  /* event claims (flag event_claims) */
+  /**
+   * Make a one-time claim link for an organiser's room, or for the room of a listing. No email: whoever opens /claim/<token> and signs in gets
+   * the room and its upcoming events (single use, 14 days, no review). Only a hash of the token is kept; the link comes back once.
+   * Refused for an organiser who said no ("They said no. Reopen them first") or who already claimed, and above 5 open links per room.
+   */
+  createClaimLink(target: { organiserId: string } | { eventId: string }, by: string): Promise<ClaimLinkMade>;
+  revokeClaimLink(linkId: string, by: string): Promise<void>;
+  /** Listings Hoppaz hosts that nobody has claimed and that are still to come, soonest first, with the claim state of each. */
+  claimable(): Promise<Claimable[]>;
+  /** Asks from people without a link, newest first (open and decided). */
+  claimAsks(): Promise<ClaimAsk[]>;
+  /** Approve: the room and its upcoming events are handed to the asker, now. Decline: nothing changes. Answers how many events moved (0 on a decline). */
+  decideClaimAsk(askId: string, approve: boolean, by: string): Promise<{ moved_events: number }>;
+  /** Outside ticket taps for the desk: "[N] people went to buy", by event and by organiser. */
+  tapCounts(): Promise<TapCounts>;
+  /**
+   * Approve many pulled rows in one go (up to 100). Each row is approved on its own: one that cannot be (no start time, a name under 2
+   * characters, a blocked organiser, folded away) is skipped with its reason and the rest still go live.
+   */
+  approveMany(pulledIds: string[], by: string): Promise<ApproveManyResult>;
   /* transfer */
   createTransfer(organiserId: string, email: string, by: string, days?: number): Promise<TransferLink>;
   revokeTransfer(transferId: string, by: string): Promise<void>;

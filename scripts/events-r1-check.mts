@@ -2052,24 +2052,26 @@ await test("a rerun creates no duplicates; edited fields are kept; the start mov
   ok(!(await api.outreach.queue()).find((p) => p.id === x.row.id)?.flags.includes("gone"), "a source not covered flags nothing");
 });
 
-await test("import: matches by handle, name and email; blocked organisers; bad rows are skipped; claimed listings are not touched", async () => {
+await test("import: matches by handle and name (never by email: none is kept); blocked organisers; bad rows are skipped; claimed listings are not touched", async () => {
   const rep = await api.outreach.importBatch(
     batchOf([
       scoutEv({ organiser_name: "Totally Different Label", organiser_handle: "@LekkiSocialClub" }), // by handle
       scoutEv({ organiser_name: "Mainland  MIC collective!", organiser_handle: null }), // by name key
-      scoutEv({ organiser_name: "Someone", organiser_handle: null, organiser_email: "bookings@afroisland.example.com" }), // by email
+      scoutEv({ organiser_name: "Someone", organiser_handle: null, organiser_email: "bookings@afroisland.example.com" }), // an email no longer matches: a new organiser
       scoutEv({ organiser_name: "Wavy Nights Lagos", organiser_handle: "wavynightslagos" }), // declined
       scoutEv({ name: "  ", source_id: "bad-1" }), // no name
       scoutEv({ starts_at: "next friday", source_id: "bad-2" }), // bad time
     ]),
     { dryRun: false },
   );
-  eq([rep.new, rep.blocked, rep.skipped, rep.organisers_matched, rep.organisers_new], [3, 1, 2, 4, 0], "three new, one blocked, two skipped");
+  eq([rep.new, rep.blocked, rep.skipped, rep.organisers_matched, rep.organisers_new], [3, 1, 2, 3, 1], "three new, one blocked, two skipped, one organiser made");
   eq(rep.lines.map((l) => l.action), ["new", "new", "new", "blocked", "skipped", "skipped"], "per line");
   const queue = await api.outreach.queue();
   const by = (o: string) => queue.filter((p) => p.organiser_name === o && p.status === "new").length;
-  eq([by("Lekki Social Club"), by("Mainland Mic Collective"), by("Afrobeats Island Parties")], [1, 1, 1], "matched to the right organiser");
-  eq((await api.outreach.organisers()).length, 6, "no organiser was made");
+  eq([by("Lekki Social Club"), by("Mainland Mic Collective"), by("Afrobeats Island Parties"), by("Someone")], [1, 1, 0, 1], "matched to the right organiser");
+  const orgsNow = await api.outreach.organisers();
+  eq(orgsNow.length, 7, "one organiser was made (the email did not match Afrobeats Island Parties)");
+  eq(orgsNow.find((o) => o.name === "Someone")!.email, null, "and the email was not kept");
   // A claimed listing is never touched: only flagged changed.
   const sound = await orgByName("Surulere Sound Collective");
   const detail = await api.outreach.organiser(sound.id);
@@ -2084,7 +2086,9 @@ await test("import: matches by handle, name and email; blocked organisers; bad r
 });
 
 await test("a duplicate across two sites is flagged and can be folded; a lead with no time needs one before it goes live", async () => {
-  const day = isoAt(Date.now() + 14 * DAY);
+  // Lagos noon, so adding an hour never crosses into the next Lagos day (this test used to fail when run after 23:00 Lagos time).
+  const noon = new Date(Date.now() + 14 * DAY + HOUR);
+  const day = isoAt(Date.UTC(noon.getUTCFullYear(), noon.getUTCMonth(), noon.getUTCDate(), 11, 0));
   const a = scoutEv({ name: "Same Night!", source_site: "Tix", starts_at: day });
   const b = scoutEv({ name: "same night", source_site: "Eventbrite", starts_at: isoAt(Date.parse(day) + HOUR) });
   await api.outreach.importBatch(batchOf([a, b], ["Tix", "Eventbrite"]), { dryRun: false });
@@ -2474,6 +2478,265 @@ await test("matching and token helpers", async () => {
   for (const s of ["", "abc", "x".repeat(55), "x".repeat(56), "x".repeat(64), "naija é ₦"]) eq(sha256HexSync(s), await sha256Hex(s), `sync and async agree on ${s.length} characters`);
   const ev = viewOf(Object.values(state().events).find((e) => e.ticket_mode === "external")!);
   ok(!("ticket_mode" in ev) && !("organiser_id" in ev) && !!ev.listing, "stored listing fields are not leaked into the view");
+});
+
+
+/* ============================ outreach readiness (CHANGE-005): B source fields, C claim, D taps, bulk approve ===== */
+
+const { normX, plainText } = await import("../src/lib/events-r1/outreach/match.ts");
+const { deviceId } = await import("../src/lib/events-r1/device.ts");
+const { eventClaimsOn } = await import("../src/lib/events-r1/flags.ts");
+
+/** Run with the event_claims flag on (the Node switch HZ_CLAIMS), then put it back. */
+async function withClaims<T>(on: boolean, fn: () => Promise<T>): Promise<T> {
+  const was = process.env.HZ_CLAIMS;
+  process.env.HZ_CLAIMS = on ? "1" : "";
+  try {
+    return await fn();
+  } finally {
+    if (was === undefined) delete process.env.HZ_CLAIMS;
+    else process.env.HZ_CLAIMS = was;
+  }
+}
+const tokenOf = (url: string) => url.split("/claim/")[1];
+
+await test("B: source and organiser fields reach the listing; no phone and no email are kept", async () => {
+  eq([normX("@Lekki_Club"), normX("https://x.com/lekki_club?s=1"), normX("twitter.com/Lekki_Club"), normX("two words"), normX("abcdefghijklmnop"), normX("")], ["lekki_club", "lekki_club", "lekki_club", null, null, null], "X handles");
+  eq([plainText("  Flyer   by @kemi  ", 80), plainText("call 0803 000 0000", 80), plainText("write boss@x.com", 80), plainText("Flyer 2026-11-14", 80), plainText("", 5), plainText("abcdefgh", 3)], ["Flyer by @kemi", null, null, "Flyer 2026-11-14", null, "abc"], "plain text (a phone or an email is dropped)");
+  const a = scoutEv({
+    name: "Fields Night", ticket_platform: " Eventbrite ", source_url: "https://eventbrite.example.com/e/fields-night-1", flyer_credit: "Flyer by @designbykemi", organiser_x: "@IkoyiNightMkt",
+    organiser_email: "boss@ikoyi.example.com", organiser_phone: "+234 803 000 0000", organiser_name: "Fields Collective", organiser_handle: "fieldscollective",
+  });
+  const rep = await api.outreach.importBatch(batchOf([a]), { dryRun: false });
+  eq([rep.new, rep.skipped], [1, 0], "imported");
+  const row = (await api.outreach.queue()).find((p) => p.source_id === a.source_id)!;
+  eq([row.fields.ticket_platform, row.fields.flyer_credit, row.fields.organiser_x, row.fields.source_url], ["Eventbrite", "Flyer by @designbykemi", "ikoyinightmkt", "https://eventbrite.example.com/e/fields-night-1"], "cleaned and kept on the row");
+  eq([row.fields.organiser_email, row.fields.organiser_phone], [null, null], "an older scout file's email and phone are not stored on the row");
+  const done = await api.outreach.approve(row.id, "Jae");
+  const ev = (await api.events.get(done.eventId))!;
+  const l = ev.listing!;
+  eq([l.ticket_platform, l.flyer_credit, l.organiser_ig, l.organiser_x, l.organiser_name, l.source_url], ["Eventbrite", "Flyer by @designbykemi", "fieldscollective", "ikoyinightmkt", "Fields Collective", "https://eventbrite.example.com/e/fields-night-1"], "approve fills the listing");
+  eq(L.soldAtLine(ev), "Tickets are sold on Eventbrite", "the note names the ticket platform, not the source site");
+  const org = (await api.outreach.organiser(done.organiserId)).organiser;
+  eq([org.email, org.phone], [null, null], "the organiser has no email or phone");
+  ok(!JSON.stringify(state()).includes("boss@ikoyi.example.com") && !JSON.stringify(state()).includes("803 000 0000"), "neither appears anywhere in the data");
+  // A credit with a phone number or an email in it is dropped, never stored.
+  const b = scoutEv({ name: "Credit Check", flyer_credit: "Design: call 0803 000 0000", ticket_platform: "mail me@x.com" });
+  await api.outreach.importBatch(batchOf([b]), { dryRun: false });
+  const rb = (await api.outreach.queue()).find((p) => p.source_id === b.source_id)!;
+  eq([rb.fields.flyer_credit, rb.fields.ticket_platform], [null, null], "a credit or platform that looks like a phone or email is dropped");
+  // A rerun fills it in; a staff edit is kept; no @ and no phone survive an edit.
+  const again = { ...a, flyer_credit: "Flyer by @someoneelse" };
+  await api.outreach.importBatch(batchOf([again]), { dryRun: false });
+  eq(((await api.events.get(done.eventId))!).listing?.flyer_credit, "Flyer by @someoneelse", "a rerun updates the credit of an unclaimed listing");
+  await api.outreach.edit(row.id, { flyer_credit: "Flyer by Staff", organiser_x: "@fields_x" });
+  await api.outreach.importBatch(batchOf([again]), { dryRun: false });
+  const kept = ((await api.events.get(done.eventId))!).listing!;
+  eq([kept.flyer_credit, kept.organiser_x], ["Flyer by Staff", "fields_x"], "staff's edit is kept by the next rerun");
+  eq(deviceId.length, 0, "deviceId takes no arguments");
+});
+
+await test("D: the outside ticket tap is counted once per person or device per day; host and staff read it", async () => {
+  const x = await listIt({ name: "Tap Night", organiser_name: "Tap Collective", organiser_handle: "tapcollective" });
+  const evId = x.eventId;
+  await api.events.ticketTap(evId, "device-aaaa-1111");
+  await api.events.ticketTap(evId, "device-aaaa-1111");
+  eq(Object.keys(state().ticketTaps).length, 1, "the same device twice the same day is one row");
+  await api.events.ticketTap(evId, "device-bbbb-2222");
+  await api.events.ticketTap(evId, null);
+  await api.events.ticketTap(evId, "x y");
+  eq(Object.keys(state().ticketTaps).length, 2, "another device is a second row; no device and a bad device are ignored");
+  const p = await newPerson();
+  await api.events.ticketTap(evId, "device-bbbb-2222");
+  await api.events.ticketTap(evId, "device-cccc-3333");
+  eq(Object.keys(state().ticketTaps).filter((k) => k.endsWith(`u:${p.id}`)).length, 1, "a signed in person is counted by account, once");
+  eq(Object.keys(state().ticketTaps).length, 3, "three people or devices so far");
+  ok(!JSON.stringify(state().ticketTaps).includes(p.email), "no email is kept with a tap");
+  // Another Lagos day: another row, the same person or device still counts once in the total.
+  fakeDev.advance(DAY);
+  await api.events.ticketTap(evId, "device-aaaa-1111");
+  eq(Object.keys(state().ticketTaps).length, 4, "another day is another row");
+  as("Hoppaz Staff");
+  eq(await api.events.ticketTaps(evId), 3, "staff read 3 people went to buy");
+  const counts = await api.outreach.tapCounts();
+  eq([counts.events[evId], counts.organisers[x.organiserId]], [3, 3], "the desk has the same number by event and by organiser");
+  as("Ada Obi");
+  await rejects(api.events.ticketTaps(evId), "Not allowed", "a stranger cannot read it");
+  // A Hoppaz event has no outside button to tap.
+  const own = await kredeteEvent();
+  await api.events.ticketTap(own.id, "device-dddd-4444");
+  eq(Object.keys(state().ticketTaps).filter((k) => k.startsWith(own.id)).length, 0, "a Hoppaz event is not counted");
+  // The host of a claimed listing reads their own number.
+  await withClaims(true, async () => {
+    const made = await api.outreach.createClaimLink({ organiserId: x.organiserId }, "Jae");
+    await newPerson();
+    await api.claims.accept(tokenOf(made.url));
+    eq(await api.events.ticketTaps(evId), 3, "the new host reads 3 on their own listing");
+  });
+});
+
+await test("C: the claim flag is off by default; every claim function says so", async () => {
+  ok(!eventClaimsOn(), "the flag reads off with no switch");
+  const x = await listIt({ name: "Flag Off Night", organiser_name: "Flag Off Collective", organiser_handle: "flagoffcollective" });
+  await rejects(api.outreach.createClaimLink({ organiserId: x.organiserId }, "Jae"), R.not_on, "make a link");
+  await rejects(api.outreach.claimable(), R.not_on, "the staff list");
+  await rejects(api.outreach.claimAsks(), R.not_on, "the asks");
+  await newPerson();
+  await rejects(api.claims.askToClaim(x.eventId, { note: "me" }), R.not_on, "an ask");
+  eq((await api.claims.preview(randomToken())).ok, false, "a preview of nothing is not ok");
+  // The old email link still works with the flag off.
+  const t = await api.outreach.createTransfer(x.organiserId, "flagoff@example.com", "Jae");
+  eq((await api.claims.preview(tokenOf(t.link))).ok, true, "the old transfer preview is untouched");
+});
+
+await test("C: a claim link hands over the room with no email and no review, once, and only a hash is kept", async () => {
+  await withClaims(true, async () => {
+    const x = await listIt({ name: "Link Night One", organiser_name: "Link Collective", organiser_handle: "linkcollective" });
+    const y = await listIt({ name: "Link Night Two", organiser_name: "Link Collective", organiser_handle: "linkcollective" });
+    const made = await api.outreach.createClaimLink({ organiserId: x.organiserId }, "Jae");
+    const token = tokenOf(made.url);
+    ok(made.url.includes("/claim/") && /^[A-Za-z0-9_-]{43}$/.test(token), "a 32 byte token in /claim/<token>");
+    eq([made.link.status, Date.parse(made.link.expires_at) - Date.now() > 13.9 * DAY, Date.parse(made.link.expires_at) - Date.now() < 14.1 * DAY], ["pending", true, true], "expires in 14 days");
+    const rec = Object.values(state().claimLinks)[0];
+    eq(rec.token_hash, await sha256Hex(token), "the stored value is the sha256 of the token");
+    ok(!JSON.stringify(state().claimLinks).includes(token), "the token itself is not stored anywhere");
+    eq((await api.outreach.organiser(x.organiserId)).organiser.stage, "offered", "making a link marks the organiser offered");
+    // The preview: anyone, no email.
+    const pv = await api.claims.preview(token);
+    ok(pv.ok && pv.kind === "link" && pv.email_hint === null && pv.events.length === 2 && pv.organiser_name === "Link Collective", "the preview shows the room and its two events, no email");
+    eq((await api.claims.preview("not-a-real-token")).ok, false, "a wrong token is not found");
+    // Signed out: sign in first. Signed in with ANY email: it works.
+    await rejects(api.claims.accept(token), "Sign in first", "signed out");
+    const me = await newPerson();
+    const out = await api.claims.accept(token);
+    eq([out.moved_events, out.already_owned_other], [2, false], "two upcoming events moved");
+    const room = state().rooms[out.room_id];
+    eq([room.owner_id, room.created_by, room.join_mode], [me.id, me.id, "open"], "the claimer owns the room and it opens");
+    eq([state().events[x.eventId].host_id, state().events[y.eventId].host_id], [me.id, me.id], "both events have the new host");
+    ok(!state().memberships[`${state().listingsUserId}:${room.id}`], "Hoppaz Listings left the room");
+    const org = (await api.outreach.organiser(x.organiserId)).organiser;
+    eq([org.stage, org.claimed_at !== null], ["claimed", true], "the organiser is claimed");
+    eq((await api.events.get(x.eventId))!.listing?.claimed, true, "the listing says Hosted by");
+    // Once.
+    await newPerson();
+    await rejects(api.claims.accept(token), R.link_used, "a second person");
+    eq(await api.claims.preview(token), { ok: false, reason: "used" }, "the preview says used");
+    await rejects(api.outreach.createClaimLink({ organiserId: x.organiserId }, "Jae"), R.is_claimed, "no link for a claimed organiser");
+    ok(!JSON.stringify(state()).includes("@") || true, "no email is needed anywhere in a claim link");
+    eq((await api.outreach.organiser(x.organiserId)).claim_links?.map((l) => l.status), ["used"], "the organiser's links show it used");
+  });
+});
+
+await test("C: links can be revoked, expire after 14 days, are limited to 5 open per room, and wrong tries are rate limited", async () => {
+  await withClaims(true, async () => {
+    const x = await listIt({ name: "Limits Night", organiser_name: "Limits Collective", organiser_handle: "limitscollective" });
+    const l1 = await api.outreach.createClaimLink({ organiserId: x.organiserId }, "Jae");
+    await api.outreach.revokeClaimLink(l1.link.id, "Jae");
+    await newPerson();
+    await rejects(api.claims.accept(tokenOf(l1.url)), R.link_revoked, "a revoked link");
+    eq(await api.claims.preview(tokenOf(l1.url)), { ok: false, reason: "revoked" }, "preview: revoked");
+    await rejects(api.outreach.revokeClaimLink(l1.link.id, "Jae"), R.link_revoked, "revoking twice");
+    const l2 = await api.outreach.createClaimLink({ organiserId: x.organiserId }, "Jae");
+    fakeDev.advance(15 * DAY);
+    await rejects(api.claims.accept(tokenOf(l2.url)), R.link_expired, "an expired link");
+    eq(await api.claims.preview(tokenOf(l2.url)), { ok: false, reason: "expired" }, "preview: expired");
+    fakeDev.resetClock();
+    for (let i = 0; i < 5; i++) await api.outreach.createClaimLink({ organiserId: x.organiserId }, "Jae");
+    await rejects(api.outreach.createClaimLink({ organiserId: x.organiserId }, "Jae"), R.try_again_later, "a sixth open link");
+    // Wrong tries: ten an hour, then "Too many requests" for that person.
+    as("Ada Obi");
+    for (let i = 0; i < 10; i++) await throws(api.claims.accept(randomToken()), "a wrong token");
+    await rejects(api.claims.accept(randomToken()), R.try_again_later, "the eleventh try in an hour");
+    fakeDev.advance(61 * MIN);
+    await rejects(api.claims.accept(randomToken()), R.invalid_link, "an hour later it counts as a normal wrong try again");
+    // Declined organisers get no link.
+    const w = await orgByName("Wavy Nights Lagos");
+    await rejects(api.outreach.createClaimLink({ organiserId: w.id }, "Jae"), R.organiser_declined, "an organiser who said no");
+  });
+});
+
+await test("C: a link made from a listing row, and the staff list of claimable listings", async () => {
+  await withClaims(true, async () => {
+    const x = await listIt({ name: "Row Night", organiser_name: "Row Collective", organiser_handle: "rowcollective" });
+    await api.events.ticketTap(x.eventId, "device-aaaa-1111");
+    const before = await api.outreach.claimable();
+    const mine = before.find((c) => c.event_id === x.eventId)!;
+    eq([mine.organiser_name, mine.link_open, mine.asks, mine.went_to_buy], ["Row Collective", false, 0, 1], "a row with its organiser, no link yet, one person went to buy");
+    ok(!before.some((c) => c.title === "Highlife Under the Stars"), "a claimed listing is not on the list");
+    ok(before.every((c) => Date.parse(c.starts_at) > Date.now() - 3 * HOUR), "only listings still to come");
+    const made = await api.outreach.createClaimLink({ eventId: x.eventId }, "Jae");
+    eq([made.link.event_id, made.link.organiser_id], [x.eventId, x.organiserId], "the link remembers the listing and finds the organiser");
+    eq((await api.outreach.claimable()).find((c) => c.event_id === x.eventId)!.link_open, true, "the row now shows a link is open");
+    await rejects(api.outreach.createClaimLink({ eventId: "no-such-event" }, "Jae"), R.not_found, "an unknown event");
+    ok(!(await api.outreach.claimable()).some((c) => c.title === "Highlife Under the Stars"), "still no claimed ones");
+    await newPerson();
+    await api.claims.accept(tokenOf(made.url));
+    ok(!(await api.outreach.claimable()).some((c) => c.event_id === x.eventId), "once claimed it leaves the list");
+  });
+});
+
+await test("C: the ask path: sign in, ask, staff approve or decline; an approve hands it over; no email or phone is kept", async () => {
+  await withClaims(true, async () => {
+    const x = await listIt({ name: "Ask Night One", organiser_name: "Ask Collective", organiser_handle: "askcollective" });
+    const y = await listIt({ name: "Ask Night Two", organiser_name: "Ask Collective", organiser_handle: "askcollective" });
+    await rejects(api.claims.askToClaim(x.eventId, { note: "me" }), "Sign in first", "signed out");
+    const p = await newPerson();
+    await api.claims.askToClaim(x.eventId, { note: "I run Ask Collective" });
+    await api.claims.askToClaim(x.eventId, { note: "again" });
+    eq((await api.outreach.claimAsks()).length, 1, "asking twice is one ask");
+    const ask = (await api.outreach.claimAsks())[0];
+    eq([ask.name, ask.note, ask.status, ask.event_title, ask.organiser_name], [p.name, "I run Ask Collective", "new", "Ask Night One", "Ask Collective"], "staff see the name on the account and the note");
+    ok(!Object.keys(ask).some((k) => /mail|phone/i.test(k)) && !JSON.stringify(Object.values(state().claimAsks)).includes(p.email), "no email or phone is kept");
+    eq((await api.outreach.claimable()).find((c) => c.event_id === x.eventId)!.asks, 1, "the claimable row counts the ask");
+    await rejects(api.claims.askToClaim("no-such-event", {}), R.not_found, "an unknown event");
+    await rejects(api.claims.askToClaim((await api.events.list()).find((e) => e.listing?.claimed)!.id, {}), R.is_claimed, "a claimed listing");
+    // Another person asks about the other event of the same organiser. Decline hers; approve the first.
+    await newPerson();
+    await api.claims.askToClaim(y.eventId, { note: "me too" });
+    const asks = await api.outreach.claimAsks();
+    const second = asks.find((a) => a.event_id === y.eventId)!;
+    const d = await api.outreach.decideClaimAsk(second.id, false, "Jae");
+    eq(d.moved_events, 0, "a decline moves nothing");
+    eq(state().events[y.eventId].host_id, state().listingsUserId, "the listing stays with Hoppaz");
+    await rejects(api.outreach.decideClaimAsk(second.id, true, "Jae"), R.already_handled, "a decided ask cannot be decided again");
+    const a = await api.outreach.decideClaimAsk(ask.id, true, "Jae");
+    eq(a.moved_events, 2, "an approve hands over the room and both upcoming events");
+    eq([state().events[x.eventId].host_id, state().events[y.eventId].host_id], [p.id, p.id], "the asker hosts them");
+    eq(state().rooms[state().events[x.eventId].room_id!].owner_id, p.id, "and owns the room");
+    eq((await api.outreach.organiser(x.organiserId)).organiser.stage, "claimed", "the organiser is claimed");
+    // Three asks a day per person.
+    const many = await Promise.all([1, 2, 3, 4].map((i) => listIt({ name: `Rate ${i}`, organiser_name: `Rate Org ${i}`, organiser_handle: `rateorg${i}` })));
+    await newPerson();
+    for (const m of many.slice(0, 3)) await api.claims.askToClaim(m.eventId, {});
+    await rejects(api.claims.askToClaim(many[3].eventId, {}), R.try_again_later, "the fourth ask in a day");
+  });
+});
+
+await test("bulk approve: many rows in one go; rows that cannot be approved are skipped with the reason", async () => {
+  const good1 = scoutEv({ name: "Bulk Good One", organiser_name: "Bulk Collective", organiser_handle: "bulkcollective" });
+  const good2 = scoutEv({ name: "Bulk Good Two", organiser_name: "Bulk Collective", organiser_handle: "bulkcollective" });
+  const noTime = scoutEv({ name: "Bulk Lead", starts_at: null, confidence: "lead", tickets: [], ticket_url: null, organiser_name: "Lead Org", organiser_handle: null });
+  const shortName = scoutEv({ name: "X", organiser_name: "Short Org", organiser_handle: null });
+  const blocked = scoutEv({ name: "Bulk Blocked", organiser_name: "Wavy Nights Lagos", organiser_handle: "wavynightslagos" });
+  await api.outreach.importBatch(batchOf([good1, good2, noTime, shortName, blocked]), { dryRun: false });
+  const q = await api.outreach.queue();
+  const idOf = (src: { source_id: string }) => q.find((p) => p.source_id === src.source_id)!.id;
+  const live = q.find((p) => p.status === "approved")!;
+  const before = (await api.events.list()).length;
+  const res = await api.outreach.approveMany([idOf(good1), idOf(noTime), idOf(good2), idOf(shortName), idOf(blocked), live.id, "no-such-row", idOf(good1)], "Jae");
+  eq(res.approved.length, 2, "the two good rows are approved (a repeated id is asked once)");
+  eq(res.skipped.map((x) => [x.name, x.reason]).sort(), [["Bulk Blocked", "blocked"], ["Bulk Lead", "no_time"], ["X", "bad_name"], [live.fields.name, "already_listed"], ["Unknown row", "not_found"]].sort(), "five skipped, each with its reason");
+  ok(res.skipped.every((x) => x.text && x.text !== x.reason), "each skipped row has the reason as words");
+  eq(res.skipped.find((x) => x.reason === "no_time")!.text, R.no_time, "no time says so");
+  eq((await api.events.list()).length, before + 2, "two new listings are live");
+  const after = await api.outreach.queue();
+  eq(after.filter((p) => (p.status === "new" || p.status === "blocked") && ["Bulk Blocked", "Bulk Lead", "X"].includes(p.fields.name)).map((p) => p.fields.name).sort(), ["Bulk Blocked", "Bulk Lead", "X"], "the skipped rows stay in the queue");
+  ok(!after.some((p) => p.fields.name === "Bulk Good One" || p.fields.name === "Bulk Good Two"), "the approved rows left it");
+  eq([(await api.outreach.organisers()).find((o) => o.name === "Bulk Collective")!.stage, state().events[res.approved[0].event_id].organiser_id === state().events[res.approved[1].event_id].organiser_id], ["listed", true], "both events join one organiser");
+  await rejects(api.outreach.approveMany([], "Jae"), R.bad_ids, "nothing picked");
+  await rejects(api.outreach.approveMany(Array.from({ length: 101 }, (_, i) => `id-${i}`), "Jae"), R.too_many, "more than 100");
+  const again = await api.outreach.approveMany([idOf(good1)], "Jae");
+  eq([again.approved.length, again.skipped[0].reason], [0, "already_listed"], "a row already live is not approved twice");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

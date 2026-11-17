@@ -300,7 +300,7 @@ export function buildSeed(now: number): FakeState {
   const st: FakeState = {
     users: {}, events: {}, regs: {}, tickets: {}, pops: {}, announcements: {}, messages: {}, reports: {}, rooms: {},
     orders: {}, payouts: {}, regSettings: {}, lineups: {}, memberships: {}, roles: {}, joinedAt: {}, doorStaff: {}, requests: {}, notices: {}, interest: {}, reads: {}, savedDetails: {},
-    organisers: {}, organiserLog: {}, pulled: {}, transfers: {}, claimRequests: {}, listingsUserId: null,
+    organisers: {}, organiserLog: {}, pulled: {}, transfers: {}, claimRequests: {}, claimLinks: {}, claimAsks: {}, ticketTaps: {}, listingsUserId: null,
     viewerId: null, pendingEmail: null, offset: 0, key: null,
   };
   const iso = (ms: number) => new Date(ms).toISOString();

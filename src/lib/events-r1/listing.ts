@@ -45,7 +45,8 @@ export function soldAtLine(e: { listing?: ListingInfo | null }): string {
   const l = e.listing;
   if (!l) return "";
   if (l.sold_out) return "Sold out at the source";
-  return l.source_site ? `Tickets are sold on ${l.source_site}` : "Tickets are sold by the organiser";
+  const where = l.ticket_platform || l.source_site;
+  return where ? `Tickets are sold on ${where}` : "Tickets are sold by the organiser";
 }
 
 /** Going counts, spots left and the ticket list mean nothing for a listing: never show them. */

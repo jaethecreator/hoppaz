@@ -108,6 +108,14 @@ Skill runs on Jae's computer in the Claude desktop app (built-in browser), 2 to 
 - A claimed organiser's next scraped event is hosted by the room's owner, not Hoppaz Listings, and links to the same room.
 - Logged replies are kept in the database (`last_replied_at`), so every staff device sees them.
 
+## Outreach readiness (CHANGE-005, draft)
+
+Added in `supabase/events_r1_outreach_ready.sql` (see `supabase/EVENTS_R1_ORDER.md`, section 1a). The listing page shows the flyer credit and the organiser's public Instagram and X.
+Behind the flag `event_claims` (off by default, front end `NEXT_PUBLIC_EVENT_CLAIMS=1` and database `ev_set_claims('on')`): the strip "Is this your event? Claim it" on a listing Hoppaz
+listed, one-time `/claim/<token>` links that need no email and no review (staff press "Copy claim link"), an ask for people without a link that staff approve or decline, and the
+Claimable list in the desk. A listing has exactly one ticket button; a tap on it is counted once per person or device per day ("[N] people went to buy" on the host Overview and in the
+desk). Review has "Select" on each row and "Approve selected": rows that cannot be approved (no time, a name under 2 characters, a blocked organiser) are skipped with the reason.
+
 ## What is deliberately not here (later)
 
 Sending email from Hoppaz (the notify system is on `claude/reminders-2f2458`; the `TransferMailer` interface is ready), a

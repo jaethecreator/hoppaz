@@ -25,7 +25,9 @@ import { isOver } from "../pay/money";
 import { isOnline } from "../words";
 import { downloadIcs, googleCalendarUrl } from "./calendar";
 import ManageBar, { HostExtras } from "./ManageBar";
-import { ListedBy, ListingBar, ListingCard } from "./ListingParts";
+import ClaimStrip from "./ClaimStrip";
+import { ListedBy, ListingBar, ListingCard, ListingCredits } from "./ListingParts";
+import { useClaimsOn } from "../claim/useClaimsOn";
 import { eventUrl, shareOrCopy } from "./share";
 import StatusCard from "./StatusCard";
 import { CheckoutSheet, TicketBar, TicketCard, useStoryTickets } from "./StoryTickets";
@@ -280,6 +282,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   const [said, setSaid] = useState("");
   const anchor = useRef<HTMLDivElement>(null);
   const t = useStoryTickets(event, asVisitor || !!real?.isHost);
+  const claimsOn = useClaimsOn();
   const w = useMemo(() => whenWords(event), [event]);
   const online = isOnline(event);
 
@@ -348,8 +351,10 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
   // A listing: the organiser sells the tickets on their own page. The page shows the price and a link, never a count or a ticket list.
   const listing = isListing(event);
   const unclaimed = listing && !event.listing?.claimed;
+  // The claim strip takes the place of the small "Is this your event?" link while the event_claims flag is on (visitors only).
+  const strip = unclaimed && claimsOn && !viewer?.isHost;
   let action: React.ReactNode;
-  if (listing) action = <><ListingCard event={event} anchor={anchor} />{viewer?.isHost && <div className="t-adopt mt-3"><HostExtras event={event} viewer={viewer} /></div>}</>;
+  if (listing) action = <><ListingCard event={event} anchor={anchor} bar={!viewer?.isHost} />{viewer?.isHost && <div className="t-adopt mt-3"><HostExtras event={event} viewer={viewer} /></div>}</>;
   else if (viewer?.isHost) action = <><TicketCard t={t} anchor={anchor} /><div className="t-adopt mt-3"><HostExtras event={event} viewer={viewer} /></div></>;
   else if (viewer?.registration) action = <div className="t-adopt"><StatusCard event={event} viewer={viewer} fresh={t.flow.justDone} /></div>;
   else action = <TicketCard t={t} anchor={anchor} />;
@@ -358,6 +363,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
     <div className="h-full overflow-y-auto">
       <TintShell look={look} tint={tint} className="min-h-full">
         {viewer?.isHost && <ManageBar event={event} viewer={viewer} />}
+        {strip && <ClaimStrip event={event} />}
         {asVisitor && (
           <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 bg-t-accent px-[22px] py-2 text-[13.5px] font-bold text-t-on lg:px-[30px]" data-visitor-bar>
             <span>Viewing as a visitor. This is your page exactly as guests see it.</span>
@@ -452,7 +458,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
             <div className="order-6 lg:order-none mt-2.5 lg:mt-0">{action}</div>
             <div className="order-7 lg:order-none mt-2.5 lg:mt-0">
               {unclaimed ? (
-                <ListedBy event={event} tone="tint" />
+                <ListedBy event={event} tone="tint" claim={!strip} />
               ) : (
                 <>
                   <div className="font-body text-[12px] font-semibold text-t-muted">Hosted by</div>
@@ -465,6 +471,7 @@ export default function HostStory({ event: given, extra }: { event: R1Event; ext
                   </div>
                 </>
               )}
+              {listing && <ListingCredits event={event} tone="tint" className="mt-1.5" />}
               <div className="mt-2.5 grid gap-[5px] font-body text-[13px] text-t-muted">
                 {room && !unclaimed && (
                   <Link href={`/rooms/${encodeURIComponent(room)}`} className="underline-offset-4 hover:underline">

@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * Guarded like the rest of the desk: Authorization: Bearer $HOPPAZ_ADMIN_TOKEN (timing safe). The ev_o_* functions are service-role only
  * (supabase/events_r1_outreach.sql, events_r1_transfer.sql), so they are called here with the service key.
  *
- *   GET  ?what=organisers | queue | claims | week      -> { ok: true, data }
+ *   GET  ?what=organisers | queue | claims | week | claimable | claim_asks | taps   -> { ok: true, data }
  *   GET  ?what=organiser&id=<uuid>                      -> { ok: true, data: OrganiserDetail }
  *   POST { action, ...args }                            -> { ok: true, data, ...extra }
  *
@@ -21,6 +21,9 @@ export const dynamic = "force-dynamic";
  *   | save_organiser { id, patch } | log_contact { id, by, kind, channel?, body } | set_stage { id, stage, by }
  *   | delete_listing { id, confirm, by } -> { events } | create_transfer { id, email, by, days? } -> data { transfer, link } and mail_connected
  *   | revoke_transfer { id, by } | handle_claim_request { id, by }
+ *   | approve_many { pulled: [id], by } -> { approved: [{ id, event_id }], skipped: [{ id, name, reason }] }
+ *   | create_claim_link { id | event, by } -> data { link, url } (event_claims flag; the token is made here, only its sha256 is stored, 14 days)
+ *   | revoke_claim_link { id, by } | decide_claim_ask { id, approve, by } -> { moved_events }
  *   | flyer { source_site, source_id, jpeg_base64 } -> { url } (also top level)
  *   | the reads above by name ({ action: "queue" }, "organisers", "organiser" with id, "claims", "week").
  * create_transfer makes the token here; only its sha256 hex is stored. The link is in the answer once and never logged.
@@ -120,11 +123,12 @@ function pulledPatch(v: unknown): Check<Obj> {
       case "name": err = put(k, text(raw, "The name", 1, 160)); break;
       case "starts_at": case "ends_at": err = put(k, isoOrNull(raw, "the time")); break;
       case "venue": case "area": case "category": case "organiser_name": case "organiser_handle": err = put(k, textOrNull(raw, k.replace("_", " "), 160)); break;
+      case "organiser_x": case "ticket_platform": case "flyer_credit": err = put(k, textOrNull(raw, k.replace("_", " "), 120)); break;
       case "description": err = put(k, typeof raw === "string" && raw.length <= 8000 ? { value: raw } : { error: "The description is too long" }); break;
       case "lat": err = put(k, raw === null || (typeof raw === "number" && raw >= -90 && raw <= 90) ? { value: raw } : { error: "Check the pin" }); break;
       case "lng": err = put(k, raw === null || (typeof raw === "number" && raw >= -180 && raw <= 180) ? { value: raw } : { error: "Check the pin" }); break;
       case "sold_out": err = put(k, typeof raw === "boolean" ? { value: raw } : { error: "Check sold out" }); break;
-      case "ticket_url": case "flyer_url": err = put(k, httpsUrl(raw, k.replace("_", " "))); break;
+      case "ticket_url": case "flyer_url": case "source_url": err = put(k, httpsUrl(raw, k.replace("_", " "))); break;
       case "tickets": {
         if (!Array.isArray(raw) || raw.length > 20) { err = "Up to 20 ticket types"; break; }
         const tickets: Obj[] = [];
@@ -223,15 +227,23 @@ async function read(sb: SupabaseClient, what: string, id: unknown): Promise<Next
     case "queue": r = await call(sb, what, "ev_o_queue", {}); break;
     case "claims": r = await call(sb, what, "ev_o_claim_requests", {}); break;
     case "week": r = await call(sb, what, "ev_o_week", {}); break;
+    case "claimable": r = await call(sb, what, "ev_o_claimable", {}); break;
+    case "claim_asks": r = await call(sb, what, "ev_o_claim_asks", {}); break;
+    case "taps": r = await call(sb, what, "ev_o_tap_counts", {}); break;
     case "organiser": {
       const c = uuidOf(id, "organiser id");
       if (failed(c)) return bad(c.error);
       r = await call(sb, what, "ev_o_organiser", { p_id: c.value });
+      // The claim links (event_claims flag) ride along. A database without the file, or the flag off, just has none.
+      if (!("response" in r) && isObj(r.data)) {
+        const links = (await sb.rpc("ev_o_claim_links", { p_org: c.value })) as Rpc;
+        if (!links.error && Array.isArray(links.data)) r = { data: { ...r.data, claim_links: links.data } };
+      }
       break;
     }
-    default: return bad("Ask for organisers, queue, claims, week or organiser");
+    default: return bad("Ask for organisers, queue, claims, week, claimable, claim_asks, taps or organiser");
   }
-  return "response" in r ? r.response : ok(r.data ?? (what === "week" ? {} : []));
+  return "response" in r ? r.response : ok(r.data ?? (what === "week" || what === "taps" ? {} : []));
 }
 
 /* ------------------------------------------------------------- flyers -- */
@@ -306,7 +318,7 @@ export async function POST(req: Request) {
   const b = parsed;
   const action = b.action as string;
 
-  if (["queue", "organisers", "organiser", "claims", "week"].includes(action)) return read(sb, action, b.id);
+  if (["queue", "organisers", "organiser", "claims", "week", "claimable", "claim_asks", "taps"].includes(action)) return read(sb, action, b.id);
   if (action === "flyer") return flyer(sb, b);
 
   /** Run a service function with the checked args, then shape the data. */
@@ -384,6 +396,36 @@ export async function POST(req: Request) {
       case "revoke_transfer": {
         const id = need(uuidOf(b.id, "transfer id")), who = need(by(b.by));
         return await run("ev_o_transfer_revoke", { p_id: id, p_by: who });
+      }
+      case "approve_many": {
+        const who = need(by(b.by));
+        if (!Array.isArray(b.pulled) || b.pulled.length === 0) return bad("Pick at least one row");
+        if (b.pulled.length > 100) return bad("Pick up to 100 rows at a time");
+        const ids = b.pulled.map((x) => need(uuidOf(x, "pulled id")));
+        return await run("ev_o_approve_many", { p_ids: ids, p_by: who });
+      }
+      case "create_claim_link": {
+        const who = need(by(b.by));
+        const org = b.id === undefined || b.id === null ? null : need(uuidOf(b.id, "organiser id"));
+        const ev = b.event === undefined || b.event === null ? null : need(uuidOf(b.event, "event id"));
+        if ((org === null) === (ev === null)) return bad("Send an organiser id or an event id");
+        // The token lives here only. The database keeps its sha256; the link goes back once and is never logged.
+        const token = randomBytes(32).toString("base64url");
+        const hash = createHash("sha256").update(token).digest("hex");
+        return await run("ev_o_claim_link_create", { p_org: org, p_event: ev, p_hash: hash, p_by: who }, (d) => {
+          const link = isObj(d) ? d.link : null;
+          const url = `${siteOf(req)}/claim/${token}`;
+          return ok({ link, url }, { link, url });
+        });
+      }
+      case "revoke_claim_link": {
+        const id = need(uuidOf(b.id, "link id")), who = need(by(b.by));
+        return await run("ev_o_claim_link_revoke", { p_id: id, p_by: who });
+      }
+      case "decide_claim_ask": {
+        const id = need(uuidOf(b.id, "ask id")), who = need(by(b.by));
+        if (typeof b.approve !== "boolean") return bad("Send approve true or false");
+        return await run("ev_o_claim_ask_decide", { p_id: id, p_approve: b.approve, p_by: who }, (d) => ok({ moved_events: isObj(d) ? Number(d.moved_events) || 0 : 0 }));
       }
       case "handle_claim_request": {
         const id = need(uuidOf(b.id, "request id")), who = need(by(b.by));
