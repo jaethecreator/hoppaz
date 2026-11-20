@@ -78,6 +78,10 @@ export type RoomRec = Omit<RoomSummary, "members" | "joined" | "unread" | "lates
   join_mode?: JoinMode;
   /** Who made the room (crews.created_by). A dormant room is made by the Listings account; accepting a transfer moves it to the new owner. */
   created_by?: string | null;
+  /** Hoppaz made this room for a listed organiser (ev_room_profiles.listed_by_staff). Missing on older rooms: made by the Listings account counts. */
+  listed_by_staff?: boolean;
+  /** Staff set the mode by hand on the desk (ev_room_profiles.listed_mode_set): the open organiser rooms switch leaves it alone. */
+  listed_mode_set?: boolean;
   /** Members before anyone joins in this browser. */
   base_members: number;
 };

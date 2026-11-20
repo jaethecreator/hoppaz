@@ -10,7 +10,7 @@ import type {
   AcceptOutcome, ApproveManyResult, AuthUser, Claimable, ClaimAsk, ClaimLinkMade, ClaimRequest, TapCounts, ContactChannel, DoorPerson, EventChat, ImportReport, Organiser, OrganiserDetail, OrganiserPatch, OrganiserStage,
   PulledEvent, PulledPatch, ScoutBatch, Transfer, TransferLink, TransferPreview, WeekSummary, EventDraft, Pop, PopAudience, PopAuto, R1Event, RegMessages, RegQuestion, Registration,
   JoinOutcome, JoinRequest, Report, ReportReason, RoomAnnouncement, RoomChannel, RoomDraft, RoomGuests, RoomMember, RoomMessage, RoomNotice,
-  RoomPatch, RoomPreview, RoomRole, RoomSummary, SavedDetails, MyRegistration, ScanResult, Ticket, ViewerState,
+  RoomListing, RoomModeView, RoomPatch, RoomPreview, RoomRole, RoomSummary, SavedDetails, MyRegistration, ScanResult, Ticket, ViewerState,
 } from "./types";
 
 export type Unsub = () => void;
@@ -148,6 +148,11 @@ export interface RoomsApi {
   leave(roomId: string): Promise<void>;
   /** Who a room is, for anyone with its address, an invite only room too (the locked page). null when there is no such room. */
   preview(idOrSlug: string): Promise<RoomPreview | null>;
+  /**
+   * An unclaimed room Hoppaz made for a listed organiser (CHANGE-006): the claim strip's data. null for any other room, for a claimed one,
+   * and while open organiser rooms are off. Anyone may ask, signed out too. Real: ev_room_listing.
+   */
+  listing(roomId: string): Promise<RoomListing | null>;
   /**
    * Every event chat of the room the viewer could see, whoever they are: open first, then not open yet, then closed, each with whether the
    * viewer may come in (can_enter). The room page's channel list; eventChats(roomId) is only the chats the viewer already cares about.
@@ -326,6 +331,11 @@ export interface OutreachApi {
   decideClaimAsk(askId: string, approve: boolean, by: string): Promise<{ moved_events: number }>;
   /** Outside ticket taps for the desk: "[N] people went to buy", by event and by organiser. */
   tapCounts(): Promise<TapCounts>;
+  /**
+   * "Room: Open / Invite only" (CHANGE-006): set the organiser's room while nobody has claimed it. Refused once claimed ("They own the room
+   * now. They change it in Settings"). The open organiser rooms switch leaves a room set here alone. Answers the new view.
+   */
+  setRoomMode(organiserId: string, mode: "open" | "invite", by: string): Promise<RoomModeView>;
   /**
    * Approve many pulled rows in one go (up to 100). Each row is approved on its own: one that cannot be (no start time, a name under 2
    * characters, a blocked organiser, folded away) is skipped with its reason and the rest still go live.

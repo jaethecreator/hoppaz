@@ -13,13 +13,14 @@ import {
   useAnnouncements, useR1Api, useR1Auth, useR1Now, useR1Query, useRoomEvents, useRoomMessages,
 } from "@/lib/events-r1/hooks";
 import { DEFAULT_LOOK } from "@/lib/events-r1/looks";
-import type { EventChat, R1Event, RoomMember, RoomPreview, RoomSummary } from "@/lib/events-r1/types";
+import type { EventChat, R1Event, RoomListing, RoomMember, RoomPreview, RoomSummary } from "@/lib/events-r1/types";
 import { siteOrigin } from "@/lib/events-r1/siteUrl";
 import { copyText, shareOrCopy } from "../page/share";
 import { useInviteLink } from "../workspace/admin/useInviteLink";
 import SignInSheet from "../SignInSheet";
 import { useDialogFocus } from "../signin/useDialogFocus";
 import { enterPath, roomPath, walkable } from "../rooms/words";
+import ClaimRoomStrip from "./ClaimRoomStrip";
 import { AboutCard, EventsTab, LeaderboardCard, MembersCard, MembersTab, NextEvent, QuestCard, QuestsTab, hostNames } from "./Cards";
 import Scene from "./Scene";
 import {
@@ -144,6 +145,9 @@ function Page({ real, invite }: { real: RoomSummary; invite: string | undefined 
   const members = useR1Query((a) => a.rooms.members(real.id).catch(() => null as RoomMember[] | null), [real.id, insider, user?.id ?? ""]);
   const anns = useAnnouncements(open || insider ? real.id : null);
   const invitation = useInviteLink(real);
+  // An unclaimed room Hoppaz made for a listed organiser (CHANGE-006): the claim strip, and General stays read only until the claim.
+  const listingQ = useR1Query((a) => a.rooms.listing(real.id), [real.id, user?.id ?? ""]);
+  const listing: RoomListing | null = hq ? null : listingQ.data;
 
   const list: EventChat[] = useMemo(
     () => (chans.data ?? []).map((c) => (asVisitor ? { ...c, can_enter: false } : c)),
@@ -163,6 +167,12 @@ function Page({ real, invite }: { real: RoomSummary; invite: string | undefined 
   const landedOnEvent = useRef(!!sp.get("ch") && sp.get("ch") !== GENERAL && sp.get("ch") !== ANNOUNCEMENTS);
   const wantTab = sp.get("tab");
   const [tab, setTab] = useState<Tab>((["chat", "events", "members", "quests"] as const).find((t) => t === wantTab && (t !== "quests" || QUESTS_ON)) ?? "chat");
+  // An unclaimed organiser room opens on its events (its chat is quiet until the claim), unless the address asks for a tab or a channel.
+  const listed = !!listing;
+  const tabPicked = useRef(!!wantTab || !!sp.get("ch"));
+  useEffect(() => {
+    if (listed && !tabPicked.current) setTab("events");
+  }, [listed]);
   const pick = useCallback((c: string) => {
     setCh(c);
     setTab("chat");
@@ -187,7 +197,7 @@ function Page({ real, invite }: { real: RoomSummary; invite: string | undefined 
   const readGeneral = insider || open;
   const canReadNow = chan === GENERAL || chan === ANNOUNCEMENTS ? readGeneral : enterable && chat?.state !== "upcoming";
   const canPost =
-    chan === GENERAL ? insider
+    chan === GENERAL ? insider && !listing
       : chan === ANNOUNCEMENTS ? room.can_post
         : enterable && chat?.state === "open";
 
@@ -290,14 +300,15 @@ function Page({ real, invite }: { real: RoomSummary; invite: string | undefined 
   const bundle: Ctx = {
     room, real, base, insider, owner, asVisitor, manager, requested, invited, open, hq, ticketMode, ticketEvent, user: !!user,
     list, chan, chat, onEvent, readGeneral, canReadNow, canPost, talk, pinned, anns: anns.data ?? [], general: general.data ?? [], voice,
-    members: members.data, upcoming, past, next, eventIds, now, fresh, tab, setTab, pick, join, busy, send, share, copyInvite, flash,
-    leaveAsk: () => setLeaving(true), invitation: invitation.url, linesLoading: lines.loading,
+    members: members.data, upcoming, past, next, eventIds, now, fresh, tab, setTab: (t: Tab) => { tabPicked.current = true; setTab(t); }, pick, join, busy, send, share, copyInvite, flash,
+    leaveAsk: () => setLeaving(true), invitation: invitation.url, linesLoading: lines.loading, listing,
   };
 
   if (desktop === null) return <Frame logo={real.logo_url} roomId={real.id}><span /></Frame>;
 
   return (
     <Frame logo={real.logo_url} roomId={real.id} scroller={scroller} fill={desktop === true}>
+      {listing && !asVisitor && <ClaimRoomStrip listing={listing} />}
       {desktop ? <Desktop c={bundle} /> : <Phone c={bundle} />}
       <Toast text={toast} />
       <LeaveDialog open={leaving} room={real.name} phone={!desktop} onStay={() => setLeaving(false)} onLeave={() => void leave()} />
@@ -362,6 +373,8 @@ type Ctx = {
   leaveAsk: () => void;
   invitation: string;
   linesLoading: boolean;
+  /** An unclaimed organiser room (CHANGE-006): the claim strip's data. null for every other room. */
+  listing: RoomListing | null;
 };
 
 const eventTitle = (c: Ctx, id: string | undefined) => c.list.find((x) => x.event_id === id)?.event_title ?? "this event";
@@ -430,6 +443,15 @@ function ThreadBody({ c, phone }: { c: Ctx; phone: boolean }) {
       <Note title={`This chat opens ${dayTime(chat.opens_at, c.now)}`}>
         <NoteText>That&apos;s 1 hour before doors. It stays open for 3 days after, then it closes and lives here as history.</NoteText>
         {mine && (<><NoteText>Until then, General is open.</NoteText><button type="button" className={GHOST} onClick={() => c.pick(GENERAL)}>Go to General</button></>)}
+      </Note>
+    );
+  }
+
+  if (chan === GENERAL && c.listing && !c.talk.length && !c.linesLoading) {
+    return (
+      <Note title={`The chat opens when ${c.listing.name} claims this room`}>
+        <NoteText>{c.insider ? "You’re in, so you can say hi as soon as it opens." : "Join now and you’re in when it opens."} Until then, see what’s on in Events.</NoteText>
+        <button type="button" className={GHOST} onClick={() => c.setTab("events")}>See events</button>
       </Note>
     );
   }
@@ -530,7 +552,7 @@ function channelRows(c: Ctx) {
   const gen = c.general.length ? lastLine(c.general) : null;
   const ann = room.latest_announcement ? `Pinned: ${room.latest_announcement.body}` : "Nothing yet";
   const rows: Array<{ id: string; ic: string; b: string; sm: string; un?: number; dot?: boolean; dim?: boolean; group?: string }> = [
-    { id: GENERAL, ic: "#", b: "General", sm: c.fresh && !gen ? "Say hi first" : gen ?? "Everyone in the room" },
+    { id: GENERAL, ic: "#", b: "General", sm: c.listing && !gen ? "Opens when the room is claimed" : c.fresh && !gen ? "Say hi first" : gen ?? "Everyone in the room" },
     { id: ANNOUNCEMENTS, ic: "◆", b: "Announcements", sm: c.fresh && !room.latest_announcement ? "Nothing yet" : ann, un: c.insider ? room.unread : 0 },
   ];
   let shown = 0;
@@ -729,7 +751,7 @@ function Desktop({ c }: { c: Ctx }) {
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px] gap-7 px-8 pb-6 pt-4">
         <div className="flex min-h-0 min-w-0 flex-col gap-3.5">
           {tabsRow}
-          {c.tab === "chat" ? mainChat : <div className="min-h-0 flex-1 overflow-y-auto">{c.tab === "events" ? <EventsTab upcoming={c.upcoming} past={c.past} fresh={c.fresh} /> : c.tab === "members" ? <MembersTab room={room} members={c.members} insider={c.insider} /> : <QuestsTab eventIds={c.eventIds} next={c.next} insider={c.insider} />}</div>}
+          {c.tab === "chat" ? mainChat : <div className="min-h-0 flex-1 overflow-y-auto">{c.tab === "events" ? <EventsTab upcoming={c.upcoming} past={c.past} fresh={c.fresh} emptyUpcoming={c.listing ? `New events from ${c.listing.name} show up here.` : undefined} /> : c.tab === "members" ? <MembersTab room={room} members={c.members} insider={c.insider} /> : <QuestsTab eventIds={c.eventIds} next={c.next} insider={c.insider} />}</div>}
         </div>
         <div className="min-h-0 overflow-y-auto">{aside}</div>
       </div>
@@ -914,7 +936,7 @@ function Phone({ c }: { c: Ctx }) {
     } else {
       body = (
         <div className="grid content-start gap-3.5 px-4 pb-7 pt-4">
-          {c.tab === "events" ? <EventsTab upcoming={c.upcoming} past={c.past} fresh={c.fresh} /> : c.tab === "members" ? <MembersTab room={room} members={c.members} insider={c.insider} /> : <QuestsTab eventIds={c.eventIds} next={c.next} insider={c.insider} />}
+          {c.tab === "events" ? <EventsTab upcoming={c.upcoming} past={c.past} fresh={c.fresh} emptyUpcoming={c.listing ? `New events from ${c.listing.name} show up here.` : undefined} /> : c.tab === "members" ? <MembersTab room={room} members={c.members} insider={c.insider} /> : <QuestsTab eventIds={c.eventIds} next={c.next} insider={c.insider} />}
         </div>
       );
     }
@@ -970,7 +992,13 @@ function Phone({ c }: { c: Ctx }) {
         {room.about && <p className="max-w-[34ch] text-[15px]">{room.about}</p>}
       </div>
       {c.invited && <InviteBanner c={c} />}
-      <div className="grid gap-3 px-[22px] pt-[22px]"><NextEvent event={c.next} room={room} now={c.now} /></div>
+      {c.listing ? (
+        <div className="grid gap-3 px-[22px] pt-[22px]" data-room-events>
+          <EventsTab upcoming={c.upcoming} past={c.past} fresh={c.fresh} emptyUpcoming={`New events from ${c.listing.name} show up here.`} />
+        </div>
+      ) : (
+        <div className="grid gap-3 px-[22px] pt-[22px]"><NextEvent event={c.next} room={room} now={c.now} /></div>
+      )}
       <div className="grid gap-3 px-[22px] pt-[22px]">
         <p className="flex justify-between gap-2 text-[12.5px] font-semibold text-t-muted"><span>Chat</span></p>
         <section aria-label="General" className="relative overflow-hidden rounded-hz border border-t-line bg-t-tile">

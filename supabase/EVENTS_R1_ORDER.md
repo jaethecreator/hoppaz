@@ -41,6 +41,7 @@ Then the new files, in this order, each one once (they are safe to run again):
 | 18 | `events_r1_outreach.sql` | files 11 and 17 | Staff functions (service role): import, review, approve, organisers, outreach log, delete, week. Test: `tests/events_r1_outreach_test.sql`. |
 | 19 | `events_r1_transfer.sql` | files 11, 17 and 18, `has_account()` | Claim and handover transfer (single use, hashed token), "Is this your event?", switch to Hoppaz tickets. Test: `tests/events_r1_transfer_test.sql`. |
 | 20 | `events_r1_outreach_ready.sql` | files 17, 18 and 19 | Outreach readiness (CHANGE-005), a DRAFT. Source and organiser fields on events (`ticket_platform`, `source_url`, `flyer_credit`, `organiser_name`, `organiser_ig`, `organiser_x`; no phone numbers or emails), claim an event behind the switch `event_claims` (one-time links with no email, asks, the claimable list), outside ticket taps ("[N] people went to buy"), bulk approve. Replaces five functions of files 17 and 18 (listed in its header), so run it AFTER them and again after any later run of them. Test: `tests/events_r1_outreach_ready_test.sql`. See section 1a. |
+| 21 | `events_r1_open_rooms.sql` | files 11, 17, 18, 19 and 20 | Open organiser rooms (CHANGE-006), a DRAFT. A room Hoppaz made for a listed organiser, while nobody has claimed it, is open to view (signed out too) instead of showing the invite lock. The switch `open_organiser_rooms` is ON when the file runs and the file opens the unclaimed organiser rooms that exist (the backfill). Staff switch per room (`ev_o_room_set_mode`), the claim strip data (`ev_room_listing`), "Claim it" from the room (`ev_claim_ask_room`, the CHANGE-005 ask), General stays read only until the claim. Host rooms are never touched. Replaces `ev_o_ensure_room` (file 18) and `_ev_cl_handover` (file 20), so run it AFTER them and again after any later run of them. Test: `tests/events_r1_open_rooms_test.sql`. See section 1b. |
 
 ## 1a. Outreach readiness (file 20): what it does and how to switch it on
 
@@ -57,6 +58,31 @@ Files 1 and 2 leave small stubs for functions that later files fill in (the goin
 the HQ test). A stub is written only when the real function is missing, so running a file again never puts a stub back over the real one.
 Running the older files again later (even `schema.sql`) does not undo anything here: the new status check, the new trigger, the new
 columns and the new functions are not touched by them.
+
+
+## 1b. Open organiser rooms (file 21): what it does and how to undo it
+
+`events_r1_open_rooms.sql` is one transaction, safe to run twice. Before running it on production, see how many rooms it will open (read only, on production, after files 17 to 20):
+
+```sql
+select count(*) as rooms_it_opens
+  from public.ev_organisers o
+  join public.crews c on c.id = o.room_id
+  join public.ev_room_profiles p on p.crew_id = o.room_id
+ where o.claimed_at is null and o.stage <> 'claimed'
+   and c.created_by = (select user_id from public.ev_listings_account where only_row)
+   and p.join_mode = 'invite'
+   and not exists (select 1 from public.events e where e.room_id = o.room_id and e.visibility in ('community', 'invite'));
+```
+
+After it runs: `select public.ev_open_organiser_rooms_count();` gives `unclaimed_rooms`, `open`, `invite_only` and `set_by_hand`.
+
+- **Which rooms.** Only a room an organiser row points at, made by and still owned by the Hoppaz Listings account, nobody has claimed, and with no community or invite event in it. It is flagged `ev_room_profiles.listed_by_staff`. Rooms hosts made are never flagged, so never opened. The queer community spaces are separate tables (`queer_community.sql`), not rooms.
+- **Undo.** `select public.ev_set_open_organiser_rooms('off');` closes every unclaimed organiser room again (claimed rooms and rooms staff set by hand are not touched) and new organiser rooms are made invite only, as before. `('on')` opens them again.
+- **Staff switch.** The desk shows "Room: Open / Invite only" on an organiser with a room. It only works while the room is unclaimed; after a claim the owner changes it in Room admin, Settings. A room staff set by hand is left alone by the switch above.
+- **Claims keep the mode.** While the switch is on, a claim (link or approved ask) leaves the room's mode as it is. With the switch off, a dormant room opens on claim as in file 20.
+- **Chat.** Visitors can join an open organiser room. A trigger on `crew_room_messages` refuses a new General line until the room is claimed (staff and the Listings account excepted). The trigger is only made if that table has `crew_id` and `scope`.
+- **Discover.** An open room can show in Discover (`ev_discover_rooms` lists open and ask rooms, biggest first, 20 at most). These rooms have one member, so they sort last.
 
 ## 2. The one-time secret step (tickets)
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { ContactChannel, Organiser, OrganiserDetail, OrganiserLogEntry } from "@/lib/events-r1/types";
+import type { ContactChannel, Organiser, OrganiserDetail, OrganiserLogEntry, RoomModeView } from "@/lib/events-r1/types";
 import CopyClaimLink from "./CopyClaimLink";
 import { ago, igUrl, stamp, when } from "./format";
 import LinkTool from "./LinkTool";
@@ -122,6 +122,7 @@ export default function OrganiserPanel({ org, mode, setMode, copyKey, copyMessag
         <Loading />
       ) : (
         <>
+          {detail.room_mode && <RoomMode org={org} view={detail.room_mode} onChanged={(v) => setDetail((d) => (d ? { ...d, room_mode: v } : d))} />}
           <Events detail={detail} org={org} />
           <Details org={org} />
           <Log detail={detail} onNote={() => void load()} org={org} />
@@ -339,6 +340,64 @@ function PendingLinks({ detail, onChanged }: { detail: OrganiserDetail; onChange
             </Btn>
           </div>
         ))}
+      <Fail>{err}</Fail>
+    </div>
+  );
+}
+
+/**
+ * "Room: Open / Invite only" (CHANGE-006): the organiser's room while nobody has claimed it. Open lets anyone see it from the DM link, signed out
+ * too; Invite only shows the lock. After a claim it is the owner's to change (Room admin, Settings), so it only shows the mode.
+ */
+function RoomMode({ org, view, onChanged }: { org: Organiser; view: RoomModeView; onChanged: (v: RoomModeView) => void }) {
+  const { api, by, say } = useOutreach();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const label = (m: RoomModeView["join_mode"]) => (m === "open" ? "Open" : m === "invite" ? "Invite only" : "Ask to join");
+  const set = async (mode: "open" | "invite") => {
+    if (busy || mode === view.join_mode) return;
+    setErr("");
+    setBusy(true);
+    try {
+      const next = await api.setRoomMode(org.id, mode, by);
+      onChanged(next);
+      say(`${org.room_name ?? org.name} is ${mode === "open" ? "open to everyone" : "invite only"} now`);
+    } catch (e) {
+      setErr(why(e));
+    }
+    setBusy(false);
+  };
+  return (
+    <div data-room-mode>
+      <p className="seclabel mb-1">Room: Open / Invite only</p>
+      {view.switchable ? (
+        <div role="radiogroup" aria-label="Room: Open / Invite only" className="flex flex-wrap items-center gap-2">
+          {(["open", "invite"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={view.join_mode === m}
+              disabled={busy}
+              onClick={() => void set(m)}
+              className="chip !min-h-[44px] !px-4 !font-body !text-[14px] !normal-case !tracking-normal"
+              data-room-mode-option={m}
+            >
+              {label(m)}
+            </button>
+          ))}
+          {org.room_slug && (
+            <a href={`/rooms/${encodeURIComponent(org.room_slug)}`} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-[44px] items-center font-body text-[13px] text-orange underline underline-offset-4">
+              See the room ↗
+            </a>
+          )}
+        </div>
+      ) : (
+        <p className="font-body text-[14px]">
+          {label(view.join_mode)}. <span className="hint">They own the room now, so they change it in Settings.</span>
+        </p>
+      )}
+      <p className="hint mt-1">{view.join_mode === "open" ? "Anyone with the link sees the room, signed out too." : "People with the link see a lock until they get an invite."}</p>
       <Fail>{err}</Fail>
     </div>
   );

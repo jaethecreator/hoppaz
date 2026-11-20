@@ -4,7 +4,8 @@
  */
 import type { EventChat, EventStatus, HostRef, JoinMode, ListingInfo, R1Event, RegStatus, Registration, RoomRole, RoomSummary, TicketType } from "../types";
 import { haversineKm, LAGOS_CENTER } from "../../geo";
-import type { EventRec, RoomRec, TicketRec, TicketTypeRec, UserRec } from "./store";
+import { openOrganiserRoomsOn } from "../flags";
+import type { EventRec, OrganiserRec, RoomRec, TicketRec, TicketTypeRec, UserRec } from "./store";
 import { S, now, viewer } from "./store";
 import { clone, HOUR, DAY, seedId } from "./util";
 
@@ -86,7 +87,27 @@ export function roomToPostIn(userId: string): RoomRec | null {
   return Object.values(S().rooms).find((r) => r.kind !== "hq" && roleOf(r.id, userId) === "admin") ?? null;
 }
 
-export const joinModeOf = (room: RoomRec): JoinMode => room.join_mode ?? "open";
+/**
+ * The organiser of an unclaimed room Hoppaz made (CHANGE-006), or null: the rule of _ev_room_listing_org in events_r1_open_rooms.sql.
+ * The room is the organiser's, made by (or flagged for) the Listings account and still owned by it, nobody claimed it, and no community or
+ * invite event is in it. A room a host made never matches.
+ */
+export function listingOrgOf(room: RoomRec): OrganiserRec | null {
+  const lu = S().listingsUserId;
+  if (!lu || room.kind === "hq" || room.owner_id !== lu) return null;
+  if (!(room.listed_by_staff ?? room.created_by === lu)) return null;
+  if (Object.values(S().events).some((e) => e.room_id === room.id && (e.visibility === "community" || e.visibility === "invite"))) return null;
+  return Object.values(S().organisers).find((o) => o.room_id === room.id && !o.claimed_at && o.stage !== "claimed") ?? null;
+}
+
+/**
+ * Who can join. An unclaimed organiser room that staff did not set by hand reads Open while the open organiser rooms switch is on and
+ * Invite only (dormant) while it is off: the backfill and ev_set_open_organiser_rooms of events_r1_open_rooms.sql. Every other room reads as stored.
+ */
+export const joinModeOf = (room: RoomRec): JoinMode => {
+  if (!room.listed_mode_set && listingOrgOf(room)) return openOrganiserRoomsOn() ? "open" : "invite";
+  return room.join_mode ?? "open";
+};
 
 /** The room's invite code (fake: made from its id; the real one is crews.invite_code). */
 export const inviteCodeOf = (room: RoomRec): string => `HZ${room.id.replace(/-/g, "").slice(0, 8).toUpperCase()}`;

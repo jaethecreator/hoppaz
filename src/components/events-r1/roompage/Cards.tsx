@@ -184,12 +184,12 @@ function Row({ e, past, fresh }: { e: R1Event; past?: boolean; fresh: boolean })
   );
 }
 
-export function EventsTab({ upcoming, past, fresh }: { upcoming: R1Event[]; past: R1Event[]; fresh: boolean }) {
+export function EventsTab({ upcoming, past, fresh, emptyUpcoming }: { upcoming: R1Event[]; past: R1Event[]; fresh: boolean; emptyUpcoming?: string }) {
   return (
     <div className="grid content-start gap-5">
       <div>
         <p className="flex justify-between gap-2 font-body text-[12.5px] font-semibold text-t-muted">Upcoming</p>
-        {upcoming.length ? upcoming.map((e) => <Row key={e.id} e={e} fresh={fresh} />) : <p className="mt-2 font-body text-[14px] text-t-muted">Nothing coming up yet.</p>}
+        {upcoming.length ? upcoming.map((e) => <Row key={e.id} e={e} fresh={fresh} />) : <p className="mt-2 font-body text-[14px] text-t-muted" data-events-empty>{emptyUpcoming ?? "Nothing coming up yet."}</p>}
       </div>
       <div>
         <p className="font-body text-[12.5px] font-semibold text-t-muted">Past</p>

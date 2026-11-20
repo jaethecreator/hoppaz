@@ -20,6 +20,8 @@ export type ClaimSheetProps = {
   eventId: string;
   eventTitle: string;
   onClose: () => void;
+  /** Called once the ask or request went through (the room's claim strip turns to "We're checking"). */
+  onSent?: () => void;
 };
 
 const field = "mb-1.5 block font-body text-[13px] text-dim";
@@ -35,7 +37,7 @@ export default function ClaimSheet(props: ClaimSheetProps) {
   return claims ? <AskSheet {...props} /> : <EmailClaimSheet {...props} />;
 }
 
-function EmailClaimSheet({ open, eventId, eventTitle, onClose }: ClaimSheetProps) {
+function EmailClaimSheet({ open, eventId, eventTitle, onClose, onSent }: ClaimSheetProps) {
   const api = useR1Api();
   const { user } = useR1Auth();
   const titleId = useId();
@@ -100,6 +102,7 @@ function EmailClaimSheet({ open, eventId, eventTitle, onClose }: ClaimSheetProps
         ...(note.trim() ? { note: note.trim() } : {}),
       });
       setSent(true);
+      onSent?.();
     } catch {
       setError("That did not send. Try again.");
     } finally {
@@ -216,7 +219,7 @@ function EmailClaimSheet({ open, eventId, eventTitle, onClose }: ClaimSheetProps
 }
 
 /** The ask to claim (event_claims on). Signed out: sign in first. Signed in: an optional note, then Ask to claim. */
-function AskSheet({ open, eventId, eventTitle, onClose }: ClaimSheetProps) {
+function AskSheet({ open, eventId, eventTitle, onClose, onSent }: ClaimSheetProps) {
   const api = useR1Api();
   const { user } = useR1Auth();
   const titleId = useId();
@@ -253,6 +256,7 @@ function AskSheet({ open, eventId, eventTitle, onClose }: ClaimSheetProps) {
     try {
       await api.claims.askToClaim(eventId, { note: note.trim() });
       setSent(true);
+      onSent?.();
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : "That did not send. Try again.");
     } finally {

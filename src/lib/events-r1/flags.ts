@@ -12,6 +12,9 @@
  *                                 staff Claimable list. Default off. The database has the same switch (ev_settings 'event_claims', set by
  *                                 ev_set_setting) and refuses every claim function while it is off.
  *
+ * Open organiser rooms (CHANGE-006): the database decides (ev_settings 'open_organiser_rooms', ev_set_open_organiser_rooms). The fake has a
+ * demo switch for it, ON by default (openOrganiserRoomsOn below).
+ *
  * Each is read as a literal `process.env.NEXT_PUBLIC_*` so the bundler can inline it.
  */
 export const EVENTS_R1 = process.env.NEXT_PUBLIC_EVENTS_R1 === "1";
@@ -55,5 +58,21 @@ export function eventClaimsOn(): boolean {
     return window.localStorage.getItem(CLAIMS_KEY) === "1";
   } catch {
     return false;
+  }
+}
+
+/** localStorage key of the demo switch for open organiser rooms (fake data only). "0" is off; anything else (or nothing) is on. */
+export const OPEN_ROOMS_KEY = "hz.r1.openrooms";
+
+/**
+ * Are unclaimed organiser rooms open to view (CHANGE-006)? Fake data only: the demo switch "Open organiser rooms", on unless set to "0".
+ * Under Node (the check script) HZ_OPEN_ROOMS=0 turns it off. The real layer asks the database (ev_room_listing answers null while it is off).
+ */
+export function openOrganiserRoomsOn(): boolean {
+  if (typeof window === "undefined") return typeof process === "undefined" || process.env.HZ_OPEN_ROOMS !== "0";
+  try {
+    return window.localStorage.getItem(OPEN_ROOMS_KEY) !== "0";
+  } catch {
+    return true;
   }
 }

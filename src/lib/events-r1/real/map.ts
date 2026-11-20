@@ -7,7 +7,7 @@ import { haversineKm, LAGOS_CENTER } from "../../geo";
 import type {
   AcceptOutcome, ApproveManyResult, Claimable, ClaimAsk, ClaimLink, ClaimRequest, ContactChannel, EventChat, HostRef, ImportReport, ListingInfo, Organiser, OrganiserDetail, OrganiserHandles, OrganiserLogEntry,
   OrganiserLogKind, OrganiserStage, Pop, PulledEvent, PulledFlag, PulledStatus, R1Event, RegQuestion, Registration, Report, RoomAnnouncement, RoomLinks, RoomMessage,
-  RoomRole, RoomSummary, ScoutEvent, TapCounts, Ticket, TicketType, Transfer, TransferPreview, WeekSummary,
+  RoomListing, RoomModeView, RoomRole, RoomSummary, ScoutEvent, TapCounts, Ticket, TicketType, Transfer, TransferPreview, WeekSummary,
 } from "../types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -375,7 +375,26 @@ export function mapOrganiserDetail(j: J): OrganiserDetail {
     })),
     transfers: list(j.transfers).map(mapTransfer),
     claim_links: list(j.claim_links).map(mapClaimLink),
+    room_mode: mapRoomMode(j.room_mode),
   };
+}
+
+/** ev_o_room_mode: the desk's "Room: Open / Invite only" (CHANGE-006). null when missing (no room, or a database without the file). */
+export function mapRoomMode(v: unknown): RoomModeView | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const j = v as J;
+  const m = j.join_mode === "open" || j.join_mode === "ask" || j.join_mode === "invite" ? j.join_mode : null;
+  if (!m) return null;
+  return { join_mode: m, switchable: j.switchable === true, set_by_hand: j.set_by_hand === true };
+}
+
+/** ev_room_listing: the claim strip of an unclaimed organiser room (CHANGE-006). null for any other room. No email, no phone. */
+export function mapRoomListing(v: unknown): RoomListing | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const j = v as J;
+  const name = str(j.name);
+  if (!name) return null;
+  return { name, claim_event_id: strOrNull(j.claim_event_id), my_claim: j.my_claim === "pending" ? "pending" : "none", claims_on: j.claims_on === true };
 }
 
 /** One claim link (never the token or its hash). */

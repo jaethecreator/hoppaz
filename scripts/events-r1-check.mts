@@ -1896,6 +1896,18 @@ const orgByName = async (name: string) => {
   return o;
 };
 /** Import one event and approve it. */
+
+/** Run with open organiser rooms on or off (the Node switch HZ_OPEN_ROOMS, CHANGE-006), then put it back. Default on. */
+async function withOpenRooms<T>(on: boolean, fn: () => Promise<T>): Promise<T> {
+  const was = process.env.HZ_OPEN_ROOMS;
+  process.env.HZ_OPEN_ROOMS = on ? "1" : "0";
+  try {
+    return await fn();
+  } finally {
+    if (was === undefined) delete process.env.HZ_OPEN_ROOMS;
+    else process.env.HZ_OPEN_ROOMS = was;
+  }
+}
 async function listIt(o: Record<string, unknown> = {}) {
   const ev = scoutEv(o);
   await api.outreach.importBatch(batchOf([ev]), { dryRun: false });
@@ -2008,11 +2020,14 @@ await test("a scrape lands in the queue, not on the app; approved it appears wit
   fakeDev.setPaid(false);
   as("Ada Obi");
   await rejects(api.registrations.register(evA.id), EXTERNAL, "register as Ada");
-  // The dormant room is hidden: not in Discover, not found by its address for a stranger.
+  // CHANGE-006: the organiser's room is open to view while unclaimed (the outreach DM links to it). With the switch off it is dormant again.
   const room = (await api.outreach.organiser(ok1.organiserId)).organiser;
-  eq(await api.rooms.get(room.room_slug!), null, "the dormant room is invite only");
-  ok(!(await api.rooms.list()).discover.some((r) => r.slug === room.room_slug), "not in Discover");
-  ok(!!(await api.rooms.preview(room.room_slug!)), "but the claim page can preview it");
+  eq((await api.rooms.get(room.room_slug!))?.join_mode, "open", "the unclaimed organiser room opens for a stranger");
+  ok(!!(await api.rooms.preview(room.room_slug!)), "and the claim page can preview it");
+  await withOpenRooms(false, async () => {
+    eq(await api.rooms.get(room.room_slug!), null, "switch off: the dormant room is invite only");
+    ok(!(await api.rooms.list()).discover.some((r) => r.slug === room.room_slug), "switch off: not in Discover");
+  });
 });
 
 await test("a rerun creates no duplicates; edited fields are kept; the start moving is flagged", async () => {
@@ -2709,6 +2724,75 @@ await test("C: the ask path: sign in, ask, staff approve or decline; an approve 
     await newPerson();
     for (const m of many.slice(0, 3)) await api.claims.askToClaim(m.eventId, {});
     await rejects(api.claims.askToClaim(many[3].eventId, {}), R.try_again_later, "the fourth ask in a day");
+  });
+});
+
+/* ===================================================== CHANGE-006: open organiser rooms ===== */
+
+await test("CHANGE-006: an unclaimed organiser room is open to view; the claim strip data; chat read only; host rooms stay locked", async () => {
+  await api.auth.signOut();
+  const x = await listIt({ name: "Shiro Night", organiser_name: "Shiro Lagos", organiser_handle: "shirolagos" });
+  const slug = (await api.outreach.organiser(x.organiserId)).organiser.room_slug!;
+  const r = await api.rooms.get(slug);
+  eq([r?.name, r?.join_mode, r?.joined], ["Shiro Lagos", "open", false], "signed out: the room opens (no lock)");
+  const l = await api.rooms.listing(r!.id);
+  eq([l?.name, l?.claim_event_id, l?.my_claim], ["Shiro Lagos", x.eventId, "none"], "the strip: the organiser name and the event the claim points at");
+  ok(!/@|mail|phone/i.test(JSON.stringify(l)), "no email and no phone in the strip data");
+  // Seeded rooms from before (stored invite only) read open too: the backfill.
+  const lekki = Object.values(state().rooms).find((x2) => x2.slug === "lekki-social-club")!;
+  eq([lekki.join_mode, (await api.rooms.get("lekki-social-club"))?.join_mode], ["invite", "open"], "an older dormant room reads open (the backfill)");
+  // Join, but General is read only until the claim.
+  await newPerson();
+  eq(await api.rooms.join(r!.id), "joined", "a visitor can join");
+  await rejects(api.rooms.send(r!.id, "general", "hello"), "The chat opens when the organiser claims this room", "General is read only");
+  // A host's invite only room never opens and has no strip.
+  await newPerson();
+  const hostRoom = (await api.rooms.create({ name: "Our Quiet Circle", join_mode: "invite" })).id;
+  await api.auth.signOut();
+  eq(await api.rooms.get(hostRoom), null, "a host's invite only room still shows the lock");
+  eq(await api.rooms.listing(hostRoom), null, "and has no claim strip");
+  // Switch off: back to the lock.
+  await withOpenRooms(false, async () => {
+    eq(await api.rooms.get(slug), null, "switch off: the lock is back");
+    eq(await api.rooms.listing(r!.id), null, "switch off: no strip");
+  });
+});
+
+await test("CHANGE-006: staff switch Open / Invite only; a claim keeps the mode; the strip goes", async () => {
+  await withClaims(true, async () => {
+    const x = await listIt({ name: "Brunch Day", organiser_name: "Brunch Club", organiser_handle: "brunchclub" });
+    let d = await api.outreach.organiser(x.organiserId);
+    eq([d.room_mode?.join_mode, d.room_mode?.switchable], ["open", true], "the desk reads Open and can switch it");
+    const v = await api.outreach.setRoomMode(x.organiserId, "invite", "Ola");
+    eq([v.join_mode, v.set_by_hand], ["invite", true], "staff set Invite only");
+    await api.auth.signOut();
+    eq(await api.rooms.get(d.organiser.room_slug!), null, "a stranger sees the lock now");
+    eq((await api.outreach.organiser(x.organiserId)).log[0].body, "Room set to Invite only.", "the log has it");
+    await api.outreach.setRoomMode(x.organiserId, "open", "Ola");
+    // Ask from the room, see We're checking, staff approve.
+    const p = await newPerson();
+    const roomId = await roomIdOf(x.eventId);
+    const l = (await api.rooms.listing(roomId))!;
+    await api.claims.askToClaim(l.claim_event_id!, { note: "I run Brunch Club" });
+    eq((await api.rooms.listing(roomId))?.my_claim, "pending", "the asker sees We're checking");
+    const ask = (await api.outreach.claimAsks()).find((a) => a.event_id === x.eventId)!;
+    await api.outreach.decideClaimAsk(ask.id, true, "Jae");
+    eq([state().rooms[roomId].owner_id, (await api.rooms.get(roomId))?.join_mode], [p.id, "open"], "claimed: theirs, and still open");
+    eq(await api.rooms.listing(roomId), null, "claimed: the strip is gone");
+    d = await api.outreach.organiser(x.organiserId);
+    eq(d.room_mode?.switchable, false, "claimed: the desk cannot switch it");
+    await rejects(api.outreach.setRoomMode(x.organiserId, "invite", "Ola"), R.is_claimed, "claimed: the desk is refused");
+    await api.rooms.send(roomId, "general", "Welcome to Brunch Club");
+    ok(true, "claimed: the owner can post in General");
+    // Invite only set by staff stays invite only after the claim.
+    const y = await listIt({ name: "Late Night", organiser_name: "Late Org", organiser_handle: "lateorg" });
+    await api.outreach.setRoomMode(y.organiserId, "invite", "Ola");
+    const q = await newPerson();
+    await api.claims.askToClaim(y.eventId, {});
+    const ask2 = (await api.outreach.claimAsks()).find((a) => a.event_id === y.eventId)!;
+    await api.outreach.decideClaimAsk(ask2.id, true, "Jae");
+    const yRoom = await roomIdOf(y.eventId);
+    eq([state().rooms[yRoom].owner_id, (await api.rooms.get(yRoom))?.join_mode], [q.id, "invite"], "a claim keeps Invite only");
   });
 });
 

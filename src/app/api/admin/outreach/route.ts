@@ -239,6 +239,11 @@ async function read(sb: SupabaseClient, what: string, id: unknown): Promise<Next
         const links = (await sb.rpc("ev_o_claim_links", { p_org: c.value })) as Rpc;
         if (!links.error && Array.isArray(links.data)) r = { data: { ...r.data, claim_links: links.data } };
       }
+      // The room mode for "Room: Open / Invite only" (events_r1_open_rooms.sql). A database without the file just has none.
+      if (!("response" in r) && isObj(r.data)) {
+        const mode = (await sb.rpc("ev_o_room_mode", { p_org: c.value })) as Rpc;
+        if (!mode.error && isObj(mode.data)) r = { data: { ...r.data, room_mode: mode.data } };
+      }
       break;
     }
     default: return bad("Ask for organisers, queue, claims, week, claimable, claim_asks, taps or organiser");
@@ -426,6 +431,13 @@ export async function POST(req: Request) {
         const id = need(uuidOf(b.id, "ask id")), who = need(by(b.by));
         if (typeof b.approve !== "boolean") return bad("Send approve true or false");
         return await run("ev_o_claim_ask_decide", { p_id: id, p_approve: b.approve, p_by: who }, (d) => ok({ moved_events: isObj(d) ? Number(d.moved_events) || 0 : 0 }));
+      }
+      case "set_room_mode": {
+        const id = need(uuidOf(b.id, "organiser id")), who = need(by(b.by));
+        if (b.mode !== "open" && b.mode !== "invite") return bad("Send mode open or invite");
+        const set = await call(sb, action, "ev_o_room_set_mode", { p_org: id, p_mode: b.mode, p_by: who });
+        if ("response" in set) return set.response;
+        return await run("ev_o_room_mode", { p_org: id });
       }
       case "handle_claim_request": {
         const id = need(uuidOf(b.id, "request id")), who = need(by(b.by));

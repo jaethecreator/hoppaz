@@ -6,7 +6,7 @@
  * and only when every step passed do the copies become the live state. A failed step, or a dry run, leaves the state untouched.
  */
 import type { ClaimsApi, OutreachApi } from "../api";
-import { eventClaimsOn } from "../flags";
+import { eventClaimsOn, openOrganiserRoomsOn } from "../flags";
 import { siteOrigin } from "../siteUrl";
 import { isBlocked, lagosDay, maskEmail, nameKey, normEmail, normHandle, normX, plainText, stageRefusal } from "../outreach/match";
 import { fail, OutreachError } from "../outreach/reasons";
@@ -14,10 +14,10 @@ import { OUTREACH_REASONS } from "../types";
 import { randomToken, sha256Hex } from "../outreach/token";
 import type {
   AcceptOutcome, ApproveManyResult, Claimable, ClaimAsk, ClaimLink, ClaimRequest, ContactChannel, ImportLine, ImportReport, Organiser, OrganiserDetail, OrganiserLogEntry, OrganiserLogKind, OrganiserPatch,
-  OrganiserStage, PulledEvent, PulledFlag, PulledPatch, ScoutBatch, ScoutEvent, Transfer, TransferLink, TransferPreview, WeekSummary,
+  OrganiserStage, PulledEvent, PulledFlag, PulledPatch, RoomModeView, ScoutBatch, ScoutEvent, Transfer, TransferLink, TransferPreview, WeekSummary,
 } from "../types";
 import { listingFields, priceRange } from "./listingRec";
-import { eventEnd, isExternal, isUnclaimed, requireViewer, roleOf, statusOf } from "./rules";
+import { eventEnd, isExternal, isUnclaimed, joinModeOf, listingOrgOf, requireViewer, roleOf, statusOf } from "./rules";
 import { emit, now, persist, S, viewer } from "./store";
 import type { ClaimAskRec, ClaimLinkRec, EventRec, OrganiserRec, PulledRec, RoomRec, TransferRec } from "./store";
 import { allTaps } from "./taps";
@@ -236,7 +236,10 @@ function freeSlug(name: string): string {
   return slug;
 }
 
-/** The organiser's one room, made on first use (dormant: the Listings account owns it, invite only so Discover hides it). Reused after. */
+/**
+ * The organiser's one room, made on first use: the Listings account owns it, flagged as made by Hoppaz. Open while the open organiser rooms
+ * switch is on (CHANGE-006), else invite only (dormant) as before. Reused after.
+ */
 function ensureRoom(o: OrganiserRec): RoomRec {
   const have = o.room_id ? S().rooms[o.room_id] : undefined;
   if (have) return have;
@@ -244,12 +247,19 @@ function ensureRoom(o: OrganiserRec): RoomRec {
   const id = newId();
   const room: RoomRec = {
     id, slug: freeSlug(o.name), name: o.name, kind: "crew", logo_url: null, wallpaper_url: null, verified: false, owner_id: owner, description: "", base_members: 0,
-    join_mode: "invite", created_by: owner,
+    join_mode: openOrganiserRoomsOn() ? "open" : "invite", created_by: owner, listed_by_staff: true,
   };
   S().rooms[id] = room;
   S().memberships[`${owner}:${id}`] = true;
   o.room_id = id;
   return room;
+}
+
+/** The desk's "Room: Open / Invite only" view of an organiser's room (ev_o_room_mode). null with no room. */
+function roomModeOf(o: OrganiserRec): RoomModeView | null {
+  const room = o.room_id ? S().rooms[o.room_id] : undefined;
+  if (!room) return null;
+  return { join_mode: joinModeOf(room), switchable: listingOrgOf(room)?.id === o.id, set_by_hand: !!room.listed_mode_set };
 }
 
 function newOrganiser(f: { name: string; ig_handle: string | null; email: string | null; phone: string | null }): OrganiserRec {
@@ -569,6 +579,7 @@ const noteFailed = (userId: string): void => {
  */
 function handOver(room: RoomRec, to: { id: string; name: string }, orgId: string | null, how: string): AcceptOutcome {
   const before = room.owner_id;
+  const keptMode = joinModeOf(room);
   const alreadyOwnsOther = Object.values(S().rooms).some((r) => r.id !== room.id && r.kind !== "hq" && r.owner_id === to.id);
   const moving = upcomingOfRoom(room.id);
   if (before !== to.id && moving.some((e) => Object.values(S().orders).some((o) => o.event_id === e.id && (o.status === "paid" || o.status === "refund_pending")))) return fail("paid_sales");
@@ -587,7 +598,8 @@ function handOver(room: RoomRec, to: { id: string; name: string }, orgId: string
     }
   }
   room.created_by = to.id;
-  if (before === S().listingsUserId) room.join_mode = "open";
+  // A dormant room opens on claim; while open organiser rooms are on, the room keeps the mode it shows (CHANGE-006).
+  if (before === S().listingsUserId) room.join_mode = openOrganiserRoomsOn() ? keptMode : "open";
   stepOf("events");
   for (const e of moving) e.host_id = to.id;
   stepOf("organiser");
@@ -712,7 +724,7 @@ export const outreach: OutreachApi = {
     const claim_links = eventClaimsOn()
       ? Object.values(S().claimLinks).filter((l) => l.organiser_id === id).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).map(linkView)
       : [];
-    return { organiser: organiserView(o), log: clone(log) as OrganiserLogEntry[], events, transfers, claim_links } satisfies OrganiserDetail;
+    return { organiser: organiserView(o), log: clone(log) as OrganiserLogEntry[], events, transfers, claim_links, room_mode: roomModeOf(o) } satisfies OrganiserDetail;
   },
 
   async saveOrganiser(id, patch: OrganiserPatch) {
@@ -924,6 +936,22 @@ export const outreach: OutreachApi = {
       a.status = "approved";
       a.decided_by = staffLabel(by);
       return { moved_events: done.moved_events };
+    });
+    emit();
+    return out;
+  },
+
+  async setRoomMode(organiserId, mode, by) {
+    if (mode !== "open" && mode !== "invite") throw new Error("Pick Open or Invite only");
+    const out = transaction(() => {
+      const o = organiserRec(organiserId);
+      const room = o.room_id ? S().rooms[o.room_id] : undefined;
+      if (!room) return fail("not_found");
+      if (listingOrgOf(room)?.id !== o.id) return fail("is_claimed");
+      room.join_mode = mode;
+      room.listed_mode_set = true;
+      logLine(o.id, "note", `Room set to ${mode === "open" ? "Open" : "Invite only"}.`, by);
+      return roomModeOf(o)!;
     });
     emit();
     return out;
@@ -1238,7 +1266,8 @@ export const claims: ClaimsApi = {
       }
       room.created_by = v.id;
       // A dormant room (the Listings account owned it) opens now.
-      if (before === S().listingsUserId) room.join_mode = "open";
+      // An email transfer (ev_transfer_accept) still opens a dormant room; only the CHANGE-005 claim keeps the mode (CHANGE-006).
+      if (before === S().listingsUserId) room.join_mode = joinModeOf(room) === "invite" ? "open" : joinModeOf(room);
 
       // 2. The upcoming events: the new owner hosts them. Past events keep their old host.
       stepOf("events");

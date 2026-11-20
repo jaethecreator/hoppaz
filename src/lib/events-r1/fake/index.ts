@@ -4,7 +4,7 @@
  * as anyone, a valid ticket token for a registration, a full reset.
  */
 import type { EventsR1Api } from "../api";
-import { CLAIMS_KEY, EVENT_CLAIMS, eventClaimsOn, PAID_KEY, PAID_TICKETS, paidTicketsOn } from "../flags";
+import { CLAIMS_KEY, EVENT_CLAIMS, eventClaimsOn, OPEN_ROOMS_KEY, openOrganiserRoomsOn, PAID_KEY, PAID_TICKETS, paidTicketsOn } from "../flags";
 import type { HostPayoutStatus, PayMethod } from "../pay";
 import type { R1Event, Registration } from "../types";
 import { account } from "./account";
@@ -121,6 +121,17 @@ export const fakeDev = {
     try {
       if (on) window.localStorage.setItem(CLAIMS_KEY, "1");
       else window.localStorage.removeItem(CLAIMS_KEY);
+    } catch {
+      /* private mode: the switch cannot be kept */
+    }
+    emit();
+  },
+  /** The demo switch for open organiser rooms (CHANGE-006; the database's open_organiser_rooms). On unless switched off here. */
+  openRoomsOn: openOrganiserRoomsOn,
+  setOpenRooms(on: boolean) {
+    try {
+      if (on) window.localStorage.removeItem(OPEN_ROOMS_KEY);
+      else window.localStorage.setItem(OPEN_ROOMS_KEY, "0");
     } catch {
       /* private mode: the switch cannot be kept */
     }

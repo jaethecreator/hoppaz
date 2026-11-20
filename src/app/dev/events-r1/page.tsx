@@ -56,6 +56,7 @@ function Panel() {
   const [offset, setOffset] = useState(0);
   const [paid, setPaid] = useState(false);
   const [claims, setClaims] = useState(false);
+  const [openRooms, setOpenRooms] = useState(true);
   const [payout, setPayout] = useState<HostPayoutStatus>("not_started");
   const [ticket, setTicket] = useState<{ id: string; text: string } | null>(null);
   const [note, setNote] = useState("");
@@ -71,6 +72,7 @@ function Panel() {
     setOffset(dev.getOffset());
     setPaid(dev.paidOn());
     setClaims(dev.claimsOn());
+    setOpenRooms(dev.openRoomsOn());
     const id = api?.auth.current()?.id;
     setPayout(id ? dev.payoutStatus(id) : "not_started");
   }, [dev, api]);
@@ -143,6 +145,16 @@ function Panel() {
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" className="chip" aria-pressed={claims} disabled={dev.claimsLockedByBuild} onClick={() => dev.setClaims(true)}>On</button>
             <button type="button" className="chip" aria-pressed={!claims} disabled={dev.claimsLockedByBuild} onClick={() => dev.setClaims(false)}>Off</button>
+          </div>
+        </section>
+
+        <section className="card mt-4">
+          <h2 className="seclabel">Open organiser rooms</h2>
+          <p className="mt-2 font-body text-[15px]">Open organiser rooms: {openRooms ? "On" : "Off"}</p>
+          <p className="hint mt-1">On: a room Hoppaz made for a listed organiser opens to anyone until it is claimed, with the claim strip. Off: it shows the invite lock, as before.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" className="chip" aria-pressed={openRooms} onClick={() => dev.setOpenRooms(true)}>On</button>
+            <button type="button" className="chip" aria-pressed={!openRooms} onClick={() => dev.setOpenRooms(false)}>Off</button>
           </div>
         </section>
 
