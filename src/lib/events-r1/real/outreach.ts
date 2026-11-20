@@ -13,7 +13,7 @@ import type { Organiser, TransferLink } from "../types";
 import { eventClaimsOn } from "../flags";
 import { emit, rpc } from "./core";
 import { eventIdOf, roomIdOf } from "./ids";
-import { mapAccept, mapApproveMany, mapClaimable, mapClaimAsk, mapClaimLink, mapClaimRequest, mapImportReport, mapOrganiser, mapOrganiserDetail, mapPreview, mapPulled, mapTapCounts, mapTransfer, mapWeek } from "./map";
+import { mapAccept, mapApproveMany, mapClaimable, mapClaimAsk, mapClaimLink, mapClaimRequest, mapImportReport, mapOrganiser, mapOrganiserDetail, mapPreview, mapPulled, mapRoomMode, mapTapCounts, mapTransfer, mapWeek } from "./map";
 import { outreachReason } from "./reasons";
 import { soft } from "./roomProfile";
 
@@ -160,6 +160,14 @@ export const outreach: OutreachApi = {
     const out = (await write({ action: "decide_claim_ask", id: askId, approve, by })) as { moved_events?: number };
     emit();
     return { moved_events: Number(out?.moved_events) || 0 };
+  },
+
+  async setRoomMode(organiserId, mode, by) {
+    const out = await write({ action: "set_room_mode", id: organiserId, mode, by });
+    emit();
+    const view = mapRoomMode(out);
+    if (!view) throw new Error("That did not work. Try again");
+    return view;
   },
 
   async tapCounts() {

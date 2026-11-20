@@ -6,10 +6,11 @@
 import type { RoomsApi } from "../api";
 import type { EventChat, JoinRequest, RoomGuests, RoomMember, RoomMessage, RoomRole, RoomSummary } from "../types";
 import { ABOUT_MAX } from "../types";
+import { eventClaimsOn, openOrganiserRoomsOn } from "../flags";
 import { normalizeLinks, slugFromName, slugOk, slugShapeOk, SLUG_HELP } from "../roomRules";
 import { flushDuePops, pops } from "./pops";
 import {
-  canList, canManageRoom, chatFor, findEvent, inviteCodeOf, isGoing, isHostOf, isMember, joinModeOf, myRole, regOf,
+  canList, canManageRoom, chatFor, findEvent, inviteCodeOf, isGoing, isHostOf, isMember, joinModeOf, listingOrgOf, myRole, regOf,
   requireViewer, roleOf, roomSummary,
 } from "./rules";
 import { emit, now, S, subscribe, viewer } from "./store";
@@ -222,6 +223,21 @@ export const rooms: RoomsApi = {
     const r = findRoom(idOrSlug);
     if (!r) return null;
     return { id: r.id, slug: r.slug, name: r.name, kind: r.kind, logo_url: r.logo_url, wallpaper_url: r.wallpaper_url, about: r.description, verified: r.verified, join_mode: joinModeOf(r) };
+  },
+
+  async listing(roomId) {
+    const r = findRoom(roomId);
+    if (!r || !openOrganiserRoomsOn()) return null;
+    const o = listingOrgOf(r);
+    if (!o) return null;
+    const evs = Object.values(S().events)
+      .filter((e) => e.room_id === r.id && e.visibility === "public" && e.status === "live")
+      .sort((a, b) => Date.parse(b.starts_at) - Date.parse(a.starts_at));
+    const v = viewer();
+    const pending = !!v && Object.values(S().claimAsks).some(
+      (a) => a.user_id === v.id && a.status === "new" && (a.organiser_id === o.id || S().events[a.event_id]?.room_id === r.id)
+    );
+    return { name: o.name || r.name, claim_event_id: evs[0]?.id ?? null, my_claim: pending ? "pending" : "none", claims_on: eventClaimsOn() };
   },
 
   async channels(roomId) {
@@ -467,6 +483,8 @@ export const rooms: RoomsApi = {
     if (text.length > MAX_LINE) throw new Error(`Keep it under ${MAX_LINE} characters`);
     if (channel === "general") {
       if (!isMember(r.id)) throw new Error("Join the room to chat");
+      // An unclaimed organiser room: General is read only until the organiser claims it (the trigger in events_r1_open_rooms.sql).
+      if (openOrganiserRoomsOn() && listingOrgOf(r)) throw new Error("The chat opens when the organiser claims this room");
     } else {
       const e = findEvent(channel);
       const chat = e && e.room_id === r.id ? chatFor(e) : null;

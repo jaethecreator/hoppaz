@@ -9,7 +9,7 @@ import type { EventChat, RoomAnnouncement, RoomMessage, RoomRole, RoomSummary } 
 import { client, emit, failText, reasonText, rpc, rpcText, shared, subscribe, userId, uuid, who } from "./core";
 import { events } from "./events";
 import { eventIdOf, roomIdOf } from "./ids";
-import { iso, mapAnnouncement, mapChat, mapMessage, mapPop, mapRoom } from "./map";
+import { iso, mapAnnouncement, mapChat, mapMessage, mapPop, mapRoom, mapRoomListing } from "./map";
 import { profileApi, soft } from "./roomProfile";
 
 type Row = Record<string, unknown>;
@@ -226,6 +226,14 @@ export const rooms: RoomsApi = {
       logo_url: (j.logo_url as string | null) ?? null, wallpaper_url: (j.wallpaper_url as string | null) ?? null, about: typeof j.about === "string" ? j.about : "",
       verified: !!j.verified, join_mode: j.join_mode === "ask" || j.join_mode === "invite" ? j.join_mode : "open",
     };
+  },
+
+  /** ev_room_listing (events_r1_open_rooms.sql): the claim strip of an unclaimed organiser room. A database without the file has none. */
+  async listing(roomId) {
+    const id = await roomIdOf(roomId);
+    if (!id) return null;
+    const r = await soft<unknown>("ev_room_listing", { p_room: id });
+    return r.missing || r.error ? null : mapRoomListing(r.data);
   },
 
   /** Every chat of the room's events the viewer can see, each with the viewer's can_enter (one ev_event_chat call per event). */

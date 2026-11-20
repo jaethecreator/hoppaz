@@ -149,5 +149,15 @@ test("claims and bulk approve: a claim link preview has no email; links, asks, t
   eq(outreachReason("not_on"), OUTREACH_REASONS.not_on, "not_on has words");
 });
 
+test("CHANGE-006: mapRoomListing and mapRoomMode", () => {
+  eq(map.mapRoomListing({ name: "Shiro Lagos", claim_event_id: ID, my_claim: "pending", claims_on: true }), { name: "Shiro Lagos", claim_event_id: ID, my_claim: "pending", claims_on: true }, "a listing");
+  eq(map.mapRoomListing({ name: "Shiro Lagos", claim_event_id: null, my_claim: "odd" }), { name: "Shiro Lagos", claim_event_id: null, my_claim: "none", claims_on: false }, "defaults");
+  eq([map.mapRoomListing(null), map.mapRoomListing({}), map.mapRoomListing([])], [null, null, null], "no listing");
+  eq(map.mapRoomMode({ join_mode: "invite", switchable: true, set_by_hand: true }), { join_mode: "invite", switchable: true, set_by_hand: true }, "a mode");
+  eq([map.mapRoomMode({ join_mode: "closed" }), map.mapRoomMode(null)], [null, null], "a bad or missing mode");
+  eq(map.mapOrganiserDetail({ organiser: { id: ID, name: "X" }, room_mode: { join_mode: "open", switchable: false } }).room_mode, { join_mode: "open", switchable: false, set_by_hand: false }, "the detail carries the room mode");
+  eq(map.mapOrganiserDetail({ organiser: { id: ID, name: "X" } }).room_mode, null, "a database without the file has none");
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

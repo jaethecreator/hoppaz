@@ -270,6 +270,16 @@ export type RoomPreview = {
   join_mode: JoinMode;
 };
 
+/**
+ * An unclaimed room Hoppaz made for a listed organiser (CHANGE-006): what the claim strip needs. null for every other room, and while the
+ * switch open_organiser_rooms is off. name is the organiser's public name; never an email or a phone number. claim_event_id is the event the
+ * CHANGE-005 ask points at (the organiser's latest public event in the room). my_claim is the viewer's own open ask ("We're checking").
+ */
+export type RoomListing = { name: string; claim_event_id: string | null; my_claim: "none" | "pending"; claims_on: boolean };
+
+/** The staff desk's view of an organiser's room mode: "Room: Open / Invite only". switchable only while the room is unclaimed. */
+export type RoomModeView = { join_mode: JoinMode; switchable: boolean; set_by_hand: boolean };
+
 /** Someone asking to join an ask room. */
 export type JoinRequest = {
   id: string;
@@ -469,6 +479,8 @@ export type OrganiserDetail = {
   transfers: Transfer[];
   /** Open and past claim links (the event_claims flag). Empty when the flag is off. */
   claim_links?: ClaimLink[];
+  /** The organiser's room mode for the desk switch (CHANGE-006). Missing or null with no room, or a database without the file. */
+  room_mode?: RoomModeView | null;
 };
 
 export type OrganiserPatch = {
